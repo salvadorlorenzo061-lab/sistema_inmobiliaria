@@ -1,0 +1,16 @@
+# Ignorar las librerías instaladas (¡Súper pesado!)
+node_modules/
+server/node_modules/
+cliente/node_modules/
+
+# Ignorar archivos de producción locales de React
+cliente/build/
+cliente/dist/
+
+# SEGURIDAD: Ocultar archivos de conexión y variables de entorno
+server/.env
+.env
+
+# Pon aquí abajo el nombre exacto de tu archivo de conexión si no usas .env
+# Ejemplo (descomenta quitando el # si aplica):
+# server/conexion.js

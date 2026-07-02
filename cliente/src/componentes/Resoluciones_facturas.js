@@ -1,0 +1,522 @@
+import { useState, useEffect } from 'react';
+import Axios from "axios";
+import 'bootstrap/dist/css/bootstrap.min.css';
+import Swal from 'sweetalert2';
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { getPaginatedData, PaginationControls } from '../utils/paginationUtils'; 
+
+const LOTE_FACTURAS = 10000;
+
+function Resoluciones_facturas() {
+  const [id_resolucion, setId_resolucion] = useState(""); 
+  const [id_empresa, setId_empresa] = useState("");
+  const [numero_resolucion, setNumero_resolucion] = useState("");
+  const [serie, setSerie] = useState("");
+  const [rango_inicial, setRango_inicial] = useState("");
+  const [rango_final, setRango_final] = useState("");
+  const [correlativo_actual, setCorrelativo_actual] = useState("");
+  const [fecha_autorizacion, setFecha_autorizacion] = useState("");
+  const [fecha_vencimiento, setFecha_vencimiento] = useState("");
+  const [estado, setEstado] = useState("");
+  // 🔴 Se eliminó el estado 'rol'
+  
+  const [Resoluciones_facturasList, setResoluciones_facturas] = useState([]);
+  const [busqueda, setBusqueda] = useState("");
+
+  const [showRegModal, setShowRegModal] = useState(false);  
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10; 
+
+  const API_URL = "http://localhost:3001/api/resoluciones_facturas";
+
+  const calcularRangoFinalPorLote = (inicio) => {
+    const n = Number(inicio);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    return String(n + LOTE_FACTURAS - 1);
+  };
+
+  const aplicarLoteDesdeRangoInicial = (valorInicial) => {
+    setRango_inicial(valorInicial);
+    const finalCalculado = calcularRangoFinalPorLote(valorInicial);
+    setRango_final(finalCalculado);
+    if (!String(correlativo_actual || '').trim()) {
+      setCorrelativo_actual(String(valorInicial || ''));
+    }
+  };
+
+  // =========================================================================
+  // 📄 REPORTE PROFESIONAL: FICHA DE RESOLUCIONES FACTURAS
+  // =========================================================================
+  const descargarPDFIndividual = (val) => {
+    const doc = new jsPDF();
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(40, 40, 40);
+    doc.text("INMOBILIARIA S.A. GUATEMALA", 14, 20);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(90, 90, 90);
+    doc.text("Departamento de Facturación e Informática", 14, 25);
+    doc.text("Sistema Centralizado de Control", 14, 30);
+    doc.text(`Generado por: Auditoría de Sistemas`, 14, 35);
+
+    doc.setFillColor(245, 247, 250); 
+    doc.rect(130, 12, 66, 26, "F");  
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(41, 128, 185);  
+    doc.text("EXPEDIENTE INTEGRAL", 133, 18);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0); 
+    doc.text(`ID REGISTRO: #${val.id_resolucion}`, 133, 24); 
+    
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Empresa ID: ${val.id_empresa}`, 133, 30);
+    doc.text(`Fecha Ref: ${new Date().toLocaleDateString()}`, 133, 34);
+
+    doc.line(14, 42, 196, 42); 
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(40, 40, 40);
+    doc.text("DATOS GENERALES DE LA RESOLUCIÓN FACTURA", 14, 49);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.text(`ID:   ${String(val.id_resolucion)}`, 14, 56);
+    doc.text(`Número de resolución: ${val.numero_resolucion}`, 14, 61);
+    doc.text(`Estado resolución:    ${val.estado.toUpperCase()}`, 14, 66); 
+
+    autoTable(doc, {
+      startY: 72,
+      head: [['PARÁMETRO DE SEGURIDAD', 'VALOR / CREDENCIAL ASIGNADA']],
+      body: [
+        ['CÓDIGO INTERNO RESOLUCION', `RES-${val.id_resolucion}2026`],
+        ['SERIE', val.serie.toUpperCase()],
+        ['RANGO INICIAL', val.rango_inicial],
+        ['RANGO FINAL', val.rango_final],
+        ['CORRELATIVO ACTUAL', String(val.correlativo_actual).toUpperCase()],
+        ['FECHA AUTORIZACION', val.fecha_autorizacion],
+        ['FECHA VENCIMIENTO', val.fecha_vencimiento],
+        // 🔴 Se eliminó la fila del Rol
+        ['ESTADO OPERATIVO EN SISTEMA', val.estado.toUpperCase()],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [41, 128, 185], fontSize: 9.5, halign: 'left' },
+      styles: { fontSize: 9, cellPadding: 3.5 },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 65, textColor: [50, 50, 50] },
+        1: { cellWidth: 117 }
+      }
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 12;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text("Nota de seguridad: Esta ficha contiene datos de resoluciones autorizadas de uso confidencial.", 14, finalY);
+    doc.text("Inmobiliaria S.A. - Control de Auditoría Interna de Sistemas de Información.", 14, finalY + 4);
+
+    doc.save(`Ficha_Resolucion_${val.numero_resolucion.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  // =========================================================================
+  //   CONTROLADORES DE BASE DE DATOS (CRUD)
+  // =========================================================================
+  const add = () => {
+    // 🔴 Se quitó 'rol.trim()' de la condición
+    if (!id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim()) {
+      Swal.fire({
+        position: "top-end",
+        icon: "warning",
+        title: 'DATOS INCOMPLETOS',
+        showConfirmButton: false,
+        timer: 3000
+      });
+      return; 
+    }
+
+    const rInicial = Number(rango_inicial);
+    const rFinal = Number(rango_final);
+    const cActual = Number(correlativo_actual);
+
+    if (rInicial > rFinal) {
+      Swal.fire({ icon: "error", title: "Error de Rangos", text: "El rango inicial no puede ser mayor que el rango final." });
+      return;
+    }
+
+    if (cActual < rInicial || cActual > rFinal) {
+      Swal.fire({ icon: "error", title: "Correlativo Inválido", text: `El correlativo actual (${cActual}) debe estar estrictamente dentro del rango autorizado (${rInicial} al ${rFinal}).` });
+      return;
+    }
+
+    // 🔴 Se quitó 'rol' del objeto enviado
+    Axios.post(`${API_URL}/crear`, { 
+      id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado 
+    })
+    .then(() => {
+      getResoluciones();
+      limpiarCampos();
+      setShowRegModal(false);
+      Swal.fire({
+        position: "top-end",
+        icon: "success",
+        title: 'Resolución ' + numero_resolucion + ' creada correctamente',
+        showConfirmButton: false,
+        timer: 3000
+      });
+    })
+    .catch((error) => {
+      Swal.fire({
+        title: "<strong>No se registró!</strong>",
+        text: error.response?.data?.message || 'Hubo un error en el sistema',
+        icon: 'warning',
+        timer: 3000,
+        showConfirmButton: false
+      });
+      console.error(error);
+    });
+  };
+
+  const actualizar = () => {
+    // 🔴 Se quitó 'rol.trim()' de la condición
+    if (!id_resolucion || !id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim()) {
+      Swal.fire({ icon: 'warning', title: 'Campos incompletos' });
+      return;
+    }
+
+    const rInicial = Number(rango_inicial);
+    const rFinal = Number(rango_final);
+    const cActual = Number(correlativo_actual);
+
+    if (rInicial > rFinal) {
+      Swal.fire({ icon: "error", title: "Error de Rangos", text: "El rango inicial no puede ser mayor que el rango final." });
+      return;
+    }
+
+    if (cActual < rInicial || cActual > rFinal) {
+      Swal.fire({ icon: "error", title: "Correlativo Inválido", text: `El correlativo actual (${cActual}) debe estar estrictamente dentro del rango autorizado (${rInicial} al ${rFinal}).` });
+      return;
+    }
+
+    // 🔴 Se quitó 'rol' del objeto enviado
+    Axios.put(`${API_URL}/actualizar`, { 
+      id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado 
+    })
+    .then(() => {
+      getResoluciones();
+      limpiarCampos();
+      setShowEditModal(false);
+      Swal.fire({
+        html: '<strong>¡Éxito!</strong><p>Resolución actualizada correctamente</p>',
+        icon: 'success',
+        timer: 3000,
+        showConfirmButton: false
+      });
+    })
+    .catch((error) => {
+      console.error(error);
+      Swal.fire({ icon: 'error', title: 'Error al actualizar' });
+    });
+  };
+
+  const deteleResolucion = (val) => {
+    Swal.fire({
+      title: "Confirmar eliminación",
+      html: '<i>¿Desea eliminar la resolución <strong>' + val.numero_resolucion + '</strong>?</i>',
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#3085d6",
+      buttonColor: "#d33",
+      confirmButtonText: "Sí, eliminarla!",
+      cancelButtonText: "Cancelar"
+    }).then((result) => {
+      if (result.isConfirmed) {
+        Axios.delete(`${API_URL}/delete/${val.id_resolucion}`)
+        .then(() => {
+          getResoluciones();
+          Swal.fire('¡Eliminado!', 'La resolución ' + val.numero_resolucion + ' fue eliminada.', 'success');
+        })
+        .catch(err => console.error(err));
+      }
+    });
+  };
+
+  const limpiarCampos = () => {
+    setId_resolucion("");
+    setId_empresa("");
+    setNumero_resolucion(""); 
+    setSerie(""); 
+    setRango_inicial(""); 
+    setRango_final(""); 
+    setCorrelativo_actual("");
+    setFecha_autorizacion("");
+    setFecha_vencimiento("");
+    setEstado("");
+    // 🔴 Se quitó 'setRol("")'
+  };
+
+  const getResoluciones = () => {
+    Axios.get(API_URL)
+    .then((response) => { setResoluciones_facturas(response.data); })
+    .catch((error) => { console.error("Error al obtener resoluciones", error); });
+  };
+
+  useEffect(() => { getResoluciones(); }, []);
+
+  const abrirEditarModal = (val) => {
+    setId_resolucion(val.id_resolucion);
+    setId_empresa(val.id_empresa);
+    setNumero_resolucion(val.numero_resolucion);
+    setSerie(val.serie);
+    setRango_inicial(val.rango_inicial); 
+    setRango_final(val.rango_final);
+    setCorrelativo_actual(val.correlativo_actual);
+    setFecha_autorizacion(val.fecha_autorizacion);
+    setFecha_vencimiento(val.fecha_vencimiento);
+    setEstado(val.estado);
+    // 🔴 Se quitó la asignación de rol
+    setShowEditModal(true);
+  };
+
+  const resoluciones_facturasFiltrados = Resoluciones_facturasList.filter((prov) => 
+    prov.numero_resolucion?.toLowerCase().includes(busqueda.toLowerCase())
+  );
+
+  const handleBusquedaChange = (e) => {
+    setBusqueda(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const { paginatedItems: resolucionesPaginadas, totalPages, startIndex, endIndex } = getPaginatedData(resoluciones_facturasFiltrados, currentPage, itemsPerPage);
+
+  return (
+    <div className='container mt-4'>
+      
+      {/* CABECERA DE LA PANTALLA */}
+      <div className="module-header">
+      <div className="row align-items-center bg-light p-3 rounded shadow-sm">
+        <div className="col-md-4">
+          <h3 className="m-0 text-dark fw-bold">GESTIÓN DE RESOLUCIONES FACTURAS</h3>
+        </div>
+        <div className="col-md-5">
+          <div className="input-group">
+            <span className="input-group-text bg-primary text-white">🔍</span>
+            <input 
+              type="text" 
+              className="form-control" 
+              placeholder="Buscar por número resolución..." 
+              value={busqueda}
+              onChange={handleBusquedaChange}
+            />
+          </div>
+        </div>
+        <div className="col-md-3 text-end">
+          <button 
+            className="btn btn-success fw-bold w-100" 
+            onClick={() => { limpiarCampos(); setShowRegModal(true); }}
+          >
+            ➕ AGREGAR NUEVA RESOLUCION
+          </button>
+        </div>
+      </div>
+      </div>
+      
+      {/* TABLA DE DATOS */}
+      <table className="table table-striped table-bordered align-middle shadow-sm">
+        <thead className="table-dark">
+          <tr>
+            <th>EMPRESA</th>
+            <th>NUMERO RESOLUCION</th>
+            <th>SERIE</th>
+            <th>RANGO INICIAL</th>
+            <th>RANGO FINAL</th>
+            <th>CORRELATIVO ACTUAL</th>
+            <th>FECHA AUTORIZACION</th>
+            <th>FECHA VENCIMIENTO</th>
+            {/* 🔴 Se eliminó la cabecera del ROL */}
+            <th>ESTADO</th>
+            <th>OPCIONES</th>
+          </tr>
+        </thead>
+        <tbody>
+          {resolucionesPaginadas.length > 0 ? (
+            resolucionesPaginadas.map((val) => (
+              <tr key={val.id_resolucion}>
+                <td>{val.id_empresa}</td>
+                <td>{val.numero_resolucion}</td>
+                <td>{val.serie}</td>
+                <td>{val.rango_inicial}</td>
+                <td>{val.rango_final}</td>
+                <td>{val.correlativo_actual}</td>
+                <td>{val.fecha_autorizacion}</td>
+                <td>{val.fecha_vencimiento}</td>
+                {/* 🔴 Se eliminó la celda del ROL */}
+                <td>
+                  <span className={`badge ${val.estado === 'activo' ? 'bg-success' : val.estado === 'inactivo' ? 'bg-danger' : 'bg-warning'}`}>
+                    {val.estado.toUpperCase()}
+                  </span>
+                </td>
+                <td>
+                  <div className="btn-group" role="group">
+                    <button type="button" onClick={() => abrirEditarModal(val)} className="btn btn-info btn-sm m-1 fw-bold">ACTUALIZAR</button>
+                    <button type="button" onClick={() => deteleResolucion(val)} className="btn btn-danger btn-sm m-1 fw-bold">ELIMINAR</button>
+                    <button type="button" onClick={() => descargarPDFIndividual(val)} className="btn btn-secondary btn-sm m-1 fw-bold">📄 PDF</button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="10" className="text-center text-muted py-3">No se encontraron resoluciones coincidentes.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <PaginationControls
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+        startIndex={startIndex}
+        endIndex={endIndex}
+        itemsCount={resoluciones_facturasFiltrados.length}
+      />
+
+      {/* 1. MODAL REGISTRO */}
+      {showRegModal && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog">
+            <div className="modal-content shadow-lg">
+              <div className="modal-header bg-success text-white">
+                <h5 className="modal-title fw-bold">Registrar Resolución Factura</h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => { setShowRegModal(false); limpiarCampos(); }}></button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label fw-bold">EMPRESA (ID)</label>
+                  <input type="number" value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-control" placeholder="ID Empresa" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Número resolución:</label>
+                  <input type="text" value={numero_resolucion} onChange={(e) => setNumero_resolucion(e.target.value)} className="form-control" placeholder="Ingrese Número Resolución" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Serie:</label>
+                  <input type="text" value={serie} onChange={(e) => setSerie(e.target.value)} className="form-control" placeholder="Ingrese serie" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rango Inicial (lote de {LOTE_FACTURAS.toLocaleString()}):</label>
+                  <input type="number" value={rango_inicial} onChange={(e) => aplicarLoteDesdeRangoInicial(e.target.value)} className="form-control" placeholder="Rango Inicial" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rango Final (automático):</label>
+                  <input type="number" value={rango_final} readOnly className="form-control bg-light" placeholder="Rango Final" />
+                  <small className="text-muted">Se calcula automáticamente con un lote de {LOTE_FACTURAS.toLocaleString()} facturas.</small>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Correlativo actual:</label>
+                  <input type="number" value={correlativo_actual} onChange={(e) => setCorrelativo_actual(e.target.value)} className="form-control" placeholder="Correlativo actual" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Fecha autorizada:</label>
+                  <input type="date" value={fecha_autorizacion} onChange={(e) => setFecha_autorizacion(e.target.value)} className="form-control" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Fecha vencimiento:</label>
+                  <input type="date" value={fecha_vencimiento} onChange={(e) => setFecha_vencimiento(e.target.value)} className="form-control" />
+                </div>
+                {/* 🔴 Se eliminó por completo el <div mb-3> del select de Rol */}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Estado:</label>
+                  <select value={estado} onChange={(e) => setEstado(e.target.value)} className="form-select">
+                    <option value="" disabled>-- Seleccione un estado --</option>
+                    <option value="activo">Activo</option>
+                    <option value="inactivo">Inactivo</option>
+                    <option value="pendiente">Pendiente</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowRegModal(false); limpiarCampos(); }}>Cancelar</button>
+                <button type="button" className="btn btn-success fw-bold" onClick={add}>Guardar Resolución</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. MODAL EDICIÓN */}
+      {showEditModal && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog">
+            <div className="modal-content shadow-lg">
+              <div className="modal-header bg-warning text-dark">
+                <h5 className="modal-title fw-bold">Actualizar Resolución #{id_resolucion}</h5>
+                <button type="button" className="btn-close" onClick={() => { setShowEditModal(false); limpiarCampos(); }}></button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label fw-bold">EMPRESA (ID)</label>
+                  <input type="number" value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-control" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Número resolución:</label>
+                  <input type="text" value={numero_resolucion} onChange={(e) => setNumero_resolucion(e.target.value)} className="form-control" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Serie:</label>
+                  <input type="text" value={serie} onChange={(e) => setSerie(e.target.value)} className="form-control" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rango Inicial:</label>
+                  <input type="number" value={rango_inicial} onChange={(e) => aplicarLoteDesdeRangoInicial(e.target.value)} className="form-control" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rango Final (automático):</label>
+                  <input type="number" value={rango_final} readOnly className="form-control bg-light" />
+                  <small className="text-muted">Lote estándar aplicado: {LOTE_FACTURAS.toLocaleString()} facturas.</small>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Correlativo actual:</label>
+                  <input type="number" value={correlativo_actual} onChange={(e) => setCorrelativo_actual(e.target.value)} className="form-control" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Fecha autorizada:</label>
+                  <input type="date" value={fecha_autorizacion} onChange={(e) => setFecha_autorizacion(e.target.value)} className="form-control" />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Fecha vencimiento:</label>
+                  <input type="date" value={fecha_vencimiento} onChange={(e) => setFecha_vencimiento(e.target.value)} className="form-control" />
+                </div>
+                {/* 🔴 Se eliminó por completo el <div mb-3> del select de Rol */}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Estado:</label>
+                  <select value={estado} onChange={(e) => setEstado(e.target.value)} className="form-select">
+                    <option value="activo">Activo</option>
+                    <option value="inactivo">Inactivo</option>
+                    <option value="pendiente">Pendiente</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowEditModal(false); limpiarCampos(); }}>Cancelar</button>
+                <button type="button" className="btn btn-warning fw-bold" onClick={actualizar}>Guardar Cambios</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+export default Resoluciones_facturas;

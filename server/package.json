@@ -1,0 +1,25 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mysql": "^2.18.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^9.0.0",
+    "react-toastify": "^11.1.0",
+    "sweetalert2": "^11.26.25",
+    "sweetalert2-react-content": "^5.1.2",
+    "twilio": "^6.0.2",
+    "xlsx": "^0.18.5"
+  }
+}

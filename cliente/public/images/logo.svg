@@ -1,0 +1,32 @@
+<svg viewBox="0 0 600 300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mountains/Investment Symbol -->
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a2d4d;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2d4a6f;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#d4a954;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c4934d;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- First Mountain (Blue) -->
+  <polygon points="80,220 150,80 220,220" fill="url(#grad1)" stroke="#1a2d4d" stroke-width="2"/>
+  
+  <!-- Second Mountain (Gold/Yellow) -->
+  <polygon points="160,220 260,60 320,220" fill="url(#grad2)" stroke="#c4934d" stroke-width="2"/>
+  
+  <!-- Third Mountain (Light) -->
+  <polygon points="240,220 280,140 320,220" fill="white" stroke="#e8e8e8" stroke-width="2" opacity="0.9"/>
+  
+  <!-- Text: GRUPO DE -->
+  <text x="380" y="120" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#1a2d4d">
+    GRUPO DE
+  </text>
+  
+  <!-- Text: INVERSIONES (Green) -->
+  <text x="380" y="160" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="#6ba537">
+    INVERSIONES
+  </text>
+</svg>
