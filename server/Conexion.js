@@ -1,13 +1,13 @@
 const mysql = require('mysql');
 
 const db = mysql.createConnection({
-  host: process.env.mysql-27a2d8f6-salvadorlorenzo061-2f31.d.aivencloud.com,
+  host: "mysql-27a2d8f6-salvadorlorenzo061-2f31.d.aivencloud.com", // <-- Corregido con comillas
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   port: process.env.DB_PORT,
   ssl: {
-    rejectUnauthorized: false // Esto es obligatorio para que Render acepte el certificado de Aiven
+    rejectUnauthorized: false 
   }
 });
 
