@@ -31,13 +31,6 @@ const ensureContratosServiciosTable = () => {
     });
 };
 
-const REGLAS_AUTOASIGNACION_SERVICIOS = [
-    'agua',
-    'agua potable',
-    'drenaje',
-    'mantenimiento'
-];
-
 const resolverColumnaCostoServicios = (callback) => {
     db.query("SHOW COLUMNS FROM servicios LIKE 'costo_servicio'", (errCostoServicio, rowsCostoServicio) => {
         if (errCostoServicio) {
@@ -67,46 +60,90 @@ const resolverColumnaCostoServicios = (callback) => {
     });
 };
 
-const asignarServiciosBaseAContrato = (idContrato, callback) => {
+const syncServiciosContrato = (idContrato, serviciosContrato, callback) => {
+    const serviciosIds = [...new Set((Array.isArray(serviciosContrato) ? serviciosContrato : [])
+        .map((item) => Number(item))
+        .filter((id) => Number.isInteger(id) && id > 0))];
+
     resolverColumnaCostoServicios((colErr, columnaCosto) => {
         if (colErr) {
             return callback(colErr);
         }
 
-        const condicionesNombre = REGLAS_AUTOASIGNACION_SERVICIOS
-            .map(() => 'LOWER(TRIM(s.nombre_servicio)) LIKE ?')
-            .join(' OR ');
-        const valoresNombre = REGLAS_AUTOASIGNACION_SERVICIOS.map((regla) => `%${regla}%`);
+        if (!serviciosIds.length) {
+            db.query('DELETE FROM contratos_servicios WHERE id_contrato = ?', [idContrato], (deleteErr) => {
+                if (deleteErr) {
+                    return callback(deleteErr);
+                }
+                return callback(null);
+            });
+            return;
+        }
 
-        const sql = `
-            INSERT INTO contratos_servicios (id_contrato, id_servicio, monto_servicio, estado)
-            SELECT ?, s.id_servicio, s.${columnaCosto}, 'activo'
-            FROM servicios s
-            LEFT JOIN contratos_servicios cs ON cs.id_contrato = ? AND cs.id_servicio = s.id_servicio
-            WHERE s.estado = 'activo'
-              AND cs.id_contrato_servicio IS NULL
-              AND (${condicionesNombre})
+        const placeholders = serviciosIds.map(() => '?').join(',');
+        const sqlServicios = `
+            SELECT id_servicio, ${columnaCosto} AS costo_servicio
+            FROM servicios
+            WHERE id_servicio IN (${placeholders})
+              AND estado = 'activo'
         `;
 
-        db.query(sql, [idContrato, idContrato, ...valoresNombre], (err) => {
-            if (err) {
-                return callback(err);
+        db.query(sqlServicios, serviciosIds, (servErr, servRows) => {
+            if (servErr) {
+                return callback(servErr);
             }
-            return callback(null);
+
+            const serviciosValidos = servRows || [];
+            if (!serviciosValidos.length) {
+                db.query('DELETE FROM contratos_servicios WHERE id_contrato = ?', [idContrato], (deleteErr) => {
+                    if (deleteErr) {
+                        return callback(deleteErr);
+                    }
+                    return callback(null);
+                });
+                return;
+            }
+
+            const idsValidos = serviciosValidos.map((row) => Number(row.id_servicio));
+            const placeholdersValidos = idsValidos.map(() => '?').join(',');
+
+            db.query(
+                `DELETE FROM contratos_servicios WHERE id_contrato = ? AND id_servicio NOT IN (${placeholdersValidos})`,
+                [idContrato, ...idsValidos],
+                (deleteErr) => {
+                    if (deleteErr) {
+                        return callback(deleteErr);
+                    }
+
+                    const values = serviciosValidos.map((row) => [
+                        idContrato,
+                        Number(row.id_servicio),
+                        Number(row.costo_servicio || 0),
+                        'activo'
+                    ]);
+
+                    db.query(
+                        `
+                            INSERT INTO contratos_servicios (id_contrato, id_servicio, monto_servicio, estado)
+                            VALUES ?
+                            ON DUPLICATE KEY UPDATE
+                                monto_servicio = VALUES(monto_servicio),
+                                estado = 'activo'
+                        `,
+                        [values],
+                        (upsertErr) => {
+                            if (upsertErr) {
+                                return callback(upsertErr);
+                            }
+                            return callback(null);
+                        }
+                    );
+                }
+            );
         });
     });
 };
 
-const ensureEmpresaMarcaColumn = () => {
-    const checkColumnQuery = `
-        SELECT COUNT(*) AS total
-        FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'contratos_residentes'
-          AND COLUMN_NAME = 'id_empresa_marca'
-    `;
-
-    db.query(checkColumnQuery, (checkErr, checkResult) => {
 const ensureFormatoContratoColumn = () => {
     const checkColumnQuery = `
         SELECT COUNT(*) AS total
@@ -141,9 +178,19 @@ const ensureFormatoContratoColumn = () => {
         });
     });
 };
+
+const ensureEmpresaMarcaColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'id_empresa_marca'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
         if (checkErr) {
             console.error('Error verificando columna id_empresa_marca:', checkErr);
-ensureFormatoContratoColumn();
             return;
         }
 
@@ -167,14 +214,51 @@ ensureFormatoContratoColumn();
     });
 };
 
+const ensureProyectoColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'id_proyecto'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna id_proyecto:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) {
+            return;
+        }
+
+        const alterQuery = `
+            ALTER TABLE contratos_residentes
+            ADD COLUMN id_proyecto INT NULL AFTER id_empresa_marca
+        `;
+
+        db.query(alterQuery, (alterErr) => {
+            if (alterErr) {
+                console.error('Error agregando columna id_proyecto:', alterErr);
+                return;
+            }
+            console.log('Columna id_proyecto creada en contratos_residentes.');
+        });
+    });
+};
+
 ensureEmpresaMarcaColumn();
+ensureProyectoColumn();
+ensureFormatoContratoColumn();
 ensureContratosServiciosTable();
 
 // === 1. LISTAR CONTRATOS (CON JOINS) ===
 router.get("/", (req, res) => {
     const query = `
-        SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato, 
-             c.id_empresa_marca,
+           SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato, 
+               c.id_empresa_marca, c.id_proyecto,
                c.formato_contrato,
                c.monto_total, c.cuotas_pactadas, c.monto_cuota, c.dia_pago_limite, 
                c.fecha_firma, c.fecha_compra, c.fecha_fin, c.estado, c.documento_contrato,
@@ -182,7 +266,23 @@ router.get("/", (req, res) => {
                r.numero_identificacion,
              t.nombre_tipo_contrato,
              em.nombre_empresa AS nombre_empresa_marca,
-             em.logo AS logo_empresa_marca
+                         em.logo AS logo_empresa_marca,
+                         (
+                                SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
+                                FROM contratos_servicios cs
+                                INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                                WHERE cs.id_contrato = c.id_contrato
+                                    AND cs.estado = 'activo'
+                                    AND s.estado = 'activo'
+                         ) AS servicios_contrato_ids,
+                         (
+                                SELECT GROUP_CONCAT(s.nombre_servicio ORDER BY s.nombre_servicio SEPARATOR '||')
+                                FROM contratos_servicios cs
+                                INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                                WHERE cs.id_contrato = c.id_contrato
+                                    AND cs.estado = 'activo'
+                                    AND s.estado = 'activo'
+                         ) AS servicios_contrato_nombres
         FROM contratos_residentes c
         INNER JOIN residentes r ON c.id_residente = r.id_residente
         INNER JOIN tipos_contrato t ON c.id_tipo_contrato = t.id_tipo_contrato
@@ -202,8 +302,9 @@ router.get("/", (req, res) => {
 // === 2. CREAR CONTRATO ===
 router.post("/crear", (req, res) => {
     const { 
-        codigo_contrato, id_residente, id_empresa_marca, id_tipo_contrato, formato_contrato, monto_total, 
-        cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato 
+        codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
+        cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        servicios_contrato
     } = req.body;
 
     // Validar que el código de contrato no esté duplicado
@@ -218,28 +319,31 @@ router.post("/crear", (req, res) => {
 
         const queryInsert = `
             INSERT INTO contratos_residentes 
-            (codigo_contrato, id_residente, id_empresa_marca, id_tipo_contrato, formato_contrato, monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         db.query(
             queryInsert,
-            [codigo_contrato, id_residente, id_empresa_marca || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null],
+            [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null],
             (insertErr, insertResult) => {
                 if (insertErr) {
                     console.error(insertErr);
                     return res.status(500).send("Error al registrar el contrato");
                 } else {
                     const idContratoCreado = insertResult?.insertId;
-                    const contratoActivo = String(estado || '').toLowerCase() === 'activo';
-
-                    if (!idContratoCreado || !contratoActivo) {
+                    if (!idContratoCreado) {
                         return res.status(200).send("Contrato establecido con éxito");
                     }
 
-                    asignarServiciosBaseAContrato(idContratoCreado, (asignErr) => {
+                    const serviciosEnPayload = Array.isArray(servicios_contrato);
+                    if (!serviciosEnPayload) {
+                        return res.status(200).send("Contrato establecido con éxito");
+                    }
+
+                    syncServiciosContrato(idContratoCreado, servicios_contrato, (asignErr) => {
                         if (asignErr) {
-                            console.error('Contrato creado pero sin asignacion de servicios base:', asignErr.message);
-                            return res.status(200).send("Contrato establecido con éxito (servicios base pendientes de asignación)");
+                            console.error('Contrato creado pero sin asignacion de servicios:', asignErr.message);
+                            return res.status(200).send("Contrato establecido con éxito (servicios pendientes de asignación)");
                         }
                         return res.status(200).send("Contrato establecido con éxito");
                     });
@@ -252,25 +356,36 @@ router.post("/crear", (req, res) => {
 // === 3. ACTUALIZAR CONTRATO ===
 router.put("/actualizar", (req, res) => {
     const { 
-        id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_tipo_contrato, formato_contrato, monto_total, 
-        cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato 
+        id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
+        cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        servicios_contrato
     } = req.body;
     
     const queryUpdate = `
         UPDATE contratos_residentes SET 
-        codigo_contrato=?, id_residente=?, id_empresa_marca=?, id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
+        codigo_contrato=?, id_residente=?, id_empresa_marca=?, id_proyecto=?, id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
         cuotas_pactadas=?, monto_cuota=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
         WHERE id_contrato=?
     `;
     db.query(
         queryUpdate,
-        [codigo_contrato, id_residente, id_empresa_marca || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null, id_contrato],
+        [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null, id_contrato],
         (err, result) => {
             if (err) {
                 console.error(err);
                 res.status(500).send("Error al actualizar el contrato");
             } else {
-                res.status(200).send("Contrato actualizado correctamente");
+                if (!Array.isArray(servicios_contrato)) {
+                    return res.status(200).send("Contrato actualizado correctamente");
+                }
+
+                syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
+                    if (syncErr) {
+                        console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
+                        return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
+                    }
+                    return res.status(200).send("Contrato actualizado correctamente");
+                });
             }
         }
     );

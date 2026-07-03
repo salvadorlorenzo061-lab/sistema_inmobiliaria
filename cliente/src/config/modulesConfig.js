@@ -12,6 +12,7 @@ import ContratosResidentesComponent from '../componentes/Contratos_Residentes';
 import AnulacionDeuda from '../componentes/AnulacionDeuda';
 import Morosidad from '../componentes/Morosidad';
 import Servicios from '../componentes/Servicios';
+import Servicio from '../componentes/Servicio/Servicio';
 import Roles from '../componentes/Roles';
 import PagosExtraordinarios from '../componentes/PagosExtraordinarios';
 import Pagos from '../componentes/Pagos';
@@ -76,6 +77,14 @@ export const modulesConfig = [
     icon: '💧',
     path: '/servicios',
     component: Servicios,
+    category: 'Sistema'
+  },
+  {
+    id: 'servicio',
+    label: 'Servicio',
+    icon: '💧',
+    path: '/servicio',
+    component: Servicio,
     category: 'Sistema'
   },
   {

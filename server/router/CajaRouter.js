@@ -13,6 +13,32 @@ const normalizeText = (value = '') => String(value || '')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
+const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
+    const periodicidadNormalizada = normalizeText(periodicidad);
+    if (periodicidadNormalizada === 'unico') {
+        return true;
+    }
+    if (periodicidadNormalizada === 'mensual') {
+        return false;
+    }
+
+    const nombre = normalizeText(nombreServicio);
+    return ['derecho', 'paja', 'instalacion', 'conexion', 'matricula', 'inscripcion']
+        .some((fragmento) => nombre.includes(fragmento));
+};
+
+const calcularComponentesFiscalmente = (total = 0) => {
+    const montoTotal = parseFloat(Number(total || 0).toFixed(2));
+    const iva = parseFloat((montoTotal * 0.12).toFixed(2));
+    const subtotal = parseFloat((montoTotal - iva).toFixed(2));
+
+    return {
+        subtotal,
+        iva,
+        total: montoTotal
+    };
+};
+
 const obtenerContextoUsuarioCobro = (idUsuario, callback) => {
     if (!idUsuario) {
         callback(null, { esAdmin: false, nombre_rol: '' });
@@ -392,42 +418,101 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
     }
 
     const query = `
-        SELECT
-            cs.id_servicio,
-            s.nombre_servicio,
-            cs.monto_servicio,
+        SELECT DISTINCT
+            base.id_servicio,
+            base.nombre_servicio,
+            base.monto_servicio,
+            base.periodicidad,
             CASE
                 WHEN ? != '' AND EXISTS (
                     SELECT 1
                     FROM pagos_detalle pd
                     INNER JOIN pagos p ON p.id_pago = pd.id_pago
-                    WHERE p.id_contrato = cs.id_contrato
+                    WHERE p.id_contrato = ?
                       AND pd.tipo_concepto = 'servicio'
-                      AND pd.id_concepto_servicio = cs.id_servicio
+                      AND pd.id_concepto_servicio = base.id_servicio
                       AND pd.mes_pagado = ?
                 ) THEN 1
                 ELSE 0
-            END AS ya_pagado_mes
-        FROM contratos_servicios cs
-        INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
-        WHERE cs.id_contrato = ?
-          AND cs.estado = 'activo'
-          AND s.estado = 'activo'
-        ORDER BY s.nombre_servicio ASC
+            END AS ya_pagado_mes,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM pagos_detalle pd
+                    INNER JOIN pagos p ON p.id_pago = pd.id_pago
+                    WHERE p.id_contrato = ?
+                      AND pd.tipo_concepto = 'servicio'
+                      AND pd.id_concepto_servicio = base.id_servicio
+                ) THEN 1
+                ELSE 0
+            END AS ya_pagado_alguna_vez
+            ,CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM pagos_detalle pd
+                    INNER JOIN pagos p ON p.id_pago = pd.id_pago
+                    INNER JOIN servicios s_pagado ON s_pagado.id_servicio = pd.id_concepto_servicio
+                    WHERE p.id_contrato = ?
+                      AND pd.tipo_concepto = 'servicio'
+                      AND LOWER(TRIM(s_pagado.nombre_servicio)) = LOWER(TRIM(base.nombre_servicio))
+                ) THEN 1
+                ELSE 0
+            END AS ya_pagado_por_nombre
+        FROM (
+            SELECT
+                cs.id_servicio,
+                s.nombre_servicio,
+                cs.monto_servicio,
+                COALESCE(s.periodicidad, 'mensual') AS periodicidad
+            FROM contratos_servicios cs
+            INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+            WHERE cs.id_contrato = ?
+              AND cs.estado = 'activo'
+              AND s.estado = 'activo'
+
+            UNION
+
+            SELECT
+                ps.id_servicio,
+                s.nombre_servicio,
+                ps.monto_servicio,
+                COALESCE(s.periodicidad, 'mensual') AS periodicidad
+            FROM contratos_residentes c
+            INNER JOIN proyecto_servicios ps ON ps.id_proyecto = c.id_proyecto
+            INNER JOIN servicios s ON s.id_servicio = ps.id_servicio
+            WHERE c.id_contrato = ?
+              AND ps.estado = 'activo'
+              AND s.estado = 'activo'
+        ) AS base
+        ORDER BY base.nombre_servicio ASC
     `;
 
-    db.query(query, [mes, mes, id_contrato], (err, rows) => {
+    db.query(query, [mes, id_contrato, mes, id_contrato, id_contrato, id_contrato, id_contrato], (err, rows) => {
         if (err) {
             console.error('Error al obtener servicios del contrato:', err.message);
             return res.status(500).send('Error al obtener servicios del contrato.');
         }
 
-        const servicios = (rows || []).map((row) => ({
-            id_servicio: Number(row.id_servicio),
-            nombre_servicio: row.nombre_servicio,
-            costo_servicio: Number(row.monto_servicio || 0),
-            ya_pagado_mes: Number(row.ya_pagado_mes || 0) === 1
-        }));
+        const servicios = (rows || [])
+            .map((row) => {
+                const nombreServicio = String(row.nombre_servicio || '').trim();
+                const periodicidad = String(row.periodicidad || 'mensual').trim().toLowerCase();
+                const esCobroUnico = esServicioCobroUnico(periodicidad, nombreServicio);
+                const yaPagadoAlgunaVez = Number(row.ya_pagado_alguna_vez || 0) === 1;
+                const yaPagadoPorNombre = Number(row.ya_pagado_por_nombre || 0) === 1;
+                const solventeContrato = yaPagadoAlgunaVez || yaPagadoPorNombre;
+
+                return {
+                    id_servicio: Number(row.id_servicio),
+                    nombre_servicio: nombreServicio,
+                    costo_servicio: Number(row.monto_servicio || 0),
+                    periodicidad,
+                    es_cobro_unico: esCobroUnico,
+                    ya_pagado_mes: esCobroUnico ? solventeContrato : Number(row.ya_pagado_mes || 0) === 1,
+                    ya_pagado_alguna_vez: solventeContrato
+                };
+            })
+            .filter((servicio) => !(servicio.es_cobro_unico && servicio.ya_pagado_alguna_vez));
 
         return res.status(200).json({
             id_contrato: Number(id_contrato),
@@ -469,27 +554,73 @@ router.post("/procesar-pago", (req, res) => {
     const mesesAProcesar = normalizarMeses(meses.length ? meses : ['Enero']);
     const cantidadMeses = Math.max(mesesAProcesar.length, 1);
 
-    const serviciosSolicitados = Array.isArray(servicios_pagados)
+    let serviciosSolicitados = Array.isArray(servicios_pagados)
         ? servicios_pagados
             .map((item) => ({
                 id_servicio: Number(item?.id_servicio),
                 subtotal: Number(item?.subtotal),
-                nombre_servicio: String(item?.nombre_servicio || '').trim()
+                nombre_servicio: String(item?.nombre_servicio || '').trim(),
+                periodicidad: String(item?.periodicidad || '').trim().toLowerCase(),
+                es_cobro_unico: Boolean(item?.es_cobro_unico) || esServicioCobroUnico(item?.periodicidad || '', item?.nombre_servicio || '')
             }))
             .filter((item) => Number.isInteger(item.id_servicio) && item.id_servicio > 0 && Number.isFinite(item.subtotal) && item.subtotal > 0)
         : [];
 
+    let serviciosMesInicial = [];
+
     const montoSolicitado = parseFloat(monto_pagar || 0);
     const montoTerrenoSolicitado = parseFloat(monto_terreno_pagar);
-    const montoServiciosMensual = serviciosSolicitados.reduce((sum, item) => sum + item.subtotal, 0);
-    const montoServiciosTotal = parseFloat((montoServiciosMensual * cantidadMeses).toFixed(2));
-    const montoTerrenoTotal = Number.isFinite(montoTerrenoSolicitado)
+    const montoTerrenoTotalBase = Number.isFinite(montoTerrenoSolicitado)
         ? parseFloat(Math.max(montoTerrenoSolicitado, 0).toFixed(2))
-        : parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0) - montoServiciosTotal, 0).toFixed(2));
-    const montoPrincipalTotal = parseFloat((montoTerrenoTotal + montoServiciosTotal).toFixed(2));
-    const montoPorMesTerreno = parseFloat((montoTerrenoTotal / cantidadMeses).toFixed(2));
-    const ivaTotal = parseFloat((montoPrincipalTotal * 0.12).toFixed(2));
-    const ivaPorMes = parseFloat((ivaTotal / cantidadMeses).toFixed(2));
+        : parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0), 0).toFixed(2));
+
+    let montoTerrenoTotal = montoTerrenoTotalBase;
+    let montoServiciosMensual = 0;
+    let montoServiciosMesInicial = 0;
+    let montoServiciosTotal = 0;
+    let montoPrincipalTotal = 0;
+    let montoPorMesTerreno = 0;
+    let ivaTotal = 0;
+    let ivaPorMes = 0;
+
+    const recalcularTotales = () => {
+        const serviciosMensuales = serviciosSolicitados.filter((item) => !item.es_cobro_unico);
+        const serviciosUnicos = serviciosSolicitados.filter((item) => item.es_cobro_unico);
+
+        montoServiciosMensual = serviciosMensuales.reduce((sum, item) => sum + Number(item?.subtotal || 0), 0);
+        const montoServiciosUnicos = serviciosUnicos.reduce((sum, item) => sum + Number(item?.subtotal || 0), 0);
+        montoServiciosMesInicial = serviciosMesInicial.reduce((sum, item) => sum + Number(item?.subtotal || 0), 0);
+        montoServiciosTotal = parseFloat(((montoServiciosMensual * cantidadMeses) + montoServiciosUnicos + montoServiciosMesInicial).toFixed(2));
+
+        if (!Number.isFinite(montoTerrenoSolicitado)) {
+            montoTerrenoTotal = parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0) - montoServiciosTotal, 0).toFixed(2));
+        }
+
+        montoPrincipalTotal = parseFloat((montoTerrenoTotal + montoServiciosTotal).toFixed(2));
+        montoPorMesTerreno = parseFloat((montoTerrenoTotal / cantidadMeses).toFixed(2));
+        ivaTotal = parseFloat((montoPrincipalTotal * 0.12).toFixed(2));
+        ivaPorMes = parseFloat((ivaTotal / cantidadMeses).toFixed(2));
+    };
+
+    recalcularTotales();
+
+    const parseMesEtiqueta = (mesTexto = '') => {
+        const nombreMeses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+        const limpio = String(mesTexto || '').trim();
+        if (!limpio) return null;
+        const partes = limpio.split(' ');
+        if (partes.length < 2) return null;
+        const mesNombre = partes[0];
+        const anio = Number(partes[1]);
+        const idx = nombreMeses.findIndex((m) => m.toLowerCase() === mesNombre.toLowerCase());
+        if (idx < 0 || !Number.isInteger(anio)) return null;
+        return new Date(anio, idx, 1);
+    };
+
+    const etiquetaMesDesdeFecha = (fecha) => {
+        const nombreMeses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+        return `${nombreMeses[fecha.getMonth()]} ${fecha.getFullYear()}`;
+    };
     const numero_recibo = "REC-" + Math.floor(100000 + Math.random() * 900000);
 
     if (!id_contrato || !id_residente) {
@@ -511,7 +642,7 @@ router.post("/procesar-pago", (req, res) => {
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
-            db.query('SELECT monto_total FROM contratos_residentes WHERE id_contrato = ? FOR UPDATE', [id_contrato], (saldoErr, saldoRows) => {
+            db.query('SELECT monto_total, fecha_compra, fecha_firma FROM contratos_residentes WHERE id_contrato = ? FOR UPDATE', [id_contrato], (saldoErr, saldoRows) => {
             if (saldoErr) {
                 return db.rollback(() => res.status(500).send('Error al validar saldo pendiente: ' + saldoErr.message));
             }
@@ -532,14 +663,102 @@ router.post("/procesar-pago", (req, res) => {
                 }
             }
 
+            const prepararServiciosMesInicial = (callbackPreparar) => {
+                const fechaCompraRaw = saldoRows[0]?.fecha_compra;
+                const fechaFirmaRaw = saldoRows[0]?.fecha_firma;
+                const fechaCompra = fechaCompraRaw ? new Date(fechaCompraRaw) : null;
+                const fechaFirma = fechaFirmaRaw ? new Date(fechaFirmaRaw) : null;
+                const fechaInicio = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
+                    ? fechaCompra
+                    : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
+
+                if (!fechaInicio || montoTerrenoTotal <= 0) {
+                    return callbackPreparar();
+                }
+
+                const mesInicialContrato = etiquetaMesDesdeFecha(new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), 1));
+                if (!mesesAProcesar.includes(mesInicialContrato)) {
+                    return callbackPreparar();
+                }
+
+                const mesesOrdenados = [...mesesAProcesar]
+                    .map((item) => ({ etiqueta: item, fecha: parseMesEtiqueta(item) }))
+                    .filter((item) => item.fecha instanceof Date)
+                    .sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+
+                const primerMesCobrado = mesesOrdenados.length ? mesesOrdenados[0].etiqueta : mesesAProcesar[0];
+                if (primerMesCobrado !== mesInicialContrato) {
+                    return callbackPreparar();
+                }
+
+                const idsServiciosMensuales = new Set(serviciosSolicitados.map((s) => Number(s.id_servicio)));
+
+                const sqlServiciosIniciales = `
+                    SELECT
+                        cs.id_servicio,
+                        s.nombre_servicio,
+                        cs.monto_servicio,
+                        CASE
+                            WHEN EXISTS (
+                                SELECT 1
+                                FROM pagos_detalle pd
+                                INNER JOIN pagos p ON p.id_pago = pd.id_pago
+                                WHERE p.id_contrato = cs.id_contrato
+                                  AND pd.tipo_concepto = 'servicio'
+                                  AND pd.id_concepto_servicio = cs.id_servicio
+                                  AND pd.mes_pagado = ?
+                            ) THEN 1
+                            ELSE 0
+                        END AS ya_cobrado
+                    FROM contratos_servicios cs
+                    INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                    WHERE cs.id_contrato = ?
+                      AND cs.estado = 'activo'
+                      AND s.estado = 'activo'
+                `;
+
+                db.query(sqlServiciosIniciales, [mesInicialContrato, id_contrato], (autoErr, autoRows) => {
+                    if (autoErr) {
+                        return db.rollback(() => res.status(500).send('Error preparando cobro de servicios del mes inicial: ' + autoErr.message));
+                    }
+
+                    serviciosMesInicial = (autoRows || [])
+                        .filter((row) => Number(row.ya_cobrado || 0) !== 1)
+                        .filter((row) => !idsServiciosMensuales.has(Number(row.id_servicio)))
+                        .map((row) => ({
+                            id_servicio: Number(row.id_servicio),
+                            nombre_servicio: String(row.nombre_servicio || '').trim(),
+                            periodicidad: String(row.periodicidad || 'mensual').trim().toLowerCase(),
+                            subtotal: Number(row.monto_servicio || 0)
+                        }))
+                        .filter((item) => Number.isFinite(item.subtotal) && item.subtotal > 0);
+
+                    recalcularTotales();
+                    return callbackPreparar();
+                });
+            };
+
+            prepararServiciosMesInicial(() => {
+
             const validarServiciosYContinuar = () => {
-                if (!serviciosSolicitados.length) {
+                const serviciosAValidar = [...serviciosSolicitados, ...serviciosMesInicial];
+
+                if (!serviciosAValidar.length) {
                     return procesarCobroPrincipal();
                 }
 
-                const idsServicios = [...new Set(serviciosSolicitados.map((s) => s.id_servicio))];
+                const idsServicios = [...new Set(serviciosAValidar.map((s) => s.id_servicio))];
                 const placeholdersIds = idsServicios.map(() => '?').join(',');
                 const placeholdersMeses = mesesAProcesar.map(() => '?').join(',');
+
+                const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
+                const fechaFirma = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+                const fechaInicioValida = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
+                    ? fechaCompra
+                    : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
+                const mesInicialContrato = fechaInicioValida
+                    ? etiquetaMesDesdeFecha(new Date(fechaInicioValida.getFullYear(), fechaInicioValida.getMonth(), 1))
+                    : null;
 
                 const sqlServiciosAsignados = `
                     SELECT cs.id_servicio
@@ -582,7 +801,35 @@ router.post("/procesar-pago", (req, res) => {
                             return db.rollback(() => res.status(400).send(`Ya existen cobros registrados para: ${detalleDuplicado}.`));
                         }
 
-                        return procesarCobroPrincipal();
+                        if (!serviciosMesInicial.length || !mesInicialContrato) {
+                            return procesarCobroPrincipal();
+                        }
+
+                        const idsServiciosInicial = [...new Set(serviciosMesInicial.map((s) => s.id_servicio))];
+                        const placeholdersIniciales = idsServiciosInicial.map(() => '?').join(',');
+                        const sqlDuplicadosInicial = `
+                            SELECT DISTINCT pd.id_concepto_servicio
+                            FROM pagos_detalle pd
+                            INNER JOIN pagos p ON p.id_pago = pd.id_pago
+                            WHERE p.id_contrato = ?
+                              AND pd.tipo_concepto = 'servicio'
+                              AND pd.id_concepto_servicio IN (${placeholdersIniciales})
+                              AND pd.mes_pagado = ?
+                        `;
+
+                        db.query(sqlDuplicadosInicial, [id_contrato, ...idsServiciosInicial, mesInicialContrato], (dupIniErr, dupIniRows) => {
+                            if (dupIniErr) {
+                                return db.rollback(() => res.status(500).send('Error validando servicios del mes inicial: ' + dupIniErr.message));
+                            }
+
+                            if (dupIniRows && dupIniRows.length) {
+                                const idsDuplicados = new Set((dupIniRows || []).map((r) => Number(r.id_concepto_servicio)));
+                                serviciosMesInicial = serviciosMesInicial.filter((item) => !idsDuplicados.has(Number(item.id_servicio)));
+                                recalcularTotales();
+                            }
+
+                            return procesarCobroPrincipal();
+                        });
                     });
                 });
             };
@@ -614,7 +861,7 @@ router.post("/procesar-pago", (req, res) => {
                         const sqlPago = `INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia) 
                                          VALUES (?, ?, NOW(), ?, ?, ?)`;
                         const moraTotal = parseFloat(monto_mora || 0);
-                        const totalTransaccion = parseFloat((montoPrincipalTotal + ivaTotal + moraTotal).toFixed(2));
+                        const totalTransaccion = parseFloat((montoPrincipalTotal + moraTotal).toFixed(2));
 
                         db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (err, resPago) => {
                             if (err) return db.rollback(() => res.status(500).send("Error en tabla pagos: " + err.message));
@@ -632,10 +879,32 @@ router.post("/procesar-pago", (req, res) => {
                                 }
 
                                 if (serviciosSolicitados.length > 0) {
+                                    const serviciosMensuales = serviciosSolicitados.filter((servicio) => !servicio.es_cobro_unico);
+                                    const serviciosUnicos = serviciosSolicitados.filter((servicio) => servicio.es_cobro_unico);
+
                                     mesesAProcesar.forEach((mes) => {
-                                        serviciosSolicitados.forEach((servicio) => {
+                                        serviciosMensuales.forEach((servicio) => {
                                             detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mes, null, servicio.subtotal]);
                                         });
+                                    });
+
+                                    serviciosUnicos.forEach((servicio) => {
+                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal]);
+                                    });
+                                }
+
+                                if (serviciosMesInicial.length > 0) {
+                                    const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
+                                    const fechaFirma = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+                                    const fechaInicioValida = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
+                                        ? fechaCompra
+                                        : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
+                                    const mesInicialContrato = fechaInicioValida
+                                        ? etiquetaMesDesdeFecha(new Date(fechaInicioValida.getFullYear(), fechaInicioValida.getMonth(), 1))
+                                        : mesesAProcesar[0];
+
+                                    serviciosMesInicial.forEach((servicio) => {
+                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesInicialContrato, null, servicio.subtotal]);
                                     });
                                 }
 
@@ -667,29 +936,64 @@ router.post("/procesar-pago", (req, res) => {
 
                                                     mesesAProcesar.forEach((mes, index) => {
                                                         if (montoPorMesTerreno > 0) {
-                                                            const baseTerreno = parseFloat(montoPorMesTerreno.toFixed(2));
-                                                            const ivaTerreno = parseFloat((baseTerreno * 0.12).toFixed(2));
+                                                            const desgloseTerreno = calcularComponentesFiscalmente(montoPorMesTerreno);
                                                             detalleCobro.push({
                                                                 concepto: `Cuota de Terreno No. ${parseInt(numero_cuota || 1, 10) + index}`,
                                                                 mes,
-                                                                monto_base: baseTerreno,
-                                                                iva: ivaTerreno,
-                                                                total: parseFloat((baseTerreno + ivaTerreno).toFixed(2))
+                                                                monto_base: desgloseTerreno.subtotal,
+                                                                iva: desgloseTerreno.iva,
+                                                                total: desgloseTerreno.total
                                                             });
                                                         }
 
-                                                        serviciosSolicitados.forEach((servicio) => {
-                                                            const baseServicio = parseFloat(Number(servicio?.subtotal || 0).toFixed(2));
-                                                            const ivaServicio = parseFloat((baseServicio * 0.12).toFixed(2));
+                                                        serviciosSolicitados
+                                                            .filter((servicio) => !servicio.es_cobro_unico)
+                                                            .forEach((servicio) => {
+                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
                                                             detalleCobro.push({
                                                                 concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
                                                                 mes,
-                                                                monto_base: baseServicio,
-                                                                iva: ivaServicio,
-                                                                total: parseFloat((baseServicio + ivaServicio).toFixed(2))
+                                                                monto_base: desgloseServicio.subtotal,
+                                                                iva: desgloseServicio.iva,
+                                                                total: desgloseServicio.total
                                                             });
                                                         });
                                                     });
+
+                                                    serviciosSolicitados
+                                                        .filter((servicio) => servicio.es_cobro_unico)
+                                                        .forEach((servicio) => {
+                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
+                                                            detalleCobro.push({
+                                                                concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                mes: mesesAProcesar[0],
+                                                                monto_base: desgloseServicio.subtotal,
+                                                                iva: desgloseServicio.iva,
+                                                                total: desgloseServicio.total
+                                                            });
+                                                        });
+
+                                                    if (serviciosMesInicial.length > 0) {
+                                                        const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
+                                                        const fechaFirma = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+                                                        const fechaInicioValida = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
+                                                            ? fechaCompra
+                                                            : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
+                                                        const mesInicialContrato = fechaInicioValida
+                                                            ? etiquetaMesDesdeFecha(new Date(fechaInicioValida.getFullYear(), fechaInicioValida.getMonth(), 1))
+                                                            : mesesAProcesar[0];
+
+                                                        serviciosMesInicial.forEach((servicio) => {
+                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
+                                                            detalleCobro.push({
+                                                                concepto: `Servicio inicial: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                mes: mesInicialContrato,
+                                                                monto_base: desgloseServicio.subtotal,
+                                                                iva: desgloseServicio.iva,
+                                                                total: desgloseServicio.total
+                                                            });
+                                                        });
+                                                    }
 
                                                     res.status(200).json({
                                                         success: true,
@@ -698,7 +1002,9 @@ router.post("/procesar-pago", (req, res) => {
                                                         monto_pagado: montoPrincipalTotal,
                                                         monto_terreno_pagado: montoTerrenoTotal,
                                                         monto_servicios_pagado: montoServiciosTotal,
+                                                        monto_servicios_mes_inicial: montoServiciosMesInicial,
                                                         servicios_cobrados: serviciosSolicitados,
+                                                        servicios_cobrados_mes_inicial: serviciosMesInicial,
                                                         monto_mora: moraTotal,
                                                         iva_total: ivaTotal,
                                                         iva_por_mes: ivaPorMes,
@@ -830,6 +1136,7 @@ router.post("/procesar-pago", (req, res) => {
             };
 
             return validarServiciosYContinuar();
+            });
             });
         });
     });

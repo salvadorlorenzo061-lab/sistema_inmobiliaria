@@ -154,6 +154,79 @@ const getVariantLayout = (variant = 'FORMATO_BASE') => {
   return layouts[variant] || layouts.FORMATO_BASE;
 };
 
+const limpiarNombreServicioClausula = (valor = '') => {
+  // Remueve montos tipo Q100, Q 100.00 o texto entre parentesis que contenga Q.
+  const sinMontos = String(valor || '')
+    .replace(/\(\s*Q\s*[0-9.,]+\s*\)/gi, '')
+    .replace(/\bQ\s*[0-9.,]+\b/gi, '')
+    .replace(/\s+-\s+Q\s*[0-9.,]+\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return sinMontos;
+};
+
+const indiceALetras = (index = 0) => {
+  let n = Number(index) + 1;
+  let resultado = '';
+
+  while (n > 0) {
+    const residuo = (n - 1) % 26;
+    resultado = String.fromCharCode(65 + residuo) + resultado;
+    n = Math.floor((n - 1) / 26);
+  }
+
+  return resultado;
+};
+
+const normalizarNombreServicio = (valor = '') => {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+};
+
+const construirDetalleServicio = (nombreServicio = '', etiqueta = 'A') => {
+  const nombre = String(nombreServicio || '').trim().toUpperCase();
+  const clave = normalizarNombreServicio(nombreServicio);
+
+  if (clave.includes('agua')) {
+    return `${etiqueta}) ${nombre}: La fracción especificada contará con el servicio de agua potable. El cual se establecerá si será un servicio privado o municipal.`;
+  }
+
+  if (clave.includes('luz') || clave.includes('energia electrica') || clave.includes('energia')) {
+    return `${etiqueta}) ${nombre}: El posteado eléctrico será instalado por "LA PARTE VENDEDORA" encargándose de los trámites y gastos necesarios. La instalación de las viviendas será responsabilidad de "LA PARTE COMPRADORA" y "LA PARTE VENDEDORA" se compromete a apoyar con los requerimientos que sean necesarios.`;
+  }
+
+  if (clave.includes('drenaje') || clave.includes('saneamiento') || clave.includes('sanitario')) {
+    return `${etiqueta}) ${nombre}: El proyecto contará con pozos de absorción para drenajes y "LA PARTE COMPRADORA" se compromete a realizar la instalación a los pozos que proveerá "LA PARTE VENDEDORA", por medio de un biodigestor.`;
+  }
+
+  if (clave.includes('calle') || clave.includes('vias') || clave.includes('acceso')) {
+    return `${etiqueta}) ${nombre}: "LA PARTE VENDEDORA" se compromete a realizar la estructura de las calles al momento de terminar la instalación de los pozos de absorción.`;
+  }
+
+  return `${etiqueta}) ${nombre}: La prestación, habilitación y continuidad de este servicio se realizará conforme al plan de desarrollo del proyecto y la normativa aplicable.`;
+};
+
+const construirClausulaTercera = (serviciosSeleccionados = []) => {
+  const servicios = Array.isArray(serviciosSeleccionados)
+    ? serviciosSeleccionados
+      .map((item) => limpiarNombreServicioClausula(item))
+      .filter(Boolean)
+    : [];
+
+  if (!servicios.length) {
+    return `TERCERA: La fracción vendida contará únicamente con los servicios y amenidades previamente asignados al proyecto seleccionado por "LA PARTE VENDEDORA", de conformidad con las condiciones técnicas y administrativas vigentes al momento de la entrega.`;
+  }
+
+  const listado = servicios
+    .map((nombre, index) => construirDetalleServicio(nombre, indiceALetras(index)))
+    .join(' ');
+  return `TERCERA: La fracción vendida contará con los siguientes servicios y amenidades del proyecto: ${listado}`;
+};
+
 /* ─────────────── Generador principal ─────────────── */
 const generarPdfFormatoBase = (datosContrato = {}, datosResidente = {}, options = {}) => {
   const doc = new jsPDF('p','mm','letter');
@@ -354,6 +427,9 @@ const generarPdfFormatoBase = (datosContrato = {}, datosResidente = {}, options 
   const pManzana  = datosContrato.manzana_propiedad  || 'A';
   const pArea     = datosContrato.area_propiedad     || '89.65';
   const pProyecto = datosContrato.proyecto_propiedad || 'VILLAS DE TAPACUN';
+  const serviciosClausulaTercera = Array.isArray(datosContrato.servicios_clausula_tercera)
+    ? datosContrato.servicios_clausula_tercera
+    : [];
   const mNorte    = datosContrato.medida_norte       || '15.00';
   const mSur      = datosContrato.medida_sur         || '15.00';
   const mOriente  = datosContrato.medida_oriente     || '15.00';
@@ -431,13 +507,7 @@ const generarPdfFormatoBase = (datosContrato = {}, datosResidente = {}, options 
     `de la manzana ${pManzana}. En las medidas ya está incluido un derecho de banqueta.`
   );
 
-  addPara(
-    `TERCERA: La fracción vendida contará con los siguientes servicios: A) EL AGUA: La fracción especificada contará con el servicio de agua potable ` +
-    `el cual se establecerá si será municipal o privado. B) POSTEADO ELÉCTRICO: el posteado eléctrico será instalado por "LA PARTE VENDEDORA" encargándose ` +
-    `de los trámites y gastos necesarios para su instalación. C) SERVICIO DE SANEAMIENTO: "LA PARTE VENDEDORA" se compromete a realizar la estructura ` +
-    `de los pozos de absorción para drenajes, mismos a los que "LA PARTE COMPRADORA" se compromete a conectarse por medio de un biodigestor. D) CALLES: ` +
-    `"LA PARTE VENDEDORA" se compromete a realizar la estructura de las calles al momento de terminar la estructura de los pozos de absorción para drenajes.`
-  );
+  addPara(construirClausulaTercera(serviciosClausulaTercera));
 
   // CUARTA (TÉRMINOS ECONÓMICOS)
   addPara(

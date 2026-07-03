@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { API_BASE_URL } from '../config';
 
 function PagosExtraordinarios() {
   const [id_pago_extra, setId_pago_extra] = useState("");
@@ -22,10 +23,15 @@ function PagosExtraordinarios() {
   const [mensajeBusquedaResidente, setMensajeBusquedaResidente] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [esEdicion, setEsEdicion] = useState(false);
+  const [modoFormulario, setModoFormulario] = useState('cargo');
+  const [proyectosCatalogo, setProyectosCatalogo] = useState([]);
+  const [proyectosAmenidad, setProyectosAmenidad] = useState([]);
+  const [contratosAmenidad, setContratosAmenidad] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const API_URL = "http://localhost:3001/api/pagos_extraordinarios";
+  const API_URL = `${API_BASE_URL}/api/pagos_extraordinarios`;
+  const API_SERVICIOS = `${API_BASE_URL}/api/servicios`;
   const IVA_RATE = 0.12;
 
   const getImageFormatFromDataUrl = (dataUrl = '') => {
@@ -144,13 +150,20 @@ function PagosExtraordinarios() {
         setExtrasList([]);
       });
 
-    Axios.get("http://localhost:3001/api/contratos_residentes")
+    Axios.get(`${API_BASE_URL}/api/contratos_residentes`)
       .then(res => setContratosList(Array.isArray(res.data) ? res.data : []))
       .catch(err => {
         console.error('Error al cargar contratos:', err);
         setContratosList([]);
       });
-  }, []);
+
+    Axios.get(`${API_SERVICIOS}/catalogo-proyectos`)
+      .then((res) => setProyectosCatalogo(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => {
+        console.error('Error al cargar catalogo de proyectos para amenidades:', err);
+        setProyectosCatalogo([]);
+      });
+  }, [API_URL, API_SERVICIOS]);
 
   const recargarExtras = () => {
     Axios.get(API_URL)
@@ -159,7 +172,48 @@ function PagosExtraordinarios() {
   };
 
   const guardar = () => {
-    if(!id_contrato || !concepto.trim() || !monto){ Swal.fire('Atención', 'Complete todos los campos requeridos', 'warning'); return; }
+    if (!concepto.trim() || !monto) {
+      Swal.fire('Atención', 'Complete todos los campos requeridos', 'warning');
+      return;
+    }
+
+    if (modoFormulario === 'amenidad') {
+      Axios.post(`${API_SERVICIOS}/crear`, {
+        nombre_servicio: concepto,
+        costo_servicio: monto,
+        estado: 'activo',
+        proyectos_asignados: proyectosAmenidad,
+        contratos_asignados: contratosAmenidad
+      })
+        .then(() => {
+          setShowModal(false);
+          limpiar();
+          Swal.fire({
+            icon: 'success',
+            title: 'Amenidad creada',
+            text: proyectosAmenidad.length
+              ? 'Amenidad registrada y relacionada a proyectos.'
+              : 'Amenidad registrada sin proyecto asignado.',
+            timer: 2200,
+            showConfirmButton: false
+          });
+        })
+        .catch((err) => {
+          const detalleServidor = err.response?.data?.detail || err.response?.data?.message || err.response?.data;
+          Swal.fire({
+            icon: 'error',
+            title: 'No se pudo crear la amenidad',
+            text: detalleServidor || 'Error al guardar la amenidad.'
+          });
+        });
+      return;
+    }
+
+    if (!id_contrato) {
+      Swal.fire('Atención', 'Debe seleccionar un contrato para crear el cobro extraordinario.', 'warning');
+      return;
+    }
+
     const url = esEdicion ? `${API_URL}/actualizar` : `${API_URL}/crear`;
     const metodo = esEdicion ? Axios.put : Axios.post;
 
@@ -242,6 +296,9 @@ function PagosExtraordinarios() {
     setResultadosResidentes([]);
     setResidenteSeleccionado(null);
     setMensajeBusquedaResidente("");
+    setModoFormulario('cargo');
+    setProyectosAmenidad([]);
+    setContratosAmenidad([]);
   };
 
   const buscarResidenteContrato = async () => {
@@ -422,6 +479,30 @@ function PagosExtraordinarios() {
               <div className="modal-header bg-danger text-white"><h5>{esEdicion ? "Modificar Cargo Extra" : "Aplicar Cargo Extraordinario"}</h5></div>
               <div className="modal-body">
                 {!esEdicion && (
+                  <div className="mb-3">
+                    <label className="fw-bold">Tipo de registro:</label>
+                    <select
+                      className="form-select"
+                      value={modoFormulario}
+                      onChange={(e) => {
+                        const modo = e.target.value;
+                        setModoFormulario(modo);
+                        setResidenteSeleccionado(null);
+                        setResultadosResidentes([]);
+                        setMensajeBusquedaResidente('');
+                        setId_contrato('');
+                        setProyectosAmenidad([]);
+                        setContratosAmenidad([]);
+                      }}
+                    >
+                      <option value="cargo">Cobro extraordinario a contrato</option>
+                      <option value="amenidad">Crear amenidad para proyectos</option>
+                    </select>
+                    <small className="text-muted">Use "Crear amenidad" para que luego aparezca en contratos según el proyecto.</small>
+                  </div>
+                )}
+
+                {!esEdicion && modoFormulario === 'cargo' && (
                   <>
                     <div className="mb-2">
                       <label className="fw-bold">Buscar Residente (Nombre / DPI / Clave / Contrato):</label>
@@ -479,36 +560,88 @@ function PagosExtraordinarios() {
                   </>
                 )}
 
+                {(modoFormulario === 'cargo' || esEdicion) && (
+                  <div className="mb-2">
+                    <label className="fw-bold">Vincular al Contrato:</label>
+                    <select value={id_contrato} onChange={e => setId_contrato(e.target.value)} className="form-select">
+                      <option value="">-- Seleccione Contrato Destino --</option>
+                      {contratosList.map(c => (
+                        <option key={c.id_contrato} value={c.id_contrato}>
+                          #{c.id_contrato} - {c.codigo_contrato || 'SIN-CODIGO'} - {c.nombre_residente || 'Residente'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="mb-2">
-                  <label className="fw-bold">Vincular al Contrato:</label>
-                  <select value={id_contrato} onChange={e => setId_contrato(e.target.value)} className="form-select">
-                    <option value="">-- Seleccione Contrato Destino --</option>
-                    {contratosList.map(c => (
-                      <option key={c.id_contrato} value={c.id_contrato}>
-                        #{c.id_contrato} - {c.codigo_contrato || 'SIN-CODIGO'} - {c.nombre_residente || 'Residente'}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="fw-bold">{modoFormulario === 'amenidad' && !esEdicion ? 'Nombre de amenidad:' : 'Concepto / Razón del Cargo:'}</label>
+                  <input type="text" className="form-control" value={concepto} onChange={e => setConcepto(e.target.value)} placeholder={modoFormulario === 'amenidad' && !esEdicion ? 'Ej: Agua potable residencial' : 'Ej: Aporte para pavimentación calle principal'} />
                 </div>
                 <div className="mb-2">
-                  <label className="fw-bold">Concepto / Razón del Cargo:</label>
-                  <input type="text" className="form-control" value={concepto} onChange={e => setConcepto(e.target.value)} placeholder="Ej: Aporte para pavimentación calle principal" />
-                </div>
-                <div className="mb-2">
-                  <label className="fw-bold">Monto Excepcional (Q):</label>
+                  <label className="fw-bold">{modoFormulario === 'amenidad' && !esEdicion ? 'Tarifa base de amenidad (Q):' : 'Monto Excepcional (Q):'}</label>
                   <input type="number" step="0.01" className="form-control" value={monto} onChange={e => setMonto(e.target.value)} />
                 </div>
-                <div className="mb-2">
-                  <label className="fw-bold">Estado:</label>
-                  <select className="form-select" value={estado} onChange={e => setEstado(e.target.value)}>
-                    <option value="pendiente">Pendiente de Cobro</option>
-                    <option value="pagado">Pagado / Solventado</option>
-                  </select>
-                </div>
+                {modoFormulario === 'amenidad' && !esEdicion && (
+                  <div className="mb-2">
+                    <label className="fw-bold">Asignar amenidad a proyectos:</label>
+                    <select
+                      className="form-select"
+                      multiple
+                      value={proyectosAmenidad.map((id) => String(id))}
+                      onChange={(e) => {
+                        const ids = Array.from(e.target.selectedOptions)
+                          .map((option) => Number(option.value))
+                          .filter((id) => Number.isInteger(id) && id > 0);
+                        setProyectosAmenidad(ids);
+                      }}
+                      style={{ minHeight: '140px' }}
+                    >
+                      {proyectosCatalogo.map((proyecto) => (
+                        <option key={proyecto.id_proyecto} value={proyecto.id_proyecto}>
+                          {proyecto.nombre} - {proyecto.nombre_empresa || 'Sin empresa'}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-muted">Opcional. Solo aparecerá en contrato cuando el proyecto tenga esta amenidad asignada.</small>
+                  </div>
+                )}
+                {modoFormulario === 'amenidad' && !esEdicion && (
+                  <div className="mb-2">
+                    <label className="fw-bold">Asignar amenidad a contratos:</label>
+                    <select
+                      className="form-select"
+                      multiple
+                      value={contratosAmenidad.map((id) => String(id))}
+                      onChange={(e) => {
+                        const ids = Array.from(e.target.selectedOptions)
+                          .map((option) => Number(option.value))
+                          .filter((id) => Number.isInteger(id) && id > 0);
+                        setContratosAmenidad(ids);
+                      }}
+                      style={{ minHeight: '140px' }}
+                    >
+                      {contratosList.map((contrato) => (
+                        <option key={contrato.id_contrato} value={contrato.id_contrato}>
+                          {contrato.codigo_contrato || `#${contrato.id_contrato}`} - {contrato.nombre_residente || 'Residente'}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-muted">Si eliges un contrato aquí, la amenidad aparecerá en Caja de inmediato para ese residente.</small>
+                  </div>
+                )}
+                {(modoFormulario === 'cargo' || esEdicion) && (
+                  <div className="mb-2">
+                    <label className="fw-bold">Estado:</label>
+                    <select className="form-select" value={estado} onChange={e => setEstado(e.target.value)}>
+                      <option value="pendiente">Pendiente de Cobro</option>
+                      <option value="pagado">Pagado / Solventado</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button className="btn btn-light" onClick={() => setShowModal(false)}>Cancelar</button>
-                <button className="btn btn-danger" onClick={guardar}>Aplicar Cargo</button>
+                <button className="btn btn-danger" onClick={guardar}>{modoFormulario === 'amenidad' && !esEdicion ? 'Crear Amenidad' : 'Aplicar Cargo'}</button>
               </div>
             </div>
           </div>

@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 
 function AnulacionDeuda() {
@@ -28,11 +30,40 @@ function AnulacionDeuda() {
 
   const API_URL = "http://localhost:3001/api/anulacion_deuda";
 
-  const cargarDatosRelacionales = () => {
+  const getUsuarioActivo = () => {
+    try {
+      return JSON.parse(localStorage.getItem('usuario') || '{}');
+    } catch {
+      return {};
+    }
+  };
+
+  const getNombreUsuario = (usuario = {}) => {
+    return usuario?.nombre_usuario || usuario?.nombre || usuario?.correo || `Usuario #${usuario?.id_usuario || ''}`;
+  };
+
+  const esUsuarioAutorizador = (usuario = {}) => {
+    const rol = String(usuario?.nombre_rol || '').toLowerCase();
+    return String(usuario?.estado || '').toLowerCase() === 'activo'
+      && (rol.includes('admin') || rol.includes('administrador') || rol.includes('gerente'));
+  };
+
+  const cargarDatosRelacionales = useCallback(() => {
     Axios.get("http://localhost:3001/api/morosidad").then((res) => setMorosidades(res.data)).catch(console.error);
     Axios.get("http://localhost:3001/api/contratos_residentes").then((res) => setContratos(res.data)).catch(console.error);
-    Axios.get("http://localhost:3001/api/usuarios").then((res) => setUsuarios(res.data)).catch(console.error);
-  };
+    Axios.get("http://localhost:3001/api/usuarios").then((res) => {
+      const usuarios = Array.isArray(res.data) ? res.data : [];
+      setUsuarios(usuarios);
+
+      const usuarioActivo = getUsuarioActivo();
+      const usuarioActivoId = String(usuarioActivo?.id_usuario || '');
+      const usuarioAutorizadorActual = usuarios.find((u) => String(u.id_usuario) === usuarioActivoId && esUsuarioAutorizador(u));
+
+      if (usuarioAutorizadorActual && !id_usuario_autoriza) {
+        setId_usuario_autoriza(String(usuarioAutorizadorActual.id_usuario));
+      }
+    }).catch(console.error);
+  }, [id_usuario_autoriza]);
 
   const getAnulaciones = () => {
     Axios.get(API_URL).then((res) => setAnulaciones(res.data)).catch(console.error);
@@ -41,12 +72,82 @@ function AnulacionDeuda() {
   useEffect(() => { 
     getAnulaciones(); 
     cargarDatosRelacionales();
-  }, []);
+  }, [cargarDatosRelacionales]);
 
   const getMesesCorrelativo = () => {
     const raw = String(detalleCorrelativo?.meses_pagados || '').trim();
     if (!raw) return [];
     return raw.split(',').map((mes) => mes.trim()).filter(Boolean);
+  };
+
+  const getDetalleCobroCorrelativo = () => {
+    return Array.isArray(detalleCorrelativo?.detalle_cobro) ? detalleCorrelativo.detalle_cobro : [];
+  };
+
+  const getContratoInfo = (idContratoActual) => {
+    return contratosList.find((contrato) => String(contrato.id_contrato) === String(idContratoActual)) || null;
+  };
+
+  const getAutorizadorInfo = (idUsuario) => {
+    return usuariosList.find((usuario) => String(usuario.id_usuario) === String(idUsuario)) || null;
+  };
+
+  const descargarPdfAnulacion = (anulacion) => {
+    try {
+      const doc = new jsPDF();
+      const contratoInfo = getContratoInfo(anulacion.id_contrato);
+      const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
+      const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;
+      const fechaTexto = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion).toLocaleString('es-GT') : 'N/A';
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('COMPROBANTE DE ANULACION DE COBRO', 105, 18, { align: 'center' });
+
+      doc.setFontSize(11);
+      doc.text(`Anulación No.: ${anulacion.id_anulacion || 'N/A'}`, 14, 32);
+      doc.text(`Fecha de registro: ${fechaTexto}`, 14, 39);
+      doc.text(`Correlativo anulado: ${correlativoTexto}`, 14, 46);
+      doc.text(`Pago afectado: #${anulacion.id_pago || 'N/A'}`, 14, 53);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('DATOS RELACIONADOS', 14, 66);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`Contrato: ${contratoInfo?.codigo_contrato || `Contrato #${anulacion.id_contrato || '-'}`}`, 14, 74);
+      doc.text(`Residente: ${contratoInfo?.nombre_residente || 'N/A'}`, 14, 81);
+      doc.text(`Autorizó: ${getNombreUsuario(autorizadorInfo)}`, 14, 88);
+      doc.text(`Monto anulado: Q${parseFloat(anulacion.monto_anulado || 0).toFixed(2)}`, 14, 95);
+
+      autoTable(doc, {
+        startY: 105,
+        head: [['Campo', 'Detalle']],
+        body: [
+          ['Referencia', anulacion.id_morosidad ? `Ref #${anulacion.id_morosidad}` : 'Por correlativo'],
+          ['Contrato asociado', contratoInfo?.codigo_contrato || `Contrato #${anulacion.id_contrato || '-'}`],
+          ['Correlativo', correlativoTexto],
+          ['Pago detectado', `Pago #${anulacion.id_pago || 'N/A'}`],
+          ['Usuario autorizador', getNombreUsuario(autorizadorInfo)],
+          ['Monto revertido', `Q${parseFloat(anulacion.monto_anulado || 0).toFixed(2)}`],
+          ['Motivo / justificación', String(anulacion.motivo || 'Sin motivo registrado')]
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [33, 37, 41] },
+        styles: { fontSize: 10, cellWidth: 'wrap' },
+        columnStyles: {
+          0: { cellWidth: 48, fontStyle: 'bold' },
+          1: { cellWidth: 132 }
+        }
+      });
+
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'italic');
+      doc.text('Documento generado desde el módulo de anulación de cobros.', 14, doc.lastAutoTable.finalY + 12);
+
+      doc.save(`Anulacion_${anulacion.id_anulacion || 'sin_id'}_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
+    } catch (error) {
+      console.error('Error al generar PDF de anulación:', error);
+      Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo generar el PDF de la anulación.' });
+    }
   };
 
   const addAnulacion = () => {
@@ -90,7 +191,7 @@ function AnulacionDeuda() {
         correlativo,
         id_usuario_autoriza,
         motivo,
-        nombre_usuario: usuariosList.find((u) => String(u.id_usuario) === String(id_usuario_autoriza))?.usuario || 'DESCONOCIDO'
+        nombre_usuario: getNombreUsuario(usuariosList.find((u) => String(u.id_usuario) === String(id_usuario_autoriza))) || 'DESCONOCIDO'
       })
       .then(() => {
         getAnulaciones();
@@ -240,6 +341,7 @@ function AnulacionDeuda() {
               <td>{val.motivo}</td>
               <td>{new Date(val.fecha_anulacion).toLocaleDateString()}</td>
               <td>
+                <button onClick={() => descargarPdfAnulacion(val)} className="btn btn-info btn-sm m-1 text-white">PDF</button>
                 <button onClick={() => abrirEditar(val)} className="btn btn-warning btn-sm m-1">EDITAR</button>
                 <button onClick={() => deleteAnulacion(val)} className="btn btn-danger btn-sm m-1">ELIMINAR</button>
               </td>
@@ -304,7 +406,7 @@ function AnulacionDeuda() {
                       <label className="fw-bold">Usuario que Autoriza:</label>
                       <select value={id_usuario_autoriza} onChange={(e) => setId_usuario_autoriza(e.target.value)} className="form-select">
                         <option value="">-- Seleccione Gerente/Admin --</option>
-                        {usuariosList.map(u => <option key={u.id_usuario} value={u.id_usuario}>{u.usuario}</option>)}
+                        {usuariosList.filter(esUsuarioAutorizador).map(u => <option key={u.id_usuario} value={u.id_usuario}>{getNombreUsuario(u)}</option>)}
                       </select>
                     </div>
                     <div className="mb-2">
@@ -315,6 +417,9 @@ function AnulacionDeuda() {
                       <div className="alert alert-info py-2 mb-2">
                         <div><strong>Residente:</strong> {detalleCorrelativo.nombre_residente || 'N/A'}</div>
                         <div><strong>Contrato:</strong> {detalleCorrelativo.codigo_contrato || `#${detalleCorrelativo.id_contrato}`}</div>
+                        <div><strong>Total cobrado ubicado:</strong> Q{parseFloat(detalleCorrelativo.principal_pagado || 0).toFixed(2)}</div>
+                        <div><strong>Terreno a revertir:</strong> Q{parseFloat(detalleCorrelativo.principal_terreno || 0).toFixed(2)}</div>
+                        <div><strong>Servicios a revertir:</strong> Q{parseFloat(detalleCorrelativo.principal_servicios || 0).toFixed(2)}</div>
                         <div className="mb-1"><strong>Meses a revertir:</strong></div>
                         <div className="d-flex flex-wrap gap-1">
                           {getMesesCorrelativo().length ? (
@@ -325,6 +430,22 @@ function AnulacionDeuda() {
                             ))
                           ) : (
                             <span className="badge bg-secondary">No especificado</span>
+                          )}
+                        </div>
+                        <div className="mt-2 mb-1"><strong>Detalle del cobro encontrado:</strong></div>
+                        <div className="border rounded bg-white p-2" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                          {getDetalleCobroCorrelativo().length ? (
+                            getDetalleCobroCorrelativo().map((item) => (
+                              <div key={item.id_pago_detalle} className="d-flex justify-content-between align-items-start small border-bottom py-1">
+                                <div>
+                                  <div className="fw-bold">{item.concepto}</div>
+                                  <div className="text-muted">{item.mes_pagado || 'Sin mes'}{item.tipo_concepto === 'cuota_terreno' && item.numero_cuota_afectada ? ` | Cuota ${item.numero_cuota_afectada}` : ''}</div>
+                                </div>
+                                <div className="text-danger fw-bold">Q{parseFloat(item.subtotal || 0).toFixed(2)}</div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-muted small">No hay detalle disponible para este cobro.</div>
                           )}
                         </div>
                       </div>
@@ -354,7 +475,7 @@ function AnulacionDeuda() {
                       <label className="fw-bold">Usuario que Autoriza:</label>
                       <select value={id_usuario_autoriza} onChange={(e) => setId_usuario_autoriza(e.target.value)} className="form-select">
                         <option value="">-- Seleccione Gerente/Admin --</option>
-                        {usuariosList.map(u => <option key={u.id_usuario} value={u.id_usuario}>{u.usuario}</option>)}
+                        {usuariosList.filter(esUsuarioAutorizador).map(u => <option key={u.id_usuario} value={u.id_usuario}>{getNombreUsuario(u)}</option>)}
                       </select>
                     </div>
                     <div className="mb-2">

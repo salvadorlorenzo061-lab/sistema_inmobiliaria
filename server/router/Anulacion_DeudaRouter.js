@@ -62,6 +62,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             c.id_residente,
             r.nombre AS nombre_residente,
             COALESCE(SUM(pd.subtotal), 0) AS principal_pagado,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END), 0) AS principal_terreno,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'servicio' THEN pd.subtotal ELSE 0 END), 0) AS principal_servicios,
             GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados
         FROM pagos p
         INNER JOIN contratos_residentes c ON c.id_contrato = p.id_contrato
@@ -76,7 +78,54 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
     db.query(sql, params, (err, rows) => {
         if (err) return callback(err);
         if (!rows || !rows.length) return callback(null, null);
-        return callback(null, rows[0]);
+
+        const pago = rows[0];
+        db.query(
+            `
+                SELECT
+                    pd.id_pago_detalle,
+                    pd.tipo_concepto,
+                    pd.id_concepto_servicio,
+                    pd.mes_pagado,
+                    pd.numero_cuota_afectada,
+                    pd.subtotal,
+                    s.nombre_servicio
+                FROM pagos_detalle pd
+                LEFT JOIN servicios s ON s.id_servicio = pd.id_concepto_servicio
+                WHERE pd.id_pago = ?
+                ORDER BY pd.id_pago_detalle ASC
+            `,
+            [pago.id_pago],
+            (detailErr, detailRows) => {
+                if (detailErr) return callback(detailErr);
+
+                const detalle_cobro = (detailRows || []).map((row) => ({
+                    id_pago_detalle: Number(row.id_pago_detalle),
+                    tipo_concepto: row.tipo_concepto,
+                    id_concepto_servicio: row.id_concepto_servicio ? Number(row.id_concepto_servicio) : null,
+                    mes_pagado: row.mes_pagado || '',
+                    numero_cuota_afectada: row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null,
+                    subtotal: Number(row.subtotal || 0),
+                    concepto: row.tipo_concepto === 'cuota_terreno'
+                        ? `Cuota de Terreno No. ${row.numero_cuota_afectada || ''}`.trim()
+                        : `Servicio: ${row.nombre_servicio || `ID ${row.id_concepto_servicio || 'N/A'}`}`
+                }));
+
+                const mesesUnicos = [];
+                detalle_cobro.forEach((item) => {
+                    const mes = String(item.mes_pagado || '').trim();
+                    if (mes && !mesesUnicos.includes(mes)) {
+                        mesesUnicos.push(mes);
+                    }
+                });
+
+                return callback(null, {
+                    ...pago,
+                    meses_pagados: mesesUnicos.join(', '),
+                    detalle_cobro
+                });
+            }
+        );
     });
 };
 
@@ -118,6 +167,7 @@ router.post('/anular-por-correlativo', (req, res) => {
         }
 
         const principalAnular = parseFloat(pago.principal_pagado || 0);
+        const principalTerreno = parseFloat(pago.principal_terreno || 0);
         if (!Number.isFinite(principalAnular) || principalAnular <= 0) {
             return res.status(400).send({ message: 'El correlativo no tiene detalle válido para reversar el cargo.' });
         }
@@ -136,7 +186,7 @@ router.post('/anular-por-correlativo', (req, res) => {
 
                 db.query(
                     'UPDATE contratos_residentes SET monto_total = monto_total + ? WHERE id_contrato = ?',
-                    [principalAnular, pago.id_contrato],
+                    [principalTerreno, pago.id_contrato],
                     (saldoErr) => {
                         if (saldoErr) {
                             return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
@@ -186,8 +236,11 @@ router.post('/anular-por-correlativo', (req, res) => {
                                                 id_contrato: pago.id_contrato,
                                                 correlativo: correlativoFinal,
                                                 monto_restaurado: principalAnular,
+                                                monto_restaurado_terreno: principalTerreno,
+                                                monto_revertido_servicios: parseFloat(pago.principal_servicios || 0),
                                                 residente: pago.nombre_residente || 'N/A',
-                                                meses: pago.meses_pagados || ''
+                                                meses: pago.meses_pagados || '',
+                                                detalle_cobro: pago.detalle_cobro || []
                                             });
                                         });
                                     }

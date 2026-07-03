@@ -10,8 +10,11 @@ function Servicios() {
   const [nombre_servicio, setNombre_servicio] = useState("");
   const [costo_servicio, setCosto_servicio] = useState("");
   const [estado, setEstado] = useState("activo");
+  const [periodicidad, setPeriodicidad] = useState("mensual");
 
   const [serviciosList, setServicios] = useState([]);
+  const [proyectosCatalogo, setProyectosCatalogo] = useState([]);
+  const [proyectoAsignadoId, setProyectoAsignadoId] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [showRegModal, setShowRegModal] = useState(false);  
   const [showEditModal, setShowEditModal] = useState(false); 
@@ -29,14 +32,34 @@ function Servicios() {
       .catch(console.error);
   }, [API_URL]);
 
-  useEffect(() => { getServicios(); }, [getServicios]);
+  const getCatalogoProyectos = useCallback(() => {
+    Axios.get(`${API_URL}/catalogo-proyectos`)
+      .then((res) => {
+        setProyectosCatalogo(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch((error) => {
+        console.error('Error cargando catalogo de proyectos:', error);
+        setProyectosCatalogo([]);
+      });
+  }, [API_URL]);
+
+  useEffect(() => {
+    getServicios();
+    getCatalogoProyectos();
+  }, [getServicios, getCatalogoProyectos]);
 
   const addServicio = () => {
     if (!nombre_servicio.trim() || !costo_servicio.trim()) {
       Swal.fire({ position: "top-end", icon: "warning", title: 'CAMPOS VACÍOS', showConfirmButton: false, timer: 2500 });
       return; 
     }
-    Axios.post(`${API_URL}/crear`, { nombre_servicio, costo_servicio, estado })
+    Axios.post(`${API_URL}/crear`, {
+      nombre_servicio,
+      costo_servicio,
+      estado,
+      periodicidad,
+      proyectos_asignados: proyectoAsignadoId ? [Number(proyectoAsignadoId)] : []
+    })
     .then(() => {
       getServicios(); limpiarCampos(); setShowRegModal(false);
       Swal.fire({ position: "top-end", icon: "success", title: 'Servicio creado', showConfirmButton: false, timer: 2500 });
@@ -47,7 +70,14 @@ function Servicios() {
   };
 
   const actualizarServicio = () => {
-    Axios.put(`${API_URL}/actualizar`, { id_servicio, nombre_servicio, costo_servicio, estado })
+    Axios.put(`${API_URL}/actualizar`, {
+      id_servicio,
+      nombre_servicio,
+      costo_servicio,
+      estado,
+      periodicidad,
+      proyectos_asignados: proyectoAsignadoId ? [Number(proyectoAsignadoId)] : []
+    })
     .then(() => {
       getServicios(); limpiarCampos(); setShowEditModal(false);
       Swal.fire({ icon: 'success', title: 'Servicio modificado', timer: 2500, showConfirmButton: false });
@@ -77,11 +107,31 @@ function Servicios() {
   const abrirEditar = (val) => {
     setId_servicio(val.id_servicio); setNombre_servicio(val.nombre_servicio);
     setCosto_servicio(String(val.costo_servicio)); setEstado(val.estado || "activo");
-    setShowEditModal(true);
+    setPeriodicidad(val.periodicidad || "mensual");
+
+    Axios.get(`${API_URL}/proyectos/${val.id_servicio}`)
+      .then((res) => {
+        const ids = Array.isArray(res.data?.proyectos)
+          ? res.data.proyectos
+          : [];
+        const primerProyecto = ids
+          .map((id) => Number(id))
+          .find((id) => Number.isInteger(id) && id > 0);
+        setProyectoAsignadoId(primerProyecto ? String(primerProyecto) : "");
+      })
+      .catch((error) => {
+        console.error('Error cargando proyectos asignados al servicio:', error);
+        setProyectoAsignadoId("");
+      })
+      .finally(() => {
+        setShowEditModal(true);
+      });
   };
 
   const limpiarCampos = () => {
     setId_servicio(""); setNombre_servicio(""); setCosto_servicio(""); setEstado("activo");
+    setPeriodicidad("mensual");
+    setProyectoAsignadoId("");
   };
 
   // Filtrado y paginación
@@ -113,6 +163,7 @@ function Servicios() {
             <th>ID</th>
             <th>NOMBRE DEL SERVICIO</th>
             <th>TARIFA ESTÁNDAR</th>
+            <th>PERIODICIDAD</th>
             <th>ESTADO</th>
             <th>OPCIONES</th>
           </tr>
@@ -123,6 +174,11 @@ function Servicios() {
               <th>#{val.id_servicio}</th>
               <td className="fw-bold">{val.nombre_servicio}</td>
               <td className="text-primary fw-bold">Q {parseFloat(val.costo_servicio || 0).toFixed(2)}</td>
+              <td>
+                <span className={`badge ${String(val.periodicidad || 'mensual') === 'unico' ? 'bg-secondary' : 'bg-primary'}`}>
+                  {String(val.periodicidad || 'mensual').toUpperCase()}
+                </span>
+              </td>
               <td>
                 {/* 🟢 CORREGIDO: Protección con cortocircuito (|| 'inactivo') para evitar el crash si viene NULL */}
                 <span className={`badge bg-${(val.estado || 'inactivo') === 'activo' ? 'success' : 'danger'}`}>
@@ -160,6 +216,26 @@ function Servicios() {
                 <div className="mb-3"><label className="fw-bold">Estado inicial:</label>
                   <select className="form-select" value={estado} onChange={e => setEstado(e.target.value)}><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select>
                 </div>
+                <div className="mb-3"><label className="fw-bold">Periodicidad de cobro:</label>
+                  <select className="form-select" value={periodicidad} onChange={e => setPeriodicidad(e.target.value)}><option value="mensual">Mensual</option><option value="unico">Cobro unico</option></select>
+                  <small className="text-muted">Use mensual para servicios que deben volver a aparecer cada mes. Use cobro unico para extras que solo se cobran una vez.</small>
+                </div>
+                <div className="mb-3">
+                  <label className="fw-bold">Asignar a proyecto:</label>
+                  <select
+                    className="form-select"
+                    value={proyectoAsignadoId}
+                    onChange={(e) => setProyectoAsignadoId(e.target.value)}
+                  >
+                    <option value="">Sin proyecto</option>
+                    {proyectosCatalogo.map((proyecto) => (
+                      <option key={proyecto.id_proyecto} value={proyecto.id_proyecto}>
+                        {proyecto.nombre} - {proyecto.nombre_empresa || 'Sin empresa'}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="text-muted">Opcional. Si no selecciona proyectos, el servicio no aparecerá en la cláusula tercera.</small>
+                </div>
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setShowRegModal(false)}>Cerrar</button>
@@ -181,6 +257,26 @@ function Servicios() {
                 <div className="mb-3"><label className="fw-bold">Costo (Q):</label><input type="number" step="0.01" className="form-control" value={costo_servicio} onChange={e => setCosto_servicio(e.target.value)} /></div>
                 <div className="mb-3"><label className="fw-bold">Estado:</label>
                   <select className="form-select" value={estado} onChange={e => setEstado(e.target.value)}><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select>
+                </div>
+                <div className="mb-3"><label className="fw-bold">Periodicidad de cobro:</label>
+                  <select className="form-select" value={periodicidad} onChange={e => setPeriodicidad(e.target.value)}><option value="mensual">Mensual</option><option value="unico">Cobro unico</option></select>
+                  <small className="text-muted">Cambie aqui si el servicio debe cobrarse cada mes o una sola vez.</small>
+                </div>
+                <div className="mb-3">
+                  <label className="fw-bold">Asignar a proyecto:</label>
+                  <select
+                    className="form-select"
+                    value={proyectoAsignadoId}
+                    onChange={(e) => setProyectoAsignadoId(e.target.value)}
+                  >
+                    <option value="">Sin proyecto</option>
+                    {proyectosCatalogo.map((proyecto) => (
+                      <option key={proyecto.id_proyecto} value={proyecto.id_proyecto}>
+                        {proyecto.nombre} - {proyecto.nombre_empresa || 'Sin empresa'}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="text-muted">Opcional. Puede ajustar aquí los proyectos donde aplica este servicio.</small>
                 </div>
               </div>
               <div className="modal-footer">

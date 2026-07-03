@@ -8,6 +8,7 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 function Proyecto() {
   const [proyectos, setProyectos] = useState([]);
   const [empresas, setEmpresas] = useState([]);
+  const [serviciosCatalogo, setServiciosCatalogo] = useState([]);
 
   const [idProyecto, setIdProyecto] = useState('');
   const [nombre, setNombre] = useState('');
@@ -21,6 +22,10 @@ function Proyecto() {
 
   const [showRegModal, setShowRegModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showServiciosModal, setShowServiciosModal] = useState(false);
+  const [proyectoServiciosTarget, setProyectoServiciosTarget] = useState(null);
+  const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
+  const [guardandoServicios, setGuardandoServicios] = useState(false);
 
   const API_URL = `${API_BASE_URL}/api/proyectos`;
 
@@ -35,16 +40,22 @@ function Proyecto() {
   const cargarDatos = useCallback(() => {
     Promise.all([
       Axios.get(API_URL),
-      Axios.get(`${API_URL}/catalogo`)
+      Axios.get(`${API_URL}/catalogo`),
+      Axios.get(`${API_BASE_URL}/api/servicios`)
     ])
-      .then(([proyectosResponse, catalogoResponse]) => {
+      .then(([proyectosResponse, catalogoResponse, serviciosResponse]) => {
         setProyectos(Array.isArray(proyectosResponse.data) ? proyectosResponse.data : []);
         setEmpresas(Array.isArray(catalogoResponse.data?.empresas) ? catalogoResponse.data.empresas : []);
+        const serviciosActivos = Array.isArray(serviciosResponse.data)
+          ? serviciosResponse.data.filter((item) => String(item.estado || '').toLowerCase() === 'activo')
+          : [];
+        setServiciosCatalogo(serviciosActivos);
       })
       .catch((error) => {
         console.error('Error al cargar proyectos', error);
         setProyectos([]);
         setEmpresas([]);
+        setServiciosCatalogo([]);
       });
   }, [API_URL]);
 
@@ -146,6 +157,58 @@ function Proyecto() {
     });
   };
 
+  const abrirServiciosModal = (item) => {
+    setProyectoServiciosTarget(item);
+    setServiciosSeleccionados([]);
+
+    Axios.get(`${API_URL}/servicios/${item.id_proyecto}`)
+      .then((res) => {
+        const servicios = Array.isArray(res.data?.servicios) ? res.data.servicios : [];
+        const ids = servicios
+          .map((servicio) => Number(servicio.id_servicio))
+          .filter((id) => Number.isInteger(id) && id > 0)
+          .map((id) => String(id));
+        setServiciosSeleccionados(ids);
+      })
+      .catch((error) => {
+        console.error('Error al cargar servicios del proyecto:', error);
+        Swal.fire({
+          icon: 'warning',
+          title: 'Sin servicios cargados',
+          text: 'No se pudieron leer los servicios asignados, pero puede seleccionar y guardar nuevamente.'
+        });
+      })
+      .finally(() => {
+        setShowServiciosModal(true);
+      });
+  };
+
+  const guardarServiciosProyecto = () => {
+    if (!proyectoServiciosTarget?.id_proyecto) {
+      Swal.fire({ icon: 'warning', title: 'Proyecto inválido', text: 'No se encontró el proyecto seleccionado.' });
+      return;
+    }
+
+    setGuardandoServicios(true);
+    Axios.put(`${API_URL}/servicios/${proyectoServiciosTarget.id_proyecto}`, {
+      servicios: serviciosSeleccionados.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    })
+      .then(() => {
+        setShowServiciosModal(false);
+        setProyectoServiciosTarget(null);
+        setServiciosSeleccionados([]);
+        Swal.fire({ icon: 'success', title: 'Servicios actualizados', timer: 1800, showConfirmButton: false });
+      })
+      .catch((error) => {
+        Swal.fire({
+          icon: 'error',
+          title: 'No se pudo guardar',
+          text: error.response?.data?.message || 'Error al actualizar servicios del proyecto.'
+        });
+      })
+      .finally(() => setGuardandoServicios(false));
+  };
+
   return (
     <div className="container mt-4">
       <div className="module-header">
@@ -206,6 +269,7 @@ function Proyecto() {
                 <td>
                   <div className="d-flex gap-1">
                     <button className="btn btn-info btn-sm fw-bold" onClick={() => abrirEditarModal(item)}>EDITAR</button>
+                    <button className="btn btn-primary btn-sm fw-bold" onClick={() => abrirServiciosModal(item)}>SERVICIOS</button>
                     <button className="btn btn-danger btn-sm fw-bold" onClick={() => eliminarProyecto(item)}>ELIMINAR</button>
                   </div>
                 </td>
@@ -308,6 +372,77 @@ function Proyecto() {
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => { setShowEditModal(false); limpiarCampos(); }}>Cancelar</button>
                 <button type="button" className="btn btn-warning fw-bold" onClick={actualizarProyecto}>Actualizar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showServiciosModal && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg">
+            <div className="modal-content shadow-lg">
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title fw-bold">
+                  Servicios del proyecto: {proyectoServiciosTarget?.nombre || ''}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => {
+                    setShowServiciosModal(false);
+                    setProyectoServiciosTarget(null);
+                    setServiciosSeleccionados([]);
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <label className="form-label fw-bold">Seleccione servicios disponibles para este proyecto:</label>
+                {serviciosCatalogo.length === 0 ? (
+                  <div className="alert alert-warning mb-0">No hay servicios activos en el catálogo.</div>
+                ) : (
+                  <>
+                    <select
+                      className="form-select"
+                      multiple
+                      value={serviciosSeleccionados}
+                      onChange={(e) => {
+                        const ids = Array.from(e.target.selectedOptions).map((option) => option.value);
+                        setServiciosSeleccionados(ids);
+                      }}
+                      style={{ minHeight: '220px' }}
+                    >
+                      {serviciosCatalogo.map((servicio) => (
+                        <option key={servicio.id_servicio} value={String(servicio.id_servicio)}>
+                          {servicio.nombre_servicio} - Q {Number(servicio.costo_servicio || 0).toFixed(2)}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-muted">Mantenga presionada la tecla Ctrl para seleccionar varios servicios.</small>
+                  </>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowServiciosModal(false);
+                    setProyectoServiciosTarget(null);
+                    setServiciosSeleccionados([]);
+                  }}
+                  disabled={guardandoServicios}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary fw-bold"
+                  onClick={guardarServiciosProyecto}
+                  disabled={guardandoServicios || serviciosCatalogo.length === 0}
+                >
+                  {guardandoServicios ? 'Guardando...' : 'Guardar Servicios'}
+                </button>
               </div>
             </div>
           </div>

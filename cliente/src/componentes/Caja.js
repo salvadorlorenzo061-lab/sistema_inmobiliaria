@@ -48,6 +48,32 @@ const normalizeImageDataUrl = (value = '') => {
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
+    const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
+        const periodicidadNormalizada = String(periodicidad || '').trim().toLowerCase();
+        if (periodicidadNormalizada === 'unico') {
+            return true;
+        }
+        if (periodicidadNormalizada === 'mensual') {
+            return false;
+        }
+
+        const nombre = String(nombreServicio || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim();
+
+        return ['derecho', 'paja', 'instalacion', 'conexion', 'matricula', 'inscripcion']
+            .some((fragmento) => nombre.includes(fragmento));
+    };
+
+    const filtrarServiciosMostrables = (servicios = []) => {
+        return (Array.isArray(servicios) ? servicios : []).filter((servicio) => {
+            const esUnico = esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
+            const yaPagadoAlgunaVez = Boolean(servicio?.ya_pagado_alguna_vez);
+            return !(esUnico && yaPagadoAlgunaVez);
+        });
+    };
 
     // ✅ Función helper para mostrar notificaciones flotantes (toast)
     const mostrarToast = (titulo, tipo = 'success') => {
@@ -91,6 +117,7 @@ const Caja = () => {
     const [showModalCobro, setShowModalCobro] = useState(false);
     const [estadoCorrelativoUsuario, setEstadoCorrelativoUsuario] = useState(null);
     const [estadoCorrelativo, setEstadoCorrelativo] = useState(null);
+    const [resumenServiciosIniciales, setResumenServiciosIniciales] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
 
@@ -171,6 +198,7 @@ const Caja = () => {
         setMontoServiciosSeleccionado(0);
         setShowModalCobro(false);
         setEstadoCorrelativo(null);
+        setResumenServiciosIniciales(null);
 
         try {
             const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`);
@@ -193,10 +221,15 @@ const Caja = () => {
         const mesesTerrenoACobrar = Math.min(cantidadMeses, cuotasRestantes);
         const terrenoCalculado = saldoPendiente > 0 && mesesTerrenoACobrar > 0 ? (montoCuota * mesesTerrenoACobrar) : 0;
         const terrenoTotal = Math.min(terrenoCalculado, Math.max(saldoPendiente, 0));
-        const costoServiciosMensual = (serviciosDisponibles || [])
-            .filter((s) => serviciosIds.includes(s.id_servicio))
+        const serviciosSeleccionadosDetalle = (serviciosDisponibles || [])
+            .filter((s) => serviciosIds.includes(s.id_servicio));
+        const costoServiciosMensual = serviciosSeleccionadosDetalle
+            .filter((s) => !esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
-        const serviciosTotal = cantidadMeses > 0 ? (costoServiciosMensual * cantidadMeses) : 0;
+        const costoServiciosUnicos = serviciosSeleccionadosDetalle
+            .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
+            .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
+        const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos) : 0;
         const total = terrenoTotal + serviciosTotal;
 
         setMontoTerrenoSeleccionado(terrenoTotal);
@@ -261,6 +294,7 @@ const Caja = () => {
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMontoServiciosSeleccionado(0);
+        setResumenServiciosIniciales(null);
 
         try {
             await consultarSiguienteCorrelativo(residente.id_contrato);
@@ -290,7 +324,7 @@ const Caja = () => {
             if (primerMes) {
                 try {
                     const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residente.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
-                    const servicios = serviciosRes?.data?.servicios || [];
+                    const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
 
                     const seleccionInicialServicios = servicios
@@ -382,7 +416,9 @@ const Caja = () => {
             .map((servicio) => ({
                 id_servicio: servicio.id_servicio,
                 nombre_servicio: servicio.nombre_servicio,
-                subtotal: parseFloat(servicio.costo_servicio || 0)
+                subtotal: parseFloat(servicio.costo_servicio || 0),
+                periodicidad: servicio.periodicidad || 'mensual',
+                es_cobro_unico: Boolean(servicio.es_cobro_unico)
             }));
         
         const payload = {
@@ -420,6 +456,26 @@ const Caja = () => {
                     ...prev,
                     saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno, 0)
                 }));
+
+                if (Number(response?.data?.monto_servicios_mes_inicial || 0) > 0) {
+                    const serviciosIniciales = Array.isArray(response?.data?.servicios_cobrados_mes_inicial)
+                        ? response.data.servicios_cobrados_mes_inicial
+                        : [];
+                    setResumenServiciosIniciales({
+                        monto: Number(response.data.monto_servicios_mes_inicial || 0),
+                        servicios: serviciosIniciales
+                    });
+
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Servicios iniciales agregados automáticamente',
+                        text: `Se cobraron Q${Number(response.data.monto_servicios_mes_inicial || 0).toFixed(2)} por amenidades del mes inicial en este mismo recibo.`,
+                        timer: 2800,
+                        showConfirmButton: false
+                    });
+                } else {
+                    setResumenServiciosIniciales(null);
+                }
                 
                 // RECARGAR MESES PENDIENTES DESPUÉS DEL PAGO
                 try {
@@ -433,7 +489,7 @@ const Caja = () => {
                     }
                     const primerMes = mesesActualizados[0] || '';
                     const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
-                    const servicios = serviciosRes?.data?.servicios || [];
+                    const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
                     const serviciosActivos = servicios.filter((s) => !s.ya_pagado_mes).map((s) => s.id_servicio);
                     setServiciosSeleccionados(serviciosActivos);
@@ -578,12 +634,13 @@ const Caja = () => {
                     : [recibo?.mes_pagado || 'N/A'];
                 const montoPrincipalFallback = parseFloat(recibo?.monto_pagado || 0);
                 const ivaFallback = parseFloat(recibo?.iva_total || (montoPrincipalFallback * 0.12));
+                const subtotalFallback = parseFloat((montoPrincipalFallback - ivaFallback).toFixed(2));
                 rows.push([
                     'Pago aplicado',
                     mesesPagados.join(', '),
-                    `Q${montoPrincipalFallback.toFixed(2)}`,
+                    `Q${subtotalFallback.toFixed(2)}`,
                     `Q${ivaFallback.toFixed(2)}`,
-                    `Q${(montoPrincipalFallback + ivaFallback).toFixed(2)}`
+                    `Q${montoPrincipalFallback.toFixed(2)}`
                 ]);
             }
 
@@ -603,11 +660,12 @@ const Caja = () => {
             const saldoAnterior = parseFloat(residente?.saldo_pendiente || 0);
             const montoPrincipalHoy = parseFloat(recibo?.monto_pagado || 0);
             const ivaTotal = parseFloat(recibo?.iva_total || (montoPrincipalHoy * 0.12));
-            const montoPagadoHoy = parseFloat(recibo?.total_cobrado || (montoPrincipalHoy + ivaTotal + parseFloat(recibo?.monto_mora || 0)));
+            const subtotalHoy = parseFloat((montoPrincipalHoy - ivaTotal).toFixed(2));
+            const montoPagadoHoy = parseFloat(recibo?.total_cobrado || (montoPrincipalHoy + parseFloat(recibo?.monto_mora || 0)));
             const nuevoSaldoDeber = saldoAnterior - montoPrincipalHoy;
             
             doc.text(`Saldo Anterior: Q${saldoAnterior.toFixed(2)}`, 130, finalY);
-            doc.text(`Subtotal deuda pagada: Q${montoPrincipalHoy.toFixed(2)}`, 130, finalY + 7);
+            doc.text(`Subtotal deuda pagada: Q${subtotalHoy.toFixed(2)}`, 130, finalY + 7);
             doc.setFont("Helvetica", "bold");
             doc.text(`IVA 12%: Q${ivaTotal.toFixed(2)}`, 130, finalY + 14);
             doc.text(`Mora Aplicada: Q${parseFloat(recibo?.monto_mora || 0).toFixed(2)}`, 130, finalY + 21);
@@ -646,6 +704,11 @@ const Caja = () => {
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
     const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes);
+    const posibleCobroServiciosIniciales =
+        !!datosDeuda
+        && mesesSeleccionados.includes(mesesPendientes[0] || '')
+        && montoTerrenoSeleccionado > 0
+        && (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
 
     return (
         <div className="container mt-4">
@@ -832,6 +895,23 @@ const Caja = () => {
                                 )}
 
                                 <form onSubmit={ejecutarCobro} id="formCobro">
+                                    {posibleCobroServiciosIniciales && (
+                                        <div className="alert alert-warning py-2 mb-3">
+                                            ⚠️ Al incluir el primer mes del contrato en este cobro, el sistema puede agregar automáticamente amenidades/servicios iniciales en el mismo recibo.
+                                        </div>
+                                    )}
+
+                                    {resumenServiciosIniciales && (
+                                        <div className="alert alert-info py-2 mb-3">
+                                            <strong>Servicios iniciales agregados:</strong> Q{Number(resumenServiciosIniciales.monto || 0).toFixed(2)}
+                                            {Array.isArray(resumenServiciosIniciales.servicios) && resumenServiciosIniciales.servicios.length > 0 && (
+                                                <div className="small mt-1">
+                                                    {resumenServiciosIniciales.servicios.map((item) => item?.nombre_servicio).filter(Boolean).join(', ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* Qué está pagando */}
                                     <div className="mb-3">
                                         <label className="form-label fw-bold">¿Qué está pagando?</label>
@@ -904,6 +984,9 @@ const Caja = () => {
                                             {serviciosContrato.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">
                                                     {serviciosContrato.map((servicio) => (
+                                                        (() => {
+                                                            const esUnico = esServicioCobroUnico(servicio.periodicidad, servicio.nombre_servicio);
+                                                            return (
                                                         <div
                                                             key={servicio.id_servicio}
                                                             className={`d-flex align-items-center p-3 border rounded-2 ${serviciosSeleccionados.includes(servicio.id_servicio) ? 'bg-success bg-opacity-10 border-success border-2' : 'bg-white border-secondary'} ${servicio.ya_pagado_mes ? 'opacity-75' : ''}`}
@@ -920,11 +1003,16 @@ const Caja = () => {
                                                             />
                                                             <div className="flex-grow-1">
                                                                 <span className="fw-bold fs-6 text-dark">{servicio.nombre_servicio}</span>
+                                                                <span className={`badge ms-2 ${esUnico ? 'bg-secondary' : 'bg-info text-dark'}`}>
+                                                                    {esUnico ? 'Cobro unico' : 'Mensual'}
+                                                                </span>
                                                                 <br />
                                                                 {servicio.ya_pagado_mes && <small className="text-success fw-bold">Ya pagado en el mes seleccionado</small>}
                                                             </div>
-                                                            <span className="badge bg-primary">Q{parseFloat(servicio.costo_servicio || 0).toFixed(2)} / mes</span>
+                                                            <span className="badge bg-primary">Q{parseFloat(servicio.costo_servicio || 0).toFixed(2)}{esUnico ? ' pago unico' : ' / mes'}</span>
                                                         </div>
+                                                            );
+                                                        })()
                                                     ))}
                                                 </div>
                                             ) : (

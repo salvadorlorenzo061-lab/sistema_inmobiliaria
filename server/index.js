@@ -16,8 +16,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Auditoría automática global para acciones mutables (POST/PUT/PATCH/DELETE).
 app.use(auditRequestMiddleware);
 
-// Importar los enrutadores modulares existentes
-const tipos_contratosRouter = require('./router/Tipos_contratosRouter'); 
+// Importar los enrutadores modulares existentes (CORREGIDO Tipos_ContratosRouter con 'C' mayúscula)
+const tipos_contratosRouter = require('./router/Tipos_ContratosRouter'); 
 const residentesRouter = require('./router/ResidentesRouter');      
 const usuariosRouter = require('./router/UsuariosRouter');      
 const cajaRouter = require('./router/CajaRouter'); 
@@ -36,6 +36,7 @@ const asignarCorrelativoRouter = require('./router/Asignar_CorrelativoRouter');
 const anulacionDeudaRouter = require('./router/Anulacion_DeudaRouter');
 const morosidadRouter = require('./router/MorosidadRouter');
 const serviciosRouter = require('./router/ServiciosRouter');
+const servicioRouter = require('./router/Servicio/ServicioRouter');
 const rolesRouter = require('./router/RolesRouter');
 const pagosExtraordinariosRouter = require('./router/Pagos_ExtraordinariosRouter');
 const estadoCuentaRouter = require('./router/Estado_CuentaRouter');
@@ -43,7 +44,7 @@ const estadoCuentaRouter = require('./router/Estado_CuentaRouter');
 
 // 2. Declarar los prefijos de la API global existentes
 app.use('/api/tipos_contratos', tipos_contratosRouter); 
-app.use('/api/usuarios', usuariosRouter);                     
+app.use('/api/usuarios', usuariosRouter);                         
 app.use('/api/residentes', residentesRouter);                     
 app.use('/api/caja', cajaRouter); 
 app.use('/api/resoluciones_facturas', resoluciones_facturasRouter);
@@ -61,6 +62,7 @@ app.use('/api/asignar_correlativo', asignarCorrelativoRouter);
 app.use('/api/anulacion_deuda', anulacionDeudaRouter);
 app.use('/api/morosidad', morosidadRouter);
 app.use('/api/servicios', serviciosRouter);
+app.use('/api/servicio', servicioRouter);
 app.use('/api/roles', rolesRouter);
 app.use('/api/pagos_extraordinarios', pagosExtraordinariosRouter);
 app.use('/api/estado_cuenta', estadoCuentaRouter);

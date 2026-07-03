@@ -30,22 +30,15 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true, refreshKey 
   const [logoWarning, setLogoWarning] = useState('');
   const lastPdfUrlRef = useRef(null);
   const renderTokenRef = useRef(0);
-  const datosContratoRef = useRef(datosContrato);
-  const datosResidenteRef = useRef(datosResidente);
   const formatoSeleccionado = getContractTemplateLabel(resolveContractTemplateId(datosContrato.formato_contrato));
   const brandingMode = datosContrato.modo_marca_empresa || (datosContrato.mostrar_nombre_empresa ? 'logo_y_nombre' : 'solo_logo');
   const showLogoInFooter = ['solo_logo', 'logo_y_nombre', 'logo_centrado'].includes(brandingMode);
   const showNameInFooter = ['logo_y_nombre', 'solo_nombre'].includes(brandingMode);
 
   useEffect(() => {
-    datosContratoRef.current = datosContrato;
-    datosResidenteRef.current = datosResidente;
-  }, [datosContrato, datosResidente]);
-
-  useEffect(() => {
     const renderToken = ++renderTokenRef.current;
-    const contratoActual = datosContratoRef.current;
-    const residenteActual = datosResidenteRef.current;
+    const contratoActual = datosContrato || {};
+    const residenteActual = datosResidente || {};
 
     if (!mostrar || !contratoActual.codigo_contrato || !residenteActual.id_residente) {
       if (lastPdfUrlRef.current) {
@@ -102,7 +95,7 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true, refreshKey 
         setCargando(false);
       }
     }
-  }, [refreshKey, mostrar]);
+  }, [refreshKey, mostrar, datosContrato, datosResidente]);
 
   useEffect(() => {
     return () => {

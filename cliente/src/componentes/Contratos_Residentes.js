@@ -90,6 +90,9 @@ function Contratos_Residentes() {
   const [tiposContratoList, setTiposContratoList] = useState([]);
   const [empresasList, setEmpresasLista] = useState([]);
   const [proyectosList, setProyectosList] = useState([]);
+  const [serviciosProyectoList, setServiciosProyectoList] = useState([]);
+  const [serviciosContratoSeleccionados, setServiciosContratoSeleccionados] = useState([]);
+  const [serviciosCatalogoList, setServiciosCatalogoList] = useState([]);
   const [busqueda, setBusqueda] = useState("");
 
   // Modales
@@ -192,6 +195,55 @@ function Contratos_Residentes() {
     : [];
 
   const proyectosDisponibles = proyectosRelacionados;
+  const proyectoSeleccionado = proyectosDisponibles.find((proyecto) => getProyectoNombre(proyecto) === proyecto_propiedad) || null;
+
+  const formatMoney = (value) => `Q${Number(value || 0).toFixed(2)}`;
+
+  useEffect(() => {
+    const idProyecto = Number(proyectoSeleccionado?.id_proyecto || 0);
+    Axios.get(`${API_BASE_URL}/api/servicios`)
+      .then((resServicios) => {
+        const serviciosActivos = Array.isArray(resServicios.data)
+          ? resServicios.data.filter((item) => String(item.estado || '').toLowerCase() === 'activo')
+          : [];
+
+        setServiciosCatalogoList(serviciosActivos);
+
+        if (!idProyecto) {
+          setServiciosProyectoList(serviciosActivos);
+          return null;
+        }
+
+        return Axios.get(`${API_BASE_URL}/api/proyectos/servicios/${idProyecto}`)
+          .then((resProyecto) => {
+            const serviciosProyecto = Array.isArray(resProyecto.data?.servicios) ? resProyecto.data.servicios : [];
+            const serviciosProyectoMap = new Map(serviciosProyecto.map((item) => [Number(item.id_servicio), item]));
+
+            const serviciosVisibles = serviciosActivos.map((servicio) => {
+              const proyectoData = serviciosProyectoMap.get(Number(servicio.id_servicio));
+              return {
+                ...servicio,
+                asignado_al_proyecto: !!proyectoData,
+                costo_servicio: proyectoData?.costo_servicio ?? servicio.costo_servicio,
+              };
+            });
+
+            setServiciosProyectoList(serviciosVisibles);
+
+            const idsDisponibles = new Set(
+              serviciosProyecto.map((item) => Number(item.id_servicio)).filter((id) => Number.isInteger(id) && id > 0)
+            );
+            setServiciosContratoSeleccionados((prev) => prev.filter((id) => idsDisponibles.has(Number(id))));
+            return null;
+          });
+      })
+      .catch((error) => {
+        console.error('No se pudieron cargar servicios del catálogo/proyecto:', error);
+        setServiciosCatalogoList([]);
+        setServiciosProyectoList([]);
+        setServiciosContratoSeleccionados([]);
+      });
+  }, [proyectoSeleccionado?.id_proyecto]);
 
   const actualizarEmpresaMarcaYProyecto = (idEmpresa) => {
     setId_empresa_marca(idEmpresa);
@@ -259,6 +311,24 @@ function Contratos_Residentes() {
     return faltantes;
   };
 
+  const obtenerNombresServiciosSeleccionados = () => {
+    const selected = new Set(serviciosContratoSeleccionados.map((id) => Number(id)));
+    return serviciosProyectoList
+      .filter((servicio) => selected.has(Number(servicio.id_servicio)))
+      .map((servicio) => servicio.nombre_servicio)
+      .filter(Boolean);
+  };
+
+  const toggleServicioSeleccionado = (idServicio, permitido) => {
+    if (!permitido) return;
+
+    setServiciosContratoSeleccionados((prev) => (
+      prev.includes(idServicio)
+        ? prev.filter((item) => item !== idServicio)
+        : [...prev, idServicio]
+    ));
+  };
+
   const mostrarAlertaCamposFaltantes = (faltantes) => {
     const htmlLista = faltantes.map((campo) => `<li>${campo}</li>`).join('');
     Swal.fire({
@@ -279,6 +349,7 @@ function Contratos_Residentes() {
       codigo_contrato, 
       id_residente, 
       id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null,
+      id_proyecto: proyectoSeleccionado?.id_proyecto || null,
       id_tipo_contrato,
       formato_contrato,
       monto_total,
@@ -289,7 +360,8 @@ function Contratos_Residentes() {
       fecha_compra: fecha_compra || null,
       fecha_fin: fecha_fin || null,
       estado,
-      documento_contrato: documento_contrato || null
+      documento_contrato: documento_contrato || null,
+      servicios_contrato: serviciosContratoSeleccionados
     })
     .then(() => {
       const brandingMap = getBrandingCompanyMap();
@@ -302,6 +374,7 @@ function Contratos_Residentes() {
       // Generar PDF automáticamente
       if (residente) {
         try {
+          const serviciosClausula = obtenerNombresServiciosSeleccionados();
           const datosParaPdf = {
             formato_contrato,
             modo_marca_empresa,
@@ -323,6 +396,7 @@ function Contratos_Residentes() {
             // Datos propiedad
             numero_finca, folio_propiedad, libro_propiedad, numero_lote,
             manzana_propiedad, area_propiedad, proyecto_propiedad,
+            servicios_clausula_tercera: serviciosClausula,
             // Medidas
             medida_norte, medida_sur, medida_oriente, medida_poniente,
             // Datos económicos
@@ -355,8 +429,9 @@ function Contratos_Residentes() {
     }
 
     Axios.put(`${API_URL}/actualizar`, {
-      id_contrato, codigo_contrato, id_residente, id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null, id_tipo_contrato, formato_contrato, monto_total,
-      cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null
+      id_contrato, codigo_contrato, id_residente, id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null, id_proyecto: proyectoSeleccionado?.id_proyecto || null, id_tipo_contrato, formato_contrato, monto_total,
+      cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
+      servicios_contrato: serviciosContratoSeleccionados
     })
     .then(() => {
       const brandingMap = getBrandingCompanyMap();
@@ -431,6 +506,10 @@ function Contratos_Residentes() {
         // Datos propiedad
         numero_finca, folio_propiedad, libro_propiedad, numero_lote,
         manzana_propiedad, area_propiedad, proyecto_propiedad,
+        servicios_clausula_tercera: String(val.servicios_contrato_nombres || '')
+          .split('||')
+          .map((item) => item.trim())
+          .filter(Boolean),
         // Medidas
         medida_norte, medida_sur, medida_oriente, medida_poniente,
         // Datos económicos
@@ -475,6 +554,11 @@ function Contratos_Residentes() {
     setFecha_fin(val.fecha_fin ? val.fecha_fin.split('T')[0] : '');
     setEstado(val.estado);
     setDocumento_contrato(val.documento_contrato || '');
+    const serviciosIds = String(val.servicios_contrato_ids || '')
+      .split(',')
+      .map((item) => Number(item))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    setServiciosContratoSeleccionados(serviciosIds);
     setShowPdfPreview(false);
     setPdfPreviewRefreshKey(0);
     setShowEditModal(true);
@@ -500,6 +584,8 @@ function Contratos_Residentes() {
     setNumero_finca("30052"); setFolio_propiedad("133"); setLibro_propiedad("268");
     setNumero_lote("1"); setManzana_propiedad("A"); setArea_propiedad("89.65");
     setProyecto_propiedad("VILLAS DE TAPACUN");
+    setServiciosProyectoList([]);
+    setServiciosContratoSeleccionados([]);
     // Medidas
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
@@ -743,6 +829,72 @@ function Contratos_Residentes() {
                   </select>
                   <small className="text-muted">Se muestran solo proyectos relacionados con la empresa seleccionada desde la tabla de proyectos.</small>
                 </div>
+                <div className="col-12 mb-3">
+                  <label className="form-label fw-bold">Tipos de servicios disponibles para agregar:</label>
+                  {!proyectoSeleccionado ? (
+                    <div className="text-muted small border rounded p-2 bg-light">
+                      Seleccione un proyecto para ver los servicios disponibles.
+                    </div>
+                  ) : serviciosCatalogoList.length === 0 ? (
+                    <div className="text-muted small border rounded p-2 bg-light">
+                      No hay servicios registrados en el catálogo.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="border rounded-3 p-3 bg-light">
+                        <div className="row g-2">
+                          {serviciosProyectoList.map((servicio) => {
+                            const idServicio = Number(servicio.id_servicio);
+                            const seleccionado = serviciosContratoSeleccionados.includes(idServicio);
+
+                            return (
+                              <div className="col-md-6" key={idServicio}>
+                                <div
+                                  className={`d-flex align-items-center justify-content-between border rounded-2 p-2 ${seleccionado ? 'bg-success bg-opacity-10 border-success' : 'bg-white'} ${servicio.asignado_al_proyecto ? '' : 'opacity-50'}`}
+                                  style={{ cursor: servicio.asignado_al_proyecto ? 'pointer' : 'not-allowed' }}
+                                  onClick={() => toggleServicioSeleccionado(idServicio, servicio.asignado_al_proyecto)}
+                                >
+                                  <div className="d-flex align-items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="form-check-input m-0"
+                                      checked={seleccionado}
+                                      disabled={!servicio.asignado_al_proyecto}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={() => toggleServicioSeleccionado(idServicio, servicio.asignado_al_proyecto)}
+                                    />
+                                    <div>
+                                      <div className="fw-bold">{servicio.nombre_servicio}</div>
+                                      <small className="text-muted">
+                                        {servicio.asignado_al_proyecto ? 'Asignado al proyecto seleccionado' : 'No disponible para este proyecto'}
+                                      </small>
+                                    </div>
+                                  </div>
+                                  <span className="badge bg-primary">{formatMoney(servicio.costo_servicio)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <small className="text-muted d-block mt-1">Marque los servicios que desea incluir. La cláusula tercera solo mostrará los servicios seleccionados.</small>
+
+                      {serviciosContratoSeleccionados.length > 0 && (
+                        <div className="alert alert-light border mt-2 mb-0 py-2">
+                          <div className="fw-bold mb-1">Resumen de amenidades seleccionadas</div>
+                          {serviciosProyectoList
+                            .filter((servicio) => serviciosContratoSeleccionados.includes(Number(servicio.id_servicio)))
+                            .map((servicio) => (
+                              <div key={servicio.id_servicio} className="d-flex justify-content-between small">
+                                <span>{servicio.nombre_servicio}</span>
+                                <span>{formatMoney(servicio.costo_servicio)}</span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
                 {/* MEDIDAS */}
                 <div className="col-12 mb-2"><h6 className="fw-bold text-secondary border-bottom pb-1">📐 MEDIDAS Y COLINDANCIAS</h6></div>
@@ -913,6 +1065,7 @@ function Contratos_Residentes() {
                         registro_numero, registro_folio, registro_libro,
                         numero_finca, folio_propiedad, libro_propiedad, numero_lote,
                         manzana_propiedad, area_propiedad, proyecto_propiedad,
+                        servicios_clausula_tercera: obtenerNombresServiciosSeleccionados(),
                         medida_norte, medida_sur, medida_oriente, medida_poniente,
                         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
                         mes_inicio_pagos, anio_inicio_pagos
@@ -1055,6 +1208,73 @@ function Contratos_Residentes() {
                     ))}
                   </select>
                   <small className="text-muted">Se muestran solo proyectos relacionados con la empresa seleccionada desde la tabla de proyectos.</small>
+                </div>
+
+                <div className="col-12 mb-3">
+                  <label className="form-label fw-bold">Tipos de servicios disponibles para agregar:</label>
+                  {!proyectoSeleccionado ? (
+                    <div className="text-muted small border rounded p-2 bg-light">
+                      Seleccione un proyecto para ver los servicios disponibles.
+                    </div>
+                  ) : serviciosCatalogoList.length === 0 ? (
+                    <div className="text-muted small border rounded p-2 bg-light">
+                      No hay servicios registrados en el catálogo.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="border rounded-3 p-3 bg-light">
+                        <div className="row g-2">
+                          {serviciosProyectoList.map((servicio) => {
+                            const idServicio = Number(servicio.id_servicio);
+                            const seleccionado = serviciosContratoSeleccionados.includes(idServicio);
+
+                            return (
+                              <div className="col-md-6" key={idServicio}>
+                                <div
+                                  className={`d-flex align-items-center justify-content-between border rounded-2 p-2 ${seleccionado ? 'bg-success bg-opacity-10 border-success' : 'bg-white'} ${servicio.asignado_al_proyecto ? '' : 'opacity-50'}`}
+                                  style={{ cursor: servicio.asignado_al_proyecto ? 'pointer' : 'not-allowed' }}
+                                  onClick={() => toggleServicioSeleccionado(idServicio, servicio.asignado_al_proyecto)}
+                                >
+                                  <div className="d-flex align-items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="form-check-input m-0"
+                                      checked={seleccionado}
+                                      disabled={!servicio.asignado_al_proyecto}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={() => toggleServicioSeleccionado(idServicio, servicio.asignado_al_proyecto)}
+                                    />
+                                    <div>
+                                      <div className="fw-bold">{servicio.nombre_servicio}</div>
+                                      <small className="text-muted">
+                                        {servicio.asignado_al_proyecto ? 'Asignado al proyecto seleccionado' : 'No disponible para este proyecto'}
+                                      </small>
+                                    </div>
+                                  </div>
+                                  <span className="badge bg-primary">{formatMoney(servicio.costo_servicio)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <small className="text-muted d-block mt-1">Marque los servicios que desea incluir. La cláusula tercera solo mostrará los servicios seleccionados.</small>
+
+                      {serviciosContratoSeleccionados.length > 0 && (
+                        <div className="alert alert-light border mt-2 mb-0 py-2">
+                          <div className="fw-bold mb-1">Resumen de amenidades seleccionadas</div>
+                          {serviciosProyectoList
+                            .filter((servicio) => serviciosContratoSeleccionados.includes(Number(servicio.id_servicio)))
+                            .map((servicio) => (
+                              <div key={servicio.id_servicio} className="d-flex justify-content-between small">
+                                <span>{servicio.nombre_servicio}</span>
+                                <span>{formatMoney(servicio.costo_servicio)}</span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {/* MEDIDAS */}
@@ -1221,6 +1441,7 @@ function Contratos_Residentes() {
                         registro_numero, registro_folio, registro_libro,
                         numero_finca, folio_propiedad, libro_propiedad, numero_lote,
                         manzana_propiedad, area_propiedad, proyecto_propiedad,
+                        servicios_clausula_tercera: obtenerNombresServiciosSeleccionados(),
                         medida_norte, medida_sur, medida_oriente, medida_poniente,
                         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
                         mes_inicio_pagos, anio_inicio_pagos
