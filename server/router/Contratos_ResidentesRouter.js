@@ -297,7 +297,7 @@ router.get("/", (req, res) => {
                    r.nombre AS nombre_residente,
                    tc.nombre_tipo_contrato,
                    e.nombre_empresa AS nombre_empresa_marca,
-                   p.nombre_proyecto
+                   p.nombre AS nombre_proyecto
             FROM contratos_residentes c
             INNER JOIN residentes r ON c.id_residente = r.id_residente
             INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
