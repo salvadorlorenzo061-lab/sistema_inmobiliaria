@@ -1,12 +1,12 @@
-
-
 const mysql = require('mysql');
 
+// Configuración híbrida: Usa las variables de la nube (process.env) o cae en localhost por defecto
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "",
-  database: "inmobiliaria"
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  database: process.env.DB_NAME || "inmobiliaria",
+  port: process.env.DB_PORT || 3306
 });
 
 // Conectar a la base de datos
