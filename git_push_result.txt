@@ -1,0 +1,2 @@
+error: src refspec subida-inicial does not match any
+error: failed to push some refs to 'https://github.com/salvadorlorenzo061-lab/sistema_inmobiliaria'

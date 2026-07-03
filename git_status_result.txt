@@ -1,0 +1,4 @@
+## main...origin/main [ahead 2]
+?? cliente/.git_diag.txt
+?? git_push_result.txt
+?? git_status_result.txt
