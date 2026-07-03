@@ -1,22 +1,33 @@
 const mysql = require('mysql');
 
-// Configuración híbrida: Usa las variables de la nube (process.env) o cae en localhost por defecto
 const db = mysql.createConnection({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "inmobiliaria",
-  port: process.env.DB_PORT || 3306
+  host: process.env.mysql-27a2d8f6-salvadorlorenzo061-2f31.d.aivencloud.com,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT,
+  ssl: {
+    rejectUnauthorized: false // Esto es obligatorio para que Render acepte el certificado de Aiven
+  }
 });
 
-// Conectar a la base de datos
+// Agregamos un manejo de errores más robusto
 db.connect((err) => {
   if (err) {
-    console.error('Error al conectar a la base de datos:', err);
+    console.error('Error de conexión:', err);
     return;
   }
-  console.log('Conectado exitosamente a la base de datos MySQL.');
+  console.log('Conectado exitosamente a la base de datos MySQL en Aiven.');
 });
 
-// Exportar la conexión para usarla en otros archivos del servidor
+// Manejo de desconexiones inesperadas para evitar el fatal error
+db.on('error', function(err) {
+  console.error('Error en la base de datos:', err);
+  if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+    // Aquí podrías implementar una lógica de reconexión si fuera necesario
+  } else {
+    throw err;
+  }
+});
+
 module.exports = db;
