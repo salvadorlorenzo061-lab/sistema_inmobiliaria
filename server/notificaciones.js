@@ -18,7 +18,7 @@ setTimeout(() => {
     const mesHoy = hoy.getMonth() + 1;
     const diaHoy = hoy.getDate();
 
-    const queryCumple = 'SELECT nombre, correo FROM residentes WHERE MONTH(fecha_nacimiento) = ? AND DAY(fecha_nacimiento) = ? AND estado = "activo"';
+    const queryCumple = "SELECT nombre, correo FROM residentes WHERE MONTH(fecha_nacimiento) = ? AND DAY(fecha_nacimiento) = ? AND estado = 'activo'";
 
     db.query(queryCumple, [mesHoy, diaHoy], (err, residentesCumple) => {
         if (err) return console.error(err);
@@ -65,7 +65,7 @@ setTimeout(() => {
     const mesHoy = hoy.getMonth() + 1;
     const diaHoy = hoy.getDate();
 
-    const queryCumple = 'SELECT nombre, correo FROM residentes WHERE MONTH(fecha_nacimiento) = ? AND DAY(fecha_nacimiento) = ? AND estado = "activo"';
+    const queryCumple = "SELECT nombre, correo FROM residentes WHERE MONTH(fecha_nacimiento) = ? AND DAY(fecha_nacimiento) = ? AND estado = 'activo'";
 
     db.query(queryCumple, [mesHoy, diaHoy], (err, residentesCumple) => {
         if (err) return console.error(err);
