@@ -292,7 +292,7 @@ ensureContratosServiciosTable();
 router.get("/", (req, res) => {
     const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
-                   c.fecha_inicio, c.fecha_fin, c.monto_total, c.estado, c.formato_contrato,
+               c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_fin, c.monto_total, c.estado, c.formato_contrato,
                    c.id_empresa_marca, c.id_proyecto,
                    r.nombre AS nombre_residente,
                    tc.nombre_tipo_contrato,
