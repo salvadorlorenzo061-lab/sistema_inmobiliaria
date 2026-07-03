@@ -314,38 +314,6 @@ router.get("/", (req, res) => {
         res.send(result);
     });
 });
-                         em.logo AS logo_empresa_marca,
-                         (
-                                SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
-                                FROM contratos_servicios cs
-                                INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
-                                WHERE cs.id_contrato = c.id_contrato
-                                    AND cs.estado = 'activo'
-                                    AND s.estado = 'activo'
-                         ) AS servicios_contrato_ids,
-                         (
-                                SELECT GROUP_CONCAT(s.nombre_servicio ORDER BY s.nombre_servicio SEPARATOR '||')
-                                FROM contratos_servicios cs
-                                INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
-                                WHERE cs.id_contrato = c.id_contrato
-                                    AND cs.estado = 'activo'
-                                    AND s.estado = 'activo'
-                         ) AS servicios_contrato_nombres
-        FROM contratos_residentes c
-        INNER JOIN residentes r ON c.id_residente = r.id_residente
-        INNER JOIN tipos_contrato t ON c.id_tipo_contrato = t.id_tipo_contrato
-         LEFT JOIN empresas em ON c.id_empresa_marca = em.id_empresa
-        ORDER BY c.id_contrato DESC
-    `;
-    db.query(query, (err, result) => {
-        if (err) {
-            console.error(err);
-            res.status(500).send("Error al obtener los contratos de residentes");
-        } else {
-            res.send(result);
-        }
-    });
-});
 
 // === 2. CREAR CONTRATO ===
 router.post("/crear", (req, res) => {
