@@ -26,17 +26,37 @@ const ensureEstadoColumn = () => {
             return;
         }
 
-        const alterQuery = `
-            ALTER TABLE pagos_extraordinarios
-            ADD COLUMN estado VARCHAR(20) NULL DEFAULT 'pendiente'
+        const checkTableQuery = `
+            SELECT COUNT(*) AS total
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'pagos_extraordinarios'
         `;
 
-        db.query(alterQuery, (alterErr) => {
-            if (alterErr) {
-                console.error('Error agregando columna estado en pagos_extraordinarios:', alterErr);
+        db.query(checkTableQuery, (tableErr, tableResult) => {
+            if (tableErr) {
+                console.error('Error verificando existencia de pagos_extraordinarios:', tableErr);
                 return;
             }
-            console.log('Columna estado creada en pagos_extraordinarios.');
+
+            const tableExists = tableResult?.[0]?.total > 0;
+            if (!tableExists) {
+                console.warn('La tabla pagos_extraordinarios no existe en esta base de datos. Se omite migracion de columna estado.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE pagos_extraordinarios
+                ADD COLUMN estado VARCHAR(20) NULL DEFAULT 'pendiente'
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna estado en pagos_extraordinarios:', alterErr);
+                    return;
+                }
+                console.log('Columna estado creada en pagos_extraordinarios.');
+            });
         });
     });
 };

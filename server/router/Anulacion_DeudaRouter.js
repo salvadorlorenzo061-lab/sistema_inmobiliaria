@@ -21,11 +21,29 @@ const ensureColumnInAnulacion = (columnName, sqlType) => {
         const exists = rows?.[0]?.existe > 0;
         if (exists) return;
 
-        db.query(`ALTER TABLE anulacion_deuda ADD COLUMN ${columnName} ${sqlType}`, (alterErr) => {
-            if (alterErr) {
-                console.error(`No se pudo crear columna ${columnName} en anulacion_deuda:`, alterErr.message);
+        db.query(
+            `
+                SELECT COUNT(*) AS existe
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'anulacion_deuda'
+            `,
+            (tableErr, tableRows) => {
+                if (tableErr) return;
+
+                const tableExists = tableRows?.[0]?.existe > 0;
+                if (!tableExists) {
+                    console.warn('La tabla anulacion_deuda no existe en esta base de datos. Se omite migracion de columnas.');
+                    return;
+                }
+
+                db.query(`ALTER TABLE anulacion_deuda ADD COLUMN ${columnName} ${sqlType}`, (alterErr) => {
+                    if (alterErr) {
+                        console.error(`No se pudo crear columna ${columnName} en anulacion_deuda:`, alterErr.message);
+                    }
+                });
             }
-        });
+        );
     });
 };
 

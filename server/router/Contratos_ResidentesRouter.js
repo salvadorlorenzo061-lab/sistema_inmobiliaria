@@ -144,6 +144,25 @@ const syncServiciosContrato = (idContrato, serviciosContrato, callback) => {
     });
 };
 
+const ensureTableExists = (tableName, callback) => {
+    db.query(
+        `
+            SELECT COUNT(*) AS total
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+        `,
+        [tableName],
+        (tableErr, tableResult) => {
+            if (tableErr) {
+                console.error(`Error verificando existencia de ${tableName}:`, tableErr);
+                return callback(false);
+            }
+            return callback((tableResult?.[0]?.total || 0) > 0);
+        }
+    );
+};
+
 const ensureFormatoContratoColumn = () => {
     const checkColumnQuery = `
         SELECT COUNT(*) AS total
@@ -160,21 +179,26 @@ const ensureFormatoContratoColumn = () => {
         }
 
         const exists = checkResult?.[0]?.total > 0;
-        if (exists) {
-            return;
-        }
+        if (exists) return;
 
-        const alterQuery = `
-            ALTER TABLE contratos_residentes
-            ADD COLUMN formato_contrato VARCHAR(20) NULL DEFAULT 'FORMATO_01'
-        `;
-
-        db.query(alterQuery, (alterErr) => {
-            if (alterErr) {
-                console.error('Error agregando columna formato_contrato:', alterErr);
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de formato_contrato.');
                 return;
             }
-            console.log('Columna formato_contrato creada en contratos_residentes.');
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN formato_contrato VARCHAR(20) NULL DEFAULT 'FORMATO_01'
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna formato_contrato:', alterErr);
+                    return;
+                }
+                console.log('Columna formato_contrato creada en contratos_residentes.');
+            });
         });
     });
 };
@@ -195,21 +219,26 @@ const ensureEmpresaMarcaColumn = () => {
         }
 
         const exists = checkResult?.[0]?.total > 0;
-        if (exists) {
-            return;
-        }
+        if (exists) return;
 
-        const alterQuery = `
-            ALTER TABLE contratos_residentes
-            ADD COLUMN id_empresa_marca INT NULL AFTER id_residente
-        `;
-
-        db.query(alterQuery, (alterErr) => {
-            if (alterErr) {
-                console.error('Error agregando columna id_empresa_marca:', alterErr);
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de id_empresa_marca.');
                 return;
             }
-            console.log('Columna id_empresa_marca creada en contratos_residentes.');
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN id_empresa_marca INT NULL AFTER id_residente
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna id_empresa_marca:', alterErr);
+                    return;
+                }
+                console.log('Columna id_empresa_marca creada en contratos_residentes.');
+            });
         });
     });
 };
@@ -230,21 +259,26 @@ const ensureProyectoColumn = () => {
         }
 
         const exists = checkResult?.[0]?.total > 0;
-        if (exists) {
-            return;
-        }
+        if (exists) return;
 
-        const alterQuery = `
-            ALTER TABLE contratos_residentes
-            ADD COLUMN id_proyecto INT NULL AFTER id_empresa_marca
-        `;
-
-        db.query(alterQuery, (alterErr) => {
-            if (alterErr) {
-                console.error('Error agregando columna id_proyecto:', alterErr);
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de id_proyecto.');
                 return;
             }
-            console.log('Columna id_proyecto creada en contratos_residentes.');
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN id_proyecto INT NULL AFTER id_empresa_marca
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna id_proyecto:', alterErr);
+                    return;
+                }
+                console.log('Columna id_proyecto creada en contratos_residentes.');
+            });
         });
     });
 };
@@ -257,15 +291,29 @@ ensureContratosServiciosTable();
 // === 1. LISTAR CONTRATOS (CON JOINS) ===
 router.get("/", (req, res) => {
     const query = `
-           SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato, 
-               c.id_empresa_marca, c.id_proyecto,
-               c.formato_contrato,
-               c.monto_total, c.cuotas_pactadas, c.monto_cuota, c.dia_pago_limite, 
-               c.fecha_firma, c.fecha_compra, c.fecha_fin, c.estado, c.documento_contrato,
-               r.nombre AS nombre_residente,
-               r.numero_identificacion,
-             t.nombre_tipo_contrato,
-             em.nombre_empresa AS nombre_empresa_marca,
+           SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
+                   c.fecha_inicio, c.fecha_fin, c.monto_total, c.estado, c.formato_contrato,
+                   c.id_empresa_marca, c.id_proyecto,
+                   r.nombre AS nombre_residente,
+                   tc.nombre_tipo_contrato,
+                   e.nombre_empresa AS nombre_empresa_marca,
+                   p.nombre_proyecto
+            FROM contratos_residentes c
+            INNER JOIN residentes r ON c.id_residente = r.id_residente
+            INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
+            LEFT JOIN empresas e ON e.id_empresa = c.id_empresa_marca
+            LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
+            ORDER BY c.id_contrato DESC
+    `;
+
+    db.query(query, (err, result) => {
+        if (err) {
+            console.error('Error al listar contratos:', err);
+            return res.status(500).send('Error de servidor');
+        }
+        res.send(result);
+    });
+});
                          em.logo AS logo_empresa_marca,
                          (
                                 SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
