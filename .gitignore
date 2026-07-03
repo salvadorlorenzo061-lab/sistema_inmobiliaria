@@ -14,3 +14,10 @@ server/.env
 # Pon aquí abajo el nombre exacto de tu archivo de conexión si no usas .env
 # Ejemplo (descomenta quitando el # si aplica):
 # server/conexion.js
+
+# Archivos de configuración y secretos
+.env
+server/Conexion.js
+
+# Dependencias (nunca se suben a GitHub)
+node_modules/
