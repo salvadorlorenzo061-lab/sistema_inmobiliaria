@@ -8,6 +8,24 @@ router.use(cors());
 router.use(express.json({ limit: '10mb' }));
 router.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+const ensureResidentesTableExists = (callback) => {
+    db.query(
+        `
+            SELECT COUNT(*) AS total
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'residentes'
+        `,
+        (tableErr, tableRows) => {
+            if (tableErr) {
+                console.error('Error verificando existencia de tabla residentes:', tableErr);
+                return callback(false);
+            }
+            return callback((tableRows?.[0]?.total || 0) > 0);
+        }
+    );
+};
+
 const ensureColumnInResidentes = (columnName, columnDefinition) => {
     const checkColumnQuery = `
         SELECT COUNT(*) AS total
@@ -28,13 +46,20 @@ const ensureColumnInResidentes = (columnName, columnDefinition) => {
             return;
         }
 
-        const alterQuery = `ALTER TABLE residentes ADD COLUMN ${columnName} ${columnDefinition}`;
-        db.query(alterQuery, (alterErr) => {
-            if (alterErr) {
-                console.error(`Error agregando columna ${columnName}:`, alterErr);
+        ensureResidentesTableExists((tableExists) => {
+            if (!tableExists) {
+                console.warn(`La tabla residentes no existe en esta base de datos. Se omite migracion de ${columnName}.`);
                 return;
             }
-            console.log(`Columna ${columnName} creada en residentes.`);
+
+            const alterQuery = `ALTER TABLE residentes ADD COLUMN ${columnName} ${columnDefinition}`;
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error(`Error agregando columna ${columnName}:`, alterErr);
+                    return;
+                }
+                console.log(`Columna ${columnName} creada en residentes.`);
+            });
         });
     });
 };
@@ -59,17 +84,24 @@ const ensureFormatoPreferidoColumn = () => {
             return;
         }
 
-        const alterQuery = `
-            ALTER TABLE residentes
-            ADD COLUMN formato_contrato_preferido VARCHAR(20) NULL DEFAULT 'FORMATO_01'
-        `;
-
-        db.query(alterQuery, (alterErr) => {
-            if (alterErr) {
-                console.error('Error agregando columna formato_contrato_preferido:', alterErr);
+        ensureResidentesTableExists((tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla residentes no existe en esta base de datos. Se omite migracion de formato_contrato_preferido.');
                 return;
             }
-            console.log('Columna formato_contrato_preferido creada en residentes.');
+
+            const alterQuery = `
+                ALTER TABLE residentes
+                ADD COLUMN formato_contrato_preferido VARCHAR(20) NULL DEFAULT 'FORMATO_01'
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna formato_contrato_preferido:', alterErr);
+                    return;
+                }
+                console.log('Columna formato_contrato_preferido creada en residentes.');
+            });
         });
     });
 };

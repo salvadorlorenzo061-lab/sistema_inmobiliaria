@@ -10,19 +10,44 @@ router.use(cors());
 router.use(express.json({ limit: '50mb' }));
 router.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+const ensureEmpresasTableExists = (callback) => {
+    db.query(
+        `
+            SELECT COUNT(*) AS total
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'empresas'
+        `,
+        (tableErr, tableRows) => {
+            if (tableErr) {
+                console.error('No se pudo verificar existencia de la tabla empresas:', tableErr.message);
+                return callback(false);
+            }
+            return callback((tableRows?.[0]?.total || 0) > 0);
+        }
+    );
+};
+
 const ensureColumnInEmpresas = (columnName, definition) => {
-    db.query('SHOW COLUMNS FROM empresas LIKE ?', [columnName], (err, rows) => {
-        if (err) {
-            console.error(`No se pudo verificar columna ${columnName}:`, err.message);
+    ensureEmpresasTableExists((tableExists) => {
+        if (!tableExists) {
+            console.warn(`La tabla empresas no existe en esta base de datos. Se omite migracion de ${columnName}.`);
             return;
         }
-        if (!rows || rows.length === 0) {
-            db.query(`ALTER TABLE empresas ADD COLUMN ${columnName} ${definition}`, (alterErr) => {
-                if (alterErr) {
-                    console.error(`No se pudo crear columna ${columnName}:`, alterErr.message);
-                }
-            });
-        }
+
+        db.query('SHOW COLUMNS FROM empresas LIKE ?', [columnName], (err, rows) => {
+            if (err) {
+                console.error(`No se pudo verificar columna ${columnName}:`, err.message);
+                return;
+            }
+            if (!rows || rows.length === 0) {
+                db.query(`ALTER TABLE empresas ADD COLUMN ${columnName} ${definition}`, (alterErr) => {
+                    if (alterErr) {
+                        console.error(`No se pudo crear columna ${columnName}:`, alterErr.message);
+                    }
+                });
+            }
+        });
     });
 };
 
@@ -31,34 +56,41 @@ ensureColumnInEmpresas('id_empresa_matriz', 'INT NULL');
 ensureColumnInEmpresas('mostrar_en_modulo', 'TINYINT(1) NOT NULL DEFAULT 0');
 
 const seedModuloEmpresasVisibles = () => {
-    db.query('SELECT COUNT(*) AS total FROM empresas WHERE mostrar_en_modulo = 1', (countErr, countRows) => {
-        if (countErr) {
-            console.error('No se pudo validar semillas de mostrar_en_modulo:', countErr.message);
+    ensureEmpresasTableExists((tableExists) => {
+        if (!tableExists) {
+            console.warn('La tabla empresas no existe en esta base de datos. Se omite semilla de mostrar_en_modulo.');
             return;
         }
 
-        const totalVisibles = Number(countRows?.[0]?.total || 0);
-        if (totalVisibles > 0) {
-            return;
-        }
-
-        const sql = `
-            UPDATE empresas
-            SET mostrar_en_modulo = 1
-            WHERE id_empresa_matriz IS NULL
-              AND (
-                UPPER(nombre_empresa) LIKE '%INVERSION INMOBILIARIA GT%'
-                OR UPPER(nombre_empresa) LIKE '%CORPORACION DE PROYECTOS Y VIVIENDAS%'
-                OR UPPER(nombre_empresa) LIKE '%NORSUR%'
-                OR UPPER(nombre_empresa) LIKE '%INVERSION REAL%'
-                OR UPPER(nombre_empresa) LIKE '%CORPORACION DE DESARROLLOS JW%'
-              )
-        `;
-
-        db.query(sql, (seedErr) => {
-            if (seedErr) {
-                console.error('No se pudo sembrar mostrar_en_modulo:', seedErr.message);
+        db.query('SELECT COUNT(*) AS total FROM empresas WHERE mostrar_en_modulo = 1', (countErr, countRows) => {
+            if (countErr) {
+                console.error('No se pudo validar semillas de mostrar_en_modulo:', countErr.message);
+                return;
             }
+
+            const totalVisibles = Number(countRows?.[0]?.total || 0);
+            if (totalVisibles > 0) {
+                return;
+            }
+
+            const sql = `
+                UPDATE empresas
+                SET mostrar_en_modulo = 1
+                WHERE id_empresa_matriz IS NULL
+                  AND (
+                    UPPER(nombre_empresa) LIKE '%INVERSION INMOBILIARIA GT%'
+                    OR UPPER(nombre_empresa) LIKE '%CORPORACION DE PROYECTOS Y VIVIENDAS%'
+                    OR UPPER(nombre_empresa) LIKE '%NORSUR%'
+                    OR UPPER(nombre_empresa) LIKE '%INVERSION REAL%'
+                    OR UPPER(nombre_empresa) LIKE '%CORPORACION DE DESARROLLOS JW%'
+                  )
+            `;
+
+            db.query(sql, (seedErr) => {
+                if (seedErr) {
+                    console.error('No se pudo sembrar mostrar_en_modulo:', seedErr.message);
+                }
+            });
         });
     });
 };
