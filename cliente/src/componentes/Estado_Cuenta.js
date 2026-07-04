@@ -433,7 +433,7 @@ const EstadoCuenta = () => {
           fontSize: 6.5
         },
         alternateRowStyles: {
-          fillColor: [248, 248, 248]
+          fillColor: [255, 255, 255]
         },
         columnStyles: {
           0: { cellWidth: 18 },
@@ -447,22 +447,6 @@ const EstadoCuenta = () => {
           8: { cellWidth: 13, halign: 'center' },
           9: { cellWidth: 15, halign: 'center' },
           10: { cellWidth: 27 }
-        },
-        didParseCell: (data) => {
-          if (data.section !== 'body') return;
-
-          const fila = filas[data.row.index] || [];
-          const numeroCuota = String(fila[8] || '').trim();
-          const observaciones = String(fila[10] || '').toLowerCase();
-
-          if (numeroCuota === '0' || observaciones.includes('enganche')) {
-            data.cell.styles.fillColor = [255, 249, 230];
-            data.cell.styles.fontStyle = 'bold';
-          }
-
-          if (observaciones.includes('pendiente')) {
-            data.cell.styles.textColor = [110, 110, 110];
-          }
         },
         didDrawPage: (data) => {
           dibujarMembrete(data.pageNumber);
@@ -483,17 +467,6 @@ const EstadoCuenta = () => {
             doc.text(introLines, 28, 60);
             dibujarResumenContrato();
           } else {
-            if (!obtenerBackgroundFormato()) {
-              doc.setFont('times', 'bold');
-              doc.setFontSize(8.6);
-              doc.setTextColor(70);
-              doc.text(
-                `CONTINUACION ESTADO DE CUENTA - CONTRATO ${contrato.codigo_contrato || ''}`.trim(),
-                10,
-                38
-              );
-            }
-
             doc.setFont('times', 'bold');
             doc.setFontSize(22);
             doc.setTextColor(160, 160, 160);
@@ -503,14 +476,6 @@ const EstadoCuenta = () => {
           }
         }
       });
-
-      const finalY = doc.lastAutoTable?.finalY || 0;
-      if (finalY > 0 && finalY < pageHeight - 10) {
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7);
-        doc.setTextColor(95);
-        doc.text('Forma.P: D=Deposito  T=Transferencia  E=Efectivo  C=Cheque', 10, finalY + 5);
-      }
 
       const fileName = `EstadoCuenta_${estadoCuenta.contrato.codigo_contrato || 'residente'}.pdf`;
       doc.save(fileName);
