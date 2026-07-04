@@ -1,8 +1,11 @@
 import './App.css';
-import React, { useEffect, useMemo, useState } from 'react'; 
+import React, { useEffect, useMemo, useRef, useState } from 'react'; 
 import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-router-dom';
 import { modulesConfig } from './config/modulesConfig';
 import Login from './componentes/Login';
+
+const INACTIVITY_LIMIT_MS = 3 * 60 * 1000;
+const INACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
 
 const normalizeText = (value = '') => value
   .toString()
@@ -56,6 +59,7 @@ function App() {
   const [logoIndex, setLogoIndex] = useState(0);
   const [usuarioActivo, setUsuarioActivo] = useState({});
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const inactivityTimeoutRef = useRef(null);
 
   useEffect(() => {
     const cargarUsuarioActivo = () => {
@@ -98,6 +102,49 @@ function App() {
     setIsAuthenticated(false);
     window.dispatchEvent(new Event('usuario-updated'));
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      if (inactivityTimeoutRef.current) {
+        clearTimeout(inactivityTimeoutRef.current);
+        inactivityTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    const finalizarSesionPorInactividad = () => {
+      cerrarSesionTemporal();
+      window.alert('Sesion cerrada por inactividad (3 minutos).');
+    };
+
+    const reiniciarTemporizador = () => {
+      if (inactivityTimeoutRef.current) {
+        clearTimeout(inactivityTimeoutRef.current);
+      }
+      inactivityTimeoutRef.current = setTimeout(finalizarSesionPorInactividad, INACTIVITY_LIMIT_MS);
+    };
+
+    const registrarActividad = () => {
+      reiniciarTemporizador();
+    };
+
+    INACTIVITY_EVENTS.forEach((eventName) => {
+      window.addEventListener(eventName, registrarActividad, { passive: true });
+    });
+
+    reiniciarTemporizador();
+
+    return () => {
+      INACTIVITY_EVENTS.forEach((eventName) => {
+        window.removeEventListener(eventName, registrarActividad);
+      });
+
+      if (inactivityTimeoutRef.current) {
+        clearTimeout(inactivityTimeoutRef.current);
+        inactivityTimeoutRef.current = null;
+      }
+    };
+  }, [isAuthenticated]);
 
   const onLoginSuccess = (usuario) => {
     setUsuarioActivo(usuario || {});
