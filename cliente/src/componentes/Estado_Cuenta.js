@@ -262,6 +262,31 @@ const EstadoCuenta = () => {
       const enganches = detalleRaw.filter((item) => Number(item?.numero_cuota || 0) === 0);
       const totalEnganche = enganches.reduce((acc, item) => acc + Number(item?.monto_total_detalle || 0), 0);
 
+      const nombreMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      const etiquetaMesCaja = (fecha) => {
+        if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) return '';
+        return `${nombreMeses[fecha.getMonth()]} ${fecha.getFullYear()}`;
+      };
+
+      const pendientesCajaSet = new Set();
+      try {
+        if (contrato.id_contrato) {
+          const resPendientesCaja = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes`, {
+            params: { id_contrato: contrato.id_contrato }
+          });
+          const mesesPendientesCaja = Array.isArray(resPendientesCaja?.data?.meses)
+            ? resPendientesCaja.data.meses
+            : [];
+
+          mesesPendientesCaja
+            .map((mes) => String(mes || '').trim())
+            .filter(Boolean)
+            .forEach((mes) => pendientesCajaSet.add(mes));
+        }
+      } catch (pendientesErr) {
+        console.warn('No se pudo consultar meses pendientes desde Caja:', pendientesErr?.message || pendientesErr);
+      }
+
       const obtenerBackgroundFormato = () => {
         switch (formatoContrato) {
           case 'FORMATO_01':
@@ -388,6 +413,8 @@ const EstadoCuenta = () => {
       for (let i = 1; i <= cuotasPactadas; i += 1) {
         const detalle = detallesPorCuota.get(i);
         const fechaProgramada = agregarMeses(contrato.fecha_firma, i);
+        const mesCuotaEtiqueta = etiquetaMesCaja(fechaProgramada);
+        const estaPendienteEnCaja = Boolean(mesCuotaEtiqueta && pendientesCajaSet.has(mesCuotaEtiqueta));
         const montoProgramado = (i === cuotasPactadas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
         const marcasForma = obtenerMarcaTipoServicio(detalle?.servicios_nombres, detalle?.forma_pago);
         const tienePago = Boolean(detalle?.fecha_pago);
@@ -403,7 +430,7 @@ const EstadoCuenta = () => {
           tienePago ? formatoMoneda(Number(detalle?.monto_cuota || montoProgramado || 0)) : '',
           String(i),
           tienePago && detalle?.id_pago ? String(detalle.id_pago) : '',
-          detalle?.fecha_pago ? '' : 'Pendiente'
+          detalle?.fecha_pago ? '' : (estaPendienteEnCaja ? 'Pendiente' : '')
         ]);
       }
 
