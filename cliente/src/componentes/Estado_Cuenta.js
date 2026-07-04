@@ -65,9 +65,16 @@ const EstadoCuenta = () => {
       const res = await axios.get(
         `${API_BASE_URL}/api/estado_cuenta/buscar-residente?criterio=${encodeURIComponent(busqueda)}`
       );
-      setListaResidentes(res.data);
+      const resultados = Array.isArray(res.data) ? res.data : [];
+      setListaResidentes(resultados);
       setEstadoCuenta(null);
-      setTipoMensajeBusqueda('info');
+      if (resultados.length === 0) {
+        setTipoMensajeBusqueda('warning');
+        setMensajeBusqueda('No hay datos que coincidan con la búsqueda realizada.');
+      } else {
+        setTipoMensajeBusqueda('info');
+        setMensajeBusqueda('');
+      }
     } catch (error) {
       setListaResidentes([]);
       setEstadoCuenta(null);

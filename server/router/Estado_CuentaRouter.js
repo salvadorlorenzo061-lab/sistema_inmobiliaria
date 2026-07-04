@@ -18,17 +18,18 @@ router.get("/buscar-residente", (req, res) => {
     const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.numero_identificacion, r.telefono, r.direccion_notificacion,
-            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total,
+            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.estado AS estado_contrato,
             c.monto_cuota, c.cuotas_pactadas, tc.nombre_tipo_contrato
         FROM residentes r
         INNER JOIN contratos_residentes c ON r.id_residente = c.id_residente
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
-        WHERE c.estado = 'activo' AND (
+        WHERE (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
             OR r.numero_identificacion LIKE ?
             OR c.codigo_contrato LIKE ?
         )
+        ORDER BY CASE WHEN LOWER(TRIM(COALESCE(c.estado, ''))) = 'activo' THEN 0 ELSE 1 END, c.fecha_firma DESC
         LIMIT 50
     `;
 
