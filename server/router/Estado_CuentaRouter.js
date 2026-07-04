@@ -84,6 +84,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             SELECT 
                 p.id_pago,
                 p.fecha_pago,
+                p.forma_pago,
+                p.no_referencia,
                 p.monto_total_pagado AS total_cobrado,
                 GROUP_CONCAT(DISTINCT pd.mes_pagado SEPARATOR ', ') as meses_pagados,
                 COUNT(DISTINCT pd.id_pago_detalle) as cantidad_conceptos
@@ -153,9 +155,17 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                         SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END) AS monto_cuota,
                         SUM(pd.subtotal) AS monto_total_detalle,
                         GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados,
-                        GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto
+                        GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
+                        GROUP_CONCAT(
+                            DISTINCT CASE
+                                WHEN pd.tipo_concepto = 'servicio' THEN s.nombre_servicio
+                                ELSE NULL
+                            END
+                            ORDER BY s.nombre_servicio SEPARATOR ', '
+                        ) AS servicios_nombres
                     FROM pagos_detalle pd
                     INNER JOIN pagos p ON pd.id_pago = p.id_pago
+                    LEFT JOIN servicios s ON s.id_servicio = pd.id_concepto_servicio
                     WHERE p.id_contrato = ? ${filtroFechas}
                     GROUP BY COALESCE(pd.numero_cuota_afectada, 0)
                     ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 THEN 999999 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC

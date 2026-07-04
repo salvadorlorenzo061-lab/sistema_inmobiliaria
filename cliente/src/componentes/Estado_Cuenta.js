@@ -178,13 +178,30 @@ const EstadoCuenta = () => {
     return nueva;
   };
 
-  const obtenerMarcaFormaPago = (formaPago = '') => {
-    const normalizado = String(formaPago || '').toLowerCase();
+  const obtenerMarcaTipoServicio = (serviciosNombres = '', formaPago = '') => {
+    const normalizadoServicios = String(serviciosNombres || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    const marcasPorServicio = {
+      d: /(drenaje|alcantarillado)/.test(normalizadoServicios) ? '*' : '',
+      t: /(tramite|gestion|gestoria|papeleria)/.test(normalizadoServicios) ? '*' : '',
+      e: /(electricidad|electrico|energia|luz)/.test(normalizadoServicios) ? '*' : '',
+      c: /(construccion|construc)/.test(normalizadoServicios) ? '*' : ''
+    };
+
+    if (marcasPorServicio.d || marcasPorServicio.t || marcasPorServicio.e || marcasPorServicio.c) {
+      return marcasPorServicio;
+    }
+
+    // Respaldo para historicos sin detalle de servicio: conserva el comportamiento anterior.
+    const normalizadoPago = String(formaPago || '').toLowerCase();
     return {
-      d: normalizado.includes('deposit') ? '*' : '',
-      t: normalizado.includes('transfer') ? '*' : '',
-      e: normalizado.includes('efectivo') ? '*' : '',
-      c: normalizado.includes('cheque') ? '*' : ''
+      d: normalizadoPago.includes('deposit') ? '*' : '',
+      t: normalizadoPago.includes('transfer') ? '*' : '',
+      e: normalizadoPago.includes('efectivo') ? '*' : '',
+      c: normalizadoPago.includes('cheque') ? '*' : ''
     };
   };
 
@@ -372,7 +389,7 @@ const EstadoCuenta = () => {
         const detalle = detallesPorCuota.get(i);
         const fechaProgramada = agregarMeses(contrato.fecha_firma, i);
         const montoProgramado = (i === cuotasPactadas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
-        const marcasForma = obtenerMarcaFormaPago(detalle?.forma_pago);
+        const marcasForma = obtenerMarcaTipoServicio(detalle?.servicios_nombres, detalle?.forma_pago);
         const tienePago = Boolean(detalle?.fecha_pago);
 
         filas.push([
@@ -391,7 +408,7 @@ const EstadoCuenta = () => {
       }
 
       enganches.forEach((item) => {
-        const marcasForma = obtenerMarcaFormaPago(item?.forma_pago);
+        const marcasForma = obtenerMarcaTipoServicio(item?.servicios_nombres, item?.forma_pago);
         filas.push([
           formatoFecha(item?.fecha_pago),
           marcasForma.d,
