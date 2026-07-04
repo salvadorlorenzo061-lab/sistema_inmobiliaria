@@ -353,7 +353,12 @@ const EstadoCuenta = () => {
       };
 
       const nombreResidenteTexto = String(contrato.nombre || '').trim();
-      const solicitanteTexto = nombreResidenteTexto ? `el Sr. ${nombreResidenteTexto}` : 'el residente';
+      const nombreResidenteMayus = nombreResidenteTexto.toUpperCase();
+      const nombreSinPrefijo = nombreResidenteMayus.replace(/^(SR\.?|SRA\.?|SRA\s+|SR\s+)\s*/i, '').trim();
+      const tratamiento = /^SRA\.?\s+/i.test(nombreResidenteTexto) || /^SRA\.?\s+/i.test(nombreResidenteMayus) ? 'Sra.' : 'Sr.';
+      const solicitanteTexto = nombreResidenteTexto
+        ? `el ${tratamiento} ${nombreSinPrefijo || nombreResidenteMayus}`
+        : 'el residente';
       const cuerpoIntro = `Por medio del presente, se adjunta el detalle de pagos solicitado por ${solicitanteTexto}, el cual se especifica de manera clara la forma y fecha en que fueron aplicados cada uno de sus pagos.`;
       const fechaReporteBase = estadoCuenta?.fecha_fin || new Date();
       const fechaLarga = new Date(fechaReporteBase).toLocaleDateString('es-GT', {
