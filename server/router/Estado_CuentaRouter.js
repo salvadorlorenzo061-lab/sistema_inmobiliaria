@@ -57,10 +57,13 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
         SELECT 
             r.nombre, r.dpi, r.telefono, r.direccion_notificacion,
             c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.monto_cuota,
-            c.cuotas_pactadas, tc.nombre_tipo_contrato
+            c.cuotas_pactadas, c.formato_contrato, c.id_proyecto,
+            tc.nombre_tipo_contrato,
+            p.nombre AS nombre_proyecto
         FROM residentes r
         INNER JOIN contratos_residentes c ON r.id_residente = c.id_residente
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
+        LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
         WHERE c.id_contrato = ?
     `;
 

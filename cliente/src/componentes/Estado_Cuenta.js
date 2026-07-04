@@ -6,6 +6,7 @@ import autoTable from 'jspdf-autotable';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { CONTRACT_VISUAL_ASSETS } from '../utils/contractVisualAssets';
+import { resolveContractTemplateId } from '../utils/contractTemplates';
 
 const EstadoCuenta = () => {
   const [busqueda, setBusqueda] = useState('');
@@ -202,6 +203,9 @@ const EstadoCuenta = () => {
       const borderColor = [85, 85, 85];
 
       const contrato = estadoCuenta.contrato || {};
+      const formatoContrato = resolveContractTemplateId(
+        contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
+      );
       const cuotasPactadas = Number(contrato.cuotas_pactadas || 0);
       const montoTotalContrato = Number(contrato.monto_total || 0);
       const montoCuota = Number(contrato.monto_cuota || 0);
@@ -241,15 +245,34 @@ const EstadoCuenta = () => {
       const enganches = detalleRaw.filter((item) => Number(item?.numero_cuota || 0) === 0);
       const totalEnganche = enganches.reduce((acc, item) => acc + Number(item?.monto_total_detalle || 0), 0);
 
+      const obtenerBackgroundFormato = () => {
+        switch (formatoContrato) {
+          case 'FORMATO_01':
+            return CONTRACT_VISUAL_ASSETS.FORMATO_01_MAIN;
+          case 'FORMATO_02':
+            return CONTRACT_VISUAL_ASSETS.FORMATO_02_MAIN;
+          case 'FORMATO_03':
+            return CONTRACT_VISUAL_ASSETS.FORMATO_03_MAIN;
+          default:
+            return null;
+        }
+      };
+
       const dibujarMembrete = (paginaActual) => {
-        if (CONTRACT_VISUAL_ASSETS.FORMATO_04_HEADER) {
+        const backgroundAsset = obtenerBackgroundFormato();
+
+        if (backgroundAsset) {
+          doc.addImage(backgroundAsset, 'PNG', 8, 8, pageWidth - 16, pageHeight - 16, `estado-cuenta-main-${formatoContrato}-${paginaActual}`, 'FAST');
+        } else if (formatoContrato === 'FORMATO_04' && CONTRACT_VISUAL_ASSETS.FORMATO_04_HEADER) {
           doc.addImage(CONTRACT_VISUAL_ASSETS.FORMATO_04_HEADER, 'PNG', 8, 8, pageWidth - 16, 26, `estado-cuenta-header-${paginaActual}`, 'FAST');
         } else {
           doc.setFillColor(...goldColor);
           doc.rect(0, 0, pageWidth, 6, 'F');
         }
 
-        if (CONTRACT_VISUAL_ASSETS.FORMATO_04_FOOTER) {
+        if (backgroundAsset) {
+          // El fondo de formato completo ya contiene pie de página.
+        } else if (formatoContrato === 'FORMATO_04' && CONTRACT_VISUAL_ASSETS.FORMATO_04_FOOTER) {
           doc.addImage(CONTRACT_VISUAL_ASSETS.FORMATO_04_FOOTER, 'PNG', 8, pageHeight - 19, pageWidth - 16, 10, `estado-cuenta-footer-${paginaActual}`, 'FAST');
         } else {
           doc.setFillColor(...goldColor);
@@ -429,9 +452,11 @@ const EstadoCuenta = () => {
           dibujarMembrete(data.pageNumber);
 
           if (data.pageNumber === 1) {
-            doc.setTextColor(...goldColor);
-            doc.setFillColor(...goldColor);
-            doc.rect(0, 40, pageWidth, 4.5, 'F');
+            if (!obtenerBackgroundFormato()) {
+              doc.setTextColor(...goldColor);
+              doc.setFillColor(...goldColor);
+              doc.rect(0, 40, pageWidth, 4.5, 'F');
+            }
             doc.setTextColor(45);
             doc.setFont('times', 'normal');
             doc.setFontSize(8.4);
