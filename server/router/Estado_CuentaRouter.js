@@ -113,11 +113,11 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 SELECT DISTINCT pd.mes_pagado
                 FROM pagos_detalle pd
                 INNER JOIN pagos p ON pd.id_pago = p.id_pago
-                WHERE p.id_contrato = ?
+                WHERE p.id_contrato = ? ${filtroFechas}
                 ORDER BY pd.mes_pagado
             `;
 
-            db.query(queryMesesPendientes, [id_contrato], (err, mesesResult) => {
+            db.query(queryMesesPendientes, queryPagosParams, (err, mesesResult) => {
                 if (err) {
                     console.error("Error al obtener meses:", err.message);
                     return res.status(500).send("No se pudo obtener los meses pagados.");
@@ -134,7 +134,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                         mesesPagados: mesesResult.map(m => m.mes_pagado),
                         totalPagado: totalPagado,
                         saldoPendiente: Math.max(0, saldoPendiente),
-                        fecha_inicio: contract.fecha_firma,
+                        fecha_inicio: fecha_inicio || contract.fecha_firma,
+                        fecha_fin: fecha_fin || null,
                         cuotas_pactadas: contract.cuotas_pactadas
                     });
                 };
