@@ -221,6 +221,23 @@ const EstadoCuenta = () => {
 
       const contrato = estadoCuenta.contrato || {};
       const serviciosContratoNombres = String(contrato.servicios_activos_nombres || '').trim();
+      let serviciosCajaNombres = '';
+
+      try {
+        if (contrato.id_contrato) {
+          const resServiciosCaja = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${contrato.id_contrato}`);
+          const serviciosCaja = Array.isArray(resServiciosCaja?.data?.servicios)
+            ? resServiciosCaja.data.servicios
+            : [];
+
+          serviciosCajaNombres = serviciosCaja
+            .map((item) => String(item?.nombre_servicio || '').trim())
+            .filter(Boolean)
+            .join(', ');
+        }
+      } catch (servCajaErr) {
+        console.warn('No se pudo consultar servicios desde Caja para estado de cuenta:', servCajaErr?.message || servCajaErr);
+      }
       const formatoContrato = resolveContractTemplateId(
         contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
       );
@@ -417,8 +434,13 @@ const EstadoCuenta = () => {
         const mesCuotaEtiqueta = etiquetaMesCaja(fechaProgramada);
         const estaPendienteEnCaja = Boolean(mesCuotaEtiqueta && pendientesCajaSet.has(mesCuotaEtiqueta));
         const montoProgramado = (i === cuotasPactadas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
+        const serviciosFuenteFila = [detalle?.servicios_nombres, serviciosContratoNombres, serviciosCajaNombres]
+          .map((txt) => String(txt || '').trim())
+          .filter(Boolean)
+          .join(', ');
+
         const marcasForma = obtenerMarcaTipoServicio(
-          detalle?.servicios_nombres || serviciosContratoNombres,
+          serviciosFuenteFila,
           detalle?.forma_pago
         );
         const tienePago = Boolean(detalle?.fecha_pago);
@@ -439,8 +461,13 @@ const EstadoCuenta = () => {
       }
 
       enganches.forEach((item) => {
+        const serviciosFuenteFila = [item?.servicios_nombres, serviciosContratoNombres, serviciosCajaNombres]
+          .map((txt) => String(txt || '').trim())
+          .filter(Boolean)
+          .join(', ');
+
         const marcasForma = obtenerMarcaTipoServicio(
-          item?.servicios_nombres || serviciosContratoNombres,
+          serviciosFuenteFila,
           item?.forma_pago
         );
         filas.push([
