@@ -78,9 +78,39 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
         }
 
         const contract = contractResult[0];
-        
-        // Obtener todos los pagos realizados
-        const queryPagos = `
+
+        // Obtener servicios activos del contrato (directos + por proyecto) para marcar D/T/E/C en estado de cuenta.
+        const queryServiciosContrato = `
+            SELECT GROUP_CONCAT(DISTINCT base.nombre_servicio ORDER BY base.nombre_servicio SEPARATOR ', ') AS servicios_activos_nombres
+            FROM (
+                SELECT s.nombre_servicio
+                FROM contratos_servicios cs
+                INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                WHERE cs.id_contrato = ?
+                  AND cs.estado = 'activo'
+                  AND s.estado = 'activo'
+
+                UNION
+
+                SELECT s.nombre_servicio
+                FROM contratos_residentes c2
+                INNER JOIN proyecto_servicios ps ON ps.id_proyecto = c2.id_proyecto
+                INNER JOIN servicios s ON s.id_servicio = ps.id_servicio
+                WHERE c2.id_contrato = ?
+                  AND ps.estado = 'activo'
+                  AND s.estado = 'activo'
+            ) base
+        `;
+
+        db.query(queryServiciosContrato, [id_contrato, id_contrato], (servErr, servRows) => {
+            if (servErr) {
+                console.error('Error al obtener servicios del contrato para estado de cuenta:', servErr.message);
+            }
+
+            contract.servicios_activos_nombres = servRows?.[0]?.servicios_activos_nombres || '';
+
+            // Obtener todos los pagos realizados
+            const queryPagos = `
             SELECT 
                 p.id_pago,
                 p.fecha_pago,
@@ -96,25 +126,25 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             ORDER BY p.fecha_pago DESC
         `;
 
-        // Agregar filtro de fechas si se proporcionan
-        let queryPagosParams = [id_contrato];
-        let filtroFechas = '';
-        
-        if (fecha_inicio && fecha_fin) {
-            filtroFechas = 'AND p.fecha_pago BETWEEN ? AND ?';
-            queryPagosParams = [id_contrato, fecha_inicio, fecha_fin];
-        }
-        
-        const queryPagosFiltered = queryPagos.replace('WHERE p.id_contrato = ?', `WHERE p.id_contrato = ? ${filtroFechas}`);
-        
-        db.query(queryPagosFiltered, queryPagosParams, (err, pagosResult) => {
-            if (err) {
-                console.error("Error al obtener pagos:", err.message);
-                return res.status(500).send("No se pudo obtener el historial de pagos.");
+            // Agregar filtro de fechas si se proporcionan
+            let queryPagosParams = [id_contrato];
+            let filtroFechas = '';
+
+            if (fecha_inicio && fecha_fin) {
+                filtroFechas = 'AND p.fecha_pago BETWEEN ? AND ?';
+                queryPagosParams = [id_contrato, fecha_inicio, fecha_fin];
             }
 
-            // Obtener meses pendientes
-            const queryMesesPendientes = `
+            const queryPagosFiltered = queryPagos.replace('WHERE p.id_contrato = ?', `WHERE p.id_contrato = ? ${filtroFechas}`);
+
+            db.query(queryPagosFiltered, queryPagosParams, (err, pagosResult) => {
+                if (err) {
+                    console.error("Error al obtener pagos:", err.message);
+                    return res.status(500).send("No se pudo obtener el historial de pagos.");
+                }
+
+                // Obtener meses pendientes
+                const queryMesesPendientes = `
                 SELECT DISTINCT pd.mes_pagado
                 FROM pagos_detalle pd
                 INNER JOIN pagos p ON pd.id_pago = p.id_pago
@@ -122,30 +152,30 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 ORDER BY pd.mes_pagado
             `;
 
-            db.query(queryMesesPendientes, queryPagosParams, (err, mesesResult) => {
-                if (err) {
-                    console.error("Error al obtener meses:", err.message);
-                    return res.status(500).send("No se pudo obtener los meses pagados.");
-                }
+                db.query(queryMesesPendientes, queryPagosParams, (err, mesesResult) => {
+                    if (err) {
+                        console.error("Error al obtener meses:", err.message);
+                        return res.status(500).send("No se pudo obtener los meses pagados.");
+                    }
 
-                const responderEstadoCuenta = (detalleCuotasResult = []) => {
-                    const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
-                    const saldoPendiente = parseFloat(contract.monto_total) - totalPagado;
+                    const responderEstadoCuenta = (detalleCuotasResult = []) => {
+                        const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
+                        const saldoPendiente = parseFloat(contract.monto_total) - totalPagado;
 
-                    return res.status(200).json({
-                        contrato: contract,
-                        pagos: pagosResult,
-                        cuotasDetalle: detalleCuotasResult,
-                        mesesPagados: mesesResult.map(m => m.mes_pagado),
-                        totalPagado: totalPagado,
-                        saldoPendiente: Math.max(0, saldoPendiente),
-                        fecha_inicio: fecha_inicio || contract.fecha_firma,
-                        fecha_fin: fecha_fin || null,
-                        cuotas_pactadas: contract.cuotas_pactadas
-                    });
-                };
+                        return res.status(200).json({
+                            contrato: contract,
+                            pagos: pagosResult,
+                            cuotasDetalle: detalleCuotasResult,
+                            mesesPagados: mesesResult.map(m => m.mes_pagado),
+                            totalPagado: totalPagado,
+                            saldoPendiente: Math.max(0, saldoPendiente),
+                            fecha_inicio: fecha_inicio || contract.fecha_firma,
+                            fecha_fin: fecha_fin || null,
+                            cuotas_pactadas: contract.cuotas_pactadas
+                        });
+                    };
 
-                const queryDetalleCuotas = `
+                    const queryDetalleCuotas = `
                     SELECT
                         COALESCE(pd.numero_cuota_afectada, 0) AS numero_cuota,
                         MIN(p.fecha_pago) AS fecha_pago,
@@ -169,15 +199,16 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                     WHERE p.id_contrato = ? ${filtroFechas}
                     GROUP BY COALESCE(pd.numero_cuota_afectada, 0)
                     ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 THEN 999999 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC
-                `;
+                    `;
 
-                db.query(queryDetalleCuotas, queryPagosParams, (detalleErr, detalleCuotasResult) => {
-                    if (detalleErr) {
-                        console.error("Error al obtener detalle de cuotas:", detalleErr.message);
-                        return responderEstadoCuenta([]);
-                    }
+                    db.query(queryDetalleCuotas, queryPagosParams, (detalleErr, detalleCuotasResult) => {
+                        if (detalleErr) {
+                            console.error("Error al obtener detalle de cuotas:", detalleErr.message);
+                            return responderEstadoCuenta([]);
+                        }
 
-                    return responderEstadoCuenta(detalleCuotasResult);
+                        return responderEstadoCuenta(detalleCuotasResult);
+                    });
                 });
             });
         });

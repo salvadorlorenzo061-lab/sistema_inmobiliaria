@@ -186,7 +186,7 @@ const EstadoCuenta = () => {
 
     const marcasPorServicio = {
       d: /(drenaje|alcantarillado)/.test(normalizadoServicios) ? '*' : '',
-      t: /(tramite|gestion|gestoria|papeleria)/.test(normalizadoServicios) ? '*' : '',
+      t: /(tramite|gestion|gestoria|papeleria|derecho|paja)/.test(normalizadoServicios) ? '*' : '',
       e: /(electricidad|electrico|energia|luz)/.test(normalizadoServicios) ? '*' : '',
       c: /(construccion|construc)/.test(normalizadoServicios) ? '*' : ''
     };
@@ -220,6 +220,7 @@ const EstadoCuenta = () => {
       const borderColor = [85, 85, 85];
 
       const contrato = estadoCuenta.contrato || {};
+      const serviciosContratoNombres = String(contrato.servicios_activos_nombres || '').trim();
       const formatoContrato = resolveContractTemplateId(
         contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
       );
@@ -416,7 +417,10 @@ const EstadoCuenta = () => {
         const mesCuotaEtiqueta = etiquetaMesCaja(fechaProgramada);
         const estaPendienteEnCaja = Boolean(mesCuotaEtiqueta && pendientesCajaSet.has(mesCuotaEtiqueta));
         const montoProgramado = (i === cuotasPactadas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
-        const marcasForma = obtenerMarcaTipoServicio(detalle?.servicios_nombres, detalle?.forma_pago);
+        const marcasForma = obtenerMarcaTipoServicio(
+          detalle?.servicios_nombres || serviciosContratoNombres,
+          detalle?.forma_pago
+        );
         const tienePago = Boolean(detalle?.fecha_pago);
 
         filas.push([
@@ -435,7 +439,10 @@ const EstadoCuenta = () => {
       }
 
       enganches.forEach((item) => {
-        const marcasForma = obtenerMarcaTipoServicio(item?.servicios_nombres, item?.forma_pago);
+        const marcasForma = obtenerMarcaTipoServicio(
+          item?.servicios_nombres || serviciosContratoNombres,
+          item?.forma_pago
+        );
         filas.push([
           formatoFecha(item?.fecha_pago),
           marcasForma.d,
