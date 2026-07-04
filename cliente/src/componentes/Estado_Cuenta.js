@@ -290,7 +290,7 @@ const EstadoCuenta = () => {
         const direccionLineas = doc.splitTextToSize(direccion, 57);
         const totalPagado = Number(estadoCuenta.totalPagado || 0);
         const resumenX = 10;
-        const resumenY = 57;
+        const resumenY = 76;
         const resumenW = 196;
         const resumenH = 37;
 
@@ -408,7 +408,7 @@ const EstadoCuenta = () => {
       });
 
       autoTable(doc, {
-        startY: 94,
+        startY: 114,
         margin: { top: 44, bottom: 18, left: 10, right: 10 },
         head: [
           [
@@ -472,7 +472,7 @@ const EstadoCuenta = () => {
 
             const introLines = doc.splitTextToSize(cuerpoIntro, 188);
             doc.setFontSize(7.5);
-            doc.text(introLines, 28, 60);
+            doc.text(introLines, 28, 61);
             dibujarResumenContrato();
           } else {
             doc.setFont('times', 'bold');
