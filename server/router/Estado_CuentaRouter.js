@@ -17,7 +17,7 @@ router.get("/buscar-residente", (req, res) => {
 
     const query = `
         SELECT 
-            r.id_residente, r.nombre, r.dpi, r.numero_identificacion,
+            r.id_residente, r.nombre, r.dpi, r.numero_identificacion, r.telefono, r.direccion_notificacion,
             c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total,
             c.monto_cuota, c.cuotas_pactadas, tc.nombre_tipo_contrato
         FROM residentes r
@@ -38,7 +38,7 @@ router.get("/buscar-residente", (req, res) => {
     db.query(query, queryParams, (err, result) => {
         if (err) {
             console.error("Error en la consulta:", err.message);
-            return res.status(500).send("Error al consultar el residente: " + err.message);
+            return res.status(500).send("No se pudo consultar el residente en este momento.");
         }
         if (result.length === 0) return res.status(404).send("No se encontraron residentes.");
         
@@ -54,7 +54,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
     // Obtener información del contrato
     const queryContrato = `
         SELECT 
-            r.nombre, r.dpi,
+            r.nombre, r.dpi, r.telefono, r.direccion_notificacion,
             c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.monto_cuota,
             c.cuotas_pactadas, tc.nombre_tipo_contrato
         FROM residentes r
@@ -64,6 +64,11 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
     `;
 
     db.query(queryContrato, [id_contrato], (err, contractResult) => {
+        if (err) {
+            console.error("Error al obtener contrato:", err.message);
+            return res.status(500).send("No se pudo obtener el estado de cuenta en este momento.");
+        }
+
         if (err || contractResult.length === 0) {
             return res.status(404).send("Contrato no encontrado");
         }
@@ -99,7 +104,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
         db.query(queryPagosFiltered, queryPagosParams, (err, pagosResult) => {
             if (err) {
                 console.error("Error al obtener pagos:", err.message);
-                return res.status(500).send("Error al obtener pagos");
+                return res.status(500).send("No se pudo obtener el historial de pagos.");
             }
 
             // Obtener meses pendientes
@@ -114,8 +119,32 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             db.query(queryMesesPendientes, [id_contrato], (err, mesesResult) => {
                 if (err) {
                     console.error("Error al obtener meses:", err.message);
-                    return res.status(500).send("Error al obtener meses");
+                    return res.status(500).send("No se pudo obtener los meses pagados.");
                 }
+
+                const queryDetalleCuotas = `
+                    SELECT
+                        COALESCE(pd.numero_cuota_afectada, 0) AS numero_cuota,
+                        MIN(p.fecha_pago) AS fecha_pago,
+                        SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.forma_pago ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS forma_pago,
+                        SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.no_referencia ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS no_referencia,
+                        MIN(p.id_pago) AS id_pago,
+                        SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END) AS monto_cuota,
+                        SUM(pd.subtotal) AS monto_total_detalle,
+                        GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados,
+                        GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto
+                    FROM pagos_detalle pd
+                    INNER JOIN pagos p ON pd.id_pago = p.id_pago
+                    WHERE p.id_contrato = ? ${filtroFechas}
+                    GROUP BY COALESCE(pd.numero_cuota_afectada, 0)
+                    ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 THEN 999999 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC
+                `;
+
+                db.query(queryDetalleCuotas, queryPagosParams, (detalleErr, detalleCuotasResult) => {
+                    if (detalleErr) {
+                        console.error("Error al obtener detalle de cuotas:", detalleErr.message);
+                        return res.status(500).send("No se pudo obtener el detalle de cuotas.");
+                    }
 
                 // Calcular saldo
                 const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
@@ -124,11 +153,13 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 res.status(200).json({
                     contrato: contract,
                     pagos: pagosResult,
+                    cuotasDetalle: detalleCuotasResult,
                     mesesPagados: mesesResult.map(m => m.mes_pagado),
                     totalPagado: totalPagado,
                     saldoPendiente: Math.max(0, saldoPendiente),
                     fecha_inicio: contract.fecha_firma,
                     cuotas_pactadas: contract.cuotas_pactadas
+                });
                 });
             });
         });

@@ -1,13 +1,9 @@
 import './App.css';
-import React, { useEffect, useMemo, useRef, useState } from 'react'; 
+import React, { useEffect, useMemo, useState } from 'react'; 
 import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-router-dom';
 import { modulesConfig } from './config/modulesConfig';
 import Login from './componentes/Login';
-
-const INACTIVITY_LIMIT_MS = 3 * 60 * 1000;
-const INACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
-const LAST_ACTIVITY_KEY = 'inmobiliaria:lastActivityAt';
-const FORCE_LOGOUT_KEY = 'inmobiliaria:forceLogoutAt';
+import Swal from 'sweetalert2';
 
 const normalizeText = (value = '') => value
   .toString()
@@ -54,14 +50,122 @@ const parsePermisos = (permisos) => {
   return [];
 };
 
+const showFadeToast = (message, icon = 'info') => {
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon,
+    title: message,
+    showConfirmButton: false,
+    timer: 2600,
+    timerProgressBar: true,
+    showClass: {
+      popup: 'swal-toast-fade-in'
+    },
+    hideClass: {
+      popup: 'swal-toast-fade-out'
+    }
+  });
+};
+
+const installToastAlertOverride = () => {
+  if (typeof window === 'undefined' || window.__toastAlertInstalled) {
+    return;
+  }
+
+  const nativeAlert = window.alert.bind(window);
+
+  window.__nativeAlert = nativeAlert;
+  window.alert = (message) => {
+    showFadeToast(String(message || 'Notificacion del sistema'), 'error');
+  };
+  window.__toastAlertInstalled = true;
+};
+
+installToastAlertOverride();
+
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
+  const [isMobileViewport, setIsMobileViewport] = useState(() => window.innerWidth <= 992);
   const [expandedCategories, setExpandedCategories] = useState({});
   const logoSources = ['/images/logo.svg'];
   const [logoIndex, setLogoIndex] = useState(0);
   const [usuarioActivo, setUsuarioActivo] = useState({});
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const inactivityTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 992;
+      setIsMobileViewport(mobile);
+      setIsMenuOpen((prev) => (mobile ? false : prev || true));
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    const originalFire = Swal.fire.bind(Swal);
+
+    const normalizeFireArgs = (args) => {
+      const [arg1, arg2, arg3] = args;
+
+      if (arg1 && typeof arg1 === 'object' && !Array.isArray(arg1)) {
+        return { ...arg1 };
+      }
+
+      if (typeof arg1 !== 'undefined') {
+        return {
+          title: String(arg1 || ''),
+          text: typeof arg2 === 'undefined' ? undefined : String(arg2),
+          icon: typeof arg3 === 'undefined' ? undefined : arg3
+        };
+      }
+
+      return null;
+    };
+
+    const shouldKeepAsModal = (opts = {}) => {
+      if (opts.toast === true) return false;
+      if (opts.showCancelButton) return true;
+      if (opts.input) return true;
+      if (typeof opts.preConfirm === 'function') return true;
+      if (typeof opts.willOpen === 'function' || typeof opts.didOpen === 'function') return true;
+      return false;
+    };
+
+    Swal.fire = (...args) => {
+      const options = normalizeFireArgs(args);
+      if (!options) {
+        return originalFire(...args);
+      }
+
+      if (shouldKeepAsModal(options)) {
+        return originalFire(...args);
+      }
+
+      const toastConfig = {
+        ...options,
+        toast: true,
+        position: options.position || 'top-end',
+        showConfirmButton: false,
+        timer: options.timer || 2600,
+        timerProgressBar: true,
+        showClass: options.showClass || { popup: 'swal-toast-fade-in' },
+        hideClass: options.hideClass || { popup: 'swal-toast-fade-out' }
+      };
+
+      return originalFire(toastConfig);
+    };
+
+    return () => {
+      Swal.fire = originalFire;
+    };
+  }, []);
 
   useEffect(() => {
     const cargarUsuarioActivo = () => {
@@ -98,88 +202,19 @@ function App() {
     setIsMenuOpen(!isMenuOpen);
   };
 
-  const cerrarSesionTemporal = ({ showAlert = false, broadcast = true } = {}) => {
+  const handleMobileModuleNavigation = () => {
+    if (window.innerWidth <= 992) {
+      setIsMenuOpen(false);
+    }
+  };
+
+  const cerrarSesionTemporal = () => {
     localStorage.removeItem('usuario');
     setUsuarioActivo({});
     setIsAuthenticated(false);
 
-    if (broadcast) {
-      localStorage.setItem(FORCE_LOGOUT_KEY, String(Date.now()));
-    }
-
     window.dispatchEvent(new Event('usuario-updated'));
-
-    if (showAlert) {
-      window.alert('Sesion cerrada por inactividad (3 minutos).');
-    }
   };
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      if (inactivityTimeoutRef.current) {
-        clearTimeout(inactivityTimeoutRef.current);
-        inactivityTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    const finalizarSesionPorInactividad = () => {
-      cerrarSesionTemporal({ showAlert: true, broadcast: true });
-    };
-
-    const reiniciarTemporizador = (activityAt = Date.now()) => {
-      if (inactivityTimeoutRef.current) {
-        clearTimeout(inactivityTimeoutRef.current);
-      }
-
-      const elapsed = Date.now() - activityAt;
-      const remaining = Math.max(1000, INACTIVITY_LIMIT_MS - elapsed);
-      inactivityTimeoutRef.current = setTimeout(finalizarSesionPorInactividad, remaining);
-    };
-
-    const registrarActividad = () => {
-      const now = Date.now();
-      localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
-      reiniciarTemporizador(now);
-    };
-
-    const onStorageChange = (event) => {
-      if (event.key === LAST_ACTIVITY_KEY && event.newValue) {
-        const timestamp = Number(event.newValue);
-        if (Number.isFinite(timestamp)) {
-          reiniciarTemporizador(timestamp);
-        }
-      }
-
-      if (event.key === FORCE_LOGOUT_KEY && event.newValue) {
-        cerrarSesionTemporal({ showAlert: false, broadcast: false });
-      }
-    };
-
-    INACTIVITY_EVENTS.forEach((eventName) => {
-      window.addEventListener(eventName, registrarActividad, { passive: true });
-    });
-    window.addEventListener('storage', onStorageChange);
-
-    const storedActivityAt = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
-    const initialActivityAt = Number.isFinite(storedActivityAt) ? storedActivityAt : Date.now();
-    if (!localStorage.getItem(LAST_ACTIVITY_KEY)) {
-      localStorage.setItem(LAST_ACTIVITY_KEY, String(initialActivityAt));
-    }
-    reiniciarTemporizador(initialActivityAt);
-
-    return () => {
-      INACTIVITY_EVENTS.forEach((eventName) => {
-        window.removeEventListener(eventName, registrarActividad);
-      });
-      window.removeEventListener('storage', onStorageChange);
-
-      if (inactivityTimeoutRef.current) {
-        clearTimeout(inactivityTimeoutRef.current);
-        inactivityTimeoutRef.current = null;
-      }
-    };
-  }, [isAuthenticated]);
 
   const onLoginSuccess = (usuario) => {
     setUsuarioActivo(usuario || {});
@@ -262,12 +297,12 @@ function App() {
   return (
     <Router>
       <div className="container-fluid"> 
-        <div className="row">
+        <div className="row app-shell-row">
           
           {/* BARRA LATERAL DINÁMICA (SIDEBAR) */}
           <div 
-            className={`bg-light p-3 shadow-sm min-vh-100 transition-all sidebar-shell ${
-              isMenuOpen ? 'col-md-3 col-lg-2' : 'col-auto d-flex flex-column align-items-center'
+            className={`bg-light p-3 shadow-sm min-vh-100 transition-all sidebar-shell app-sidebar ${
+              isMenuOpen ? 'col-md-3 col-lg-2 is-open' : 'col-auto d-flex flex-column align-items-center is-collapsed'
             }`}
             style={{ transition: 'all 0.3s' }}
           >
@@ -301,7 +336,7 @@ function App() {
             </div>
 
             <button className="btn btn-primary mb-4 w-100" onClick={toggleMenu}>
-              {isMenuOpen ? '◀ Contraer' : '▶'}
+              {isMobileViewport ? (isMenuOpen ? 'Ocultar menu' : 'Mostrar menu') : (isMenuOpen ? '◀ Contraer' : '▶')}
             </button>
 
             {isMenuOpen && <h5 className="fw-bold mb-4 text-center text-secondary">⚙️ Sistema</h5>}
@@ -333,6 +368,7 @@ function App() {
                           <NavLink
                             key={module.id}
                             to={module.path} 
+                            onClick={handleMobileModuleNavigation}
                             className={({ isActive }) => `nav-link fw-bold p-2 text-start d-flex align-items-center sidebar-menu-link ${isActive ? 'is-active' : ''}`}
                           >
                             <span>{module.icon}</span> 
@@ -347,7 +383,12 @@ function App() {
           </div>
 
           {/* CONTENIDO PRINCIPAL (DERECHA) */}
-          <div className={`p-4 app-content-with-profile ${isMenuOpen ? 'col-md-9 col-lg-10' : 'col'}`}>
+          <div className={`p-4 app-content-with-profile app-main-content ${isMenuOpen ? 'col-md-9 col-lg-10' : 'col'}`}>
+            <div className="app-mobile-topbar">
+              <button type="button" className="btn btn-outline-primary app-mobile-menu-btn" onClick={toggleMenu}>
+                {isMenuOpen ? 'Cerrar menu' : 'Abrir menu'}
+              </button>
+            </div>
             <div className="perfil-activo-top-right">
               <div className="perfil-activo-card">
                 <div className="perfil-activo-header">

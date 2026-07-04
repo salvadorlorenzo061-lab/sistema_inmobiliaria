@@ -25,6 +25,70 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>React App</title>
+    <script>
+      (function () {
+        var activeToast = null;
+
+        function removeToast() {
+          if (!activeToast) {
+            return;
+          }
+
+          activeToast.style.opacity = '0';
+          activeToast.style.transform = 'translateY(-10px)';
+          window.setTimeout(function () {
+            if (activeToast && activeToast.parentNode) {
+              activeToast.parentNode.removeChild(activeToast);
+            }
+            activeToast = null;
+          }, 220);
+        }
+
+        function showToast(message) {
+          removeToast();
+
+          var toast = document.createElement('div');
+          toast.textContent = String(message || 'Notificacion del sistema');
+          toast.setAttribute('role', 'status');
+          toast.style.position = 'fixed';
+          toast.style.top = '16px';
+          toast.style.right = '16px';
+          toast.style.zIndex = '99999';
+          toast.style.maxWidth = '360px';
+          toast.style.padding = '12px 14px';
+          toast.style.borderRadius = '12px';
+          toast.style.background = '#b42318';
+          toast.style.color = '#ffffff';
+          toast.style.boxShadow = '0 10px 24px rgba(0,0,0,0.18)';
+          toast.style.fontFamily = 'Segoe UI, Arial, sans-serif';
+          toast.style.fontSize = '14px';
+          toast.style.lineHeight = '1.4';
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateY(-10px)';
+          toast.style.transition = 'opacity 0.22s ease, transform 0.22s ease';
+
+          document.addEventListener('click', removeToast, { once: true });
+          document.body.appendChild(toast);
+          activeToast = toast;
+
+          window.requestAnimationFrame(function () {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateY(0)';
+          });
+
+          window.setTimeout(removeToast, 3200);
+        }
+
+        window.alert = function (message) {
+          var text = String(message || '');
+          if (/sesion cerrada por inactividad|inactividad \(3 minutos\)/i.test(text)) {
+            console.warn('Alerta de inactividad bloqueada:', text);
+            return;
+          }
+          showToast(text);
+        };
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

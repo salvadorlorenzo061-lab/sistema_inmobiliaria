@@ -3,33 +3,83 @@ import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import Swal from 'sweetalert2';
+import { API_BASE_URL } from '../config';
+import { CONTRACT_VISUAL_ASSETS } from '../utils/contractVisualAssets';
 
 const EstadoCuenta = () => {
   const [busqueda, setBusqueda] = useState('');
   const [listaResidentes, setListaResidentes] = useState([]);
   const [estadoCuenta, setEstadoCuenta] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [mensajeBusqueda, setMensajeBusqueda] = useState('');
+  const [tipoMensajeBusqueda, setTipoMensajeBusqueda] = useState('info');
   const [mostrarModalFechas, setMostrarModalFechas] = useState(false);
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [idContratoActual, setIdContratoActual] = useState(null);
 
+  const showFadeToast = (message, icon = 'info') => {
+    Swal.fire({
+      toast: true,
+      position: 'top-end',
+      icon,
+      title: message,
+      showConfirmButton: false,
+      timer: 2600,
+      timerProgressBar: true,
+      showClass: {
+        popup: 'swal-toast-fade-in'
+      },
+      hideClass: {
+        popup: 'swal-toast-fade-out'
+      }
+    });
+  };
+
+  const obtenerMensajeError = (error, fallback) => {
+    const status = error?.response?.status;
+    const rawMessage = String(error?.response?.data || '').trim();
+
+    if (status === 404 && rawMessage) {
+      return rawMessage;
+    }
+
+    if (rawMessage && /closed state|protocol|connect|network|timeout|socket|mysql/i.test(rawMessage)) {
+      return fallback;
+    }
+
+    return rawMessage || fallback;
+  };
+
   // Buscar residente
   const buscarResidente = async () => {
     if (!busqueda.trim()) {
-      return alert("Ingresa nombre, DPI, clave o número de contrato para buscar");
+      showFadeToast('Ingresa nombre, DPI, clave o numero de contrato para buscar', 'warning');
+      return;
     }
     
     setLoading(true);
+    setMensajeBusqueda('');
     try {
       const res = await axios.get(
-        `http://localhost:3001/api/estado_cuenta/buscar-residente?criterio=${busqueda}`
+        `${API_BASE_URL}/api/estado_cuenta/buscar-residente?criterio=${encodeURIComponent(busqueda)}`
       );
       setListaResidentes(res.data);
       setEstadoCuenta(null);
+      setTipoMensajeBusqueda('info');
     } catch (error) {
-      alert(error.response?.data || "Error al buscar residente");
       setListaResidentes([]);
+      setEstadoCuenta(null);
+
+      if (error?.response?.status === 404) {
+        setTipoMensajeBusqueda('warning');
+        setMensajeBusqueda('No hay datos que coincidan con la búsqueda realizada.');
+      } else {
+        setTipoMensajeBusqueda('danger');
+        setMensajeBusqueda('No se pudo consultar el residente en este momento.');
+        showFadeToast(obtenerMensajeError(error, 'No se pudo consultar el residente en este momento.'), 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -39,7 +89,7 @@ const EstadoCuenta = () => {
   const obtenerEstadoCuenta = async (id_contrato, fInicio = '', fFin = '') => {
     setLoading(true);
     try {
-      let url = `http://localhost:3001/api/estado_cuenta/estado-cuenta/${id_contrato}`;
+      let url = `${API_BASE_URL}/api/estado_cuenta/estado-cuenta/${id_contrato}`;
       if (fInicio && fFin) {
         url += `?fecha_inicio=${fInicio}&fecha_fin=${fFin}`;
       }
@@ -47,11 +97,13 @@ const EstadoCuenta = () => {
       const res = await axios.get(url);
       setEstadoCuenta(res.data);
       setListaResidentes([]);
+      setMensajeBusqueda('');
+      setTipoMensajeBusqueda('info');
       setMostrarModalFechas(false);
       setFechaInicio('');
       setFechaFin('');
     } catch (error) {
-      alert(error.response?.data || "Error al obtener estado de cuenta");
+      showFadeToast(obtenerMensajeError(error, 'No se pudo obtener el estado de cuenta en este momento.'), 'error');
     } finally {
       setLoading(false);
     }
@@ -62,6 +114,8 @@ const EstadoCuenta = () => {
     setBusqueda('');
     setListaResidentes([]);
     setEstadoCuenta(null);
+    setMensajeBusqueda('');
+    setTipoMensajeBusqueda('info');
     setFechaInicio('');
     setFechaFin('');
     setMostrarModalFechas(false);
@@ -78,10 +132,12 @@ const EstadoCuenta = () => {
   // Confirmar y obtener estado de cuenta con fechas
   const confirmarFechas = () => {
     if (!fechaInicio || !fechaFin) {
-      return alert("Por favor, selecciona fecha de inicio y fin");
+      showFadeToast('Por favor, selecciona fecha de inicio y fin', 'warning');
+      return;
     }
     if (new Date(fechaInicio) > new Date(fechaFin)) {
-      return alert("La fecha de inicio debe ser menor o igual a la fecha fin");
+      showFadeToast('La fecha de inicio debe ser menor o igual a la fecha fin', 'warning');
+      return;
     }
     obtenerEstadoCuenta(idContratoActual, fechaInicio, fechaFin);
   };
@@ -91,83 +147,302 @@ const EstadoCuenta = () => {
     obtenerEstadoCuenta(idContratoActual);
   };
 
-  const exportarEstadoCuentaPDF = () => {
+  const formatoFecha = (valor) => {
+    if (!valor) return '';
+    const fecha = new Date(valor);
+    if (Number.isNaN(fecha.getTime())) return '';
+    return fecha.toLocaleDateString('es-GT');
+  };
+
+  const formatoMoneda = (valor) => {
+    const numero = Number(valor || 0);
+    return `Q ${numero.toLocaleString('es-GT', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  };
+
+  const agregarMeses = (fechaBase, meses) => {
+    const base = new Date(fechaBase);
+    if (Number.isNaN(base.getTime())) return null;
+    const nueva = new Date(base);
+    nueva.setMonth(nueva.getMonth() + meses);
+    return nueva;
+  };
+
+  const obtenerMarcaFormaPago = (formaPago = '') => {
+    const normalizado = String(formaPago || '').toLowerCase();
+    return {
+      d: normalizado.includes('deposit') ? '*' : '',
+      t: normalizado.includes('transfer') ? '*' : '',
+      e: normalizado.includes('efectivo') ? '*' : '',
+      c: normalizado.includes('cheque') ? '*' : ''
+    };
+  };
+
+  const exportarEstadoCuentaPDF = async () => {
     if (!estadoCuenta) {
-      return alert('Primero debes cargar un estado de cuenta.');
+      showFadeToast('Primero debes cargar un estado de cuenta.', 'warning');
+      return;
     }
 
     try {
-      const doc = new jsPDF();
-      const fechaImpresion = new Date().toLocaleString();
+      const doc = new jsPDF('p', 'mm', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const goldColor = [173, 136, 38];
+      const darkTextColor = [35, 35, 35];
+      const borderColor = [85, 85, 85];
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.text('ESTADO DE CUENTA DE RESIDENTES', 14, 18);
+      const contrato = estadoCuenta.contrato || {};
+      const cuotasPactadas = Number(contrato.cuotas_pactadas || 0);
+      const montoTotalContrato = Number(contrato.monto_total || 0);
+      const montoCuota = Number(contrato.monto_cuota || 0);
+      const ultimaCuota = cuotasPactadas > 1
+        ? Math.max(0, montoTotalContrato - (montoCuota * (cuotasPactadas - 1)))
+        : montoTotalContrato;
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`Fecha de impresión: ${fechaImpresion}`, 14, 25);
-
-      doc.setDrawColor(180);
-      doc.line(14, 29, 196, 29);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('Datos del Residente', 14, 38);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`Nombre: ${estadoCuenta.contrato.nombre || 'N/A'}`, 14, 45);
-      doc.text(`DPI: ${estadoCuenta.contrato.dpi || 'N/A'}`, 14, 51);
-      doc.text(`Contrato: ${estadoCuenta.contrato.codigo_contrato || 'N/A'}`, 14, 57);
-      doc.text(`Tipo de Contrato: ${estadoCuenta.contrato.nombre_tipo_contrato || 'N/A'}`, 14, 63);
-      doc.text(`Fecha Firma: ${estadoCuenta.contrato.fecha_firma ? new Date(estadoCuenta.contrato.fecha_firma).toLocaleDateString() : 'N/A'}`, 14, 69);
-      doc.text(`Cuotas Pactadas: ${estadoCuenta.contrato.cuotas_pactadas || 'N/A'}`, 14, 75);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('Resumen Financiero', 110, 38);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`Monto Total del Contrato: Q${parseFloat(estadoCuenta.contrato.monto_total || 0).toFixed(2)}`, 110, 45);
-      doc.text(`Monto por Cuota: Q${parseFloat(estadoCuenta.contrato.monto_cuota || 0).toFixed(2)}`, 110, 51);
-      doc.text(`Total Pagado: Q${parseFloat(estadoCuenta.totalPagado || 0).toFixed(2)}`, 110, 57);
-      doc.text(`Saldo Pendiente: Q${parseFloat(estadoCuenta.saldoPendiente || 0).toFixed(2)}`, 110, 63);
-
-      const pagosRows = (estadoCuenta.pagos || []).map((pago) => ([
-        pago.fecha_pago ? new Date(pago.fecha_pago).toLocaleDateString() : 'N/A',
-        pago.meses_pagados || 'N/A',
-        `Q${parseFloat(pago.total_cobrado || 0).toFixed(2)}`,
-        `${pago.cantidad_conceptos || 0} concepto(s)`
-      ]));
-
-      autoTable(doc, {
-        startY: 84,
-        head: [['Fecha de Pago', 'Meses Pagados', 'Monto Pagado', 'Conceptos']],
-        body: pagosRows.length ? pagosRows : [['N/A', 'Sin pagos registrados', 'Q0.00', '0 concepto(s)']],
-        theme: 'striped',
-        headStyles: { fillColor: [33, 37, 41] },
-        styles: { fontSize: 10 }
+      const detallesPorCuota = new Map();
+      const detalleRaw = Array.isArray(estadoCuenta.cuotasDetalle) ? estadoCuenta.cuotasDetalle : [];
+      detalleRaw.forEach((item) => {
+        const cuota = Number(item?.numero_cuota || 0);
+        if (cuota > 0 && !detallesPorCuota.has(cuota)) {
+          detallesPorCuota.set(cuota, item);
+        }
       });
 
-      let yFinal = (doc.lastAutoTable?.finalY || 90) + 10;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('Meses Pagados', 14, yFinal);
-      yFinal += 7;
+      if (!detallesPorCuota.size && Array.isArray(estadoCuenta.pagos)) {
+        const pagosAsc = [...estadoCuenta.pagos].sort((a, b) => new Date(a.fecha_pago) - new Date(b.fecha_pago));
+        pagosAsc.forEach((pago, idx) => {
+          const cuota = idx + 1;
+          if (cuota <= cuotasPactadas) {
+            detallesPorCuota.set(cuota, {
+              numero_cuota: cuota,
+              fecha_pago: pago.fecha_pago,
+              forma_pago: pago.forma_pago,
+              no_referencia: pago.no_referencia,
+              id_pago: pago.id_pago,
+              monto_cuota: pago.total_cobrado,
+              monto_total_detalle: pago.total_cobrado,
+              meses_pagados: pago.meses_pagados,
+              tipos_concepto: 'cuota_terreno'
+            });
+          }
+        });
+      }
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      const mesesTexto = (estadoCuenta.mesesPagados && estadoCuenta.mesesPagados.length)
-        ? estadoCuenta.mesesPagados.join(', ')
-        : 'No hay meses pagados registrados.';
-      const mesesLines = doc.splitTextToSize(mesesTexto, 180);
-      doc.text(mesesLines, 14, yFinal);
+      const enganches = detalleRaw.filter((item) => Number(item?.numero_cuota || 0) === 0);
+      const totalEnganche = enganches.reduce((acc, item) => acc + Number(item?.monto_total_detalle || 0), 0);
+
+      const dibujarMembrete = (paginaActual) => {
+        if (CONTRACT_VISUAL_ASSETS.FORMATO_04_HEADER) {
+          doc.addImage(CONTRACT_VISUAL_ASSETS.FORMATO_04_HEADER, 'PNG', 8, 8, pageWidth - 16, 26, `estado-cuenta-header-${paginaActual}`, 'FAST');
+        } else {
+          doc.setFillColor(...goldColor);
+          doc.rect(0, 0, pageWidth, 6, 'F');
+        }
+
+        if (CONTRACT_VISUAL_ASSETS.FORMATO_04_FOOTER) {
+          doc.addImage(CONTRACT_VISUAL_ASSETS.FORMATO_04_FOOTER, 'PNG', 8, pageHeight - 19, pageWidth - 16, 10, `estado-cuenta-footer-${paginaActual}`, 'FAST');
+        } else {
+          doc.setFillColor(...goldColor);
+          doc.rect(0, pageHeight - 8, pageWidth, 8, 'F');
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(100);
+        doc.text(`Pagina ${paginaActual}`, pageWidth - 14, pageHeight - 3, { align: 'right' });
+      };
+
+      const dibujarResumenContrato = () => {
+        const direccion = String(contrato.direccion_notificacion || '').trim() || 'DIRECCION NO REGISTRADA';
+        const direccionLineas = doc.splitTextToSize(direccion, 57);
+        const totalPagado = Number(estadoCuenta.totalPagado || 0);
+        const resumenX = 10;
+        const resumenY = 57;
+        const resumenW = 196;
+        const resumenH = 37;
+
+        doc.setDrawColor(...borderColor);
+        doc.setLineWidth(0.25);
+        doc.rect(resumenX, resumenY, resumenW, resumenH);
+        doc.line(resumenX, resumenY + 6, resumenX + resumenW, resumenY + 6);
+        doc.line(resumenX, resumenY + 14, resumenX + resumenW, resumenY + 14);
+        doc.line(76, resumenY + 6, 76, resumenY + resumenH);
+        doc.line(127, resumenY + 6, 127, resumenY + resumenH);
+        doc.line(158, resumenY + 6, 158, resumenY + resumenH);
+        doc.line(158, resumenY + 19.5, resumenX + resumenW, resumenY + 19.5);
+        doc.line(158, resumenY + 25, resumenX + resumenW, resumenY + 25);
+        doc.line(158, resumenY + 30.5, resumenX + resumenW, resumenY + 30.5);
+
+        doc.setFillColor(245, 245, 245);
+        doc.rect(resumenX, resumenY, resumenW, 6, 'F');
+        doc.setFillColor(230, 230, 230);
+        doc.rect(resumenX, resumenY + 6, 66, 8, 'F');
+        doc.rect(76, resumenY + 6, 51, 8, 'F');
+        doc.rect(127, resumenY + 6, 31, 8, 'F');
+        doc.rect(158, resumenY + 6, 48, 8, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...darkTextColor);
+        doc.text((contrato.nombre || 'RESIDENTE').toUpperCase(), resumenX + (resumenW / 2), resumenY + 4.1, { align: 'center' });
+
+        doc.setFontSize(7);
+        doc.text('DIRECCION', 43, resumenY + 11, { align: 'center' });
+        doc.text('Monto de cuota', 101.5, resumenY + 11, { align: 'center' });
+        doc.text('No. DE', 142.5, resumenY + 9.4, { align: 'center' });
+        doc.text('CUOTA', 142.5, resumenY + 12.4, { align: 'center' });
+        doc.text('CUOTA', 182, resumenY + 11, { align: 'center' });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.6);
+        doc.text(`TELEFONO: ${contrato.telefono || 'N/A'}`, 12.5, resumenY + 18.2);
+        doc.text(direccionLineas.slice(0, 2), 12.5, resumenY + 23.2);
+
+        doc.text('Cada una', 80, resumenY + 18.2);
+        doc.text(formatoMoneda(montoCuota), 123.5, resumenY + 18.2, { align: 'right' });
+        doc.text('Una ultima', 80, resumenY + 25.4);
+        doc.text(formatoMoneda(ultimaCuota || montoCuota), 123.5, resumenY + 25.4, { align: 'right' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.text(String(cuotasPactadas || 0), 142.5, resumenY + 21.8, { align: 'center' });
+
+        doc.setFontSize(6.6);
+        doc.text('TOTAL:', 161, resumenY + 18.2);
+        doc.text(formatoMoneda(montoTotalContrato), 203, resumenY + 18.2, { align: 'right' });
+        doc.setTextColor(198, 22, 22);
+        doc.text('ENGANCHE:', 161, resumenY + 23.7);
+        doc.text(formatoMoneda(totalEnganche), 203, resumenY + 23.7, { align: 'right' });
+        doc.setTextColor(...darkTextColor);
+        doc.text('ABONADO:', 161, resumenY + 29.2);
+        doc.text(formatoMoneda(totalPagado), 203, resumenY + 29.2, { align: 'right' });
+        doc.text('SALDO:', 161, resumenY + 34.7);
+        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 203, resumenY + 34.7, { align: 'right' });
+      };
+
+      const cuerpoIntro = `Por medio del presente, se adjunta el detalle de pagos solicitado por ${contrato.nombre || 'el residente'}, el cual se especifica de manera clara la forma y fecha en que fueron aplicados cada uno de sus pagos.`;
+      const fechaLarga = new Date().toLocaleDateString('es-GT', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+
+      const filas = [];
+      for (let i = 1; i <= cuotasPactadas; i += 1) {
+        const detalle = detallesPorCuota.get(i);
+        const fechaProgramada = agregarMeses(contrato.fecha_firma, i);
+        const montoProgramado = (i === cuotasPactadas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
+        const marcasForma = obtenerMarcaFormaPago(detalle?.forma_pago);
+        const tienePago = Boolean(detalle?.fecha_pago);
+
+        filas.push([
+          formatoFecha(fechaProgramada),
+          marcasForma.d,
+          marcasForma.t,
+          marcasForma.e,
+          marcasForma.c,
+          (detalle?.no_referencia || '').toString(),
+          tienePago ? formatoFecha(detalle?.fecha_pago) : '',
+          tienePago ? formatoMoneda(Number(detalle?.monto_cuota || montoProgramado || 0)) : '',
+          String(i),
+          tienePago && detalle?.id_pago ? String(detalle.id_pago) : '',
+          detalle?.fecha_pago ? '' : 'Pendiente'
+        ]);
+      }
+
+      enganches.forEach((item) => {
+        const marcasForma = obtenerMarcaFormaPago(item?.forma_pago);
+        filas.push([
+          formatoFecha(item?.fecha_pago),
+          marcasForma.d,
+          marcasForma.t,
+          marcasForma.e,
+          marcasForma.c,
+          (item?.no_referencia || '').toString(),
+          formatoFecha(item?.fecha_pago),
+          formatoMoneda(item?.monto_total_detalle || 0),
+          '0',
+          item?.id_pago ? String(item.id_pago) : '',
+          'Enganche'
+        ]);
+      });
+
+      autoTable(doc, {
+        startY: 94,
+        margin: { top: 94, bottom: 18, left: 10, right: 10 },
+        head: [
+          [
+            { content: 'FECHA', rowSpan: 2 },
+            { content: 'Forma.P', colSpan: 4 },
+            { content: 'NO.', rowSpan: 2 },
+            { content: 'FECHA DE PAGO', rowSpan: 2 },
+            { content: 'MONTO DEL RECIBO', rowSpan: 2 },
+            { content: 'No.DE CUOTA', rowSpan: 2 },
+            { content: 'RECIBO No.', rowSpan: 2 },
+            { content: 'OBSERVACIONES', rowSpan: 2 }
+          ],
+          ['D', 'T', 'E', 'C']
+        ],
+        body: filas.length ? filas : [['', '', '', '', '', '', '', '', '', '', 'Sin pagos registrados']],
+        theme: 'grid',
+        styles: {
+          fontSize: 6.6,
+          lineColor: borderColor,
+          lineWidth: 0.1,
+          cellPadding: 1.3,
+          textColor: [20, 20, 20]
+        },
+        headStyles: {
+          fillColor: [236, 236, 236],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
+          halign: 'center',
+          valign: 'middle',
+          fontSize: 6.5
+        },
+        alternateRowStyles: {
+          fillColor: [255, 255, 255]
+        },
+        columnStyles: {
+          0: { cellWidth: 18 },
+          1: { cellWidth: 6, halign: 'center' },
+          2: { cellWidth: 6, halign: 'center' },
+          3: { cellWidth: 6, halign: 'center' },
+          4: { cellWidth: 6, halign: 'center' },
+          5: { cellWidth: 18, halign: 'center' },
+          6: { cellWidth: 20, halign: 'center' },
+          7: { cellWidth: 21, halign: 'right' },
+          8: { cellWidth: 13, halign: 'center' },
+          9: { cellWidth: 15, halign: 'center' },
+          10: { cellWidth: 27 }
+        },
+        didDrawPage: (data) => {
+          dibujarMembrete(data.pageNumber);
+
+          if (data.pageNumber === 1) {
+            doc.setTextColor(...goldColor);
+            doc.setFillColor(...goldColor);
+            doc.rect(0, 40, pageWidth, 4.5, 'F');
+            doc.setTextColor(45);
+            doc.setFont('times', 'normal');
+            doc.setFontSize(8.4);
+            doc.text(`Guatemala, ${fechaLarga}`, pageWidth - 14, 50, { align: 'right' });
+
+            const introLines = doc.splitTextToSize(cuerpoIntro, 188);
+            doc.setFontSize(7.5);
+            doc.text(introLines, 28, 60);
+            dibujarResumenContrato();
+          }
+        }
+      });
 
       const fileName = `EstadoCuenta_${estadoCuenta.contrato.codigo_contrato || 'residente'}.pdf`;
       doc.save(fileName);
     } catch (error) {
       console.error('Error al exportar PDF:', error);
-      alert('No se pudo generar el PDF del estado de cuenta.');
+      showFadeToast('No se pudo generar el PDF del estado de cuenta.', 'error');
     }
   };
 
@@ -180,7 +455,7 @@ const EstadoCuenta = () => {
 
         <div className="card-body">
           {/* BÚSQUEDA */}
-          <div className="row mb-4">
+            <div className="row mb-4 align-items-stretch">
             <div className="col-md-8">
               <input
                 type="text"
@@ -242,7 +517,7 @@ const EstadoCuenta = () => {
             <div className="mt-4">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h5 className="mb-0">📊 Estado de Cuenta Actual</h5>
-                <div className="d-flex gap-2">
+                <div className="estado-cuenta-actions">
                   <button
                     className="btn btn-sm btn-outline-danger"
                     onClick={exportarEstadoCuentaPDF}
@@ -260,7 +535,7 @@ const EstadoCuenta = () => {
               <div className="row">
                 {/* DATOS DEL RESIDENTE */}
                 <div className="col-md-6 mb-3">
-                  <div className="card border-primary">
+                  <div className="card border-primary estado-cuenta-summary-card">
                     <div className="card-header bg-primary text-white">
                       <h6 className="mb-0">👤 Datos del Residente</h6>
                     </div>
@@ -290,7 +565,7 @@ const EstadoCuenta = () => {
 
                 {/* RESUMEN FINANCIERO */}
                 <div className="col-md-6 mb-3">
-                  <div className="card border-success">
+                  <div className="card border-success estado-cuenta-summary-card">
                     <div className="card-header bg-success text-white">
                       <h6 className="mb-0">💰 Resumen Financiero</h6>
                     </div>
@@ -393,14 +668,14 @@ const EstadoCuenta = () => {
 
           {/* ESTADO SIN RESULTADOS */}
           {!loading && !estadoCuenta && listaResidentes.length === 0 && busqueda && (
-            <div className="alert alert-info">
-              Ingresa los datos de búsqueda y presiona "Buscar" para ver el estado de cuenta.
+            <div className={`alert alert-${tipoMensajeBusqueda === 'danger' ? 'danger' : tipoMensajeBusqueda === 'warning' ? 'warning' : 'info'}`}>
+              {mensajeBusqueda || 'Ingresa los datos de búsqueda y presiona "Buscar" para ver el estado de cuenta.'}
             </div>
           )}
 
           {/* MODAL PARA FILTRAR POR FECHAS */}
           {mostrarModalFechas && (
-            <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="modal d-block estado-cuenta-modal" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
               <div className="modal-dialog modal-dialog-centered">
                 <div className="modal-content">
                   <div className="modal-header bg-primary text-white">
