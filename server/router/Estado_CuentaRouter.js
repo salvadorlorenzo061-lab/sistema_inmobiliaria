@@ -123,6 +123,22 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                     return res.status(500).send("No se pudo obtener los meses pagados.");
                 }
 
+                const responderEstadoCuenta = (detalleCuotasResult = []) => {
+                    const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
+                    const saldoPendiente = parseFloat(contract.monto_total) - totalPagado;
+
+                    return res.status(200).json({
+                        contrato: contract,
+                        pagos: pagosResult,
+                        cuotasDetalle: detalleCuotasResult,
+                        mesesPagados: mesesResult.map(m => m.mes_pagado),
+                        totalPagado: totalPagado,
+                        saldoPendiente: Math.max(0, saldoPendiente),
+                        fecha_inicio: contract.fecha_firma,
+                        cuotas_pactadas: contract.cuotas_pactadas
+                    });
+                };
+
                 const queryDetalleCuotas = `
                     SELECT
                         COALESCE(pd.numero_cuota_afectada, 0) AS numero_cuota,
@@ -144,23 +160,10 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 db.query(queryDetalleCuotas, queryPagosParams, (detalleErr, detalleCuotasResult) => {
                     if (detalleErr) {
                         console.error("Error al obtener detalle de cuotas:", detalleErr.message);
-                        return res.status(500).send("No se pudo obtener el detalle de cuotas.");
+                        return responderEstadoCuenta([]);
                     }
 
-                // Calcular saldo
-                const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
-                const saldoPendiente = parseFloat(contract.monto_total) - totalPagado;
-
-                res.status(200).json({
-                    contrato: contract,
-                    pagos: pagosResult,
-                    cuotasDetalle: detalleCuotasResult,
-                    mesesPagados: mesesResult.map(m => m.mes_pagado),
-                    totalPagado: totalPagado,
-                    saldoPendiente: Math.max(0, saldoPendiente),
-                    fecha_inicio: contract.fecha_firma,
-                    cuotas_pactadas: contract.cuotas_pactadas
-                });
+                    return responderEstadoCuenta(detalleCuotasResult);
                 });
             });
         });
