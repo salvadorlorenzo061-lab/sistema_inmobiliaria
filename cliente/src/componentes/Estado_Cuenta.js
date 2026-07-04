@@ -352,8 +352,11 @@ const EstadoCuenta = () => {
         doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 203, resumenY + 34.7, { align: 'right' });
       };
 
-      const cuerpoIntro = `Por medio del presente, se adjunta el detalle de pagos solicitado por ${contrato.nombre || 'el residente'}, el cual se especifica de manera clara la forma y fecha en que fueron aplicados cada uno de sus pagos.`;
-      const fechaLarga = new Date().toLocaleDateString('es-GT', {
+      const nombreResidenteTexto = String(contrato.nombre || '').trim();
+      const solicitanteTexto = nombreResidenteTexto ? `el Sr. ${nombreResidenteTexto}` : 'el residente';
+      const cuerpoIntro = `Por medio del presente, se adjunta el detalle de pagos solicitado por ${solicitanteTexto}, el cual se especifica de manera clara la forma y fecha en que fueron aplicados cada uno de sus pagos.`;
+      const fechaReporteBase = estadoCuenta?.fecha_fin || new Date();
+      const fechaLarga = new Date(fechaReporteBase).toLocaleDateString('es-GT', {
         day: 'numeric',
         month: 'long',
         year: 'numeric'
