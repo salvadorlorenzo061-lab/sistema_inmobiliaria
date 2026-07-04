@@ -6,6 +6,8 @@ import Login from './componentes/Login';
 
 const INACTIVITY_LIMIT_MS = 3 * 60 * 1000;
 const INACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+const LAST_ACTIVITY_KEY = 'inmobiliaria:lastActivityAt';
+const FORCE_LOGOUT_KEY = 'inmobiliaria:forceLogoutAt';
 
 const normalizeText = (value = '') => value
   .toString()
@@ -96,11 +98,20 @@ function App() {
     setIsMenuOpen(!isMenuOpen);
   };
 
-  const cerrarSesionTemporal = () => {
+  const cerrarSesionTemporal = ({ showAlert = false, broadcast = true } = {}) => {
     localStorage.removeItem('usuario');
     setUsuarioActivo({});
     setIsAuthenticated(false);
+
+    if (broadcast) {
+      localStorage.setItem(FORCE_LOGOUT_KEY, String(Date.now()));
+    }
+
     window.dispatchEvent(new Event('usuario-updated'));
+
+    if (showAlert) {
+      window.alert('Sesion cerrada por inactividad (3 minutos).');
+    }
   };
 
   useEffect(() => {
@@ -113,31 +124,55 @@ function App() {
     }
 
     const finalizarSesionPorInactividad = () => {
-      cerrarSesionTemporal();
-      window.alert('Sesion cerrada por inactividad (3 minutos).');
+      cerrarSesionTemporal({ showAlert: true, broadcast: true });
     };
 
-    const reiniciarTemporizador = () => {
+    const reiniciarTemporizador = (activityAt = Date.now()) => {
       if (inactivityTimeoutRef.current) {
         clearTimeout(inactivityTimeoutRef.current);
       }
-      inactivityTimeoutRef.current = setTimeout(finalizarSesionPorInactividad, INACTIVITY_LIMIT_MS);
+
+      const elapsed = Date.now() - activityAt;
+      const remaining = Math.max(1000, INACTIVITY_LIMIT_MS - elapsed);
+      inactivityTimeoutRef.current = setTimeout(finalizarSesionPorInactividad, remaining);
     };
 
     const registrarActividad = () => {
-      reiniciarTemporizador();
+      const now = Date.now();
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+      reiniciarTemporizador(now);
+    };
+
+    const onStorageChange = (event) => {
+      if (event.key === LAST_ACTIVITY_KEY && event.newValue) {
+        const timestamp = Number(event.newValue);
+        if (Number.isFinite(timestamp)) {
+          reiniciarTemporizador(timestamp);
+        }
+      }
+
+      if (event.key === FORCE_LOGOUT_KEY && event.newValue) {
+        cerrarSesionTemporal({ showAlert: false, broadcast: false });
+      }
     };
 
     INACTIVITY_EVENTS.forEach((eventName) => {
       window.addEventListener(eventName, registrarActividad, { passive: true });
     });
+    window.addEventListener('storage', onStorageChange);
 
-    reiniciarTemporizador();
+    const storedActivityAt = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
+    const initialActivityAt = Number.isFinite(storedActivityAt) ? storedActivityAt : Date.now();
+    if (!localStorage.getItem(LAST_ACTIVITY_KEY)) {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(initialActivityAt));
+    }
+    reiniciarTemporizador(initialActivityAt);
 
     return () => {
       INACTIVITY_EVENTS.forEach((eventName) => {
         window.removeEventListener(eventName, registrarActividad);
       });
+      window.removeEventListener('storage', onStorageChange);
 
       if (inactivityTimeoutRef.current) {
         clearTimeout(inactivityTimeoutRef.current);
