@@ -292,12 +292,27 @@ ensureContratosServiciosTable();
 router.get("/", (req, res) => {
     const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
-               c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_fin, c.monto_total, c.estado, c.formato_contrato,
+               c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
+                   c.monto_total, c.cuotas_pactadas, c.monto_cuota, c.dia_pago_limite,
+                   c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
                    r.nombre AS nombre_residente,
                    tc.nombre_tipo_contrato,
                    e.nombre_empresa AS nombre_empresa_marca,
-                   p.nombre AS nombre_proyecto
+                   p.nombre AS nombre_proyecto,
+                   (
+                       SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
+                       FROM contratos_servicios cs
+                       WHERE cs.id_contrato = c.id_contrato
+                         AND cs.estado = 'activo'
+                   ) AS servicios_contrato_ids,
+                   (
+                       SELECT GROUP_CONCAT(s.nombre_servicio ORDER BY s.nombre_servicio SEPARATOR '||')
+                       FROM contratos_servicios cs
+                       INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                       WHERE cs.id_contrato = c.id_contrato
+                         AND cs.estado = 'activo'
+                   ) AS servicios_contrato_nombres
             FROM contratos_residentes c
             INNER JOIN residentes r ON c.id_residente = r.id_residente
             INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato

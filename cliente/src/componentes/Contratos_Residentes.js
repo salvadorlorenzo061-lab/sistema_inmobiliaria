@@ -528,6 +528,8 @@ function Contratos_Residentes() {
   };
 
   const abrirEditarModal = (val) => {
+    const toDateInput = (dateValue) => (dateValue ? String(dateValue).split('T')[0] : '');
+
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
     setId_residente(val.id_residente);
@@ -545,13 +547,13 @@ function Contratos_Residentes() {
     setId_tipo_contrato(val.id_tipo_contrato);
     setFormato_contrato(resolveContractTemplateId(val.formato_contrato || val.nombre_tipo_contrato || ''));
     setModo_marca_empresa('solo_logo');
-    setMonto_total(val.monto_total);
-    setCuotas_pactadas(val.cuotas_pactadas);
-    setMonto_cuota(val.monto_cuota);
-    setDia_pago_limite(val.dia_pago_limite);
-    setFecha_firma(val.fecha_firma.split('T')[0]);
-    setFecha_compra(val.fecha_compra ? val.fecha_compra.split('T')[0] : '');
-    setFecha_fin(val.fecha_fin ? val.fecha_fin.split('T')[0] : '');
+    setMonto_total(val.monto_total ?? '');
+    setCuotas_pactadas(val.cuotas_pactadas ?? '');
+    setMonto_cuota(val.monto_cuota ?? '');
+    setDia_pago_limite(val.dia_pago_limite ?? '');
+    setFecha_firma(toDateInput(val.fecha_firma));
+    setFecha_compra(toDateInput(val.fecha_compra));
+    setFecha_fin(toDateInput(val.fecha_fin));
     setEstado(val.estado);
     setDocumento_contrato(val.documento_contrato || '');
     const serviciosIds = String(val.servicios_contrato_ids || '')
