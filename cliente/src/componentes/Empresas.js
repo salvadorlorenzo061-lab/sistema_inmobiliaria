@@ -70,7 +70,7 @@ function Empresas() {
   //  CONTROLADORES CRUD
   // =========================================================================
   const getEmpresas = useCallback(() => {
-    Axios.get(`${API_URL}?soloModulo=1`)
+    Axios.get(API_URL)
     .then((response) => { setEmpresas(response.data || []); })
     .catch((error) => { console.error("Error al obtener empresas", error); });
   }, [API_URL]);
