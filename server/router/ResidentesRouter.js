@@ -207,7 +207,7 @@ router.post("/crear", (req, res) => {
                 }
                 res.status(200).json({
                     message: "Residente registrado con éxito!!!",
-                    numero_identificacion: numero_identificacion,
+                    numero_identificacion: numeroIdentificacion,
                     id_residente: insertResult.insertId
                 });
             });
@@ -237,10 +237,10 @@ router.put("/actualizar", (req, res) => {
         formato_contrato_preferido
     } = req.body;
     const nitNormalizado = nit && String(nit).trim() ? String(nit).trim() : 'C/F';
-    const identificador = numero_identificacion || null;
+    const identificador = String(numero_identificacion || '').trim() || null;
     
     // ✅ INYECTADA FECHA NACIMIENTO EN EL SET
-    const queryUpdate = 'UPDATE residentes SET id_empresa=?, nombre=?, dpi=?, nit=?, telefono=?, correo=?, fecha_nacimiento=?, estado_civil=?, profesion=?, nacionalidad=?, direccion_notificacion=?, direccion_residencia=?, foto=?, estado=?, numero_identificacion=?, formato_contrato_preferido=? WHERE id_residente=?';
+    const queryUpdate = 'UPDATE residentes SET id_empresa=?, nombre=?, dpi=?, nit=?, telefono=?, correo=?, fecha_nacimiento=?, estado_civil=?, profesion=?, nacionalidad=?, direccion_notificacion=?, direccion_residencia=?, foto=?, estado=?, numero_identificacion=COALESCE(?, numero_identificacion), formato_contrato_preferido=? WHERE id_residente=?';
     
     db.query(queryUpdate, [
         id_empresa,
@@ -298,3 +298,4 @@ router.post("/asignar-identificacion/:id", (req, res) => {
 });
 
 module.exports = router;
+
