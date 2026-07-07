@@ -60,8 +60,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
     const correlativoLimpio = valor.replace('#', '');
 
     const whereSql = esNumerico
-        ? '(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, "")) = UPPER(?))'
-        : 'UPPER(COALESCE(p.no_referencia, "")) = UPPER(?)';
+        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?))"
+        : "UPPER(COALESCE(p.no_referencia, '')) = UPPER(?)";
 
     const params = esNumerico
         ? [Number(correlativoLimpio), correlativoLimpio]
