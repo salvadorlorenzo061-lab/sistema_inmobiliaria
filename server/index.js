@@ -3,6 +3,14 @@ const cors = require('cors');
 const app = express();
 const { auditRequestMiddleware } = require('./auditingMiddleware');
 
+process.on('uncaughtException', (error) => {
+    console.error('Excepcion no controlada en servidor:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Promesa rechazada sin manejo en servidor:', reason);
+});
+
 // 1. Mover CORS arriba para que proteja/permita todas las rutas y formatos de datos
 app.use(cors());
 
