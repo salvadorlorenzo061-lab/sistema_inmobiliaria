@@ -1493,23 +1493,11 @@ router.post("/procesar-pago", (req, res) => {
                 const serviciosExtraordinarios = serviciosSolicitados.filter((s) => s.es_extraordinario && Number.isInteger(s.id_pago_extra) && s.id_pago_extra > 0);
                 const idsPagoExtra = [...new Set(serviciosExtraordinarios.map((s) => Number(s.id_pago_extra)).filter((id) => Number.isInteger(id) && id > 0))];
 
-                if (!idsPagoExtra.length) {
-                    return procesarCobroPrincipal();
-                }
+                // Primero validar que los servicios solicitados (si los hay) estén asignados al contrato
+                const idsServicios = [...new Set((serviciosSolicitados || []).map((s) => Number(s.id_servicio)).filter((id) => Number.isInteger(id) && id > 0))];
 
-                const placeholdersExtra = idsPagoExtra.map(() => '?').join(',');
-                const sqlExtra = `
-                    SELECT id_pago_extra, estado
-                    FROM pagos_extraordinarios
-                    WHERE id_contrato = ?
-                      AND id_pago_extra IN (${placeholdersExtra})
-                    FOR UPDATE
-                `;
-
-                return db.query(sqlExtra, [id_contrato, ...idsPagoExtra], (extraErr, extraRows) => {
-                    if (extraErr) {
-                        return db.rollback(() => res.status(500).send('Error validando cargos extraordinarios pendientes: ' + extraErr.message));
-                    }
+                const validarExtrasYContinuar = (extraRows) => {
+                    if (extraRows == null) return procesarCobroPrincipal();
 
                     const idsEncontrados = new Set((extraRows || []).map((row) => Number(row.id_pago_extra)));
                     const faltantes = idsPagoExtra.filter((id) => !idsEncontrados.has(id));
@@ -1523,6 +1511,68 @@ router.post("/procesar-pago", (req, res) => {
                     }
 
                     return procesarCobroPrincipal();
+                };
+
+                const consultarExtras = () => {
+                    if (!idsPagoExtra.length) return validarExtrasYContinuar(null);
+
+                    const placeholdersExtra = idsPagoExtra.map(() => '?').join(',');
+                    const sqlExtra = `
+                        SELECT id_pago_extra, estado
+                        FROM pagos_extraordinarios
+                        WHERE id_contrato = ?
+                          AND id_pago_extra IN (${placeholdersExtra})
+                        FOR UPDATE
+                    `;
+
+                    return db.query(sqlExtra, [id_contrato, ...idsPagoExtra], (extraErr, extraRows) => {
+                        if (extraErr) {
+                            return db.rollback(() => res.status(500).send('Error validando cargos extraordinarios pendientes: ' + extraErr.message));
+                        }
+                        return validarExtrasYContinuar(extraRows);
+                    });
+                };
+
+                if (!idsServicios.length) {
+                    return consultarExtras();
+                }
+
+                const placeholdersIds = idsServicios.map(() => '?').join(',');
+                const sqlServiciosAsignados = `
+                    SELECT DISTINCT base.id_servicio
+                    FROM (
+                        SELECT cs.id_servicio
+                        FROM contratos_servicios cs
+                        INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                        WHERE cs.id_contrato = ?
+                          AND cs.estado = 'activo'
+                          AND s.estado = 'activo'
+
+                        UNION
+
+                        SELECT ps.id_servicio
+                        FROM contratos_residentes c
+                        INNER JOIN proyecto_servicios ps ON ps.id_proyecto = c.id_proyecto
+                        INNER JOIN servicios s ON s.id_servicio = ps.id_servicio
+                        WHERE c.id_contrato = ?
+                          AND ps.estado = 'activo'
+                          AND s.estado = 'activo'
+                    ) AS base
+                    WHERE base.id_servicio IN (${placeholdersIds})
+                `;
+
+                db.query(sqlServiciosAsignados, [id_contrato, id_contrato, ...idsServicios], (servErr, servRows) => {
+                    if (servErr) {
+                        return db.rollback(() => res.status(500).send('Error validando servicios del contrato: ' + servErr.message));
+                    }
+
+                    const idsEncontradosServicios = new Set((servRows || []).map((r) => Number(r.id_servicio)));
+                    const faltantesServicios = idsServicios.filter((id) => !idsEncontradosServicios.has(id));
+                    if (faltantesServicios.length) {
+                        return db.rollback(() => res.status(400).send('Algunos servicios incluidos en el cobro no están asignados al contrato o proyecto.'));
+                    }
+
+                    return consultarExtras();
                 });
             };
 
