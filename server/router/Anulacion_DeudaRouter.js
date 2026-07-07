@@ -198,11 +198,11 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
     const correlativoNumero = Number(correlativoLimpio || 0);
 
     const whereSql = esNumerico
-        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?) OR CAST(SUBSTRING_INDEX(COALESCE(p.no_referencia, ''), '-', -1) AS UNSIGNED) = ?)"
+        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?))"
         : "UPPER(COALESCE(p.no_referencia, '')) = UPPER(?)";
 
     const params = esNumerico
-        ? [Number(correlativoLimpio), correlativoLimpio, correlativoNumero]
+        ? [Number(correlativoLimpio), correlativoLimpio]
         : [correlativoLimpio];
 
     const sql = `
@@ -248,13 +248,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
     db.query(sql, params, (err, rows) => {
         if (err) return callback(err);
         if (!rows || !rows.length) {
-            const whereAnulacionSql = esNumerico
-                ? "(UPPER(COALESCE(ad.correlativo, '')) = UPPER(?) OR CAST(SUBSTRING_INDEX(COALESCE(ad.correlativo, ''), '-', -1) AS UNSIGNED) = ?)"
-                : "UPPER(COALESCE(ad.correlativo, '')) = UPPER(?)";
-
-            const paramsAnulacion = esNumerico
-                ? [correlativoLimpio, correlativoNumero]
-                : [correlativoLimpio];
+            const whereAnulacionSql = "UPPER(COALESCE(ad.correlativo, '')) = UPPER(?)";
+            const paramsAnulacion = [correlativoLimpio];
 
             const sqlAnulacion = `
                 SELECT
