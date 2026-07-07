@@ -6,14 +6,15 @@ const selectedDatabase = databaseName && databaseName.toLowerCase() !== 'default
   : 'inmobiliaria';
 
 const connectionConfig = {
-  host: process.env.DB_HOST || 'mysql-27a2d8f6-salvadorlorenzo061-2f31.d.aivencloud.com',
-  user: process.env.DB_USER || 'avnadmin',
-  password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
   database: selectedDatabase,
-  port: process.env.DB_PORT || 28828,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 };
 
 let internalDb = null;
@@ -23,15 +24,15 @@ const connectInternal = () => {
 
   internalDb.connect((err) => {
     if (err) {
-      console.error('Error al conectar a MySQL. Reintentando en 2s:', err.message);
+      console.error('Error al conectar a MySQL. Reintentando en 2s:', err && err.message);
       setTimeout(connectInternal, 2000);
       return;
     }
-    console.log(`Conectado exitosamente a la base de datos MySQL en Aiven: ${selectedDatabase}`);
+    console.log(`Conectado exitosamente a la base de datos MySQL: ${selectedDatabase}`);
   });
 
   internalDb.on('error', (err) => {
-    console.error('Error de conexion MySQL:', err.message);
+    console.error('Error de conexion MySQL:', err && err.message);
     if (err && err.fatal) {
       try {
         internalDb.destroy();
