@@ -8,24 +8,6 @@ router.use(cors());
 router.use(express.json({ limit: '10mb' }));
 router.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-const ensureResidentesTableExists = (callback) => {
-    db.query(
-        `
-            SELECT COUNT(*) AS total
-            FROM information_schema.TABLES
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = 'residentes'
-        `,
-        (tableErr, tableRows) => {
-            if (tableErr) {
-                console.error('Error verificando existencia de tabla residentes:', tableErr);
-                return callback(false);
-            }
-            return callback((tableRows?.[0]?.total || 0) > 0);
-        }
-    );
-};
-
 const ensureColumnInResidentes = (columnName, columnDefinition) => {
     const checkColumnQuery = `
         SELECT COUNT(*) AS total
@@ -46,20 +28,13 @@ const ensureColumnInResidentes = (columnName, columnDefinition) => {
             return;
         }
 
-        ensureResidentesTableExists((tableExists) => {
-            if (!tableExists) {
-                console.warn(`La tabla residentes no existe en esta base de datos. Se omite migracion de ${columnName}.`);
+        const alterQuery = `ALTER TABLE residentes ADD COLUMN ${columnName} ${columnDefinition}`;
+        db.query(alterQuery, (alterErr) => {
+            if (alterErr) {
+                console.error(`Error agregando columna ${columnName}:`, alterErr);
                 return;
             }
-
-            const alterQuery = `ALTER TABLE residentes ADD COLUMN ${columnName} ${columnDefinition}`;
-            db.query(alterQuery, (alterErr) => {
-                if (alterErr) {
-                    console.error(`Error agregando columna ${columnName}:`, alterErr);
-                    return;
-                }
-                console.log(`Columna ${columnName} creada en residentes.`);
-            });
+            console.log(`Columna ${columnName} creada en residentes.`);
         });
     });
 };
@@ -84,24 +59,17 @@ const ensureFormatoPreferidoColumn = () => {
             return;
         }
 
-        ensureResidentesTableExists((tableExists) => {
-            if (!tableExists) {
-                console.warn('La tabla residentes no existe en esta base de datos. Se omite migracion de formato_contrato_preferido.');
+        const alterQuery = `
+            ALTER TABLE residentes
+            ADD COLUMN formato_contrato_preferido VARCHAR(20) NULL DEFAULT 'FORMATO_01'
+        `;
+
+        db.query(alterQuery, (alterErr) => {
+            if (alterErr) {
+                console.error('Error agregando columna formato_contrato_preferido:', alterErr);
                 return;
             }
-
-            const alterQuery = `
-                ALTER TABLE residentes
-                ADD COLUMN formato_contrato_preferido VARCHAR(20) NULL DEFAULT 'FORMATO_01'
-            `;
-
-            db.query(alterQuery, (alterErr) => {
-                if (alterErr) {
-                    console.error('Error agregando columna formato_contrato_preferido:', alterErr);
-                    return;
-                }
-                console.log('Columna formato_contrato_preferido creada en residentes.');
-            });
+            console.log('Columna formato_contrato_preferido creada en residentes.');
         });
     });
 };
@@ -237,35 +205,68 @@ router.put("/actualizar", (req, res) => {
         formato_contrato_preferido
     } = req.body;
     const nitNormalizado = nit && String(nit).trim() ? String(nit).trim() : 'C/F';
-    const identificador = String(numero_identificacion || '').trim() || null;
-    
-    // ✅ INYECTADA FECHA NACIMIENTO EN EL SET
-    const queryUpdate = 'UPDATE residentes SET id_empresa=?, nombre=?, dpi=?, nit=?, telefono=?, correo=?, fecha_nacimiento=?, estado_civil=?, profesion=?, nacionalidad=?, direccion_notificacion=?, direccion_residencia=?, foto=?, estado=?, numero_identificacion=COALESCE(?, numero_identificacion), formato_contrato_preferido=? WHERE id_residente=?';
-    
-    db.query(queryUpdate, [
-        id_empresa,
-        nombre,
-        dpi,
-        nitNormalizado,
-        telefono,
-        correo,
-        fecha_nacimiento || null, // ✅ ENVIADO
-        estado_civil || 'soltero',
-        profesion || '',
-        nacionalidad || 'guatemalteco',
-        direccion_notificacion,
-        direccion_residencia,
-        foto,
-        estado,
-        identificador,
-        formato_contrato_preferido || 'FORMATO_01',
-        id_residente
-    ], (err, result) => {
-        if (err) {
-            console.error("Error al actualizar residente:", err);
+
+    const queryCurrentId = 'SELECT numero_identificacion FROM residentes WHERE id_residente = ? LIMIT 1';
+    db.query(queryCurrentId, [id_residente], (fetchErr, rows) => {
+        if (fetchErr) {
+            console.error("Error al consultar identificación actual:", fetchErr);
             return res.status(500).send("Error al actualizar el residente");
         }
-        res.status(200).send("Residente actualizado correctamente");
+
+        if (!rows || rows.length === 0) {
+            return res.status(404).send("Residente no encontrado");
+        }
+
+        const incomingId = String(numero_identificacion || '').trim();
+        const currentId = String(rows[0].numero_identificacion || '').trim();
+
+        const continuarActualizacion = (identificadorFinal) => {
+            // ✅ INYECTADA FECHA NACIMIENTO EN EL SET
+            const queryUpdate = 'UPDATE residentes SET id_empresa=?, nombre=?, dpi=?, nit=?, telefono=?, correo=?, fecha_nacimiento=?, estado_civil=?, profesion=?, nacionalidad=?, direccion_notificacion=?, direccion_residencia=?, foto=?, estado=?, numero_identificacion=?, formato_contrato_preferido=? WHERE id_residente=?';
+
+            db.query(queryUpdate, [
+                id_empresa,
+                nombre,
+                dpi,
+                nitNormalizado,
+                telefono,
+                correo,
+                fecha_nacimiento || null,
+                estado_civil || 'soltero',
+                profesion || '',
+                nacionalidad || 'guatemalteco',
+                direccion_notificacion,
+                direccion_residencia,
+                foto,
+                estado,
+                identificadorFinal,
+                formato_contrato_preferido || 'FORMATO_01',
+                id_residente
+            ], (err) => {
+                if (err) {
+                    console.error("Error al actualizar residente:", err);
+                    return res.status(500).send("Error al actualizar el residente");
+                }
+                return res.status(200).send("Residente actualizado correctamente");
+            });
+        };
+
+        if (incomingId) {
+            return continuarActualizacion(incomingId);
+        }
+
+        if (currentId) {
+            return continuarActualizacion(currentId);
+        }
+
+        // Si no existe identificación, se genera automáticamente para evitar quedar en "Sin asignar".
+        return generarNumeroIdentificacionUnico((numeroErr, numeroIdentificacion) => {
+            if (numeroErr) {
+                console.error("Error al generar número de identificación en actualización:", numeroErr);
+                return res.status(500).send("No se pudo generar el número de identificación");
+            }
+            return continuarActualizacion(numeroIdentificacion);
+        });
     });
 });
 
@@ -283,19 +284,67 @@ router.delete("/delete/:id_residente", (req, res) => {
 
 // === ASIGNAR NÚMERO DE IDENTIFICACIÓN A RESIDENTE EXISTENTE ===
 router.post("/asignar-identificacion/:id", (req, res) => {
-    const { id } = req.params;
-    generarNumeroIdentificacionUnico((err, numeroIdentificacion) => {
-        if (err) return res.status(500).send({ message: 'No se pudo generar el número de identificación' });
-        db.query('UPDATE residentes SET numero_identificacion = ? WHERE id_residente = ? AND (numero_identificacion IS NULL OR numero_identificacion = "")',
-            [numeroIdentificacion, id],
-            (updateErr, result) => {
-                if (updateErr) return res.status(500).send({ message: 'Error al guardar el número de identificación' });
-                if (result.affectedRows === 0) return res.status(400).send({ message: 'El residente ya tiene un número de identificación asignado' });
-                res.status(200).json({ message: 'Número asignado correctamente', numero_identificacion: numeroIdentificacion });
-            }
-        );
+    const idResidente = Number(req.params?.id || 0);
+    if (!Number.isInteger(idResidente) || idResidente <= 0) {
+        return res.status(400).send({ message: 'Debe enviar un id_residente válido.' });
+    }
+
+    const queryResidente = 'SELECT numero_identificacion FROM residentes WHERE id_residente = ? LIMIT 1';
+    db.query(queryResidente, [idResidente], (fetchErr, rows) => {
+        if (fetchErr) {
+            console.error('Error al consultar residente para asignar identificación:', fetchErr);
+            return res.status(500).send({ message: 'No se pudo consultar el residente.' });
+        }
+
+        if (!rows || rows.length === 0) {
+            return res.status(404).send({ message: 'Residente no encontrado.' });
+        }
+
+        const actual = String(rows[0].numero_identificacion || '').trim();
+        const placeholdersSinId = new Set(['', 'sin asignar', 'n/a', 'na', 'null', 'undefined']);
+        if (!placeholdersSinId.has(actual.toLowerCase())) {
+            return res.status(400).send({ message: 'El residente ya tiene un número de identificación asignado.' });
+        }
+
+        const intentarAsignacion = (intento = 1) => {
+            generarNumeroIdentificacionUnico((numeroErr, numeroIdentificacion) => {
+                if (numeroErr) {
+                    console.error('Error al generar número de identificación:', numeroErr);
+                    return res.status(500).send({ message: 'No se pudo generar el número de identificación' });
+                }
+
+                db.query(
+                    'UPDATE residentes SET numero_identificacion = ? WHERE id_residente = ?',
+                    [numeroIdentificacion, idResidente],
+                    (updateErr, result) => {
+                        if (updateErr) {
+                            // Si hubo colisión por índice único, reintenta con otro ID.
+                            if (updateErr.code === 'ER_DUP_ENTRY' && intento < 5) {
+                                return intentarAsignacion(intento + 1);
+                            }
+
+                            console.error('Error al guardar número de identificación:', updateErr);
+                            return res.status(500).send({
+                                message: 'Error al guardar el número de identificación',
+                                detail: updateErr.message
+                            });
+                        }
+
+                        if (!result || result.affectedRows === 0) {
+                            return res.status(404).send({ message: 'No se pudo actualizar el residente.' });
+                        }
+
+                        return res.status(200).json({
+                            message: 'Número asignado correctamente',
+                            numero_identificacion: numeroIdentificacion
+                        });
+                    }
+                );
+            });
+        };
+
+        return intentarAsignacion();
     });
 });
 
 module.exports = router;
-
