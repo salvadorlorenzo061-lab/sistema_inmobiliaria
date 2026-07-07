@@ -112,7 +112,6 @@ const esRolJuridico = (usuario = {}) => {
     const rol = String(usuario?.nombre_rol || '').toLowerCase();
     return rol.includes('jurid') || rol.includes('legal');
 };
-
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);

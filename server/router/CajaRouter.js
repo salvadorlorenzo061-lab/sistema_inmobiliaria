@@ -586,8 +586,7 @@ router.get("/residentes-pendientes", (req, res) => {
         AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
         ${filtroPermisos}
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
-        LIMIT 300
-    `;
+        `;
 
         const queryParams = filtrarPorPermiso ? [idUsuario, idUsuario] : [];
 
