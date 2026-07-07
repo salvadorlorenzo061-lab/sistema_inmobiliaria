@@ -45,6 +45,12 @@ const normalizeImageDataUrl = (value = '') => {
     return `data:${mime};base64,${cleaned}`;
 };
 
+const normalizeSearchValue = (value = '') => String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
@@ -266,7 +272,9 @@ const Caja = () => {
         try {
             setDatosDeuda(null); // Resetea selecciones anteriores
             setListaResidentesPendientes([]); // Limpia la lista inicial
-            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente?criterio=${busqueda}`);
+            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
+                params: { criterio: busqueda.trim() }
+            });
             
             setListaResidentes(res.data);
             
@@ -508,7 +516,13 @@ const Caja = () => {
                 mostrarToast("El cobro no se completó correctamente.", "error");
             }
         } catch (error) {
-            mostrarToast("Error al procesar el cobro: " + (error?.response?.data || error?.message || "Error desconocido"), "error");
+            const status = Number(error?.response?.status || 0);
+            const mensajeBackend = error?.response?.data;
+            const esFallaComunicacion = !error?.response || status === 502 || status === 503 || status === 504;
+            const mensaje = esFallaComunicacion
+                ? 'No hay comunicacion con el servidor de Caja. Verifica que el backend este en linea e intenta de nuevo en unos segundos.'
+                : `Error al procesar el cobro: ${mensajeBackend || error?.message || 'Error desconocido'}`;
+            mostrarToast(mensaje, "error");
         }
     };
 
@@ -688,10 +702,13 @@ const Caja = () => {
 
     };
 
-    const listaFiltrada = listaResidentesPendientes.filter(r => 
-      r.nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
-      r.dpi?.toLowerCase().includes(busqueda.toLowerCase())
-    );
+        const criterioBusqueda = normalizeSearchValue(busqueda);
+        const listaFiltrada = listaResidentesPendientes.filter((r) => {
+            if (!criterioBusqueda) return true;
+
+            return [r.nombre, r.dpi, r.numero_identificacion, r.codigo_contrato]
+                .some((valor) => normalizeSearchValue(valor).includes(criterioBusqueda));
+        });
 
     const handleBusquedaChange = (e) => {
       setBusqueda(e.target.value);

@@ -82,7 +82,6 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
           AND correlativo_actual <= correlativo_fin
         ORDER BY fecha_asignacion ASC, id_asignacion ASC
         LIMIT 1
-        FOR UPDATE
     `;
 
     db.query(query, [idUsuario, idEmpresa], (err, rows) => {
@@ -228,7 +227,6 @@ router.get("/residentes-pendientes", (req, res) => {
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
         WHERE c.estado = 'activo'
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
-        LIMIT 100
     `;
 
     db.query(query, (err, result) => {
@@ -261,13 +259,15 @@ router.get("/buscar-residente", (req, res) => {
         WHERE c.estado = 'activo' AND (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
+            OR r.numero_identificacion LIKE ?
             OR c.codigo_contrato LIKE ?
         )
+        ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
         LIMIT 50
     `;
 
     const searchTerm = `%${criterio}%`;
-    const queryParams = [searchTerm, searchTerm, searchTerm];
+    const queryParams = [searchTerm, searchTerm, searchTerm, searchTerm];
 
     db.query(query, queryParams, (err, result) => {
         if (err) {
@@ -642,7 +642,7 @@ router.post("/procesar-pago", (req, res) => {
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
-            db.query('SELECT monto_total, fecha_compra, fecha_firma FROM contratos_residentes WHERE id_contrato = ? FOR UPDATE', [id_contrato], (saldoErr, saldoRows) => {
+            db.query('SELECT monto_total, fecha_compra, fecha_firma FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
             if (saldoErr) {
                 return db.rollback(() => res.status(500).send('Error al validar saldo pendiente: ' + saldoErr.message));
             }
@@ -1091,7 +1091,6 @@ router.post("/procesar-pago", (req, res) => {
                           AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
                         ORDER BY fecha_vencimiento ASC, id_resolucion ASC
                         LIMIT 1
-                        FOR UPDATE
                     `;
 
                             db.query(sqlResolucion, [idEmpresaFacturacion], (resErr, resRows) => {
