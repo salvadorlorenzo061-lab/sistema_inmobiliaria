@@ -761,16 +761,29 @@ router.post("/procesar-pago", (req, res) => {
                     : null;
 
                 const sqlServiciosAsignados = `
-                    SELECT cs.id_servicio
-                    FROM contratos_servicios cs
-                    INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
-                    WHERE cs.id_contrato = ?
-                      AND cs.estado = 'activo'
-                      AND s.estado = 'activo'
-                      AND cs.id_servicio IN (${placeholdersIds})
+                                        SELECT DISTINCT base.id_servicio
+                                        FROM (
+                                                SELECT cs.id_servicio
+                                                FROM contratos_servicios cs
+                                                INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                                                WHERE cs.id_contrato = ?
+                                                    AND cs.estado = 'activo'
+                                                    AND s.estado = 'activo'
+
+                                                UNION
+
+                                                SELECT ps.id_servicio
+                                                FROM contratos_residentes c
+                                                INNER JOIN proyecto_servicios ps ON ps.id_proyecto = c.id_proyecto
+                                                INNER JOIN servicios s ON s.id_servicio = ps.id_servicio
+                                                WHERE c.id_contrato = ?
+                                                    AND ps.estado = 'activo'
+                                                    AND s.estado = 'activo'
+                                        ) AS base
+                                        WHERE base.id_servicio IN (${placeholdersIds})
                 `;
 
-                db.query(sqlServiciosAsignados, [id_contrato, ...idsServicios], (servErr, servRows) => {
+                                db.query(sqlServiciosAsignados, [id_contrato, id_contrato, ...idsServicios], (servErr, servRows) => {
                     if (servErr) {
                         return db.rollback(() => res.status(500).send('Error validando servicios del contrato: ' + servErr.message));
                     }
