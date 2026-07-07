@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { API_BASE_URL } from '../config';
 
 function AnulacionDeuda() {
   const [id_anulacion, setId_anulacion] = useState("");
@@ -28,7 +29,7 @@ function AnulacionDeuda() {
   const [showRegModal, setShowRegModal] = useState(false);  
   const [showEditModal, setShowEditModal] = useState(false); 
 
-  const API_URL = "http://localhost:3001/api/anulacion_deuda";
+  const API_URL = `${API_BASE_URL}/api/anulacion_deuda`;
 
   const getUsuarioActivo = () => {
     try {
@@ -49,9 +50,9 @@ function AnulacionDeuda() {
   };
 
   const cargarDatosRelacionales = useCallback(() => {
-    Axios.get("http://localhost:3001/api/morosidad").then((res) => setMorosidades(res.data)).catch(console.error);
-    Axios.get("http://localhost:3001/api/contratos_residentes").then((res) => setContratos(res.data)).catch(console.error);
-    Axios.get("http://localhost:3001/api/usuarios").then((res) => {
+    Axios.get(`${API_BASE_URL}/api/morosidad`).then((res) => setMorosidades(res.data)).catch(console.error);
+    Axios.get(`${API_BASE_URL}/api/contratos_residentes`).then((res) => setContratos(res.data)).catch(console.error);
+    Axios.get(`${API_BASE_URL}/api/usuarios`).then((res) => {
       const usuarios = Array.isArray(res.data) ? res.data : [];
       setUsuarios(usuarios);
 
