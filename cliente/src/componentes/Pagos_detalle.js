@@ -20,6 +20,7 @@ function PagosDetalle() {
   const [pagosList, setPagos] = useState([]);
   const [serviciosList, setServicios] = useState([]);
   const [busqueda, setBusqueda] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState('TODAS');
 
   const [showRegModal, setShowRegModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -229,13 +230,27 @@ function PagosDetalle() {
   };
 
   // Filtrado y paginación
-  const detallesFiltrados = detallesList.filter(d => 
-    String(d.id_pago).includes(busqueda) || String(d.correlativo || '').toLowerCase().includes(String(busqueda || '').toLowerCase())
-  );
+  const detallesFiltrados = detallesList.filter((d) => {
+    const textoBusqueda = String(busqueda || '').toLowerCase().trim();
+    const coincideBusqueda = !textoBusqueda
+      || String(d.id_pago || '').toLowerCase().includes(textoBusqueda)
+      || String(d.correlativo || '').toLowerCase().includes(textoBusqueda);
+
+    if (!coincideBusqueda) return false;
+
+    if (filtroEstado === 'EMITIDA') return String(d.estado_factura || 'EMITIDA').toUpperCase() === 'EMITIDA';
+    if (filtroEstado === 'ANULADA') return String(d.estado_factura || '').toUpperCase() === 'ANULADA';
+    return true;
+  });
   const { paginatedItems: detallesPaginados, totalPages, startIndex, endIndex } = getPaginatedData(detallesFiltrados, currentPage, itemsPerPage);
 
   const handleBusquedaChange = (e) => {
     setBusqueda(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleFiltroEstadoChange = (e) => {
+    setFiltroEstado(e.target.value);
     setCurrentPage(1);
   };
 
@@ -244,8 +259,15 @@ function PagosDetalle() {
       <div className="module-header">
       <div className="row align-items-center bg-light p-3 rounded shadow-sm">
         <div className="col-md-4"><h3 className="m-0 text-dark fw-bold">DETALLE DE COMPROBANTES</h3></div>
-        <div className="col-md-5">
+        <div className="col-md-4">
           <input type="text" className="form-control" placeholder="Buscar por ID de pago principal..." value={busqueda} onChange={handleBusquedaChange} />
+        </div>
+        <div className="col-md-2">
+          <select className="form-select fw-bold" value={filtroEstado} onChange={handleFiltroEstadoChange}>
+            <option value="TODAS">TODAS</option>
+            <option value="EMITIDA">EMITIDAS</option>
+            <option value="ANULADA">ANULADAS</option>
+          </select>
         </div>
         <div className="col-md-3 text-end">
           <button className="btn btn-info fw-bold w-100 text-dark" onClick={() => { limpiarCampos(); setShowRegModal(true); }}>➕ AGREGAR DESGLOSE</button>
@@ -268,7 +290,7 @@ function PagosDetalle() {
           </tr>
         </thead>
         <tbody>
-          {detallesPaginados.filter(d => String(d.id_pago).includes(busqueda)).map(val => (
+          {detallesPaginados.map(val => (
             <tr key={val.id_pago_detalle}>
               <th>#{val.id_pago_detalle}</th>
               <td>Recibo #{val.id_pago}</td>
