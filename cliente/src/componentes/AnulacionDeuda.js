@@ -143,7 +143,7 @@ function AnulacionDeuda() {
 
   const descargarPdfAnulacion = (anulacion) => {
     try {
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [216, 140] });
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
       const contratoInfo = getContratoInfo(anulacion.id_contrato);
       const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
       const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;

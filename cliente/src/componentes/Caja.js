@@ -586,8 +586,8 @@ const Caja = () => {
     // Generador de recibo estilo formato institucional
     const generarPDF = (recibo, residente, empresa) => {
         try {
-            // Media carta: 216 x 140 mm
-            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [216, 140] });
+            // Carta completa (landscape) para evitar salto a segunda hoja
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
             const logoEmpresa = normalizeImageDataUrl(residente?.logo_proyecto || empresa?.logo || '');
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
             const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
