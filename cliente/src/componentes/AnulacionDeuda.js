@@ -147,6 +147,10 @@ function AnulacionDeuda() {
       const contratoInfo = getContratoInfo(anulacion.id_contrato);
       const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
       const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;
+      const correlativoMatch = String(correlativoTexto).match(/^(?:[A-Za-z]+-)?0*([0-9]+)$/);
+      const numeroCorrelativo = correlativoMatch
+        ? correlativoMatch[1]
+        : String(correlativoTexto).replace(/\D/g, '') || String(anulacion.id_anulacion || '0');
       const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
       const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
       const logoProyecto = normalizeImageDataUrl(contratoInfo?.logo_proyecto || '');
@@ -190,7 +194,7 @@ function AnulacionDeuda() {
       doc.setFontSize(9.5);
       doc.text('Serie "ANU"', rightHeaderX + 6, y + 13.5);
       doc.setTextColor(166, 35, 35);
-      doc.text(`N. ${String(anulacion.id_anulacion || '0').padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
+      doc.text(`N. ${String(numeroCorrelativo || '0').padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
       doc.setTextColor(0, 0, 0);
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(7.5);
