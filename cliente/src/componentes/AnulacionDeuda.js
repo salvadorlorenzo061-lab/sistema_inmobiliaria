@@ -354,7 +354,8 @@ function AnulacionDeuda() {
       doc.setFontSize(9.6);
       doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 5, { align: 'center' });
 
-      footerY = boxY + boxH + 5;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      footerY = pageHeight - 14;
       doc.setFont('Helvetica', 'italic');
       doc.setFontSize(7.2);
       doc.text(

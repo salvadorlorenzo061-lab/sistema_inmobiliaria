@@ -772,7 +772,8 @@ const Caja = () => {
             doc.setFontSize(9.6);
             doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 5, { align: 'center' });
 
-            footerY = boxY + boxH + 5;
+            const pageHeight = doc.internal.pageSize.getHeight();
+            footerY = pageHeight - 14;
             doc.setFont('Helvetica', 'italic');
             doc.setFontSize(7.2);
             doc.text(
