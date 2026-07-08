@@ -7,10 +7,29 @@ const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 router.use(cors());
 router.use(express.json());
 
+const ensureRolColumn = () => {
+    db.query("SHOW COLUMNS FROM resoluciones_facturas LIKE 'rol'", (err, rows) => {
+        if (err) {
+            console.error('Error verificando columna rol en resoluciones_facturas:', err.message);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            db.query("ALTER TABLE resoluciones_facturas ADD COLUMN rol VARCHAR(30) NOT NULL DEFAULT 'caja'", (alterErr) => {
+                if (alterErr) {
+                    console.error('Error creando columna rol en resoluciones_facturas:', alterErr.message);
+                }
+            });
+        }
+    });
+};
+
+ensureRolColumn();
+
 // === CREAR RESOLUCIÓN ===
 router.post("/crear", (req, res) => {
-    // 🔴 Se eliminó 'rol' de aquí
     const { id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
+    const rol = String(req.body?.rol || 'caja').trim().toLowerCase() || 'caja';
 
     // --- VALIDACIÓN DE PROTECCIÓN EN EL BACKEND ---
     const rInicial = Number(rango_inicial);
@@ -36,9 +55,8 @@ router.post("/crear", (req, res) => {
             return res.status(400).send({ message: "La resolución ya se encuentra registrada" });
         }
 
-        // 🔴 Se quitó 'rol' de las columnas y del VALUES
-        const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
-        const values = [id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado];
+        const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        const values = [id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
 
         db.query(sqlInsert, values, (insertErr, insertResult) => {
             if (insertErr) {
@@ -65,8 +83,8 @@ router.get("/", (req, res) => {
 
 // === ACTUALIZAR RESOLUCIÓN ===
 router.put("/actualizar", (req, res) => {
-    // 🔴 Se eliminó 'rol' de aquí
     const { id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
+    const rol = String(req.body?.rol || 'caja').trim().toLowerCase() || 'caja';
     
     // --- VALIDACIÓN DE PROTECCIÓN EN EL BACKEND ---
     const rInicial = Number(rango_inicial);
@@ -82,7 +100,6 @@ router.put("/actualizar", (req, res) => {
     }
     // ---------------------------------------------
 
-    // 🔴 Se quitó 'rol = ?' de la consulta SQL
     const sqlUpdate = `UPDATE resoluciones_facturas SET 
         id_empresa = ?, 
         numero_resolucion = ?, 
@@ -92,10 +109,11 @@ router.put("/actualizar", (req, res) => {
         correlativo_actual = ?, 
         fecha_autorizacion = ?, 
         fecha_vencimiento = ?, 
-        estado = ? 
+        estado = ?,
+        rol = ? 
         WHERE id_resolucion = ?`;
 
-    const values = [id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, id_resolucion];
+    const values = [id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol, id_resolucion];
 
     db.query(sqlUpdate, values, (err, result) => {
         if (err) {

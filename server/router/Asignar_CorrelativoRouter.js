@@ -42,6 +42,7 @@ router.get('/', (req, res) => {
             ac.*,
             u.nombre AS nombre_usuario,
             u.correo,
+            r.nombre_rol,
             e.nombre_empresa,
             rf.numero_resolucion,
             CONCAT(ac.serie, '-', LPAD(ac.correlativo_inicio, 8, '0')) AS correlativo_inicio_display,
@@ -53,6 +54,7 @@ router.get('/', (req, res) => {
             GREATEST((ac.correlativo_fin - ac.correlativo_actual) + 1, 0) AS correlativos_disponibles
         FROM asignar_correlativos ac
         INNER JOIN usuarios u ON u.id_usuario = ac.id_usuario
+        LEFT JOIN roles r ON r.id_rol = u.id_rol
         INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
         LEFT JOIN empresas e ON e.id_empresa = ac.id_empresa
         ORDER BY ac.id_asignacion DESC
@@ -322,7 +324,7 @@ router.post('/crear', (req, res) => {
             res.status(status).send({ message });
         });
 
-        db.query('SELECT id_usuario, nombre FROM usuarios WHERE id_usuario = ? LIMIT 1', [id_usuario], (userErr, userRows) => {
+        db.query('SELECT u.id_usuario, u.nombre, r.nombre_rol FROM usuarios u LEFT JOIN roles r ON r.id_rol = u.id_rol WHERE u.id_usuario = ? LIMIT 1', [id_usuario], (userErr, userRows) => {
             if (userErr) {
                 return rollback(500, 'No se pudo validar el usuario.', userErr);
             }
@@ -352,7 +354,7 @@ router.post('/crear', (req, res) => {
                 }
 
                 const resolucionQuery = `
-                    SELECT id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, estado, fecha_vencimiento
+                    SELECT id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, estado, fecha_vencimiento, rol
                     FROM resoluciones_facturas
                     WHERE id_resolucion = ?
                     LIMIT 1
@@ -373,9 +375,30 @@ router.post('/crear', (req, res) => {
                     const correlativoFin = correlativoInicio + cantidadNumerica - 1;
                     const rangoFinal = Number(resolucion.rango_final || 0);
                     const rangoInicial = Number(resolucion.rango_inicial || 0);
+                    const rolUsuario = String(userRows?.[0]?.nombre_rol || '')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .trim();
+                    const rolResolucion = String(resolucion.rol || 'caja')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .trim();
+                    const esAdminOGerente = rolUsuario.includes('admin') || rolUsuario.includes('gerente');
+                    const usuarioEsCaja = rolUsuario.includes('caja') || rolUsuario.includes('cobro');
+                    const usuarioEsJuridico = rolUsuario.includes('jurid') || rolUsuario.includes('legal');
+                    const rolCompatible = rolResolucion === 'ambos'
+                        || (rolResolucion === 'caja' && usuarioEsCaja)
+                        || (rolResolucion === 'juridico' && usuarioEsJuridico)
+                        || esAdminOGerente;
 
                     if (String(resolucion.estado || '').toLowerCase() !== 'activo') {
                         return rollback(400, 'La resolución no está activa.');
+                    }
+
+                    if (!rolCompatible) {
+                        return rollback(400, `La resolución está configurada para rol ${resolucion.rol || 'caja'} y el usuario no coincide con ese rol.`);
                     }
 
                     if (resolucion.fecha_vencimiento && new Date(resolucion.fecha_vencimiento) < new Date()) {

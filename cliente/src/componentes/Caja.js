@@ -101,6 +101,19 @@ const fechaLargaGT = (valor) => {
     });
 };
 
+const getUsuarioSesion = () => {
+    try {
+        return JSON.parse(localStorage.getItem('usuario') || '{}');
+    } catch {
+        return {};
+    }
+};
+
+const esRolJuridico = (usuario = {}) => {
+    const rol = String(usuario?.nombre_rol || '').toLowerCase();
+    return rol.includes('jurid') || rol.includes('legal');
+};
+
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
@@ -604,9 +617,167 @@ const Caja = () => {
             const meses = Array.isArray(recibo?.meses_pagados) && recibo.meses_pagados.length ? recibo.meses_pagados.join(', ') : (recibo?.mes_pagado || 'N/A');
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
+            const usuarioActivo = getUsuarioSesion();
+            const usarFormatoJuridico = esRolJuridico(usuarioActivo);
             const conceptoResumen = String(conceptos || 'Pago de cuota').length > 78
                 ? `${String(conceptos || 'Pago de cuota').slice(0, 75)}...`
                 : String(conceptos || 'Pago de cuota');
+
+            if (usarFormatoJuridico) {
+                const pageW = doc.internal.pageSize.getWidth();
+                const pageH = doc.internal.pageSize.getHeight();
+                const margenX = 8;
+                const ancho = pageW - (margenX * 2);
+                const contenidoY = 36;
+                const contenidoH = 145;
+                const nombreEmpresa = String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
+                const nombreProyecto = String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto');
+                const fechaDoc = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
+                const d = String(fechaDoc.getDate()).padStart(2, '0');
+                const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
+                const yFull = String(fechaDoc.getFullYear());
+
+                doc.setDrawColor(188, 177, 117);
+                doc.setLineWidth(0.35);
+                if (typeof doc.roundedRect === 'function') {
+                    doc.roundedRect(margenX, contenidoY, ancho, contenidoH, 3, 3, 'S');
+                } else {
+                    doc.rect(margenX, contenidoY, ancho, contenidoH);
+                }
+
+                if (logoEmpresa) {
+                    try {
+                        doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), margenX + 3, 8.5, 31, 18, `jur-logo-${Date.now()}`, 'FAST');
+                    } catch {
+                        // no-op
+                    }
+                }
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(10.8);
+                doc.text(nombreEmpresa, pageW / 2, 14.5, { align: 'center' });
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(7.8);
+                doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', pageW / 2, 20, { align: 'center' });
+                doc.text('PBX: 2220-6406  Telefono: 5825-5903', pageW / 2, 24.2, { align: 'center' });
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.8);
+                doc.text('Recibo Juridico', pageW - 42.5, 14.2);
+                doc.rect(pageW - 42.5, 15.9, 37.5, 11.8);
+                doc.setTextColor(166, 35, 35);
+                doc.setFontSize(11.8);
+                doc.text(`NO. ${String(numero).padStart(5, '0')}`, pageW - 23.8, 23.9, { align: 'center' });
+                doc.setTextColor(0, 0, 0);
+
+                doc.setTextColor(195, 195, 195);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(28);
+                doc.text('CORPORACION DE', pageW / 2, 102, { align: 'center' });
+                doc.text('INVERSION INMOBILIARIA', pageW / 2, 116, { align: 'center' });
+                doc.setTextColor(0, 0, 0);
+
+                let rY = contenidoY + 8;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(11.5);
+                doc.text('DATOS DEL CLIENTE', margenX + 4, rY);
+                doc.setDrawColor(210, 190, 92);
+                doc.setLineWidth(0.45);
+                doc.line(margenX + 4, rY + 1.8, margenX + 34, rY + 1.8);
+
+                rY += 11;
+                doc.setDrawColor(60, 60, 60);
+                doc.setLineWidth(0.2);
+                doc.setFontSize(8.3);
+                doc.text('Fecha:', margenX + 4, rY);
+                const fechaX = margenX + 18;
+                const boxW = 8;
+                const boxH = 8;
+                [d[0], d[1], m[0], m[1], yFull[0], yFull[1], yFull[2], yFull[3]].forEach((char, idx) => {
+                    const offsetX = idx < 2 ? idx * (boxW + 1) : idx < 4 ? (2 * (boxW + 1)) + 4 + ((idx - 2) * (boxW + 1)) : (4 * (boxW + 1)) + 8 + ((idx - 4) * (boxW + 1));
+                    doc.rect(fechaX + offsetX, rY - 5.8, boxW, boxH);
+                    doc.text(char, fechaX + offsetX + (boxW / 2), rY - 0.4, { align: 'center' });
+                });
+                doc.text('/', fechaX + (2 * (boxW + 1)) + 1.4, rY - 0.8);
+                doc.text('/', fechaX + (4 * (boxW + 1)) + 5.2, rY - 0.8);
+
+                const amountBoxX = pageW - 47;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(11.3);
+                doc.text('Por: Q', amountBoxX - 22, rY + 0.1);
+                doc.rect(amountBoxX, rY - 5.8, 42, 8.2);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.4);
+                doc.text(montoTotal.toFixed(2), amountBoxX + 2, rY - 0.2);
+
+                const filaAncho = ancho - 4;
+                const filaX = margenX + 2;
+                const filaH = 10.5;
+                rY += 6;
+                doc.rect(filaX, rY, filaAncho, filaH);
+                doc.rect(filaX, rY + filaH, filaAncho, filaH);
+                doc.rect(filaX, rY + (filaH * 2), filaAncho, filaH);
+                doc.rect(filaX, rY + (filaH * 3), filaAncho, filaH);
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.3);
+                doc.text('Recibimos de:', filaX + 2, rY + 6.8);
+                doc.text('Cantidad de:', filaX + 2, rY + 17.3);
+                doc.text('Por cancelacion de:', filaX + 2, rY + 27.8);
+                doc.text('Proyecto:', filaX + 2, rY + 38.3);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.3);
+                doc.text(doc.splitTextToSize(String(residente?.nombre || 'N/A'), filaAncho - 34).slice(0, 1), filaX + 30, rY + 6.8);
+                doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), filaAncho - 34).slice(0, 1), filaX + 30, rY + 17.3);
+                doc.text(doc.splitTextToSize(String(conceptos), filaAncho - 40).slice(0, 1), filaX + 40, rY + 27.8);
+                doc.text(doc.splitTextToSize(nombreProyecto, filaAncho - 34).slice(0, 1), filaX + 23, rY + 38.3);
+
+                const pagosY = rY + (filaH * 4);
+                doc.rect(filaX, pagosY, filaAncho, 24);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.2);
+                doc.text('Boleta:', filaX + 2, pagosY + 5.6);
+                doc.text('Transferencia:', filaX + 52, pagosY + 5.6);
+                doc.text('Cheque:', filaX + 114, pagosY + 5.6);
+                doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
+
+                const referenciaBase = String(recibo?.no_referencia || '').trim();
+                const boletaValor = metodo.includes('deposit') ? referenciaBase : '';
+                const transferenciaValor = metodo.includes('transfer') ? referenciaBase : '';
+                const chequeValor = metodo.includes('cheque') ? referenciaBase : '';
+                const efectivoValor = metodo.includes('efectivo') ? 'X' : '';
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.1);
+                doc.text(doc.splitTextToSize(boletaValor || '', 44).slice(0, 1), filaX + 2, pagosY + 16);
+                doc.text(doc.splitTextToSize(transferenciaValor || '', 56).slice(0, 1), filaX + 52, pagosY + 16);
+                doc.text(doc.splitTextToSize(chequeValor || '', 40).slice(0, 1), filaX + 114, pagosY + 16);
+                doc.text(efectivoValor, filaX + 160, pagosY + 16);
+
+                const firmaY = pagosY + 24;
+                doc.rect(filaX, firmaY, filaAncho, 22);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.text('Firma:', filaX + 2, firmaY + 6.2);
+                if (logoProyecto) {
+                    try {
+                        doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), filaX + 62, firmaY + 1.8, 32, 13.2, `jur-proy-${Date.now()}`, 'FAST');
+                    } catch {
+                        // no-op
+                    }
+                }
+
+                doc.setFont('Helvetica', 'italic');
+                doc.setFontSize(6.7);
+                doc.text(
+                    doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo se extiende previo a la confirmacion de la transaccion bancaria.', ancho - 4).slice(0, 2),
+                    margenX + 2,
+                    pageH - 7.5
+                );
+
+                const juridicoFileName = `Recibo_Juridico_${String(recibo?.no_referencia || recibo?.numero_recibo || 'sin_numero').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
+                doc.save(juridicoFileName);
+                return;
+            }
 
             const x = 10;
             const w = 190;
@@ -622,9 +793,9 @@ const Caja = () => {
             doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
 
             const logoX = x + 3;
-            const logoY = y + 1.5;
-            const logoW = 20;
-            const logoH = 18;
+            const logoY = y + 1.2;
+            const logoW = 24;
+            const logoH = 19;
             if (logoEmpresa) {
                 try {
                     doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `rec-logo-${Date.now()}`, 'FAST');
@@ -652,7 +823,7 @@ const Caja = () => {
             doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', x + (w / 2), y + headerHeight + 4.5, { align: 'center' });
             doc.text('PBX: 2220-6406  Telefono: 5825-5903', x + (w / 2), y + headerHeight + 8.2, { align: 'center' });
 
-            y += headerHeight + 12;
+            y += headerHeight + 10;
             doc.setFillColor(245, 211, 69);
             doc.rect(x, y, w, 6, 'F');
             doc.rect(x, y, w, 6);
@@ -662,7 +833,7 @@ const Caja = () => {
 
             y += 7;
             const nombreLineas = doc.splitTextToSize(String(residente?.nombre || 'N/A'), 158).slice(0, 1);
-            const nombreAltura = 8;
+            const nombreAltura = 9;
             doc.rect(x, y, w, nombreAltura);
             doc.setFont('Helvetica', 'bold');
             doc.setFontSize(9);
@@ -671,7 +842,7 @@ const Caja = () => {
             doc.setFontSize(10);
             doc.text(nombreLineas, x + 22, y + 5);
 
-            y += nombreAltura + 3;
+            y += nombreAltura + 2.5;
             doc.setFillColor(245, 211, 69);
             doc.rect(x, y, 145, 6, 'F');
             doc.rect(x + 145, y, 45, 6, 'F');
@@ -684,7 +855,7 @@ const Caja = () => {
 
             y += 6;
             const fechaLineas = doc.splitTextToSize(`Guatemala, ${fechaLargaGT(fecha)}`, 139).slice(0, 1);
-            const fechaAltura = 8;
+            const fechaAltura = 9;
             doc.rect(x, y, 145, fechaAltura);
             doc.rect(x + 145, y, 45, fechaAltura);
             doc.setFont('Helvetica', 'normal');
@@ -693,9 +864,9 @@ const Caja = () => {
             doc.setFont('Helvetica', 'bold');
             doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 5);
 
-            y += fechaAltura + 3;
+            y += fechaAltura + 2.5;
             const pagaLineas = doc.splitTextToSize(montoALetrasRecibo(montoTotal), 143).slice(0, 1);
-            const pagaAltura = 8;
+            const pagaAltura = 9;
             doc.rect(x, y, w, pagaAltura);
             doc.setFont('Helvetica', 'bold');
             doc.setFontSize(9);
@@ -704,7 +875,7 @@ const Caja = () => {
             doc.setFontSize(10);
             doc.text(pagaLineas, x + 45, y + 5);
 
-            y += pagaAltura + 3;
+            y += pagaAltura + 2.5;
             const conceptosLineas = doc.splitTextToSize(conceptos, 143).slice(0, 2);
             const conceptosAltura = Math.max(10, (conceptosLineas.length * 4.2) + 2.2);
             doc.rect(x, y, w, conceptosAltura);
@@ -715,7 +886,7 @@ const Caja = () => {
             doc.setFontSize(9.8);
             doc.text(conceptosLineas, x + 43, y + 4.9);
 
-            y += conceptosAltura + 3;
+            y += conceptosAltura + 2.5;
             doc.rect(x, y, 65, 8);
             doc.rect(x + 65, y, 125, 8);
             doc.setFont('Helvetica', 'bold');
@@ -730,7 +901,7 @@ const Caja = () => {
             doc.setFont('Helvetica', 'normal');
             doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 5.2);
 
-            const boxY = 158;
+            const boxY = Math.min(Math.max(y + 38, 140), 160);
             const boxH = 22;
             doc.rect(x, boxY, 60, boxH);
             doc.rect(x + 65, boxY, 60, boxH);
@@ -745,7 +916,7 @@ const Caja = () => {
 
             if (logoProyecto) {
                 try {
-                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 84, boxY + 10, 22, 9, `rec-logo-proyecto-${Date.now()}`, 'FAST');
+                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 81, boxY + 9, 28, 11, `rec-logo-proyecto-${Date.now()}`, 'FAST');
                 } catch {
                     // no-op
                 }

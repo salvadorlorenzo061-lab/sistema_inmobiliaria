@@ -91,10 +91,15 @@ function AnulacionDeuda() {
     return usuario?.nombre_usuario || usuario?.nombre || usuario?.correo || `Usuario #${usuario?.id_usuario || ''}`;
   };
 
+  const esRolJuridico = (usuario = {}) => {
+    const rol = String(usuario?.nombre_rol || '').toLowerCase();
+    return rol.includes('jurid') || rol.includes('legal');
+  };
+
   const esUsuarioAutorizador = (usuario = {}) => {
     const rol = String(usuario?.nombre_rol || '').toLowerCase();
     return String(usuario?.estado || '').toLowerCase() === 'activo'
-      && (rol.includes('admin') || rol.includes('administrador') || rol.includes('gerente'));
+      && (rol.includes('admin') || rol.includes('administrador') || rol.includes('gerente') || rol.includes('jurid') || rol.includes('legal'));
   };
 
   const cargarDatosRelacionales = useCallback(() => {
@@ -144,6 +149,7 @@ function AnulacionDeuda() {
   const descargarPdfAnulacion = (anulacion) => {
     try {
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+      const usuarioActivo = getUsuarioActivo();
       const contratoInfo = getContratoInfo(anulacion.id_contrato);
       const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
       const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;
@@ -152,10 +158,161 @@ function AnulacionDeuda() {
         ? correlativoMatch[1]
         : String(correlativoTexto).replace(/\D/g, '') || String(anulacion.id_anulacion || '0');
       const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
+      const usarFormatoJuridico = esRolJuridico(usuarioActivo);
       const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
       const logoProyecto = normalizeImageDataUrl(contratoInfo?.logo_proyecto || '');
       const nombreMarca = contratoInfo?.nombre_marca_pdf || contratoInfo?.nombre_proyecto || 'PROYECTO INMOBILIARIO';
       const montoAnulado = parseFloat(anulacion.monto_anulado || 0);
+
+      if (usarFormatoJuridico) {
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const margenX = 8;
+        const ancho = pageW - (margenX * 2);
+        const contenidoY = 36;
+        const contenidoH = 145;
+        const nombreEmpresa = String(nombreMarca || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
+        const nombreProyecto = String(contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto || 'Proyecto');
+        const fechaDoc = fechaDocumento instanceof Date && !Number.isNaN(fechaDocumento.getTime()) ? fechaDocumento : new Date();
+        const d = String(fechaDoc.getDate()).padStart(2, '0');
+        const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
+        const yFull = String(fechaDoc.getFullYear());
+
+        doc.setDrawColor(188, 177, 117);
+        doc.setLineWidth(0.35);
+        if (typeof doc.roundedRect === 'function') {
+          doc.roundedRect(margenX, contenidoY, ancho, contenidoH, 3, 3, 'S');
+        } else {
+          doc.rect(margenX, contenidoY, ancho, contenidoH);
+        }
+
+        if (logoEmpresa) {
+          try {
+            doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), margenX + 3, 8.5, 31, 18, `anu-jur-logo-${Date.now()}`, 'FAST');
+          } catch {
+            // no-op
+          }
+        }
+
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(10.8);
+        doc.text(nombreEmpresa, pageW / 2, 14.5, { align: 'center' });
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(7.8);
+        doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', pageW / 2, 20, { align: 'center' });
+        doc.text('PBX: 2220-6406  Telefono: 5825-5903', pageW / 2, 24.2, { align: 'center' });
+
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.8);
+        doc.text('Recibo Juridico', pageW - 42.5, 14.2);
+        doc.rect(pageW - 42.5, 15.9, 37.5, 11.8);
+        doc.setTextColor(166, 35, 35);
+        doc.setFontSize(11.8);
+        doc.text(`NO. ${String(numeroCorrelativo || '0').padStart(5, '0')}`, pageW - 23.8, 23.9, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+
+        doc.setTextColor(195, 195, 195);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(28);
+        doc.text('CORPORACION DE', pageW / 2, 102, { align: 'center' });
+        doc.text('INVERSION INMOBILIARIA', pageW / 2, 116, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+
+        let rY = contenidoY + 8;
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(11.5);
+        doc.text('DATOS DEL CLIENTE', margenX + 4, rY);
+        doc.setDrawColor(210, 190, 92);
+        doc.setLineWidth(0.45);
+        doc.line(margenX + 4, rY + 1.8, margenX + 34, rY + 1.8);
+
+        rY += 11;
+        doc.setDrawColor(60, 60, 60);
+        doc.setLineWidth(0.2);
+        doc.setFontSize(8.3);
+        doc.text('Fecha:', margenX + 4, rY);
+        const fechaX = margenX + 18;
+        const boxW = 8;
+        const boxH = 8;
+        [d[0], d[1], m[0], m[1], yFull[0], yFull[1], yFull[2], yFull[3]].forEach((char, idx) => {
+          const offsetX = idx < 2 ? idx * (boxW + 1) : idx < 4 ? (2 * (boxW + 1)) + 4 + ((idx - 2) * (boxW + 1)) : (4 * (boxW + 1)) + 8 + ((idx - 4) * (boxW + 1));
+          doc.rect(fechaX + offsetX, rY - 5.8, boxW, boxH);
+          doc.text(char, fechaX + offsetX + (boxW / 2), rY - 0.4, { align: 'center' });
+        });
+        doc.text('/', fechaX + (2 * (boxW + 1)) + 1.4, rY - 0.8);
+        doc.text('/', fechaX + (4 * (boxW + 1)) + 5.2, rY - 0.8);
+
+        const amountBoxX = pageW - 47;
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(11.3);
+        doc.text('Por: Q', amountBoxX - 22, rY + 0.1);
+        doc.rect(amountBoxX, rY - 5.8, 42, 8.2);
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(10.4);
+        doc.text(Math.abs(montoAnulado).toFixed(2), amountBoxX + 2, rY - 0.2);
+
+        const filaAncho = ancho - 4;
+        const filaX = margenX + 2;
+        const filaH = 10.5;
+        rY += 6;
+        doc.rect(filaX, rY, filaAncho, filaH);
+        doc.rect(filaX, rY + filaH, filaAncho, filaH);
+        doc.rect(filaX, rY + (filaH * 2), filaAncho, filaH);
+        doc.rect(filaX, rY + (filaH * 3), filaAncho, filaH);
+
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.3);
+        doc.text('Recibimos de:', filaX + 2, rY + 6.8);
+        doc.text('Cantidad de:', filaX + 2, rY + 17.3);
+        doc.text('Por cancelacion de:', filaX + 2, rY + 27.8);
+        doc.text('Proyecto:', filaX + 2, rY + 38.3);
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(10.3);
+        doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_residente || 'N/A'), filaAncho - 34).slice(0, 1), filaX + 30, rY + 6.8);
+        doc.text('ANULACION DE COBRO REGISTRADO', filaX + 30, rY + 17.3);
+        doc.text(doc.splitTextToSize(String(anulacion.motivo || 'Sin motivo registrado'), filaAncho - 40).slice(0, 1), filaX + 40, rY + 27.8);
+        doc.text(doc.splitTextToSize(nombreProyecto, filaAncho - 34).slice(0, 1), filaX + 23, rY + 38.3);
+
+        const pagosY = rY + (filaH * 4);
+        doc.rect(filaX, pagosY, filaAncho, 24);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.2);
+        doc.text('Boleta:', filaX + 2, pagosY + 5.6);
+        doc.text('Transferencia:', filaX + 52, pagosY + 5.6);
+        doc.text('Cheque:', filaX + 114, pagosY + 5.6);
+        doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(10.1);
+        doc.text(doc.splitTextToSize(String(correlativoTexto || 'N/A'), 56).slice(0, 1), filaX + 52, pagosY + 16);
+
+        const firmaY = pagosY + 24;
+        doc.rect(filaX, firmaY, filaAncho, 22);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('Firma:', filaX + 2, firmaY + 6.2);
+        doc.setFontSize(15);
+        doc.setTextColor(20, 20, 20);
+        doc.text('CANCELADO', filaX + 28, firmaY + 13);
+        doc.setTextColor(0, 0, 0);
+        if (logoProyecto) {
+          try {
+            doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), filaX + 62, firmaY + 1.8, 32, 13.2, `anu-jur-proy-${Date.now()}`, 'FAST');
+          } catch {
+            // no-op
+          }
+        }
+
+        doc.setFont('Helvetica', 'italic');
+        doc.setFontSize(6.7);
+        doc.text(
+          doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo se extiende previo a la confirmacion de la transaccion bancaria.', ancho - 4).slice(0, 2),
+          margenX + 2,
+          pageH - 7.5
+        );
+
+        doc.save(`Anulacion_Juridica_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
+        return;
+      }
 
       const x = 10;
       const w = 190;
@@ -171,9 +328,9 @@ function AnulacionDeuda() {
       doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
 
       const logoX = x + 3;
-      const logoY = y + 1.5;
-      const logoW = 20;
-      const logoH = 18;
+      const logoY = y + 1.2;
+      const logoW = 24;
+      const logoH = 19;
       if (logoEmpresa) {
         try {
           doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `anul-logo-${Date.now()}`, 'FAST');
@@ -349,7 +506,7 @@ function AnulacionDeuda() {
 
       if (logoProyecto) {
         try {
-          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 82, boxY + 7, 25, 11, `anul-logo-proyecto-${Date.now()}`, 'FAST');
+          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 80, boxY + 6.5, 29, 12, `anul-logo-proyecto-${Date.now()}`, 'FAST');
         } catch {
           // no-op
         }
@@ -630,7 +787,7 @@ function AnulacionDeuda() {
                     <div className="mb-2">
                       <label className="fw-bold">Usuario que Autoriza:</label>
                       <select value={id_usuario_autoriza} onChange={(e) => setId_usuario_autoriza(e.target.value)} className="form-select">
-                        <option value="">-- Seleccione Gerente/Admin --</option>
+                        <option value="">-- Seleccione Gerente/Admin/Juridico --</option>
                         {usuariosList.filter(esUsuarioAutorizador).map(u => <option key={u.id_usuario} value={u.id_usuario}>{getNombreUsuario(u)}</option>)}
                       </select>
                     </div>
@@ -699,7 +856,7 @@ function AnulacionDeuda() {
                     <div className="mb-2">
                       <label className="fw-bold">Usuario que Autoriza:</label>
                       <select value={id_usuario_autoriza} onChange={(e) => setId_usuario_autoriza(e.target.value)} className="form-select">
-                        <option value="">-- Seleccione Gerente/Admin --</option>
+                        <option value="">-- Seleccione Gerente/Admin/Juridico --</option>
                         {usuariosList.filter(esUsuarioAutorizador).map(u => <option key={u.id_usuario} value={u.id_usuario}>{getNombreUsuario(u)}</option>)}
                       </select>
                     </div>

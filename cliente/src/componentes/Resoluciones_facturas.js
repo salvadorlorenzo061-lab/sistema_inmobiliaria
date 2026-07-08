@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils'; 
+import { API_BASE_URL } from '../config';
 
 const LOTE_FACTURAS = 10000;
 
@@ -19,7 +20,7 @@ function Resoluciones_facturas() {
   const [fecha_autorizacion, setFecha_autorizacion] = useState("");
   const [fecha_vencimiento, setFecha_vencimiento] = useState("");
   const [estado, setEstado] = useState("");
-  // 🔴 Se eliminó el estado 'rol'
+  const [rol, setRol] = useState("caja");
   
   const [Resoluciones_facturasList, setResoluciones_facturas] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -29,7 +30,7 @@ function Resoluciones_facturas() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
-  const API_URL = "http://localhost:3001/api/resoluciones_facturas";
+  const API_URL = `${API_BASE_URL}/api/resoluciones_facturas`;
 
   const calcularRangoFinalPorLote = (inicio) => {
     const n = Number(inicio);
@@ -105,7 +106,7 @@ function Resoluciones_facturas() {
         ['CORRELATIVO ACTUAL', String(val.correlativo_actual).toUpperCase()],
         ['FECHA AUTORIZACION', val.fecha_autorizacion],
         ['FECHA VENCIMIENTO', val.fecha_vencimiento],
-        // 🔴 Se eliminó la fila del Rol
+        ['ROL ASIGNADO', String(val.rol || 'caja').toUpperCase()],
         ['ESTADO OPERATIVO EN SISTEMA', val.estado.toUpperCase()],
       ],
       theme: 'striped',
@@ -131,8 +132,7 @@ function Resoluciones_facturas() {
   //   CONTROLADORES DE BASE DE DATOS (CRUD)
   // =========================================================================
   const add = () => {
-    // 🔴 Se quitó 'rol.trim()' de la condición
-    if (!id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim()) {
+    if (!id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({
         position: "top-end",
         icon: "warning",
@@ -157,9 +157,8 @@ function Resoluciones_facturas() {
       return;
     }
 
-    // 🔴 Se quitó 'rol' del objeto enviado
     Axios.post(`${API_URL}/crear`, { 
-      id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado 
+      id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
     })
     .then(() => {
       getResoluciones();
@@ -186,8 +185,7 @@ function Resoluciones_facturas() {
   };
 
   const actualizar = () => {
-    // 🔴 Se quitó 'rol.trim()' de la condición
-    if (!id_resolucion || !id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim()) {
+    if (!id_resolucion || !id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({ icon: 'warning', title: 'Campos incompletos' });
       return;
     }
@@ -206,9 +204,8 @@ function Resoluciones_facturas() {
       return;
     }
 
-    // 🔴 Se quitó 'rol' del objeto enviado
     Axios.put(`${API_URL}/actualizar`, { 
-      id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado 
+      id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
     })
     .then(() => {
       getResoluciones();
@@ -260,7 +257,7 @@ function Resoluciones_facturas() {
     setFecha_autorizacion("");
     setFecha_vencimiento("");
     setEstado("");
-    // 🔴 Se quitó 'setRol("")'
+    setRol('caja');
   };
 
   const getResoluciones = () => {
@@ -282,7 +279,7 @@ function Resoluciones_facturas() {
     setFecha_autorizacion(val.fecha_autorizacion);
     setFecha_vencimiento(val.fecha_vencimiento);
     setEstado(val.estado);
-    // 🔴 Se quitó la asignación de rol
+    setRol(String(val.rol || 'caja'));
     setShowEditModal(true);
   };
 
@@ -341,7 +338,7 @@ function Resoluciones_facturas() {
             <th>CORRELATIVO ACTUAL</th>
             <th>FECHA AUTORIZACION</th>
             <th>FECHA VENCIMIENTO</th>
-            {/* 🔴 Se eliminó la cabecera del ROL */}
+            <th>ROL</th>
             <th>ESTADO</th>
             <th>OPCIONES</th>
           </tr>
@@ -358,7 +355,11 @@ function Resoluciones_facturas() {
                 <td>{val.correlativo_actual}</td>
                 <td>{val.fecha_autorizacion}</td>
                 <td>{val.fecha_vencimiento}</td>
-                {/* 🔴 Se eliminó la celda del ROL */}
+                <td>
+                  <span className={`badge ${String(val.rol || '').toLowerCase() === 'juridico' ? 'bg-primary' : String(val.rol || '').toLowerCase() === 'ambos' ? 'bg-dark' : 'bg-info text-dark'}`}>
+                    {String(val.rol || 'caja').toUpperCase()}
+                  </span>
+                </td>
                 <td>
                   <span className={`badge ${val.estado === 'activo' ? 'bg-success' : val.estado === 'inactivo' ? 'bg-danger' : 'bg-warning'}`}>
                     {val.estado.toUpperCase()}
@@ -375,7 +376,7 @@ function Resoluciones_facturas() {
             ))
           ) : (
             <tr>
-              <td colSpan="10" className="text-center text-muted py-3">No se encontraron resoluciones coincidentes.</td>
+              <td colSpan="11" className="text-center text-muted py-3">No se encontraron resoluciones coincidentes.</td>
             </tr>
           )}
         </tbody>
@@ -433,7 +434,15 @@ function Resoluciones_facturas() {
                   <label className="form-label fw-bold">Fecha vencimiento:</label>
                   <input type="date" value={fecha_vencimiento} onChange={(e) => setFecha_vencimiento(e.target.value)} className="form-control" />
                 </div>
-                {/* 🔴 Se eliminó por completo el <div mb-3> del select de Rol */}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rol para uso de correlativos:</label>
+                  <select value={rol} onChange={(e) => setRol(e.target.value)} className="form-select">
+                    <option value="caja">Caja</option>
+                    <option value="juridico">Juridico</option>
+                    <option value="ambos">Ambos</option>
+                  </select>
+                  <small className="text-muted">Define qué tipo de usuario podrá consumir esta resolución al asignar lotes.</small>
+                </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Estado:</label>
                   <select value={estado} onChange={(e) => setEstado(e.target.value)} className="form-select">
@@ -496,7 +505,14 @@ function Resoluciones_facturas() {
                   <label className="form-label fw-bold">Fecha vencimiento:</label>
                   <input type="date" value={fecha_vencimiento} onChange={(e) => setFecha_vencimiento(e.target.value)} className="form-control" />
                 </div>
-                {/* 🔴 Se eliminó por completo el <div mb-3> del select de Rol */}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rol para uso de correlativos:</label>
+                  <select value={rol} onChange={(e) => setRol(e.target.value)} className="form-select">
+                    <option value="caja">Caja</option>
+                    <option value="juridico">Juridico</option>
+                    <option value="ambos">Ambos</option>
+                  </select>
+                </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Estado:</label>
                   <select value={estado} onChange={(e) => setEstado(e.target.value)} className="form-select">

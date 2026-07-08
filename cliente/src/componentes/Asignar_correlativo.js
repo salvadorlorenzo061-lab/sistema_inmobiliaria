@@ -11,6 +11,11 @@ const getCurrentMonth = () => new Date().toISOString().slice(0, 7);
 
 const formatMoney = (value) => `Q ${Number(value || 0).toFixed(2)}`;
 const normalizeFileSegment = (value = '') => String(value || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
+const normalizeRole = (value = '') => String(value || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim();
 
 function AsignarCorrelativo() {
   const [usuariosList, setUsuariosList] = useState([]);
@@ -34,6 +39,27 @@ function AsignarCorrelativo() {
   const resolucionesActivas = useMemo(() => (
     resolucionesList.filter((item) => String(item.estado || '').toLowerCase() === 'activo')
   ), [resolucionesList]);
+
+  const resolucionSeleccionada = useMemo(() => {
+    if (!idResolucion) return null;
+    return resolucionesActivas.find((item) => String(item.id_resolucion) === String(idResolucion)) || null;
+  }, [idResolucion, resolucionesActivas]);
+
+  const usuariosDisponibles = useMemo(() => {
+    const rolResolucion = normalizeRole(resolucionSeleccionada?.rol || '');
+    if (!rolResolucion || rolResolucion === 'ambos') {
+      return usuariosList;
+    }
+
+    return usuariosList.filter((item) => {
+      const rolUsuario = normalizeRole(item?.nombre_rol || '');
+      if (!rolUsuario) return false;
+      if (rolUsuario.includes('admin') || rolUsuario.includes('gerente')) return true;
+      if (rolResolucion === 'caja') return rolUsuario.includes('caja') || rolUsuario.includes('cobro');
+      if (rolResolucion === 'juridico') return rolUsuario.includes('jurid') || rolUsuario.includes('legal');
+      return true;
+    });
+  }, [usuariosList, resolucionSeleccionada]);
 
   const cargarCatalogos = useCallback(async () => {
     const [usuariosRes, resolucionesRes] = await Promise.allSettled([
@@ -302,10 +328,17 @@ function AsignarCorrelativo() {
                 <label className="form-label fw-bold">Usuario que cobrará</label>
                 <select className="form-select" value={idUsuario} onChange={(e) => setIdUsuario(e.target.value)}>
                   <option value="">-- Seleccione usuario --</option>
-                  {usuariosList.map((item) => (
-                    <option key={item.id_usuario} value={item.id_usuario}>{item.nombre} - {item.correo}</option>
+                  {usuariosDisponibles.map((item) => (
+                    <option key={item.id_usuario} value={item.id_usuario}>
+                      {item.nombre} - {item.correo} ({String(item.nombre_rol || 'sin rol')})
+                    </option>
                   ))}
                 </select>
+                {!!resolucionSeleccionada?.rol && (
+                  <small className="text-muted d-block mt-1">
+                    Esta resolución está destinada al rol: <strong>{String(resolucionSeleccionada.rol).toUpperCase()}</strong>
+                  </small>
+                )}
               </div>
 
               <div className="mb-3">
@@ -314,7 +347,7 @@ function AsignarCorrelativo() {
                   <option value="">-- Seleccione resolución --</option>
                   {resolucionesActivas.map((item) => (
                     <option key={item.id_resolucion} value={item.id_resolucion}>
-                      {item.numero_resolucion} | {item.serie} | {item.correlativo_actual} a {item.rango_final}
+                      {item.numero_resolucion} | {item.serie} | {item.correlativo_actual} a {item.rango_final} | ROL: {String(item.rol || 'caja').toUpperCase()}
                     </option>
                   ))}
                 </select>
@@ -361,6 +394,7 @@ function AsignarCorrelativo() {
                         <td>
                           <div className="fw-bold">{item.nombre_usuario}</div>
                           <div className="small text-muted">{item.correo}</div>
+                          <div className="small text-muted">Rol: {String(item.nombre_rol || 'sin rol')}</div>
                         </td>
                         <td>
                           <div>{item.numero_resolucion}</div>
