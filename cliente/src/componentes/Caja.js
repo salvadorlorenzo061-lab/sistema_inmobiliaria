@@ -648,10 +648,11 @@ const Caja = () => {
             doc.text(`N. ${String(numero).padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
             doc.setTextColor(0, 0, 0);
             doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(7.5);
-            doc.text(doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), w - 8), x + (w / 2), y + 18.5, { align: 'center' });
+            doc.setFontSize(7.2);
+            const direccionLineas = doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), w - 20).slice(0, 2);
+            doc.text(direccionLineas, x + (w / 2), y + headerHeight + 6, { align: 'center' });
 
-            y += headerHeight + 4;
+            y += headerHeight + 12;
             doc.setFillColor(245, 211, 69);
             doc.rect(x, y, w, 6, 'F');
             doc.rect(x, y, w, 6);
