@@ -133,7 +133,6 @@ router.post("/crear", (req, res) => {
             }
         );
     });
-    });
 });
 
 // === LISTAR RESOLUCIONES ===
