@@ -304,6 +304,10 @@ function AnulacionDeuda() {
       doc.text(doc.splitTextToSize(`Autoriza: ${getNombreUsuario(autorizadorInfo)}`, 56).slice(0, 2), x + 132, y + 8.6);
 
       y += infoAltura + 3;
+      const maxTableStartY = 108;
+      if (y > maxTableStartY) {
+        y = maxTableStartY;
+      }
       autoTable(doc, {
         startY: y,
         head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
@@ -319,7 +323,7 @@ function AnulacionDeuda() {
         pageBreak: 'avoid'
       });
 
-      const footerY = doc.lastAutoTable.finalY + 4;
+      const footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
       doc.setFont('Helvetica', 'italic');
       doc.setFontSize(7.2);
       doc.text(

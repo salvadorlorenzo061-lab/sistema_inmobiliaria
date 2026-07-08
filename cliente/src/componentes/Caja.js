@@ -600,6 +600,20 @@ const Caja = () => {
             const meses = Array.isArray(recibo?.meses_pagados) && recibo.meses_pagados.length ? recibo.meses_pagados.join(', ') : (recibo?.mes_pagado || 'N/A');
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
+            const detalleRowsOriginal = (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: meses, total: montoTotal }]);
+            const maxDetalleRows = 4;
+            const detalleRows = detalleRowsOriginal.length > maxDetalleRows
+                ? [
+                    ...detalleRowsOriginal.slice(0, maxDetalleRows - 1),
+                    {
+                        concepto: `Otros ${detalleRowsOriginal.length - (maxDetalleRows - 1)} conceptos`,
+                        mes: 'Varios',
+                        total: detalleRowsOriginal
+                            .slice(maxDetalleRows - 1)
+                            .reduce((sum, item) => sum + parseFloat(item?.total || 0), 0)
+                    }
+                ]
+                : detalleRowsOriginal;
 
             const x = 10;
             const w = 190;
@@ -711,25 +725,30 @@ const Caja = () => {
             doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56), x + 132, y + 6);
 
             y += 30;
+            const maxTableStartY = 102;
+            if (y > maxTableStartY) {
+                y = maxTableStartY;
+            }
             autoTable(doc, {
                 startY: y,
                 head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
-                body: (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: meses, total: montoTotal }]).map((item) => ([
+                body: detalleRows.map((item) => ([
                     String(item?.concepto || 'Pago aplicado'),
                     String(item?.mes || meses || 'N/A'),
                     parseFloat(item?.total || 0).toFixed(2)
                 ])),
                 theme: 'grid',
                 headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0] },
-                styles: { fontSize: 9 },
-                margin: { left: x, right: 10 }
+                styles: { fontSize: 8.2, cellPadding: 1.1 },
+                margin: { left: x, right: 10 },
+                pageBreak: 'avoid'
             });
 
-            const footerY = doc.lastAutoTable.finalY + 10;
+            const footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
             doc.setFont('Helvetica', 'italic');
-            doc.setFontSize(8.5);
+            doc.setFontSize(7.2);
             doc.text(
-                doc.splitTextToSize('Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico conserva el detalle completo del cobro realizado.', 188),
+                doc.splitTextToSize('Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico conserva el detalle completo del cobro realizado.', 188).slice(0, 1),
                 x,
                 footerY
             );
