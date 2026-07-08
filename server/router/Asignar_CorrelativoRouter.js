@@ -195,34 +195,31 @@ router.get('/siguiente-correlativo', (req, res) => {
             return res.status(500).send({ message: 'No se pudo obtener la empresa del contrato.' });
         }
 
-        const idEmpresa = Number(empresaRows?.[0]?.id_empresa_facturacion || 0);
-        if (!idEmpresa) {
-            return res.send({
-                disponible: false,
-                origen: null,
-                correlativo: null,
-                id_asignacion: null,
-                mensaje: 'El contrato no tiene empresa de facturación configurada.'
-            });
-        }
+        const idEmpresaRaw = Number(empresaRows?.[0]?.id_empresa_facturacion || 0);
+        const idEmpresa = idEmpresaRaw > 0 ? idEmpresaRaw : null;
 
         const asignacionQuery = `
                 SELECT
                     ac.id_asignacion,
+                    ac.id_empresa,
                     ac.serie,
                     ac.correlativo_actual,
                     ac.correlativo_fin,
                     CONCAT(ac.serie, '-', LPAD(ac.correlativo_actual, 8, '0')) AS correlativo_actual_display
                 FROM asignar_correlativos ac
                 WHERE ac.id_usuario = ?
-                  AND ac.id_empresa = ?
                   AND ac.estado = 'activo'
                   AND ac.correlativo_actual <= ac.correlativo_fin
-                ORDER BY ac.fecha_asignacion ASC, ac.id_asignacion ASC
+                ORDER BY CASE
+                            WHEN ? IS NOT NULL AND ac.id_empresa = ? THEN 0
+                            ELSE 1
+                         END ASC,
+                         ac.fecha_asignacion ASC,
+                         ac.id_asignacion ASC
                 LIMIT 1
             `;
 
-        db.query(asignacionQuery, [idUsuario, idEmpresa], (asignErr, asignRows) => {
+        db.query(asignacionQuery, [idUsuario, idEmpresa, idEmpresa], (asignErr, asignRows) => {
             if (asignErr) {
                 console.error(asignErr);
                 return res.status(500).send({ message: 'No se pudo consultar el correlativo asignado.' });
@@ -230,29 +227,36 @@ router.get('/siguiente-correlativo', (req, res) => {
 
             if (asignRows && asignRows.length) {
                 const asignacion = asignRows[0];
+                const empresaCoincide = idEmpresa && Number(asignacion.id_empresa || 0) === idEmpresa;
                 return res.send({
                     disponible: true,
                     origen: 'asignado',
                     correlativo: asignacion.correlativo_actual_display,
                     id_asignacion: asignacion.id_asignacion,
                     correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
-                    mensaje: 'Este correlativo asignado será usado al generar el cobro.'
+                    mensaje: empresaCoincide
+                        ? 'Este correlativo asignado será usado al generar el cobro.'
+                        : 'Se usará tu correlativo activo disponible para este cobro.'
                 });
             }
 
             const resolucionUsuarioQuery = `
-                SELECT serie, correlativo_actual, rango_final
+                SELECT id_empresa, serie, correlativo_actual, rango_final
                 FROM resoluciones_facturas
-                WHERE id_empresa = ?
-                  AND id_usuario = ?
+                WHERE id_usuario = ?
                   AND estado = 'activo'
                   AND correlativo_actual BETWEEN rango_inicial AND rango_final
                   AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                ORDER BY fecha_vencimiento ASC, id_resolucion ASC
+                ORDER BY CASE
+                            WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
+                            ELSE 1
+                         END ASC,
+                         fecha_vencimiento ASC,
+                         id_resolucion ASC
                 LIMIT 1
             `;
 
-            db.query(resolucionUsuarioQuery, [idEmpresa, idUsuario], (resErr, resRows) => {
+            db.query(resolucionUsuarioQuery, [idUsuario, idEmpresa, idEmpresa], (resErr, resRows) => {
                 if (resErr) {
                     console.error(resErr);
                     return res.status(500).send({ message: 'No se pudo consultar resolución asignada al usuario.' });
@@ -260,13 +264,16 @@ router.get('/siguiente-correlativo', (req, res) => {
 
                 if (resRows && resRows.length) {
                     const resolucion = resRows[0];
+                    const empresaCoincide = idEmpresa && Number(resolucion.id_empresa || 0) === idEmpresa;
                     return res.send({
                         disponible: true,
                         origen: 'resolucion_usuario',
                         correlativo: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
                         id_asignacion: null,
                         correlativo_fin: `${resolucion.serie}-${padCorrelativo(resolucion.rango_final)}`,
-                        mensaje: 'Este correlativo de tu resolución asignada será usado al generar el cobro.'
+                        mensaje: empresaCoincide
+                            ? 'Este correlativo de tu resolución asignada será usado al generar el cobro.'
+                            : 'Se usará tu resolución activa disponible para este cobro.'
                     });
                 }
 

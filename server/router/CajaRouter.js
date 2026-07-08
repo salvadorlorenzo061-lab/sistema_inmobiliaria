@@ -163,22 +163,28 @@ const registrarHistorialFactura = ({
 };
 
 const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
-    if (!idUsuario || !idEmpresa) {
+    if (!idUsuario) {
         return callback(null, null);
     }
 
     const query = `
-        SELECT id_asignacion, id_resolucion, serie, correlativo_actual, correlativo_fin
+        SELECT id_asignacion, id_resolucion, id_empresa, serie, correlativo_actual, correlativo_fin
         FROM asignar_correlativos
         WHERE id_usuario = ?
-          AND id_empresa = ?
           AND estado = 'activo'
           AND correlativo_actual <= correlativo_fin
-        ORDER BY fecha_asignacion ASC, id_asignacion ASC
+        ORDER BY CASE
+                    WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
+                    ELSE 1
+                 END ASC,
+                 fecha_asignacion ASC,
+                 id_asignacion ASC
         LIMIT 1
     `;
 
-    db.query(query, [idUsuario, idEmpresa], (err, rows) => {
+    const idEmpresaNormalizado = idEmpresa ? Number(idEmpresa) : null;
+
+    db.query(query, [idUsuario, idEmpresaNormalizado, idEmpresaNormalizado], (err, rows) => {
         if (err) {
             return callback(err);
         }
@@ -205,7 +211,8 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
                 return callback(null, {
                     correlativo: correlativoTexto,
                     id_resolucion: asignacion.id_resolucion,
-                    id_asignacion: asignacion.id_asignacion
+                    id_asignacion: asignacion.id_asignacion,
+                    id_empresa: asignacion.id_empresa ? Number(asignacion.id_empresa) : null
                 });
             }
         );
@@ -1238,19 +1245,23 @@ router.post("/procesar-pago", (req, res) => {
                             });
                         }
 
-                        const sqlResolucionUsuario = `
-                            SELECT id_resolucion, serie, correlativo_actual, rango_final
-                            FROM resoluciones_facturas
-                            WHERE id_empresa = ?
-                              AND id_usuario = ?
-                              AND estado = 'activo'
-                              AND correlativo_actual BETWEEN rango_inicial AND rango_final
-                              AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                            ORDER BY fecha_vencimiento ASC, id_resolucion ASC
-                            LIMIT 1
-                        `;
+                                                const sqlResolucionUsuario = `
+                                                        SELECT id_resolucion, id_empresa, serie, correlativo_actual, rango_final
+                                                        FROM resoluciones_facturas
+                                                        WHERE id_usuario = ?
+                                                            AND estado = 'activo'
+                                                            AND correlativo_actual BETWEEN rango_inicial AND rango_final
+                                                            AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
+                                                        ORDER BY CASE
+                                                                                WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
+                                                                                ELSE 1
+                                                                         END ASC,
+                                                                         fecha_vencimiento ASC,
+                                                                         id_resolucion ASC
+                                                        LIMIT 1
+                                                `;
 
-                        db.query(sqlResolucionUsuario, [idEmpresaFacturacion, idUsuarioSeguro], (resErr, resRows) => {
+                                                db.query(sqlResolucionUsuario, [idUsuarioSeguro, idEmpresaFacturacion, idEmpresaFacturacion], (resErr, resRows) => {
                             if (resErr) {
                                 return db.rollback(() => res.status(500).send("Error al obtener resolución asignada al usuario: " + resErr.message));
                             }
