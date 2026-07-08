@@ -42,364 +42,7 @@ const normalizeImageDataUrl = (value = '') => {
     }
 
     return `data:${mime};base64,${cleaned}`;
-};
 
-const normalizeSearchValue = (value = '') => String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-
-const UNIDADES = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciseis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidos', 'veintitres', 'veinticuatro', 'veinticinco', 'veintiseis', 'veintisiete', 'veintiocho', 'veintinueve'];
-const DECENAS = ['', '', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
-const CENTENAS = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
-
-const cientosALetras = (n) => {
-    if (n === 100) return 'cien';
-    const c = Math.floor(n / 100);
-    const r = n % 100;
-    if (r === 0) return CENTENAS[c];
-    if (r < 30) return `${CENTENAS[c]} ${UNIDADES[r]}`.trim();
-    const d = Math.floor(r / 10);
-    const u = r % 10;
-    return `${CENTENAS[c]} ${DECENAS[d]}${u ? ` y ${UNIDADES[u]}` : ''}`.trim();
-};
-
-const numeroALetrasRecibo = (n) => {
-    const numero = Math.floor(Number(n || 0));
-    if (!Number.isFinite(numero) || numero <= 0) return 'cero';
-    let restante = numero;
-    let salida = '';
-
-    if (restante >= 1000000) {
-        const millones = Math.floor(restante / 1000000);
-        salida += `${numeroALetrasRecibo(millones)} ${millones === 1 ? 'millon' : 'millones'} `;
-        restante %= 1000000;
-    }
-    if (restante >= 1000) {
-        const miles = Math.floor(restante / 1000);
-        salida += `${miles === 1 ? 'mil' : `${cientosALetras(miles)} mil`} `;
-        restante %= 1000;
-    }
-    if (restante > 0) salida += cientosALetras(restante);
-    return salida.trim();
-};
-
-const montoALetrasRecibo = (monto) => {
-    const base = numeroALetrasRecibo(monto);
-    return `${base.charAt(0).toUpperCase()}${base.slice(1)} quetzales exactos`;
-};
-
-const fechaLargaGT = (valor) => {
-    const fecha = valor instanceof Date && !Number.isNaN(valor.getTime()) ? valor : new Date();
-    return fecha.toLocaleDateString('es-GT', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
-};
-
-const getUsuarioSesion = () => {
-    try {
-        return JSON.parse(localStorage.getItem('usuario') || '{}');
-    } catch {
-        return {};
-    }
-};
-
-const esRolJuridico = (usuario = {}) => {
-    const rol = String(usuario?.nombre_rol || '').toLowerCase();
-    return rol.includes('jurid') || rol.includes('legal');
-};
-const Caja = () => {
-    const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
-    const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
-    const calcularPlanFinancieroContrato = (contrato = {}) => {
-        const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
-        const capitalPorCuota = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
-        const cuotasPactadas = Math.max(parseInt(contrato?.cuotas_pactadas || 0, 10), 0);
-        const interesPorcentaje = Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
-
-        const capitalTotalContrato = (capitalPorCuota > 0 && cuotasPactadas > 0)
-            ? parseFloat((capitalPorCuota * cuotasPactadas).toFixed(2))
-            : parseFloat(saldoPendiente.toFixed(2));
-        const interesTotalContrato = (capitalTotalContrato > 0 && interesPorcentaje > 0)
-            ? parseFloat(((capitalTotalContrato * interesPorcentaje) / 100).toFixed(2))
-            : 0;
-        const interesPorCuota = cuotasPactadas > 0
-            ? parseFloat((interesTotalContrato / cuotasPactadas).toFixed(2))
-            : 0;
-        const cuotaTotalConInteres = parseFloat((capitalPorCuota + interesPorCuota).toFixed(2));
-        const cuotasRestantes = (saldoPendiente > 0 && capitalPorCuota > 0)
-            ? Math.max(Math.ceil(saldoPendiente / capitalPorCuota), 0)
-            : 0;
-        const totalContratoConInteres = parseFloat((capitalTotalContrato + interesTotalContrato).toFixed(2));
-
-        return {
-            saldoPendiente,
-            capitalPorCuota,
-            cuotasPactadas,
-            interesPorcentaje,
-            capitalTotalContrato,
-            interesTotalContrato,
-            interesPorCuota,
-            cuotaTotalConInteres,
-            cuotasRestantes,
-            totalContratoConInteres
-        };
-    };
-
-    const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
-        const periodicidadNormalizada = String(periodicidad || '').trim().toLowerCase();
-        if (periodicidadNormalizada === 'unico') {
-            return true;
-        }
-        if (periodicidadNormalizada === 'mensual') {
-            return false;
-        }
-
-        const nombre = String(nombreServicio || '')
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .trim();
-
-        return ['derecho', 'paja', 'instalacion', 'conexion', 'matricula', 'inscripcion']
-            .some((fragmento) => nombre.includes(fragmento));
-    };
-
-    const filtrarServiciosMostrables = (servicios = []) => {
-        return (Array.isArray(servicios) ? servicios : []).filter((servicio) => {
-            const esUnico = esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
-            const yaPagadoAlgunaVez = Boolean(servicio?.ya_pagado_alguna_vez);
-            return !(esUnico && yaPagadoAlgunaVez);
-        });
-    };
-
-    // ✅ Función helper para mostrar notificaciones flotantes (toast)
-    const mostrarToast = (titulo, tipo = 'success') => {
-        Swal.fire({
-            icon: tipo,
-            title: titulo,
-            toast: true,
-            position: 'top-end',
-            showConfirmButton: false,
-            timer: 3000,
-            timerProgressBar: true,
-            didOpen: (toast) => {
-                toast.addEventListener('mouseenter', Swal.stopTimer);
-                toast.addEventListener('mouseleave', Swal.resumeTimer);
-            }
-        });
-    };
-
-    // Estados de búsqueda
-    const [busqueda, setBusqueda] = useState(''); // Ahora acepta texto o números
-    const [listaResidentes, setListaResidentes] = useState([]); // Guarda las coincidencias
-    const [listaResidentesPendientes, setListaResidentesPendientes] = useState([]); // Lista inicial de residentes con pagos pendientes
-    const [datosDeuda, setDatosDeuda] = useState(null); // Residente seleccionado actualmente
-    const [idResidenteActivo, setIdResidenteActivo] = useState(''); // Guarda el ID del seleccionado para el pago
-
-    // Estados del formulario de cobro
-    const [montoAPagar, setMontoAPagar] = useState('');
-    const [montoMora, setMontoMora] = useState('0');
-    const [mesPagado, setMesPagado] = useState('Enero');
-    const [numCuota, setNumCuota] = useState('1');
-    const [opcionesCuota, setOpcionesCuota] = useState([]);
-    const [metodoPago, setMetodoPago] = useState('Efectivo');
-    const [referencia, setReferencia] = useState('');
-    const [mesesPendientes, setMesesPendientes] = useState([]);
-    const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
-    const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
-    const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
-    const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
-    const [morasPendientes, setMorasPendientes] = useState([]);
-    const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
-    const [serviciosContrato, setServiciosContrato] = useState([]);
-    const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
-    const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
-    const [showModalCobro, setShowModalCobro] = useState(false);
-    const [estadoCorrelativoUsuario, setEstadoCorrelativoUsuario] = useState(null);
-    const [estadoCorrelativo, setEstadoCorrelativo] = useState(null);
-    const [resumenServiciosIniciales, setResumenServiciosIniciales] = useState(null);
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 10;
-
-    useEffect(() => {
-        // Evitar que quede un mes inválido seleccionado al cambiar de residente o al recargar pendientes.
-        if (!Array.isArray(mesesPendientes) || !mesesPendientes.length) {
-            if (mesPagado) {
-                setMesPagado('');
-            }
-            return;
-        }
-
-        if (!mesPagado || !mesesPendientes.includes(mesPagado)) {
-            setMesPagado(mesesPendientes[0]);
-        }
-    }, [mesesPendientes, mesPagado]);
-
-    const obtenerUsuarioActivo = () => {
-        try {
-            const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
-            const id = Number(usuario?.id_usuario);
-            return Number.isInteger(id) && id > 0 ? id : null;
-        } catch {
-            return null;
-        }
-    };
-
-    const contratoTieneAsignacionValida = (registro = {}) => {
-        const idProyecto = Number(registro?.id_proyecto || 0);
-        const idEmpresaFacturacion = Number(registro?.id_empresa_facturacion || 0);
-        return Number.isInteger(idProyecto) && idProyecto > 0 && Number.isInteger(idEmpresaFacturacion) && idEmpresaFacturacion > 0;
-    };
-
-    const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
-
-    useEffect(() => {
-        const consultarEstadoCorrelativoUsuario = async () => {
-            const idUsuario = obtenerUsuarioActivo();
-            if (!idUsuario) {
-                setEstadoCorrelativoUsuario(null);
-                return;
-            }
-
-            try {
-                const res = await axios.get(`${API_BASE_URL}/api/asignar_correlativo/estado-usuario?id_usuario=${idUsuario}`);
-                setEstadoCorrelativoUsuario(res.data || null);
-            } catch (error) {
-                console.error('No se pudo consultar el estado general de correlativos del usuario:', error);
-                setEstadoCorrelativoUsuario({
-                    disponible: false,
-                    mensaje: error?.response?.data?.message || 'No se pudo consultar si tienes correlativos asignados.'
-                });
-            }
-        };
-
-        consultarEstadoCorrelativoUsuario();
-    }, []);
-
-    // ✅ Cargar lista inicial de residentes con pagos pendientes al iniciar
-    useEffect(() => {
-        const cargarResidentesPendientes = async () => {
-            const idUsuario = obtenerUsuarioActivo();
-            try {
-                const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`, {
-                    params: idUsuario ? { id_usuario: idUsuario } : {}
-                });
-                setListaResidentesPendientes(res.data || []);
-            } catch (error) {
-                console.error("Error al cargar residentes pendientes:", error);
-                setListaResidentesPendientes([]);
-            }
-        };
-        
-        cargarResidentesPendientes();
-    }, []);
-
-    const limpiarBusquedaCaja = async () => {
-        setBusqueda('');
-        setListaResidentes([]);
-        setDatosDeuda(null);
-        setIdResidenteActivo('');
-        setMesesPendientes([]);
-        setMesesSeleccionados([]);
-        setMontoAPagar('');
-        setMontoMora('0');
-        setMontoTotalSeleccionado(0);
-        setMontoTerrenoSeleccionado(0);
-        setMontoInteresSeleccionado(0);
-        setMorasPendientes([]);
-        setMorasSeleccionadas([]);
-        setServiciosContrato([]);
-        setServiciosSeleccionados([]);
-        setMontoServiciosSeleccionado(0);
-        setShowModalCobro(false);
-        setEstadoCorrelativo(null);
-        setResumenServiciosIniciales(null);
-
-        try {
-            const idUsuario = obtenerUsuarioActivo();
-            const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`, {
-                params: idUsuario ? { id_usuario: idUsuario } : {}
-            });
-            setListaResidentesPendientes(res.data || []);
-        } catch (error) {
-            console.error("Error al recargar residentes pendientes:", error);
-            setListaResidentesPendientes([]);
-        }
-    };
-
-    const recalcularTotalesCobro = (meses = mesesSeleccionados, serviciosIds = serviciosSeleccionados, residenteActual = datosDeuda, serviciosDisponibles = serviciosContrato) => {
-        const cantidadMeses = (meses || []).length;
-        const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
-        const saldoPendiente = planContrato.saldoPendiente;
-        const capitalPorCuota = planContrato.capitalPorCuota;
-        const interesPorCuota = planContrato.interesPorCuota;
-
-        // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
-        const cuotasRestantes = planContrato.cuotasRestantes;
-        const mesesTerrenoACobrar = Math.min(cantidadMeses, cuotasRestantes);
-        const terrenoCalculado = saldoPendiente > 0 && mesesTerrenoACobrar > 0 ? (capitalPorCuota * mesesTerrenoACobrar) : 0;
-        const terrenoTotal = Math.min(terrenoCalculado, Math.max(saldoPendiente, 0));
-        const serviciosSeleccionadosDetalle = (serviciosDisponibles || [])
-            .filter((s) => serviciosIds.includes(s.id_servicio));
-        const costoServiciosMensual = serviciosSeleccionadosDetalle
-            .filter((s) => !esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
-            .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
-        const costoServiciosUnicos = serviciosSeleccionadosDetalle
-            .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
-            .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
-        const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos) : 0;
-        const interesSeleccionado = parseFloat((interesPorCuota * mesesTerrenoACobrar).toFixed(2));
-        const total = terrenoTotal + serviciosTotal + interesSeleccionado;
-
-        setMontoTerrenoSeleccionado(terrenoTotal);
-        setMontoServiciosSeleccionado(serviciosTotal);
-        setMontoInteresSeleccionado(interesSeleccionado);
-        setMontoTotalSeleccionado(total);
-        setMontoAPagar(String(total.toFixed(2)));
-    };
-
-    const consultarSiguienteCorrelativo = async (idContrato) => {
-        const idUsuario = obtenerUsuarioActivo();
-        if (!idUsuario || !idContrato) {
-            setEstadoCorrelativo(null);
-            return;
-        }
-
-        try {
-            const res = await axios.get(`${API_BASE_URL}/api/asignar_correlativo/siguiente-correlativo?id_usuario=${idUsuario}&id_contrato=${idContrato}`);
-            setEstadoCorrelativo(res.data || null);
-        } catch (error) {
-            console.error('No se pudo consultar el siguiente correlativo:', error);
-            setEstadoCorrelativo({
-                disponible: false,
-                origen: null,
-                correlativo: null,
-                id_asignacion: null,
-                mensaje: error?.response?.data?.message || 'No se pudo consultar el correlativo disponible.'
-            });
-        }
-    };
-
-    // Buscar residentes por el término ingresado utilizando el puerto correcto 3001
-    const buscarResidente = async () => {
-        if (!busqueda.trim()) return mostrarToast("Ingresa nombre, apellido, DPI o número de contrato para buscar", "warning");
-        try {
-            const idUsuario = obtenerUsuarioActivo();
-            setDatosDeuda(null); // Resetea selecciones anteriores
-            setListaResidentesPendientes([]); // Limpia la lista inicial
-            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
-                params: {
-                    criterio: busqueda.trim(),
-                    ...(idUsuario ? { id_usuario: idUsuario } : {})
-                }
-            });
-            
-            setListaResidentes(res.data);
             
             // Si solo encuentra uno, lo selecciona automáticamente
             if (res.data.length === 1) {
@@ -407,370 +50,7 @@ const Caja = () => {
             }
         } catch (error) {
             mostrarToast(error.response?.data || "Error al buscar residente", "error");
-            setListaResidentes([]);
-            setDatosDeuda(null);
-        }
-    };
-
-    // Al dar clic sobre un residente de la lista de resultados
-    const seleccionarResidente = async (residente) => {
-        setDatosDeuda(residente);
-        setIdResidenteActivo(residente.id_residente);
-        setEstadoCorrelativo(null);
-        setListaResidentes([]); // Limpia la lista de búsqueda en pantalla
-        setMesesSeleccionados([]);
-        setServiciosContrato([]);
-        setServiciosSeleccionados([]);
-        setNumCuota('0');
-        setMontoMora('0');
-        setMontoTotalSeleccionado(0);
-        setMontoTerrenoSeleccionado(0);
-        setMontoInteresSeleccionado(0);
-        setMorasPendientes([]);
-        setMorasSeleccionadas([]);
-        setMontoServiciosSeleccionado(0);
-        setResumenServiciosIniciales(null);
-
-        try {
-            await consultarSiguienteCorrelativo(residente.id_contrato);
-            const res = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${residente.id_contrato}`);
-            const meses = res?.data?.meses || [];
-            setMesesPendientes(meses);
-            
-            // ✅ Seleccionar mes actual y el siguiente (si existe)
-            const mesesASeleccionar = [];
-            if (meses.length > 0) {
-                mesesASeleccionar.push(meses[0]); // Mes actual
-                if (meses.length > 1) {
-                    mesesASeleccionar.push(meses[1]); // Mes siguiente
-                }
-            }
-            setMesesSeleccionados(mesesASeleccionar);
-            setNumCuota(meses.length ? '1' : '0');
-            
-            if (meses.length) {
-                setMesPagado(meses[0]);
-            } else {
-                setMesPagado('');
-            }
-            setOpcionesCuota(meses.length ? meses.map((mes, index) => ({ value: String(index + 1), label: `Cuota ${index + 1} - ${mes}` })) : [{ value: '0', label: 'Sin cuotas pendientes' }]);
-
-            const primerMes = mesesASeleccionar[0] || meses[0] || '';
-            if (primerMes) {
-                try {
-                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residente.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
-                    const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
-                    setServiciosContrato(servicios);
-
-                    const seleccionInicialServicios = servicios
-                        .filter((s) => !s.ya_pagado_mes)
-                        .map((s) => s.id_servicio);
-
-                    setServiciosSeleccionados(seleccionInicialServicios);
-                    recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residente, servicios);
-                } catch (serviciosError) {
-                    console.error('Error al obtener servicios del contrato:', serviciosError);
-                    setServiciosContrato([]);
-                    setServiciosSeleccionados([]);
-                    // Mantener meses pendientes aunque servicios falle, para no bloquear el cobro de terreno.
-                    recalcularTotalesCobro(mesesASeleccionar, [], residente, []);
-                }
-            } else {
-                recalcularTotalesCobro(mesesASeleccionar, [], residente);
-            }
-
-            try {
-                const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${residente.id_contrato}`);
-                const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
-                setMorasPendientes(moras);
-                setMorasSeleccionadas(moras.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
-            } catch (moraError) {
-                console.error('Error al consultar moras pendientes:', moraError);
-                setMorasPendientes([]);
-                setMorasSeleccionadas([]);
-                setMontoMora('0');
-            }
-
-            const saldoPendienteResidente = parseFloat(residente?.saldo_pendiente || 0);
-            if (saldoPendienteResidente <= 0) {
-                mostrarToast('Contrato de terreno solvente. Solo se mostrarán servicios pendientes de cobro.', 'info');
-            }
-            if (saldoPendienteResidente > 0 && meses.length === 0) {
-                mostrarToast('La cuenta ya se encuentra solvente para cuotas de terreno.', 'info');
-            }
-        } catch (error) {
-            console.error('Error al obtener meses pendientes:', error);
-            setMesesPendientes([]);
-            setMesesSeleccionados([]);
-            setMesPagado('');
-            setOpcionesCuota([{ value: '0', label: 'Sin cuotas pendientes' }]);
-            recalcularTotalesCobro([], [], residente);
-        }
-    };
-
-    const actualizarMontoParaSeleccion = (seleccionados) => {
-        recalcularTotalesCobro(seleccionados, serviciosSeleccionados, datosDeuda);
-    };
-
-    const toggleMesSeleccionado = (mes) => {
-        setMesesSeleccionados(prev => {
-            const next = prev.includes(mes) ? prev.filter(item => item !== mes) : [...prev, mes];
-            const siguienteMes = next.length ? next[0] : (mesesPendientes[0] || '');
-            setMesPagado(siguienteMes);
-            actualizarMontoParaSeleccion(next);
-            return next;
-        });
-    };
-
-    const toggleServicioSeleccionado = (idServicio) => {
-        setServiciosSeleccionados(prev => {
-            const next = prev.includes(idServicio) ? prev.filter(id => id !== idServicio) : [...prev, idServicio];
-            recalcularTotalesCobro(mesesSeleccionados, next, datosDeuda);
-            return next;
-        });
-    };
-
-    const toggleMoraSeleccionada = (idMorosidad) => {
-        setMorasSeleccionadas((actuales) => {
-            if (actuales.includes(idMorosidad)) {
-                return actuales.filter((id) => id !== idMorosidad);
-            }
-            return [...actuales, idMorosidad];
-        });
-    };
-
-    useEffect(() => {
-        if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
-            setMontoMora('0');
-            return;
-        }
-
-        const totalSeleccionado = morasPendientes
-            .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
-            .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
-
-        setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
-    }, [morasPendientes, morasSeleccionadas]);
-
-    // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
-    const ejecutarCobro = async (e) => {
-        e.preventDefault();
-
-        const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
-        const montoSolicitado = parseFloat(montoAPagar || 0);
-        const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
-
-        if (!contratoTieneAsignacionValida(datosDeuda)) {
-            mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
-            return;
-        }
-
-        if (!usuarioTienePermisoCobro(datosDeuda)) {
-            mostrarToast('No se puede generar cobro: este contrato no pertenece a tus correlativos asignados.', 'warning');
-            return;
-        }
-
-        if (!Number.isFinite(montoSolicitado) || montoSolicitado <= 0) {
-            mostrarToast('El monto a cobrar debe ser mayor a cero.', 'warning');
-            return;
-        }
-
-        if (!mesesSeleccionados.length) {
-            mostrarToast('Debe seleccionar al menos un mes pendiente para generar el cobro.', 'warning');
-            return;
-        }
-
-        if (montoTerreno > 0 && saldoPendienteActual <= 0) {
-            mostrarToast('Este contrato ya está solvente para cuota de terreno.', 'warning');
-            return;
-        }
-
-        if (montoTerreno > saldoPendienteActual) {
-            mostrarToast(`El monto excede el saldo pendiente (Q${saldoPendienteActual.toFixed(2)}).`, 'warning');
-            return;
-        }
-
-        const serviciosPayload = (serviciosContrato || [])
-            .filter((servicio) => serviciosSeleccionados.includes(servicio.id_servicio))
-            .map((servicio) => ({
-                id_servicio: servicio.es_extraordinario ? null : servicio.id_servicio,
-                id_pago_extra: servicio.id_pago_extra || null,
-                es_extraordinario: Boolean(servicio.es_extraordinario),
-                nombre_servicio: servicio.nombre_servicio,
-                subtotal: parseFloat(servicio.costo_servicio || 0),
-                periodicidad: servicio.periodicidad || 'mensual',
-                es_cobro_unico: Boolean(servicio.es_cobro_unico)
-            }));
-        
-        const payload = {
-            id_residente: idResidenteActivo,
-            id_contrato: datosDeuda.id_contrato,
-            id_tipo_contrato: datosDeuda.id_tipo_contrato || 1, 
-            id_usuario: obtenerUsuarioActivo(), 
-            monto_pagar: montoSolicitado,
-            monto_terreno_pagar: montoTerreno,
-            monto_interes: parseFloat(montoInteresSeleccionado || 0),
-            monto_mora: parseFloat(montoMora),
-            metodo_pago: metodoPago,
-            no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
-            observaciones: `Pago de cuota de terreno mes de ${mesesSeleccionados.join(', ') || mesPagado}`,
-            mes_pagado: mesesSeleccionados[0] || mesPagado,
-            meses_pagados: mesesSeleccionados.length ? mesesSeleccionados : [mesPagado],
-            numero_cuota: parseInt(numCuota),
-            servicios_pagados: serviciosPayload,
-            moras_aplicadas: (morasPendientes || [])
-                .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
-                .map((mora) => ({
-                    id_morosidad: Number(mora.id_morosidad || 0),
-                    mes_atrasado: String(mora.mes_atrasado || ''),
-                    monto_mora: Number(mora.monto_mora || 0)
-                }))
-        };
-
-        try {
-            const response = await axios.post(`${API_BASE_URL}/api/caja/procesar-pago`, payload);
-            
-            if (response?.data?.success) {
-                mostrarToast("¡Cobro realizado con éxito! Generando recibo...", "success");
-                const empresaPdf = {
-                    ...(response.data?.empresa || {}),
-                    logo_empresa: datosDeuda?.logo_empresa_pdf || response.data?.empresa?.logo_empresa || response.data?.empresa?.logo || null,
-                    logo_proyecto: datosDeuda?.logo_proyecto || response.data?.empresa?.logo_proyecto || response.data?.empresa?.logo || null,
-                    logo: datosDeuda?.logo_empresa_pdf || response.data?.empresa?.logo_empresa || response.data?.empresa?.logo || null,
-                    nombre_empresa: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre_empresa || response.data?.empresa?.nombre || null,
-                    nombre_proyecto: datosDeuda?.nombre_proyecto_pdf || datosDeuda?.nombre_proyecto || response.data?.empresa?.nombre_proyecto || null,
-                    nombre: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre || response.data?.empresa?.nombre_empresa || null
-                };
-
-                generarPDF(response.data, {
-                    ...datosDeuda,
-                    nombre: datosDeuda?.nombre || 'Residente',
-                    dpi: datosDeuda?.dpi || 'N/A',
-                    codigo_contrato: datosDeuda?.codigo_contrato || 'N/A',
-                    nombre_contrato: datosDeuda?.nombre_contrato || 'Contrato',
-                    saldo_pendiente: datosDeuda?.saldo_pendiente || 0
-                }, empresaPdf);
-                
-                setDatosDeuda(prev => ({
-                    ...prev,
-                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno, 0)
-                }));
-
-                if (Number(response?.data?.monto_servicios_mes_inicial || 0) > 0) {
-                    const serviciosIniciales = Array.isArray(response?.data?.servicios_cobrados_mes_inicial)
-                        ? response.data.servicios_cobrados_mes_inicial
-                        : [];
-                    setResumenServiciosIniciales({
-                        monto: Number(response.data.monto_servicios_mes_inicial || 0),
-                        servicios: serviciosIniciales
-                    });
-
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Servicios iniciales agregados automáticamente',
-                        text: `Se cobraron Q${Number(response.data.monto_servicios_mes_inicial || 0).toFixed(2)} por amenidades del mes inicial en este mismo recibo.`,
-                        timer: 2800,
-                        showConfirmButton: false
-                    });
-                } else {
-                    setResumenServiciosIniciales(null);
-                }
-                
-                // RECARGAR MESES PENDIENTES DESPUÉS DEL PAGO
-                try {
-                    const resMeses = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${datosDeuda.id_contrato}`);
-                    const mesesActualizados = resMeses?.data?.meses || [];
-                    setMesesPendientes(mesesActualizados);
-                    setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
-                    setNumCuota(mesesActualizados.length ? '1' : '0');
-                    setOpcionesCuota(mesesActualizados.length ? mesesActualizados.map((mes, index) => ({ value: String(index + 1), label: `Cuota ${index + 1} - ${mes}` })) : [{ value: '0', label: 'Sin cuotas pendientes' }]);
-                    if (mesesActualizados.length) {
-                        setMesPagado(mesesActualizados[0]);
-                    }
-                    const primerMes = mesesActualizados[0] || '';
-                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
-                    const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
-                    setServiciosContrato(servicios);
-                    const serviciosActivos = servicios.filter((s) => !s.ya_pagado_mes).map((s) => s.id_servicio);
-                    setServiciosSeleccionados(serviciosActivos);
-                    recalcularTotalesCobro(mesesActualizados.length ? [mesesActualizados[0]] : [], serviciosActivos, {
-                        ...datosDeuda,
-                        saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno, 0)
-                    }, servicios);
-                } catch (errMeses) {
-                    console.error('Error al recargar meses pendientes:', errMeses);
-                }
-
-                try {
-                    const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${datosDeuda.id_contrato}`);
-                    const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
-                    setMorasPendientes(moras);
-                    setMorasSeleccionadas(moras.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
-                } catch (moraError) {
-                    console.error('Error al recargar moras pendientes:', moraError);
-                }
-                
-                setReferencia(''); 
-                setShowModalCobro(false);
-                await consultarSiguienteCorrelativo(datosDeuda.id_contrato);
-            } else {
-                mostrarToast("El cobro no se completó correctamente.", "error");
-            }
-        } catch (error) {
-            const status = Number(error?.response?.status || 0);
-            const mensajeBackend = error?.response?.data;
-            const esFallaComunicacion = !error?.response || status === 502 || status === 503 || status === 504;
-            const mensaje = esFallaComunicacion
-                ? 'No hay comunicacion con el servidor de Caja. Verifica que el backend este en linea e intenta de nuevo en unos segundos.'
-                : `Error al procesar el cobro: ${mensajeBackend || error?.message || 'Error desconocido'}`;
-            mostrarToast(mensaje, "error");
-        }
-    };
-
-    // Generador de recibo estilo formato institucional
-    const generarPDF = (recibo, residente, empresa) => {
-        try {
-            // Carta completa (landscape) para evitar salto a segunda hoja
-            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
-            const logoEmpresa = normalizeImageDataUrl(empresa?.logo_empresa || residente?.logo_empresa_pdf || empresa?.logo || '');
-            const logoProyecto = normalizeImageDataUrl(empresa?.logo_proyecto || residente?.logo_proyecto || '');
-            const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
-            const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
-            const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
-            const interesAplicado = parseFloat(recibo?.monto_interes_pagado || 0);
-            const referencia = String(recibo?.no_referencia || '').trim();
-            const matchRef = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
-            const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
-            const numero = matchRef ? matchRef[2].slice(-5) : String(Date.now()).slice(-5);
-            const fecha = recibo?.fecha ? new Date(recibo.fecha) : new Date();
-            const mesesPagadosRecibo = Array.isArray(recibo?.meses_pagados)
-                ? recibo.meses_pagados.map((mes) => String(mes || '').trim()).filter(Boolean)
-                : [];
-            const cuotaInicio = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 0);
-            const cuotaFin = Number(recibo?.numero_cuota_fin || cuotaInicio || 0);
-            const cantidadCuotasPagadas = Number(recibo?.cantidad_cuotas_pagadas || 0);
-            const cuotaDisplay = Number.isInteger(cuotaInicio) && cuotaInicio > 0
-                ? ((Number.isInteger(cuotaFin) && cuotaFin > cuotaInicio)
-                    ? `${cuotaInicio}-${cuotaFin}`
-                    : String(cuotaInicio))
-                : 'N/A';
-            const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
-            const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
-            const usuarioActivo = getUsuarioSesion();
-            const usarFormatoJuridico = true;
-
-            if (usarFormatoJuridico) {
-                const pageW = doc.internal.pageSize.getWidth();
-                const pageH = doc.internal.pageSize.getHeight();
-                const margenX = 8;
-                const ancho = pageW - (margenX * 2);
-                const contenidoY = 36;
-                const contenidoH = 145;
-                const nombreEmpresa = String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
-                const nombreProyecto = String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto');
-                const fechaDoc = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
-                const d = String(fechaDoc.getDate()).padStart(2, '0');
-                const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
+    
                 const yFull = String(fechaDoc.getFullYear());
 
                 doc.setDrawColor(188, 177, 117);
@@ -1089,6 +369,214 @@ const Caja = () => {
                 footerY
             );
 
+=======
+    // Generador de recibo estilo formato institucional (modelo proporcionado)
+    const generarPDF = (recibo, residente, empresa) => {
+        try {
+            const doc = new jsPDF();
+            const logoEmpresa = normalizeImageDataUrl(empresa?.logo || '');
+            const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
+            const montoPrincipal = parseFloat(recibo?.monto_pagado || 0);
+            const montoTotalCobrado = parseFloat(recibo?.total_cobrado || montoPrincipal || 0);
+            const montoAbonoExtra = Math.max(parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0), 0);
+            const fechaRecibo = recibo?.fecha ? new Date(recibo.fecha) : new Date();
+
+            const referencia = String(recibo?.no_referencia || '').trim();
+            let serie = 'B';
+            let numeroRecibo = String(recibo?.numero_recibo || '').replace(/\D/g, '').slice(-5);
+            const matchSerie = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
+            if (matchSerie) {
+                serie = matchSerie[1].toUpperCase();
+                numeroRecibo = matchSerie[2].slice(-5);
+            }
+            if (!numeroRecibo) {
+                numeroRecibo = String(Date.now()).slice(-5);
+            }
+
+            const mesesPagados = Array.isArray(recibo?.meses_pagados) ? recibo.meses_pagados : [];
+            const mesesTexto = mesesPagados.length ? mesesPagados.join(', ') : (recibo?.mes_pagado || 'N/A');
+            const conceptoResumen = detalleCobro.length
+                ? [...new Set(detalleCobro.map((item) => String(item?.concepto || '').trim()).filter(Boolean))].join(', ')
+                : `Pago de cuota (${mesesTexto})`;
+
+            const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
+
+            const x = 10;
+            const w = 190;
+            let y = 10;
+
+            const drawLabelBand = (label, top, height = 8) => {
+                doc.setFillColor(245, 211, 69);
+                doc.rect(x, top, w, height, 'F');
+                doc.setDrawColor(80, 80, 80);
+                doc.rect(x, top, w, height);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(10);
+                doc.text(label, x + 2, top + height - 2.5);
+            };
+
+            const drawField = (label, value, top, height = 12) => {
+                doc.setDrawColor(80, 80, 80);
+                doc.rect(x, top, w, height);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(9);
+                doc.text(label, x + 2, top + 4.5);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(11);
+                const text = doc.splitTextToSize(String(value || 'N/A'), w - 42);
+                doc.text(text, x + 22, top + 8);
+            };
+
+            // Header del recibo
+            doc.setFillColor(240, 228, 167);
+            doc.rect(x, y, w, 30, 'F');
+            doc.setDrawColor(120, 120, 120);
+            doc.rect(x, y, w, 30);
+
+            if (logoEmpresa) {
+                try {
+                    const logoFormat = getImageFormatFromDataUrl(logoEmpresa);
+                    doc.addImage(logoEmpresa, logoFormat, x + 3, y + 3, 22, 22, `logo-recibo-${Date.now()}`, 'FAST');
+                } catch (e) {
+                    console.warn('No se pudo cargar el logo del recibo:', e);
+                }
+            }
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(11);
+            const nombreEmpresa = String(empresa?.nombre || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
+            doc.text(doc.splitTextToSize(nombreEmpresa, 92), x + 28, y + 8);
+
+            doc.setFontSize(12);
+            doc.text('RECIBO DE CAJA', x + 145, y + 8);
+            doc.setFontSize(11);
+            doc.text(`Serie "${serie}"`, x + 145, y + 15);
+            doc.setTextColor(170, 35, 35);
+            doc.text(`N. ${String(numeroRecibo).padStart(5, '0')}`, x + 173, y + 15);
+            doc.setTextColor(0, 0, 0);
+
+            const direccion = String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5');
+            const telefonoEmpresa = String(empresa?.telefono || 'PBX: 2220-6406  Telefono: 5825-5903');
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.text(doc.splitTextToSize(`${direccion}  ${telefonoEmpresa}`, 120), x + 67, y + 25, { align: 'center' });
+
+            y += 38;
+            drawLabelBand('Datos del cliente:', y);
+            y += 10;
+            drawField('Nombre:', residente?.nombre || 'N/A', y);
+
+            y += 16;
+            doc.setFillColor(245, 211, 69);
+            doc.rect(x, y, 145, 8, 'F');
+            doc.rect(x + 145, y, 45, 8, 'F');
+            doc.rect(x, y, 145, 8);
+            doc.rect(x + 145, y, 45, 8);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.text('Fecha:', x + 2, y + 5.5);
+            doc.text('Por:', x + 147, y + 5.5);
+
+            y += 8;
+            doc.rect(x, y, 145, 11);
+            doc.rect(x + 145, y, 45, 11);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10.5);
+            doc.text(`Guatemala, ${fechaLargaGuatemala(fechaRecibo)}`, x + 2, y + 7);
+            doc.setFont('Helvetica', 'bold');
+            doc.text(`Q ${montoTotalCobrado.toFixed(2)}`, x + 147, y + 7);
+
+            y += 16;
+            doc.rect(x, y, w, 11);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Paga la cantidad de:', x + 2, y + 7);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotalCobrado), 106), x + 45, y + 7);
+
+            y += 15;
+            doc.rect(x, y, w, 11);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Por cancelacion de:', x + 2, y + 7);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(doc.splitTextToSize(conceptoResumen, 138), x + 43, y + 7);
+
+            y += 15;
+            doc.rect(x, y, 65, 11);
+            doc.rect(x + 65, y, 125, 11);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Cuota:', x + 2, y + 7);
+            doc.setFontSize(14);
+            doc.setTextColor(170, 35, 35);
+            doc.text(String(recibo?.numero_cuota || 'N/A'), x + 38, y + 7);
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(10);
+            doc.text('Abono extraordinario:', x + 67, y + 7);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(12);
+            doc.text(`Q. ${montoAbonoExtra.toFixed(2)}`, x + 112, y + 7);
+
+            y += 16;
+            doc.rect(x, y, 60, 28);
+            doc.rect(x + 65, y, 60, 28);
+            doc.rect(x + 130, y, 60, 28);
+
+            const drawCheck = (cx, cy, checked, label) => {
+                doc.rect(cx, cy, 4.5, 4.5);
+                if (checked) {
+                    doc.setTextColor(190, 0, 0);
+                    doc.text('X', cx + 1.4, cy + 3.6);
+                    doc.setTextColor(0, 0, 0);
+                }
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.text(label, cx + 6, cy + 3.7);
+            };
+
+            drawCheck(x + 2, y + 2, metodo.includes('efectivo'), 'Efectivo');
+            drawCheck(x + 2, y + 9, metodo.includes('transfer'), 'Transferencia');
+            drawCheck(x + 2, y + 16, metodo.includes('deposit'), 'Deposito');
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Referencia bancaria:', x + 67, y + 7);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(String(recibo?.no_referencia || 'N/A'), x + 67, y + 14);
+            doc.text(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, x + 67, y + 21);
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Meses pagados:', x + 132, y + 7);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(doc.splitTextToSize(mesesTexto, 56), x + 132, y + 13);
+
+            y += 34;
+            autoTable(doc, {
+                startY: y,
+                head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
+                body: (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: mesesTexto, total: montoTotalCobrado }]).map((item) => ([
+                    String(item?.concepto || 'Pago aplicado'),
+                    String(item?.mes || mesesTexto || 'N/A'),
+                    parseFloat(item?.total || 0).toFixed(2)
+                ])),
+                theme: 'grid',
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0] },
+                margin: { left: x, right: 10 }
+            });
+
+            const footerY = doc.lastAutoTable.finalY + 10;
+            doc.setFont('Helvetica', 'italic');
+            doc.setFontSize(8.5);
+            doc.text(
+                doc.splitTextToSize(
+                    'Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico se extiende previo a la confirmacion de la transaccion y conserva el detalle completo del cobro realizado.',
+                    188
+                ),
+                x,
+                footerY
+            );
+
+>>>>>>> 8acc0e7 (Redesign Caja PDF receipt to match provided template)
             const fileName = `Recibo_${String(recibo?.no_referencia || recibo?.numero_recibo || 'sin_numero').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
             doc.save(fileName);
         } catch (error) {
