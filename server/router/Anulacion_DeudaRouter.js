@@ -212,7 +212,64 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
 
     db.query(sql, params, (err, rows) => {
         if (err) return callback(err);
-        if (!rows || !rows.length) return callback(null, null);
+        if (!rows || !rows.length) {
+            const whereAnulacionSql = esNumerico
+                ? "(UPPER(COALESCE(ad.correlativo, '')) = UPPER(?) OR COALESCE(ad.correlativo, '') REGEXP ?)"
+                : "UPPER(COALESCE(ad.correlativo, '')) = UPPER(?)";
+
+            const paramsAnulacion = esNumerico
+                ? [correlativoLimpio, `(^|[^0-9])0*${correlativoNumero}$`]
+                : [correlativoLimpio];
+
+            const sqlAnulacion = `
+                SELECT
+                    ad.id_anulacion,
+                    ad.id_pago,
+                    ad.id_contrato,
+                    ad.id_usuario_autoriza,
+                    ad.monto_anulado,
+                    ad.motivo,
+                    ad.correlativo,
+                    ad.fecha_anulacion,
+                    u.nombre AS nombre_usuario_autoriza,
+                    fh.id_usuario AS id_usuario_cobro,
+                    uc.nombre AS nombre_usuario_cobro,
+                    r.nombre AS nombre_residente
+                FROM anulacion_deuda ad
+                LEFT JOIN usuarios u ON u.id_usuario = ad.id_usuario_autoriza
+                LEFT JOIN facturas_historial fh ON fh.id_pago = ad.id_pago AND fh.estado_factura = 'EMITIDA'
+                LEFT JOIN usuarios uc ON uc.id_usuario = fh.id_usuario
+                LEFT JOIN residentes r ON r.id_residente = fh.id_residente
+                WHERE ${whereAnulacionSql}
+                ORDER BY ad.id_anulacion DESC
+                LIMIT 1
+            `;
+
+            return db.query(sqlAnulacion, paramsAnulacion, (anulErr, anulRows) => {
+                if (anulErr) return callback(anulErr);
+
+                if (!anulRows || !anulRows.length) {
+                    return callback(null, null);
+                }
+
+                const anulacion = anulRows[0];
+                return callback(null, {
+                    ya_anulado: true,
+                    id_anulacion: Number(anulacion.id_anulacion || 0),
+                    id_pago: Number(anulacion.id_pago || 0),
+                    id_contrato: Number(anulacion.id_contrato || 0),
+                    correlativo: anulacion.correlativo || correlativoLimpio,
+                    monto_anulado: Number(anulacion.monto_anulado || 0),
+                    fecha_anulacion: anulacion.fecha_anulacion,
+                    motivo_anulacion: anulacion.motivo || '',
+                    id_usuario_autoriza: Number(anulacion.id_usuario_autoriza || 0),
+                    nombre_usuario_autoriza: anulacion.nombre_usuario_autoriza || null,
+                    id_usuario_cobro: anulacion.id_usuario_cobro ? Number(anulacion.id_usuario_cobro) : null,
+                    nombre_usuario_cobro: anulacion.nombre_usuario_cobro || null,
+                    nombre_residente: anulacion.nombre_residente || null
+                });
+            });
+        }
 
         const pago = rows[0];
         db.query(
@@ -281,6 +338,13 @@ router.get('/buscar-correlativo/:correlativo', (req, res) => {
             return res.status(404).send({ message: 'No se encontró un cobro con ese correlativo.' });
         }
 
+        if (pago.ya_anulado) {
+            return res.status(409).send({
+                message: `El correlativo ya fue anulado (anulación #${pago.id_anulacion}).`,
+                ...pago
+            });
+        }
+
         return res.status(200).send(pago);
     });
 });
@@ -299,6 +363,10 @@ router.post('/anular-por-correlativo', (req, res) => {
 
         if (!pago) {
             return res.status(404).send({ message: 'No se encontró el cobro a anular.' });
+        }
+
+        if (pago.ya_anulado) {
+            return res.status(409).send({ message: `El correlativo ya fue anulado (anulación #${pago.id_anulacion}).` });
         }
 
         const principalAnular = parseFloat(pago.principal_pagado || 0);

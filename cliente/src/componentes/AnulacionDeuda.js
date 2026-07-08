@@ -602,6 +602,22 @@ function AnulacionDeuda() {
       Swal.fire({ icon: 'success', title: 'Cobro localizado', timer: 1500, showConfirmButton: false });
     })
     .catch((err) => {
+      const status = Number(err?.response?.status || 0);
+      const data = err?.response?.data || {};
+
+      if (status === 409) {
+        setDetalleCorrelativo(data);
+        setId_contrato(String(data.id_contrato || ''));
+        setMonto_anulado(String(parseFloat(data.monto_anulado || 0).toFixed(2)));
+        setId_pago_anulado(String(data.id_pago || ''));
+        Swal.fire({
+          icon: 'info',
+          title: 'Correlativo ya anulado',
+          text: data?.message || 'Ese correlativo ya fue anulado previamente.'
+        });
+        return;
+      }
+
       setDetalleCorrelativo(null);
       setId_contrato('');
       setMonto_anulado('');
