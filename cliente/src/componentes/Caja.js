@@ -729,8 +729,7 @@ const Caja = () => {
             doc.setFont('Helvetica', 'normal');
             doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 5.2);
 
-            y += 10;
-            const boxY = y;
+            const boxY = 158;
             const boxH = 16;
             doc.rect(x, boxY, 60, boxH);
             doc.rect(x + 65, boxY, 60, boxH);
@@ -759,13 +758,13 @@ const Caja = () => {
             doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56).slice(0, 2), x + 132, boxY + 4.8);
             doc.text(doc.splitTextToSize(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, 56).slice(0, 1), x + 132, boxY + 12.8);
 
-            const tableY = Math.max(boxY + boxH + 4, 182);
+            const tableY = 176;
             autoTable(doc, {
                 startY: tableY,
                 head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
                 body: [[conceptoResumen, String(meses || 'N/A'), montoTotal.toFixed(2)]],
                 theme: 'grid',
-                styles: { fontSize: 8.1, cellPadding: 1.1, lineColor: [214, 120, 120], lineWidth: 0.2 },
+                styles: { fontSize: 8, cellPadding: 1.0, lineColor: [214, 120, 120], lineWidth: 0.2 },
                 headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
                 margin: { left: x, right: 10 },
                 tableWidth: w,
@@ -777,12 +776,11 @@ const Caja = () => {
                 }
             });
 
-            const pageHeight = doc.internal.pageSize.getHeight();
-            const footerY = pageHeight - 14;
+            const footerY = 205;
             doc.setFont('Helvetica', 'italic');
-            doc.setFontSize(7.2);
+            doc.setFontSize(6.8);
             doc.text(
-                doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 3),
+                doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 2),
                 x,
                 footerY
             );
