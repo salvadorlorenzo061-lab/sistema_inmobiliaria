@@ -649,9 +649,10 @@ const Caja = () => {
             doc.setTextColor(0, 0, 0);
             doc.setFont('Helvetica', 'normal');
             doc.setFontSize(7.2);
-            doc.text('15 Avenidad "A" 24-22. Zona 13, Oficina #5 PBX: 2220-6406 Telefono 5825-5903', x + (w / 2), y + headerHeight + 5.5, { align: 'center' });
+            doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', x + (w / 2), y + headerHeight + 4.5, { align: 'center' });
+            doc.text('PBX: 2220-6406  Telefono: 5825-5903', x + (w / 2), y + headerHeight + 8.2, { align: 'center' });
 
-            y += headerHeight + 10;
+            y += headerHeight + 12;
             doc.setFillColor(245, 211, 69);
             doc.rect(x, y, w, 6, 'F');
             doc.rect(x, y, w, 6);
@@ -730,21 +731,21 @@ const Caja = () => {
             doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 5.2);
 
             const boxY = 158;
-            const boxH = 16;
+            const boxH = 22;
             doc.rect(x, boxY, 60, boxH);
             doc.rect(x + 65, boxY, 60, boxH);
-            doc.rect(x + 130, boxY, 60, boxH);
 
             doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8.2);
+            doc.setFontSize(8.6);
             doc.text(`${metodo.includes('deposit') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 4.8);
-            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 9.0);
-            doc.text(`${metodo.includes('efectivo') ? 'X' : ' '}  Efectivo`, x + 3, boxY + 13.2);
-            doc.text(String(recibo?.no_referencia || 'N/A'), x + 3, boxY + 16);
+            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 10.2);
+            if (!metodo.includes('efectivo')) {
+                doc.text(`NO. ${String(recibo?.no_referencia || 'N/A')}`, x + 3, boxY + 15.8);
+            }
 
             if (logoProyecto) {
                 try {
-                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 86, boxY + 8, 18, 6, `rec-logo-proyecto-${Date.now()}`, 'FAST');
+                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 84, boxY + 10, 22, 9, `rec-logo-proyecto-${Date.now()}`, 'FAST');
                 } catch {
                     // no-op
                 }
@@ -752,29 +753,6 @@ const Caja = () => {
             doc.setFont('Helvetica', 'bold');
             doc.setFontSize(8.8);
             doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
-
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8.6);
-            doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56).slice(0, 2), x + 132, boxY + 4.8);
-            doc.text(doc.splitTextToSize(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, 56).slice(0, 1), x + 132, boxY + 12.8);
-
-            const tableY = 176;
-            autoTable(doc, {
-                startY: tableY,
-                head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
-                body: [[conceptoResumen, String(meses || 'N/A'), montoTotal.toFixed(2)]],
-                theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 1.0, lineColor: [214, 120, 120], lineWidth: 0.2 },
-                headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
-                margin: { left: x, right: 10 },
-                tableWidth: w,
-                pageBreak: 'avoid',
-                columnStyles: {
-                    0: { cellWidth: 100 },
-                    1: { cellWidth: 45, halign: 'center' },
-                    2: { cellWidth: 45, halign: 'right' }
-                }
-            });
 
             const footerY = 205;
             doc.setFont('Helvetica', 'italic');
