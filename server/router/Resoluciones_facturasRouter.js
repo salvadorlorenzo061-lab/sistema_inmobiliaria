@@ -26,9 +26,50 @@ const ensureRolColumn = () => {
 
 ensureRolColumn();
 
+const ensureIdUsuarioColumn = () => {
+    db.query("SHOW COLUMNS FROM resoluciones_facturas LIKE 'id_usuario'", (err, rows) => {
+        if (err) {
+            console.error('Error verificando columna id_usuario en resoluciones_facturas:', err.message);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            db.query('ALTER TABLE resoluciones_facturas ADD COLUMN id_usuario INT NULL AFTER id_empresa', (alterErr) => {
+                if (alterErr) {
+                    console.error('Error creando columna id_usuario en resoluciones_facturas:', alterErr.message);
+                }
+            });
+        }
+    });
+};
+
+ensureIdUsuarioColumn();
+
+const validarUsuario = (idUsuario, callback) => {
+    const id = Number(idUsuario);
+    if (!Number.isInteger(id) || id <= 0) {
+        callback(new Error('Debe enviar un id_usuario válido.'));
+        return;
+    }
+
+    db.query('SELECT id_usuario FROM usuarios WHERE id_usuario = ? LIMIT 1', [id], (err, rows) => {
+        if (err) {
+            callback(err);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            callback(new Error('El usuario seleccionado no existe.'));
+            return;
+        }
+
+        callback(null, id);
+    });
+};
+
 // === CREAR RESOLUCIÓN ===
 router.post("/crear", (req, res) => {
-    const { id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
+    const { id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
     const rol = String(req.body?.rol || 'caja').trim().toLowerCase() || 'caja';
 
     // --- VALIDACIÓN DE PROTECCIÓN EN EL BACKEND ---
@@ -45,7 +86,12 @@ router.post("/crear", (req, res) => {
     }
     // ---------------------------------------------
 
-    db.query('SELECT * FROM resoluciones_facturas WHERE numero_resolucion = ?', [numero_resolucion], (err, result) => {
+    validarUsuario(id_usuario, (userErr, idUsuarioValido) => {
+        if (userErr) {
+            return res.status(400).send({ message: userErr.message || 'Usuario inválido.' });
+        }
+
+        db.query('SELECT * FROM resoluciones_facturas WHERE numero_resolucion = ?', [numero_resolucion], (err, result) => {
         if (err) {
             console.log(err);
             return res.status(500).send("Error interno del servidor");
@@ -55,8 +101,8 @@ router.post("/crear", (req, res) => {
             return res.status(400).send({ message: "La resolución ya se encuentra registrada" });
         }
 
-        const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-        const values = [id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
+        const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
 
         db.query(sqlInsert, values, (insertErr, insertResult) => {
             if (insertErr) {
@@ -67,11 +113,21 @@ router.post("/crear", (req, res) => {
             }
         });
     });
+    });
 });
 
 // === LISTAR RESOLUCIONES ===
 router.get("/", (req, res) => {
-    db.query('SELECT * FROM resoluciones_facturas', (err, result) => {
+    const query = `
+        SELECT
+            rf.*, 
+            u.nombre AS nombre_usuario,
+            u.correo AS correo_usuario
+        FROM resoluciones_facturas rf
+        LEFT JOIN usuarios u ON u.id_usuario = rf.id_usuario
+    `;
+
+    db.query(query, (err, result) => {
         if (err) {
             console.log(err);
             res.status(500).send("Error al obtener las resoluciones");
@@ -83,7 +139,7 @@ router.get("/", (req, res) => {
 
 // === ACTUALIZAR RESOLUCIÓN ===
 router.put("/actualizar", (req, res) => {
-    const { id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
+    const { id_resolucion, id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
     const rol = String(req.body?.rol || 'caja').trim().toLowerCase() || 'caja';
     
     // --- VALIDACIÓN DE PROTECCIÓN EN EL BACKEND ---
@@ -100,28 +156,35 @@ router.put("/actualizar", (req, res) => {
     }
     // ---------------------------------------------
 
-    const sqlUpdate = `UPDATE resoluciones_facturas SET 
-        id_empresa = ?, 
-        numero_resolucion = ?, 
-        serie = ?, 
-        rango_inicial = ?, 
-        rango_final = ?, 
-        correlativo_actual = ?, 
-        fecha_autorizacion = ?, 
-        fecha_vencimiento = ?, 
-        estado = ?,
-        rol = ? 
-        WHERE id_resolucion = ?`;
-
-    const values = [id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol, id_resolucion];
-
-    db.query(sqlUpdate, values, (err, result) => {
-        if (err) {
-            console.log(err);
-            res.status(500).send("Error al actualizar");
-        } else {
-            res.status(200).send("Resolución actualizada correctamente");
+    validarUsuario(id_usuario, (userErr, idUsuarioValido) => {
+        if (userErr) {
+            return res.status(400).send({ message: userErr.message || 'Usuario inválido.' });
         }
+
+        const sqlUpdate = `UPDATE resoluciones_facturas SET 
+            id_empresa = ?, 
+            id_usuario = ?,
+            numero_resolucion = ?, 
+            serie = ?, 
+            rango_inicial = ?, 
+            rango_final = ?, 
+            correlativo_actual = ?, 
+            fecha_autorizacion = ?, 
+            fecha_vencimiento = ?, 
+            estado = ?,
+            rol = ? 
+            WHERE id_resolucion = ?`;
+
+        const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol, id_resolucion];
+
+        db.query(sqlUpdate, values, (err, result) => {
+            if (err) {
+                console.log(err);
+                res.status(500).send("Error al actualizar");
+            } else {
+                res.status(200).send("Resolución actualizada correctamente");
+            }
+        });
     });
 });
 

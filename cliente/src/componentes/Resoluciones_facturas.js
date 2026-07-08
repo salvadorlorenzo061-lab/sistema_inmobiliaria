@@ -12,6 +12,7 @@ const LOTE_FACTURAS = 10000;
 function Resoluciones_facturas() {
   const [id_resolucion, setId_resolucion] = useState(""); 
   const [id_empresa, setId_empresa] = useState("");
+  const [id_usuario, setId_usuario] = useState("");
   const [numero_resolucion, setNumero_resolucion] = useState("");
   const [serie, setSerie] = useState("");
   const [rango_inicial, setRango_inicial] = useState("");
@@ -22,6 +23,7 @@ function Resoluciones_facturas() {
   const [estado, setEstado] = useState("");
   const [rol, setRol] = useState("caja");
   const [empresasList, setEmpresasList] = useState([]);
+  const [usuariosList, setUsuariosList] = useState([]);
   
   const [Resoluciones_facturasList, setResoluciones_facturas] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -44,10 +46,50 @@ function Resoluciones_facturas() {
       });
   };
 
+  const getUsuarios = () => {
+    Axios.get(`${API_BASE_URL}/api/usuarios`)
+      .then((response) => {
+        setUsuariosList(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error al obtener usuarios', error);
+        setUsuariosList([]);
+      });
+  };
+
   const getNombreEmpresa = (empresaId) => {
     const empresa = empresasList.find((item) => String(item.id_empresa) === String(empresaId));
     return empresa?.nombre_empresa || `Empresa #${empresaId}`;
   };
+
+  const getNombreUsuario = (usuarioId, usuarioRegistro = null) => {
+    if (usuarioRegistro?.nombre_usuario) return usuarioRegistro.nombre_usuario;
+    const usuario = usuariosList.find((item) => String(item.id_usuario) === String(usuarioId));
+    return usuario?.nombre || `Usuario #${usuarioId || 'N/A'}`;
+  };
+
+  const usuariosFiltradosPorRol = usuariosList.filter((usuario) => {
+    const rolUsuario = String(usuario?.nombre_rol || '').toLowerCase();
+    if (!rolUsuario) return false;
+
+    if (rol === 'ambos') {
+      return rolUsuario.includes('caja') || rolUsuario.includes('cobro') || rolUsuario.includes('jurid') || rolUsuario.includes('legal') || rolUsuario.includes('admin') || rolUsuario.includes('gerente');
+    }
+
+    if (rol === 'juridico') {
+      return rolUsuario.includes('jurid') || rolUsuario.includes('legal') || rolUsuario.includes('admin') || rolUsuario.includes('gerente');
+    }
+
+    return rolUsuario.includes('caja') || rolUsuario.includes('cobro') || rolUsuario.includes('admin') || rolUsuario.includes('gerente');
+  });
+
+  useEffect(() => {
+    if (!id_usuario) return;
+    const existe = usuariosFiltradosPorRol.some((item) => String(item.id_usuario) === String(id_usuario));
+    if (!existe) {
+      setId_usuario('');
+    }
+  }, [rol, id_usuario]);
 
   const calcularRangoFinalPorLote = (inicio) => {
     const n = Number(inicio);
@@ -117,6 +159,7 @@ function Resoluciones_facturas() {
       head: [['PARÁMETRO DE SEGURIDAD', 'VALOR / CREDENCIAL ASIGNADA']],
       body: [
         ['CÓDIGO INTERNO RESOLUCION', `RES-${val.id_resolucion}2026`],
+        ['USUARIO RESPONSABLE', getNombreUsuario(val.id_usuario, val)],
         ['SERIE', val.serie.toUpperCase()],
         ['RANGO INICIAL', val.rango_inicial],
         ['RANGO FINAL', val.rango_final],
@@ -149,7 +192,7 @@ function Resoluciones_facturas() {
   //   CONTROLADORES DE BASE DE DATOS (CRUD)
   // =========================================================================
   const add = () => {
-    if (!id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
+    if (!id_empresa || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({
         position: "top-end",
         icon: "warning",
@@ -175,7 +218,7 @@ function Resoluciones_facturas() {
     }
 
     Axios.post(`${API_URL}/crear`, { 
-      id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
+      id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
     })
     .then(() => {
       getResoluciones();
@@ -202,7 +245,7 @@ function Resoluciones_facturas() {
   };
 
   const actualizar = () => {
-    if (!id_resolucion || !id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
+    if (!id_resolucion || !id_empresa || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({ icon: 'warning', title: 'Campos incompletos' });
       return;
     }
@@ -222,7 +265,7 @@ function Resoluciones_facturas() {
     }
 
     Axios.put(`${API_URL}/actualizar`, { 
-      id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
+      id_resolucion, id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
     })
     .then(() => {
       getResoluciones();
@@ -266,6 +309,7 @@ function Resoluciones_facturas() {
   const limpiarCampos = () => {
     setId_resolucion("");
     setId_empresa("");
+    setId_usuario("");
     setNumero_resolucion(""); 
     setSerie(""); 
     setRango_inicial(""); 
@@ -286,11 +330,13 @@ function Resoluciones_facturas() {
   useEffect(() => {
     getResoluciones();
     getEmpresas();
+    getUsuarios();
   }, []);
 
   const abrirEditarModal = (val) => {
     setId_resolucion(val.id_resolucion);
     setId_empresa(val.id_empresa);
+    setId_usuario(val.id_usuario ? String(val.id_usuario) : '');
     setNumero_resolucion(val.numero_resolucion);
     setSerie(val.serie);
     setRango_inicial(val.rango_inicial); 
@@ -351,6 +397,7 @@ function Resoluciones_facturas() {
         <thead className="table-dark">
           <tr>
             <th>EMPRESA</th>
+            <th>USUARIO</th>
             <th>NUMERO RESOLUCION</th>
             <th>SERIE</th>
             <th>RANGO INICIAL</th>
@@ -370,6 +417,10 @@ function Resoluciones_facturas() {
                 <td>
                   <div className="fw-bold">{getNombreEmpresa(val.id_empresa)}</div>
                   <div className="small text-muted">ID: {val.id_empresa}</div>
+                </td>
+                <td>
+                  <div className="fw-bold">{getNombreUsuario(val.id_usuario, val)}</div>
+                  <div className="small text-muted">ID: {val.id_usuario || 'N/A'}</div>
                 </td>
                 <td>{val.numero_resolucion}</td>
                 <td>{val.serie}</td>
@@ -399,7 +450,7 @@ function Resoluciones_facturas() {
             ))
           ) : (
             <tr>
-              <td colSpan="11" className="text-center text-muted py-3">No se encontraron resoluciones coincidentes.</td>
+              <td colSpan="12" className="text-center text-muted py-3">No se encontraron resoluciones coincidentes.</td>
             </tr>
           )}
         </tbody>
@@ -434,6 +485,18 @@ function Resoluciones_facturas() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Usuario asignado</label>
+                  <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
+                    <option value="">-- Seleccione usuario --</option>
+                    {usuariosFiltradosPorRol.map((usuario) => (
+                      <option key={usuario.id_usuario} value={usuario.id_usuario}>
+                        {usuario.nombre} ({String(usuario.nombre_rol || 'sin rol').toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
+                  <small className="text-muted">Se sugiere usuarios con rol compatible: {String(rol || 'caja').toUpperCase()}.</small>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Número resolución:</label>
@@ -509,6 +572,17 @@ function Resoluciones_facturas() {
                     {empresasList.map((empresa) => (
                       <option key={empresa.id_empresa} value={empresa.id_empresa}>
                         {empresa.nombre_empresa} (ID: {empresa.id_empresa})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Usuario asignado</label>
+                  <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
+                    <option value="">-- Seleccione usuario --</option>
+                    {usuariosFiltradosPorRol.map((usuario) => (
+                      <option key={usuario.id_usuario} value={usuario.id_usuario}>
+                        {usuario.nombre} ({String(usuario.nombre_rol || 'sin rol').toUpperCase()})
                       </option>
                     ))}
                   </select>
