@@ -300,6 +300,8 @@ router.get("/", (req, res) => {
                    tc.nombre_tipo_contrato,
                    e.nombre_empresa AS nombre_empresa_marca,
                    p.nombre AS nombre_proyecto,
+                   COALESCE(e.logo, em.logo, er.logo) AS logo_proyecto,
+                   COALESCE(e.nombre_empresa, em.nombre_empresa, p.nombre, er.nombre_empresa) AS nombre_marca_pdf,
                    (
                        SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
                        FROM contratos_servicios cs
@@ -318,6 +320,8 @@ router.get("/", (req, res) => {
             INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
             LEFT JOIN empresas e ON e.id_empresa = c.id_empresa_marca
             LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
+                LEFT JOIN empresas em ON em.id_empresa = p.id_empresa
+                LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
             ORDER BY c.id_contrato DESC
     `;
 

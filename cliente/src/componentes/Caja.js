@@ -501,6 +501,13 @@ const Caja = () => {
             
             if (response?.data?.success) {
                 mostrarToast("¡Cobro realizado con éxito! Generando recibo...", "success");
+                const empresaPdf = {
+                    ...(response.data?.empresa || {}),
+                    logo: datosDeuda?.logo_proyecto || response.data?.empresa?.logo || null,
+                    nombre_empresa: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre_empresa || response.data?.empresa?.nombre || null,
+                    nombre: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre || response.data?.empresa?.nombre_empresa || null
+                };
+
                 generarPDF(response.data, {
                     ...datosDeuda,
                     nombre: datosDeuda?.nombre || 'Residente',
@@ -508,7 +515,7 @@ const Caja = () => {
                     codigo_contrato: datosDeuda?.codigo_contrato || 'N/A',
                     nombre_contrato: datosDeuda?.nombre_contrato || 'Contrato',
                     saldo_pendiente: datosDeuda?.saldo_pendiente || 0
-                }, response.data?.empresa);
+                }, empresaPdf);
                 
                 setDatosDeuda(prev => ({
                     ...prev,
@@ -581,7 +588,7 @@ const Caja = () => {
         try {
             // Media carta: 216 x 140 mm
             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [216, 140] });
-            const logoEmpresa = normalizeImageDataUrl(empresa?.logo || '');
+            const logoEmpresa = normalizeImageDataUrl(residente?.logo_proyecto || empresa?.logo || '');
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
             const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
             const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
@@ -610,7 +617,7 @@ const Caja = () => {
             }
             doc.setFont('Helvetica', 'bold');
             doc.setFontSize(10.5);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 85), x + 26, y + 8);
+            doc.text(doc.splitTextToSize(String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 85), x + 26, y + 8);
             doc.setFontSize(12);
             doc.text('RECIBO DE CAJA', x + 145, y + 8);
             doc.setFontSize(11);
@@ -803,129 +810,103 @@ const Caja = () => {
                     </div>
                     <ul className="list-group list-group-flush" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         {listaResidentesPaginada.map((r) => (
-                        doc.rect(x, y, w, 28, 'F');
-                        doc.rect(x, y, w, 28);
-                                    <div>
-                                        <strong className="fs-4">📦 {r.nombre}</strong>
-                                doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), x + 3, y + 3, 20, 20, `rec-logo-${Date.now()}`, 'FAST');
-                                            {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
-                                        </span>
-                                        <br/>
-                                        <span className="text-muted fs-5">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
-                                    </div>
-                        doc.setFontSize(10.5);
-                        doc.text(doc.splitTextToSize(String(empresa?.nombre || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 85), x + 26, y + 8);
-                        doc.setFontSize(12);
-                        doc.text('RECIBO DE CAJA', x + 145, y + 8);
-                        doc.setFontSize(11);
-                        doc.text(`Serie "${serie}"`, x + 145, y + 15);
-                                        <br/>
-                        doc.text(`N. ${String(numero).padStart(5, '0')}`, x + 173, y + 15);
-                                    </div>
+                            <li
+                                key={r.id_residente}
+                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                onClick={() => seleccionarResidente(r)}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                <div>
+                                    <strong className="fs-6">📦 {r.nombre}</strong>
+                                    <br />
+                                    <span className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
                                 </div>
-                        doc.text(doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), 115), x + 80, y + 23, { align: 'center' });
+                                <span className={`badge ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-warning text-dark'}`}>
+                                    {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                    <div className="card-footer bg-white">
+                        <PaginationControls
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={setCurrentPage}
+                            startIndex={startIndex}
+                            endIndex={endIndex}
+                            totalItems={listaFiltrada.length}
+                        />
+                    </div>
+                </div>
+            )}
 
-                        y += 34;
-                        doc.setFillColor(245, 211, 69);
-                        doc.rect(x, y, w, 8, 'F');
-                        doc.rect(x, y, w, 8);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(10);
-                        doc.text('Datos del cliente:', x + 2, y + 5.5);
-                        y += 10;
-                        doc.rect(x, y, w, 11);
-                        doc.text('Nombre:', x + 2, y + 5.5);
-                        doc.setFont('Helvetica', 'normal');
-                        doc.setFontSize(11);
-                        doc.text(doc.splitTextToSize(String(residente?.nombre || 'N/A'), 150), x + 22, y + 7.2);
+            {/* Resultados de búsqueda */}
+            {!datosDeuda && listaResidentes.length > 0 && (
+                <div className="card mb-4 shadow-sm border-primary">
+                    <div className="card-header bg-primary text-white fw-bold">
+                        🔎 Resultados de búsqueda
+                    </div>
+                    <ul className="list-group list-group-flush">
+                        {listaResidentes.map((r) => (
+                            <li
+                                key={r.id_residente}
+                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                onClick={() => seleccionarResidente(r)}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                <div>
+                                    <strong>{r.nombre}</strong>
+                                    <br />
+                                    <small className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</small>
+                                </div>
+                                <span className="badge bg-secondary">Seleccionar</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
-                        y += 16;
-                        doc.setFillColor(245, 211, 69);
-                        doc.rect(x, y, 145, 8, 'F');
-                        doc.rect(x + 145, y, 45, 8, 'F');
-                        doc.rect(x, y, 145, 8);
-                        doc.rect(x + 145, y, 45, 8);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(10);
-                        doc.text('Fecha:', x + 2, y + 5.5);
-                        doc.text('Por:', x + 147, y + 5.5);
-                        y += 8;
-                        doc.rect(x, y, 145, 11);
-                        doc.rect(x + 145, y, 45, 11);
-                        doc.setFont('Helvetica', 'normal');
-                        doc.text(`Guatemala, ${fechaLargaGT(fecha)}`, x + 2, y + 7);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 7);
-
-                        y += 15;
-                        doc.rect(x, y, w, 11);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.text('Paga la cantidad de:', x + 2, y + 7);
-                        doc.setFont('Helvetica', 'normal');
-                        doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), 132), x + 45, y + 7);
-
-                        y += 15;
-                        doc.rect(x, y, w, 11);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.text('Por cancelacion de:', x + 2, y + 7);
-                        doc.setFont('Helvetica', 'normal');
-                        doc.text(doc.splitTextToSize(conceptos, 142), x + 43, y + 7);
-
-                        y += 15;
-                        doc.rect(x, y, 65, 11);
-                        doc.rect(x + 65, y, 125, 11);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.text('Cuota:', x + 2, y + 7);
-                        doc.setTextColor(166, 35, 35);
-                        doc.setFontSize(13);
-                        doc.text(String(recibo?.numero_cuota || 'N/A'), x + 37, y + 7);
-                        doc.setTextColor(0, 0, 0);
-                        doc.setFontSize(10);
-                        doc.text('Abono extraordinario:', x + 67, y + 7);
-                        doc.setFont('Helvetica', 'normal');
-                        doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 7);
-
-                        y += 14;
-                        doc.rect(x, y, 60, 25);
-                        doc.rect(x + 65, y, 60, 25);
-                        doc.rect(x + 130, y, 60, 25);
-                        const drawCheck = (cx, cy, checked, label) => {
-                            doc.rect(cx, cy, 4.2, 4.2);
-                            if (checked) doc.text('X', cx + 1.2, cy + 3.2);
-                            doc.setFont('Helvetica', 'normal');
-                            doc.setFontSize(8.8);
-                            doc.text(label, cx + 6, cy + 3.3);
-                        };
-                        drawCheck(x + 2, y + 2, metodo.includes('efectivo'), 'Efectivo');
-                        drawCheck(x + 2, y + 8, metodo.includes('transfer'), 'Transferencia');
-                        drawCheck(x + 2, y + 14, metodo.includes('deposit'), 'Deposito');
-                        doc.setFont('Helvetica', 'bold');
-                        doc.text('Referencia:', x + 67, y + 6);
-                        doc.setFont('Helvetica', 'normal');
-                        doc.text(String(recibo?.no_referencia || 'N/A'), x + 67, y + 12);
-                        doc.text(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, x + 67, y + 18);
-                        doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56), x + 132, y + 6);
-
-                        y += 30;
+            {/* Resumen del residente seleccionado */}
+            {datosDeuda && (
+                <div className="card mb-4 shadow-sm border-success">
+                    <div className="card-header bg-success text-white fw-bold">✅ Residente seleccionado</div>
+                    <div className="card-body">
+                        <div className="row">
+                            <div className="col-md-8">
+                                <h5 className="mb-1">{datosDeuda.nombre}</h5>
+                                <div><strong>Contrato:</strong> {datosDeuda.codigo_contrato}</div>
+                                <div><strong>DPI:</strong> {datosDeuda.dpi || 'N/A'}</div>
+                                <div><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</div>
+                            </div>
+                            <div className="col-md-4 text-md-end mt-3 mt-md-0">
+                                <div><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
+                                <div><strong>Cuota:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</div>
+                            </div>
                         </div>
                         <hr />
                         {!puedeGenerarCobro && (
-                            body: (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: meses, total: montoTotal }]).map((item) => ([
+                            <div className="alert alert-success text-center fw-bold mb-3">
                                 ✅ LA CUENTA YA SE ENCUENTRA SOLVENTE. No hay cobros pendientes por generar.
                             </div>
                         )}
                         {saldoTerrenoPendiente <= 0 && tieneServiciosPendientes && (
                             <div className="alert alert-info text-center fw-bold mb-3">
                                 ℹ️ Terreno solvente. Puede cobrar únicamente servicios (agua/drenaje u otros asignados).
-                            styles: { fontSize: 9 },
-                            margin: { left: x, right: 10 }
+                            </div>
+                        )}
+                        <div className="d-flex justify-content-end">
+                            <button
+                                className="btn btn-success fw-bold"
+                                onClick={() => setShowModalCobro(true)}
+                                disabled={!puedeGenerarCobro}
+                            >
+                                💳 Generar Cobro
                             </button>
                         </div>
-                        const footerY = doc.lastAutoTable.finalY + 10;
+                    </div>
                 </div>
-                        doc.setFontSize(8.5);
+            )}
 
-                            doc.splitTextToSize('Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico conserva el detalle completo del cobro realizado.', 188),
             {showModalCobro && datosDeuda && (
                 <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
                     <div className="modal-dialog modal-lg modal-dialog-scrollable">
