@@ -604,20 +604,9 @@ const Caja = () => {
             const meses = Array.isArray(recibo?.meses_pagados) && recibo.meses_pagados.length ? recibo.meses_pagados.join(', ') : (recibo?.mes_pagado || 'N/A');
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
-            const detalleRowsOriginal = (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: meses, total: montoTotal }]);
-            const maxDetalleRows = 4;
-            const detalleRows = detalleRowsOriginal.length > maxDetalleRows
-                ? [
-                    ...detalleRowsOriginal.slice(0, maxDetalleRows - 1),
-                    {
-                        concepto: `Otros ${detalleRowsOriginal.length - (maxDetalleRows - 1)} conceptos`,
-                        mes: 'Varios',
-                        total: detalleRowsOriginal
-                            .slice(maxDetalleRows - 1)
-                            .reduce((sum, item) => sum + parseFloat(item?.total || 0), 0)
-                    }
-                ]
-                : detalleRowsOriginal;
+            const conceptoResumen = String(conceptos || 'Pago de cuota').length > 78
+                ? `${String(conceptos || 'Pago de cuota').slice(0, 75)}...`
+                : String(conceptos || 'Pago de cuota');
 
             const x = 10;
             const w = 190;
@@ -741,28 +730,7 @@ const Caja = () => {
             doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 5.2);
 
             y += 10;
-            autoTable(doc, {
-                startY: y,
-                head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
-                body: detalleRows.map((item) => ([
-                    String(item?.concepto || 'Pago aplicado'),
-                    String(item?.mes || meses || 'N/A'),
-                    parseFloat(item?.total || 0).toFixed(2)
-                ])),
-                theme: 'grid',
-                styles: { fontSize: 8.6, cellPadding: 1.5, lineColor: [214, 120, 120], lineWidth: 0.2 },
-                headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
-                margin: { left: x, right: 10 },
-                tableWidth: w,
-                pageBreak: 'avoid',
-                columnStyles: {
-                    0: { cellWidth: 100 },
-                    1: { cellWidth: 45, halign: 'center' },
-                    2: { cellWidth: 45, halign: 'right' }
-                }
-            });
-
-            const boxY = Math.min(doc.lastAutoTable.finalY + 4, 172);
+            const boxY = y;
             const boxH = 16;
             doc.rect(x, boxY, 60, boxH);
             doc.rect(x + 65, boxY, 60, boxH);
@@ -790,6 +758,24 @@ const Caja = () => {
             doc.setFontSize(8.6);
             doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56).slice(0, 2), x + 132, boxY + 4.8);
             doc.text(doc.splitTextToSize(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, 56).slice(0, 1), x + 132, boxY + 12.8);
+
+            const tableY = boxY + boxH + 3;
+            autoTable(doc, {
+                startY: tableY,
+                head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
+                body: [[conceptoResumen, String(meses || 'N/A'), montoTotal.toFixed(2)]],
+                theme: 'grid',
+                styles: { fontSize: 8.4, cellPadding: 1.3, lineColor: [214, 120, 120], lineWidth: 0.2 },
+                headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
+                margin: { left: x, right: 10 },
+                tableWidth: w,
+                pageBreak: 'avoid',
+                columnStyles: {
+                    0: { cellWidth: 100 },
+                    1: { cellWidth: 45, halign: 'center' },
+                    2: { cellWidth: 45, halign: 'right' }
+                }
+            });
 
             const pageHeight = doc.internal.pageSize.getHeight();
             const footerY = pageHeight - 14;
