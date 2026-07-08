@@ -58,13 +58,14 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
 
     const esNumerico = /^#?\d+$/.test(valor);
     const correlativoLimpio = valor.replace('#', '');
+    const correlativoNumero = Number(correlativoLimpio || 0);
 
     const whereSql = esNumerico
-        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?))"
+        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?) OR COALESCE(p.no_referencia, '') REGEXP ?)"
         : "UPPER(COALESCE(p.no_referencia, '')) = UPPER(?)";
 
     const params = esNumerico
-        ? [Number(correlativoLimpio), correlativoLimpio]
+        ? [Number(correlativoLimpio), correlativoLimpio, `(^|[^0-9])0*${correlativoNumero}$`]
         : [correlativoLimpio];
 
     const sql = `
@@ -72,6 +73,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             p.id_pago,
             p.id_contrato,
             p.id_usuario,
+            u.nombre AS nombre_usuario_cobro,
+            u.correo AS correo_usuario_cobro,
             p.fecha_pago,
             p.monto_total_pagado,
             p.forma_pago,
@@ -85,10 +88,11 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados
         FROM pagos p
         INNER JOIN contratos_residentes c ON c.id_contrato = p.id_contrato
+        LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE ${whereSql}
-        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, c.codigo_contrato, c.id_residente, r.nombre
+        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, u.nombre, u.correo, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, c.codigo_contrato, c.id_residente, r.nombre
         ORDER BY p.id_pago DESC
         LIMIT 1
     `;

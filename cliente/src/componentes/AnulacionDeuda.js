@@ -785,6 +785,15 @@ function AnulacionDeuda() {
                       />
                     </div>
                     <div className="mb-2">
+                      <label className="fw-bold">Cobrado por Usuario:</label>
+                      <input
+                        value={detalleCorrelativo?.nombre_usuario_cobro || ''}
+                        className="form-control"
+                        readOnly
+                        placeholder="Busque el correlativo"
+                      />
+                    </div>
+                    <div className="mb-2">
                       <label className="fw-bold">Usuario que Autoriza:</label>
                       <select value={id_usuario_autoriza} onChange={(e) => setId_usuario_autoriza(e.target.value)} className="form-select">
                         <option value="">-- Seleccione Gerente/Admin/Juridico --</option>
@@ -797,8 +806,12 @@ function AnulacionDeuda() {
                     </div>
                     {detalleCorrelativo && (
                       <div className="alert alert-info py-2 mb-2">
+                        <div><strong>Correlativo encontrado:</strong> {detalleCorrelativo.no_referencia || correlativo || 'N/A'}</div>
                         <div><strong>Residente:</strong> {detalleCorrelativo.nombre_residente || 'N/A'}</div>
                         <div><strong>Contrato:</strong> {detalleCorrelativo.codigo_contrato || `#${detalleCorrelativo.id_contrato}`}</div>
+                        <div><strong>Cobrado por:</strong> {detalleCorrelativo.nombre_usuario_cobro || `Usuario #${detalleCorrelativo.id_usuario || 'N/A'}`}</div>
+                        <div><strong>Fecha de cobro:</strong> {detalleCorrelativo.fecha_pago ? new Date(detalleCorrelativo.fecha_pago).toLocaleString() : 'N/A'}</div>
+                        <div><strong>Forma de pago:</strong> {detalleCorrelativo.forma_pago || 'N/A'}</div>
                         <div><strong>Total cobrado ubicado:</strong> Q{parseFloat(detalleCorrelativo.principal_pagado || 0).toFixed(2)}</div>
                         <div><strong>Terreno a revertir:</strong> Q{parseFloat(detalleCorrelativo.principal_terreno || 0).toFixed(2)}</div>
                         <div><strong>Servicios a revertir:</strong> Q{parseFloat(detalleCorrelativo.principal_servicios || 0).toFixed(2)}</div>
