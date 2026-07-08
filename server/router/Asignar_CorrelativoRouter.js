@@ -81,10 +81,12 @@ router.get('/estado-usuario', (req, res) => {
             SELECT
                 ac.id_asignacion,
                 ac.serie,
+                ac.correlativo_inicio,
                 ac.correlativo_actual,
                 ac.correlativo_fin,
                 ac.id_empresa,
                 e.nombre_empresa,
+                CONCAT(ac.serie, '-', LPAD(ac.correlativo_inicio, 8, '0')) AS correlativo_inicio_display,
                 CONCAT(ac.serie, '-', LPAD(ac.correlativo_actual, 8, '0')) AS correlativo_actual_display
             FROM asignar_correlativos ac
             LEFT JOIN empresas e ON e.id_empresa = ac.id_empresa
@@ -106,6 +108,7 @@ router.get('/estado-usuario', (req, res) => {
             return res.send({
                 disponible: true,
                 origen: 'asignado',
+                correlativo_inicio: asignacion.correlativo_inicio_display,
                 correlativo: asignacion.correlativo_actual_display,
                 correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
                 id_asignacion: asignacion.id_asignacion,
@@ -118,6 +121,7 @@ router.get('/estado-usuario', (req, res) => {
         return res.send({
             disponible: false,
             origen: null,
+            correlativo_inicio: null,
             correlativo: null,
             correlativo_fin: null,
             id_asignacion: null,

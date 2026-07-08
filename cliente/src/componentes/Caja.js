@@ -970,6 +970,17 @@ const Caja = () => {
 
     return (
         <div className="container mt-4">
+            {estadoCorrelativoUsuario && estadoCorrelativoUsuario.disponible && (
+                <div className="alert alert-info text-center fw-bold mb-3">
+                    <div>{estadoCorrelativoUsuario.mensaje || 'Tienes correlativos asignados.'}</div>
+                    <div className="small mt-1">
+                        <strong>Inicio:</strong> {estadoCorrelativoUsuario.correlativo_inicio || estadoCorrelativoUsuario.correlativo || 'N/A'}
+                        {' | '}
+                        <strong>Fin:</strong> {estadoCorrelativoUsuario.correlativo_fin || 'N/A'}
+                    </div>
+                </div>
+            )}
+
             {estadoCorrelativoUsuario && !estadoCorrelativoUsuario.disponible && (
                 <div className="alert alert-warning text-center fw-bold mb-4">
                     {estadoCorrelativoUsuario.mensaje || 'No tienes correlativos asignados.'}
