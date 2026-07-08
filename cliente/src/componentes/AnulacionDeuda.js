@@ -155,40 +155,55 @@ function AnulacionDeuda() {
       const x = 10;
       const w = 190;
       let y = 10;
+      const headerHeight = 28;
+      const rightHeaderWidth = 68;
+      const leftHeaderWidth = w - rightHeaderWidth;
+      const rightHeaderX = x + leftHeaderWidth;
 
       doc.setFillColor(240, 228, 167);
-      doc.rect(x, y, w, 28, 'F');
-      doc.rect(x, y, w, 28);
+      doc.rect(x, y, w, headerHeight, 'F');
+      doc.rect(x, y, w, headerHeight);
+      doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
+
+      const logoX = x + 3;
+      const logoY = y + 3;
+      const logoW = 20;
+      const logoH = 20;
       if (logoProyecto) {
         try {
-          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 3, y + 3, 20, 20, `anul-logo-${Date.now()}`, 'FAST');
+          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), logoX, logoY, logoW, logoH, `anul-logo-${Date.now()}`, 'FAST');
         } catch {
           // no-op
         }
       }
+
+      const leftTextX = logoProyecto ? (logoX + logoW + 3) : (x + 3);
+      const leftTextWidth = logoProyecto ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
+      const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
+
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(10.5);
-      doc.text(doc.splitTextToSize(String(nombreMarca).toUpperCase(), 85), x + 26, y + 8);
+      doc.text(doc.splitTextToSize(String(nombreMarca).toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 8, { align: 'center' });
       doc.setFontSize(12);
-      doc.text('ANULACION DE COBRO', x + 140, y + 8);
+      doc.text('ANULACION DE COBRO', rightCenterX, y + 8, { align: 'center' });
       doc.setFontSize(11);
-      doc.text('Serie "ANU"', x + 145, y + 15);
+      doc.text('Serie "ANU"', rightHeaderX + 6, y + 15);
       doc.setTextColor(166, 35, 35);
-      doc.text(`N. ${String(anulacion.id_anulacion || '0').padStart(5, '0')}`, x + 173, y + 15);
+      doc.text(`N. ${String(anulacion.id_anulacion || '0').padStart(5, '0')}`, x + w - 2, y + 15, { align: 'right' });
       doc.setTextColor(0, 0, 0);
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto || 'Comprobante de anulacion de cobro'), 115), x + 80, y + 23, { align: 'center' });
+      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto || 'Comprobante de anulacion de cobro'), w - 8), x + (w / 2), y + 23, { align: 'center' });
 
       // Sello visual de anulado (suave para no tapar detalle)
       doc.setTextColor(214, 86, 86);
       doc.setDrawColor(214, 86, 86);
       doc.setLineWidth(0.35);
-      doc.line(70, 49, 148, 71);
-      doc.line(70, 70, 148, 48);
+      doc.line(86, 78, 164, 100);
+      doc.line(86, 100, 164, 78);
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(22);
-      doc.text('ANULADO', 109, 63, { align: 'center', angle: -13 });
+      doc.text('ANULADO', 125, 93, { align: 'center', angle: -13 });
       doc.setTextColor(0, 0, 0);
 
       y += 34;
