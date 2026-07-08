@@ -109,10 +109,17 @@ function Resoluciones_facturas() {
   const aplicarLoteDesdeRangoInicial = (valorInicial) => {
     setRango_inicial(valorInicial);
     const finalCalculado = calcularRangoFinalPorLote(valorInicial);
-    setRango_final(finalCalculado);
+    if (!String(rango_final || '').trim()) {
+      setRango_final(finalCalculado);
+    }
     if (!String(correlativo_actual || '').trim()) {
       setCorrelativo_actual(String(valorInicial || ''));
     }
+  };
+
+  const autocalcularRangoFinal = () => {
+    const finalCalculado = calcularRangoFinalPorLote(rango_inicial);
+    setRango_final(finalCalculado);
   };
 
   // =========================================================================
@@ -521,8 +528,11 @@ function Resoluciones_facturas() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Rango Final (automático):</label>
-                  <input type="number" value={rango_final} readOnly className="form-control bg-light" placeholder="Rango Final" />
-                  <small className="text-muted">Se calcula automáticamente con un lote de {LOTE_FACTURAS.toLocaleString()} facturas.</small>
+                  <input type="number" value={rango_final} onChange={(e) => setRango_final(e.target.value)} className="form-control" placeholder="Rango Final" />
+                  <div className="d-flex justify-content-between align-items-center mt-1">
+                    <small className="text-muted">Puedes editarlo manualmente o autocalcular por lote estándar.</small>
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={autocalcularRangoFinal}>Autocalcular</button>
+                  </div>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Correlativo actual:</label>
@@ -610,8 +620,11 @@ function Resoluciones_facturas() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Rango Final (automático):</label>
-                  <input type="number" value={rango_final} readOnly className="form-control bg-light" />
-                  <small className="text-muted">Lote estándar aplicado: {LOTE_FACTURAS.toLocaleString()} facturas.</small>
+                  <input type="number" value={rango_final} onChange={(e) => setRango_final(e.target.value)} className="form-control" />
+                  <div className="d-flex justify-content-between align-items-center mt-1">
+                    <small className="text-muted">Puedes editarlo manualmente o autocalcular por lote estándar.</small>
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={autocalcularRangoFinal}>Autocalcular</button>
+                  </div>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Correlativo actual:</label>
