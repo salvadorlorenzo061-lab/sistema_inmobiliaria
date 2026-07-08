@@ -174,11 +174,11 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
     const correlativoNumero = Number(correlativoLimpio || 0);
 
     const whereSql = esNumerico
-        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?) OR COALESCE(p.no_referencia, '') REGEXP ?)"
+        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?) OR CAST(SUBSTRING_INDEX(COALESCE(p.no_referencia, ''), '-', -1) AS UNSIGNED) = ?)"
         : "UPPER(COALESCE(p.no_referencia, '')) = UPPER(?)";
 
     const params = esNumerico
-        ? [Number(correlativoLimpio), correlativoLimpio, `(^|[^0-9])0*${correlativoNumero}$`]
+        ? [Number(correlativoLimpio), correlativoLimpio, correlativoNumero]
         : [correlativoLimpio];
 
     const sql = `
@@ -214,11 +214,11 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
         if (err) return callback(err);
         if (!rows || !rows.length) {
             const whereAnulacionSql = esNumerico
-                ? "(UPPER(COALESCE(ad.correlativo, '')) = UPPER(?) OR COALESCE(ad.correlativo, '') REGEXP ?)"
+                ? "(UPPER(COALESCE(ad.correlativo, '')) = UPPER(?) OR CAST(SUBSTRING_INDEX(COALESCE(ad.correlativo, ''), '-', -1) AS UNSIGNED) = ?)"
                 : "UPPER(COALESCE(ad.correlativo, '')) = UPPER(?)";
 
             const paramsAnulacion = esNumerico
-                ? [correlativoLimpio, `(^|[^0-9])0*${correlativoNumero}$`]
+                ? [correlativoLimpio, correlativoNumero]
                 : [correlativoLimpio];
 
             const sqlAnulacion = `
