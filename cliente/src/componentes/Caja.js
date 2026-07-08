@@ -622,117 +622,125 @@ const Caja = () => {
             const x = 10;
             const w = 190;
             let y = 10;
+            const headerHeight = 22;
+            const rightHeaderWidth = 68;
+            const leftHeaderWidth = w - rightHeaderWidth;
+            const rightHeaderX = x + leftHeaderWidth;
 
             doc.setFillColor(240, 228, 167);
-            doc.rect(x, y, w, 28, 'F');
-            doc.rect(x, y, w, 28);
+            doc.rect(x, y, w, headerHeight, 'F');
+            doc.rect(x, y, w, headerHeight);
+            doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
+
+            const logoX = x + 3;
+            const logoY = y + 1.5;
+            const logoW = 20;
+            const logoH = 18;
             if (logoEmpresa) {
                 try {
-                    doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), x + 3, y + 3, 20, 20, `rec-logo-${Date.now()}`, 'FAST');
+                    doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `rec-logo-${Date.now()}`, 'FAST');
                 } catch {
                     // no-op
                 }
             }
+
+            const leftTextX = logoEmpresa ? (logoX + logoW + 3) : (x + 3);
+            const leftTextWidth = logoEmpresa ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
+            const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
+
             doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9.6);
+            doc.text(doc.splitTextToSize(String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
             doc.setFontSize(10.5);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 85), x + 26, y + 8);
+            doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
+            doc.setFontSize(9.5);
+            doc.text(`Serie "${serie}"`, rightHeaderX + 6, y + 13.5);
+            doc.setTextColor(166, 35, 35);
+            doc.text(`N. ${String(numero).padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.text(doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), w - 8), x + (w / 2), y + 18.5, { align: 'center' });
+
+            y += headerHeight + 4;
+            doc.setFillColor(245, 211, 69);
+            doc.rect(x, y, w, 6, 'F');
+            doc.rect(x, y, w, 6);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.8);
+            doc.text('Datos del cliente:', x + 2, y + 4.3);
+
+            y += 7;
+            const nombreLineas = doc.splitTextToSize(String(residente?.nombre || 'N/A'), 158).slice(0, 1);
+            const nombreAltura = 8;
+            doc.rect(x, y, w, nombreAltura);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Nombre:', x + 2, y + 5);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(nombreLineas, x + 22, y + 5);
+
+            y += nombreAltura + 3;
+            doc.setFillColor(245, 211, 69);
+            doc.rect(x, y, 145, 6, 'F');
+            doc.rect(x + 145, y, 45, 6, 'F');
+            doc.rect(x, y, 145, 6);
+            doc.rect(x + 145, y, 45, 6);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.8);
+            doc.text('Fecha:', x + 2, y + 4.3);
+            doc.text('Por:', x + 147, y + 4.3);
+
+            y += 6;
+            const fechaLineas = doc.splitTextToSize(`Guatemala, ${fechaLargaGT(fecha)}`, 139).slice(0, 1);
+            const fechaAltura = 8;
+            doc.rect(x, y, 145, fechaAltura);
+            doc.rect(x + 145, y, 45, fechaAltura);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(9.3);
+            doc.text(fechaLineas, x + 2, y + 5);
+            doc.setFont('Helvetica', 'bold');
+            doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 5);
+
+            y += fechaAltura + 3;
+            const pagaLineas = doc.splitTextToSize(montoALetrasRecibo(montoTotal), 143).slice(0, 1);
+            const pagaAltura = 8;
+            doc.rect(x, y, w, pagaAltura);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Paga la cantidad de:', x + 2, y + 5);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(pagaLineas, x + 45, y + 5);
+
+            y += pagaAltura + 3;
+            const conceptosLineas = doc.splitTextToSize(conceptos, 143).slice(0, 2);
+            const conceptosAltura = Math.max(10, (conceptosLineas.length * 4.2) + 2.2);
+            doc.rect(x, y, w, conceptosAltura);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Por cancelacion de:', x + 2, y + 4.9);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(9.8);
+            doc.text(conceptosLineas, x + 43, y + 4.9);
+
+            y += conceptosAltura + 3;
+            doc.rect(x, y, 65, 8);
+            doc.rect(x + 65, y, 125, 8);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Cuota:', x + 2, y + 5.2);
+            doc.setTextColor(166, 35, 35);
             doc.setFontSize(12);
-            doc.text('RECIBO DE CAJA', x + 145, y + 8);
-            doc.setFontSize(11);
-            doc.text(`Serie "${serie}"`, x + 145, y + 15);
-            doc.setTextColor(166, 35, 35);
-            doc.text(`N. ${String(numero).padStart(5, '0')}`, x + 173, y + 15);
+            doc.text(String(recibo?.numero_cuota || 'N/A'), x + 29, y + 5.2);
             doc.setTextColor(0, 0, 0);
+            doc.setFontSize(9);
+            doc.text('Abono extraordinario:', x + 67, y + 5.2);
             doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8.5);
-            doc.text(doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), 115), x + 80, y + 23, { align: 'center' });
+            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 5.2);
 
-            y += 34;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, w, 8, 'F');
-            doc.rect(x, y, w, 8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(10);
-            doc.text('Datos del cliente:', x + 2, y + 5.5);
             y += 10;
-            doc.rect(x, y, w, 11);
-            doc.text('Nombre:', x + 2, y + 5.5);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(11);
-            doc.text(doc.splitTextToSize(String(residente?.nombre || 'N/A'), 150), x + 22, y + 7.2);
-
-            y += 16;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, 145, 8, 'F');
-            doc.rect(x + 145, y, 45, 8, 'F');
-            doc.rect(x, y, 145, 8);
-            doc.rect(x + 145, y, 45, 8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(10);
-            doc.text('Fecha:', x + 2, y + 5.5);
-            doc.text('Por:', x + 147, y + 5.5);
-            y += 8;
-            doc.rect(x, y, 145, 11);
-            doc.rect(x + 145, y, 45, 11);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(`Guatemala, ${fechaLargaGT(fecha)}`, x + 2, y + 7);
-            doc.setFont('Helvetica', 'bold');
-            doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 7);
-
-            y += 15;
-            doc.rect(x, y, w, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Paga la cantidad de:', x + 2, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), 132), x + 45, y + 7);
-
-            y += 15;
-            doc.rect(x, y, w, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Por cancelacion de:', x + 2, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(doc.splitTextToSize(conceptos, 142), x + 43, y + 7);
-
-            y += 15;
-            doc.rect(x, y, 65, 11);
-            doc.rect(x + 65, y, 125, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Cuota:', x + 2, y + 7);
-            doc.setTextColor(166, 35, 35);
-            doc.setFontSize(13);
-            doc.text(String(recibo?.numero_cuota || 'N/A'), x + 37, y + 7);
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(10);
-            doc.text('Abono extraordinario:', x + 67, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 7);
-
-            y += 14;
-            doc.rect(x, y, 60, 25);
-            doc.rect(x + 65, y, 60, 25);
-            doc.rect(x + 130, y, 60, 25);
-            const drawCheck = (cx, cy, checked, label) => {
-                doc.rect(cx, cy, 4.2, 4.2);
-                if (checked) doc.text('X', cx + 1.2, cy + 3.2);
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(8.8);
-                doc.text(label, cx + 6, cy + 3.3);
-            };
-            drawCheck(x + 2, y + 2, metodo.includes('efectivo'), 'Efectivo');
-            drawCheck(x + 2, y + 8, metodo.includes('transfer'), 'Transferencia');
-            drawCheck(x + 2, y + 14, metodo.includes('deposit'), 'Deposito');
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Referencia:', x + 67, y + 6);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(String(recibo?.no_referencia || 'N/A'), x + 67, y + 12);
-            doc.text(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, x + 67, y + 18);
-            doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56), x + 132, y + 6);
-
-            y += 30;
-            const maxTableStartY = 102;
-            if (y > maxTableStartY) {
-                y = maxTableStartY;
-            }
             autoTable(doc, {
                 startY: y,
                 head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
@@ -742,38 +750,49 @@ const Caja = () => {
                     parseFloat(item?.total || 0).toFixed(2)
                 ])),
                 theme: 'grid',
-                headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0] },
-                styles: { fontSize: 8.2, cellPadding: 1.1 },
+                styles: { fontSize: 8.6, cellPadding: 1.5, lineColor: [214, 120, 120], lineWidth: 0.2 },
+                headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
                 margin: { left: x, right: 10 },
-                pageBreak: 'avoid'
+                tableWidth: w,
+                pageBreak: 'avoid',
+                columnStyles: {
+                    0: { cellWidth: 100 },
+                    1: { cellWidth: 45, halign: 'center' },
+                    2: { cellWidth: 45, halign: 'right' }
+                }
             });
 
-            let footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
-
-            const boxY = Math.min(footerY + 3, 160);
-            const boxH = 22;
+            const boxY = Math.min(doc.lastAutoTable.finalY + 4, 172);
+            const boxH = 16;
             doc.rect(x, boxY, 60, boxH);
             doc.rect(x + 65, boxY, 60, boxH);
+            doc.rect(x + 130, boxY, 60, boxH);
 
             doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 5);
-            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 11);
-            doc.text(String(recibo?.no_referencia || 'N/A'), x + 3, boxY + 17);
+            doc.setFontSize(8.2);
+            doc.text(`${metodo.includes('deposit') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 4.8);
+            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 9.0);
+            doc.text(`${metodo.includes('efectivo') ? 'X' : ' '}  Efectivo`, x + 3, boxY + 13.2);
+            doc.text(String(recibo?.no_referencia || 'N/A'), x + 3, boxY + 16);
 
             if (logoProyecto) {
                 try {
-                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 82, boxY + 7, 25, 11, `rec-logo-proyecto-${Date.now()}`, 'FAST');
+                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 86, boxY + 8, 18, 6, `rec-logo-proyecto-${Date.now()}`, 'FAST');
                 } catch {
                     // no-op
                 }
             }
             doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9.6);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 5, { align: 'center' });
+            doc.setFontSize(8.8);
+            doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
+
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(8.6);
+            doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56).slice(0, 2), x + 132, boxY + 4.8);
+            doc.text(doc.splitTextToSize(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, 56).slice(0, 1), x + 132, boxY + 12.8);
 
             const pageHeight = doc.internal.pageSize.getHeight();
-            footerY = pageHeight - 14;
+            const footerY = pageHeight - 14;
             doc.setFont('Helvetica', 'italic');
             doc.setFontSize(7.2);
             doc.text(
