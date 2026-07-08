@@ -475,40 +475,68 @@ router.post('/crear', (req, res) => {
                         return rollback(400, `La resolución no tiene suficiente rango disponible. Solo llega hasta ${resolucion.serie}-${padCorrelativo(rangoFinal)}.`);
                     }
 
-                    const insertQuery = `
-                        INSERT INTO asignar_correlativos
-                        (id_usuario, id_resolucion, id_empresa, serie, correlativo_inicio, correlativo_fin, correlativo_actual, estado, observaciones)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'activo', ?)
+                    const overlapQuery = `
+                        SELECT id_asignacion
+                        FROM asignar_correlativos
+                        WHERE id_resolucion = ?
+                          AND (
+                                (? BETWEEN correlativo_inicio AND correlativo_fin)
+                                OR (? BETWEEN correlativo_inicio AND correlativo_fin)
+                                OR (correlativo_inicio BETWEEN ? AND ?)
+                                OR (correlativo_fin BETWEEN ? AND ?)
+                              )
+                        LIMIT 1
+                        FOR UPDATE
                     `;
 
                     db.query(
-                        insertQuery,
-                        [id_usuario, id_resolucion, resolucion.id_empresa || null, resolucion.serie, correlativoInicio, correlativoFin, correlativoInicio, observaciones || null],
-                        (insertErr, insertResult) => {
-                            if (insertErr) {
-                                return rollback(500, 'No se pudo guardar la asignación de correlativos.', insertErr);
+                        overlapQuery,
+                        [id_resolucion, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin],
+                        (overlapErr, overlapRows) => {
+                            if (overlapErr) {
+                                return rollback(500, 'No se pudo validar la unicidad de correlativos.', overlapErr);
                             }
 
+                            if (overlapRows && overlapRows.length) {
+                                return rollback(409, 'El rango de correlativos ya fue asignado previamente. Actualiza la resolución e intenta de nuevo.');
+                            }
+
+                            const insertQuery = `
+                                INSERT INTO asignar_correlativos
+                                (id_usuario, id_resolucion, id_empresa, serie, correlativo_inicio, correlativo_fin, correlativo_actual, estado, observaciones)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, 'activo', ?)
+                            `;
+
                             db.query(
-                                'UPDATE resoluciones_facturas SET correlativo_actual = ? WHERE id_resolucion = ?',
-                                [correlativoFin + 1, id_resolucion],
-                                (updateErr) => {
-                                    if (updateErr) {
-                                        return rollback(500, 'No se pudo reservar el rango en la resolución.', updateErr);
+                                insertQuery,
+                                [id_usuario, id_resolucion, resolucion.id_empresa || null, resolucion.serie, correlativoInicio, correlativoFin, correlativoInicio, observaciones || null],
+                                (insertErr, insertResult) => {
+                                    if (insertErr) {
+                                        return rollback(500, 'No se pudo guardar la asignación de correlativos.', insertErr);
                                     }
 
-                                    db.commit((commitErr) => {
-                                        if (commitErr) {
-                                            return rollback(500, 'No se pudo confirmar la asignación.', commitErr);
-                                        }
+                                    db.query(
+                                        'UPDATE resoluciones_facturas SET correlativo_actual = ? WHERE id_resolucion = ?',
+                                        [correlativoFin + 1, id_resolucion],
+                                        (updateErr) => {
+                                            if (updateErr) {
+                                                return rollback(500, 'No se pudo reservar el rango en la resolución.', updateErr);
+                                            }
 
-                                        return res.status(200).send({
-                                            message: 'Lote de correlativos asignado correctamente.',
-                                            id_asignacion: insertResult.insertId,
-                                            correlativo_inicio: `${resolucion.serie}-${padCorrelativo(correlativoInicio)}`,
-                                            correlativo_fin: `${resolucion.serie}-${padCorrelativo(correlativoFin)}`
-                                        });
-                                    });
+                                            db.commit((commitErr) => {
+                                                if (commitErr) {
+                                                    return rollback(500, 'No se pudo confirmar la asignación.', commitErr);
+                                                }
+
+                                                return res.status(200).send({
+                                                    message: 'Lote de correlativos asignado correctamente.',
+                                                    id_asignacion: insertResult.insertId,
+                                                    correlativo_inicio: `${resolucion.serie}-${padCorrelativo(correlativoInicio)}`,
+                                                    correlativo_fin: `${resolucion.serie}-${padCorrelativo(correlativoFin)}`
+                                                });
+                                            });
+                                        }
+                                    );
                                 }
                             );
                         }

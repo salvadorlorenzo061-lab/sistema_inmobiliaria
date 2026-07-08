@@ -365,23 +365,6 @@ function AsignarCorrelativo() {
               </div>
 
               <div className="mb-3">
-                <label className="form-label fw-bold">Persona que cobrará</label>
-                <select className="form-select" value={idUsuario} onChange={(e) => setIdUsuario(e.target.value)}>
-                  <option value="">-- Seleccione persona --</option>
-                  {usuariosDisponibles.map((item) => (
-                    <option key={item.id_usuario} value={item.id_usuario}>
-                      {item.nombre} - {item.correo} ({String(item.nombre_rol || 'sin rol')})
-                    </option>
-                  ))}
-                </select>
-                {!!resolucionSeleccionada?.rol && (
-                  <small className="text-muted d-block mt-1">
-                    Esta resolución está destinada al rol: <strong>{String(resolucionSeleccionada.rol).toUpperCase()}</strong>
-                  </small>
-                )}
-              </div>
-
-              <div className="mb-3">
                 <label className="form-label fw-bold">Resolución activa</label>
                 <select
                   className="form-select"
@@ -393,6 +376,7 @@ function AsignarCorrelativo() {
                     if (resolucion?.id_empresa) {
                       setIdEmpresa(String(resolucion.id_empresa));
                     }
+                    setIdUsuario('');
                   }}
                 >
                   <option value="">-- Seleccione resolución --</option>
@@ -405,6 +389,37 @@ function AsignarCorrelativo() {
                 {idEmpresa && !resolucionesActivas.length && (
                   <small className="text-danger d-block mt-1">No hay resoluciones activas para la empresa seleccionada.</small>
                 )}
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label fw-bold">Persona que cobrará</label>
+                <select
+                  className="form-select"
+                  value={idUsuario}
+                  onChange={(e) => setIdUsuario(e.target.value)}
+                  disabled={!idResolucion}
+                >
+                  <option value="">-- Seleccione persona --</option>
+                  {usuariosDisponibles.map((item) => (
+                    <option key={item.id_usuario} value={item.id_usuario}>
+                      {item.nombre} - {item.correo} ({String(item.nombre_rol || 'sin rol')})
+                    </option>
+                  ))}
+                </select>
+                {!idResolucion && (
+                  <small className="text-muted d-block mt-1">Primero selecciona la resolución para habilitar personas por rol.</small>
+                )}
+                {!!idResolucion && !!resolucionSeleccionada?.rol && (
+                  <small className="text-muted d-block mt-1">
+                    Esta resolución está destinada al rol: <strong>{String(resolucionSeleccionada.rol).toUpperCase()}</strong>
+                  </small>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <div className="alert alert-info py-2 mb-0 small">
+                  El sistema reserva correlativos en rangos consecutivos por resolución, evitando repetición entre usuarios.
+                </div>
               </div>
 
               <div className="mb-3">
