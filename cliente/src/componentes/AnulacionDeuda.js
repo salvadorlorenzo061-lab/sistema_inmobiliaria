@@ -586,30 +586,46 @@ function AnulacionDeuda() {
   };
 
   const buscarCorrelativo = () => {
+    const toNumeroCorrelativo = (value = '') => {
+      const texto = String(value || '').trim();
+      const m = texto.match(/(\d+)$/);
+      if (!m) return null;
+      const n = Number(m[1]);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const aplicarResultadoBusqueda = (data = {}, mensaje = 'Cobro localizado') => {
+      setDetalleCorrelativo(data);
+      setId_contrato(String(data.id_contrato || ''));
+      setMonto_anulado(String(parseFloat(data.principal_pagado || data.monto_anulado || 0).toFixed(2)));
+      setId_pago_anulado(String(data.id_pago || ''));
+      Swal.fire({ icon: 'success', title: mensaje, timer: 1600, showConfirmButton: false });
+    };
+
+    const limpiarBusqueda = () => {
+      setDetalleCorrelativo(null);
+      setId_contrato('');
+      setMonto_anulado('');
+      setId_pago_anulado('');
+    };
+
+    const ejecutarBusqueda = async () => {
     const valor = correlativo.trim();
     if (!valor) {
       Swal.fire({ icon: 'warning', title: 'Ingresa el correlativo del cobro', timer: 2500, showConfirmButton: false });
       return;
     }
 
-    Axios.get(`${API_URL}/buscar-correlativo/${encodeURIComponent(valor)}`)
-    .then((res) => {
-      const data = res.data || {};
-      setDetalleCorrelativo(data);
-      setId_contrato(String(data.id_contrato || ''));
-      setMonto_anulado(String(parseFloat(data.principal_pagado || 0).toFixed(2)));
-      setId_pago_anulado(String(data.id_pago || ''));
-      Swal.fire({ icon: 'success', title: 'Cobro localizado', timer: 1500, showConfirmButton: false });
-    })
-    .catch((err) => {
+      try {
+        const res = await Axios.get(`${API_URL}/buscar-correlativo/${encodeURIComponent(valor)}`);
+        aplicarResultadoBusqueda(res.data || {}, 'Cobro localizado');
+        return;
+      } catch (err) {
       const status = Number(err?.response?.status || 0);
       const data = err?.response?.data || {};
 
       if (status === 409) {
-        setDetalleCorrelativo(data);
-        setId_contrato(String(data.id_contrato || ''));
-        setMonto_anulado(String(parseFloat(data.monto_anulado || 0).toFixed(2)));
-        setId_pago_anulado(String(data.id_pago || ''));
+        aplicarResultadoBusqueda(data, 'Correlativo ya anulado');
         Swal.fire({
           icon: 'info',
           title: 'Correlativo ya anulado',
@@ -618,12 +634,32 @@ function AnulacionDeuda() {
         return;
       }
 
-      setDetalleCorrelativo(null);
-      setId_contrato('');
-      setMonto_anulado('');
-      setId_pago_anulado('');
+      const numeroBuscado = /^#?\d+$/.test(valor) ? Number(String(valor).replace('#', '')) : null;
+      if (status === 404 && Number.isFinite(numeroBuscado) && numeroBuscado > 0) {
+        try {
+          const pagosResp = await Axios.get(`${API_BASE_URL}/api/pagos`);
+          const pagos = Array.isArray(pagosResp?.data) ? pagosResp.data : [];
+          const pagoMatch = pagos.find((pago) => {
+            const numeroRef = toNumeroCorrelativo(pago?.no_referencia || '');
+            return Number.isFinite(numeroRef) && numeroRef === numeroBuscado;
+          });
+
+          if (pagoMatch?.no_referencia) {
+            const retry = await Axios.get(`${API_URL}/buscar-correlativo/${encodeURIComponent(pagoMatch.no_referencia)}`);
+            aplicarResultadoBusqueda(retry.data || {}, 'Cobro localizado por referencia completa');
+            return;
+          }
+        } catch {
+          // Si falla el fallback, se mantiene el flujo normal de no encontrado.
+        }
+      }
+
+      limpiarBusqueda();
       Swal.fire({ icon: 'error', title: 'No encontrado', text: err.response?.data?.message || 'No se encontró el correlativo.' });
-    });
+      }
+    };
+
+    ejecutarBusqueda();
   };
 
   const actualizarAnulacion = () => {
