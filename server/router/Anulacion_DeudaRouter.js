@@ -350,13 +350,17 @@ router.get('/buscar-correlativo/:correlativo', (req, res) => {
 });
 
 router.post('/anular-por-correlativo', (req, res) => {
-    const { correlativo, id_usuario_autoriza, motivo } = req.body;
+    const { correlativo, id_pago, id_usuario_autoriza, motivo } = req.body;
 
-    if (!correlativo || !id_usuario_autoriza || !String(motivo || '').trim()) {
+    if ((!correlativo && !id_pago) || !id_usuario_autoriza || !String(motivo || '').trim()) {
         return res.status(400).send({ message: 'Debe enviar correlativo, usuario que autoriza y motivo.' });
     }
 
-    resolverPagoPorCorrelativo(correlativo, (resolveErr, pago) => {
+    const criterioBusqueda = Number.isInteger(Number(id_pago)) && Number(id_pago) > 0
+        ? String(Number(id_pago))
+        : correlativo;
+
+    resolverPagoPorCorrelativo(criterioBusqueda, (resolveErr, pago) => {
         if (resolveErr) {
             return res.status(400).send({ message: resolveErr.message });
         }

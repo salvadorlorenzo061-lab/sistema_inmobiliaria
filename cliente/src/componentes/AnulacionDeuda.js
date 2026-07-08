@@ -570,7 +570,8 @@ function AnulacionDeuda() {
       }
 
       Axios.post(`${API_URL}/anular-por-correlativo`, {
-        correlativo,
+        correlativo: String(detalleCorrelativo?.no_referencia || detalleCorrelativo?.correlativo || correlativo || '').trim(),
+        id_pago: Number(id_pago_anulado || 0) || null,
         id_usuario_autoriza,
         motivo,
         nombre_usuario: getNombreUsuario(usuariosList.find((u) => String(u.id_usuario) === String(id_usuario_autoriza))) || 'DESCONOCIDO'
@@ -595,10 +596,14 @@ function AnulacionDeuda() {
     };
 
     const aplicarResultadoBusqueda = (data = {}, mensaje = 'Cobro localizado') => {
+      const correlativoCanonico = String(data.no_referencia || data.correlativo || correlativo || '').trim();
       setDetalleCorrelativo(data);
       setId_contrato(String(data.id_contrato || ''));
       setMonto_anulado(String(parseFloat(data.principal_pagado || data.monto_anulado || 0).toFixed(2)));
       setId_pago_anulado(String(data.id_pago || ''));
+      if (correlativoCanonico) {
+        setCorrelativo(correlativoCanonico);
+      }
       Swal.fire({ icon: 'success', title: mensaje, timer: 1600, showConfirmButton: false });
     };
 
