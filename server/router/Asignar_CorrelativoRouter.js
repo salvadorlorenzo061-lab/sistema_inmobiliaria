@@ -9,6 +9,46 @@ router.use(express.json());
 
 const padCorrelativo = (value) => String(Number(value) || 0).padStart(8, '0');
 
+const normalizeRole = (value = '') => String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+const getRoleType = (normalizedRole = '') => {
+    if (normalizedRole.includes('jurid') || normalizedRole.includes('legal')) return 'juridico';
+    if (normalizedRole.includes('caja') || normalizedRole.includes('cobro')) return 'caja';
+    return null;
+};
+
+const getResolucionRoleFilter = (roleType, esAdmin) => {
+    if (esAdmin) {
+        return {
+            sql: '',
+            params: []
+        };
+    }
+
+    if (roleType === 'juridico') {
+        return {
+            sql: " AND COALESCE(rol, 'caja') IN ('juridico', 'ambos')",
+            params: []
+        };
+    }
+
+    if (roleType === 'caja') {
+        return {
+            sql: " AND COALESCE(rol, 'caja') IN ('caja', 'ambos')",
+            params: []
+        };
+    }
+
+    return {
+        sql: ' AND 1 = 0',
+        params: []
+    };
+};
+
 const ensureAsignacionesTable = () => {
     const sql = `
         CREATE TABLE IF NOT EXISTS asignar_correlativos (
@@ -91,11 +131,8 @@ router.get('/estado-usuario', (req, res) => {
             return res.status(500).send({ message: 'No se pudo validar el rol del usuario.' });
         }
 
-        const rolNormalizado = String(usuarioRows?.[0]?.nombre_rol || '')
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .trim();
+        const rolNormalizado = normalizeRole(usuarioRows?.[0]?.nombre_rol || '');
+        const roleType = getRoleType(rolNormalizado);
         const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
 
         const asignacionQuery = `
@@ -136,28 +173,49 @@ router.get('/estado-usuario', (req, res) => {
                 });
             }
 
-            if (esAdmin) {
+            const roleFilter = getResolucionRoleFilter(roleType, esAdmin);
+            const resolucionGeneralQuery = `
+                SELECT id_resolucion
+                FROM resoluciones_facturas
+                WHERE estado = 'activo'
+                  AND correlativo_actual BETWEEN rango_inicial AND rango_final
+                  AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
+                  ${roleFilter.sql}
+                ORDER BY fecha_vencimiento ASC, id_resolucion ASC
+                LIMIT 1
+            `;
+
+            db.query(resolucionGeneralQuery, roleFilter.params, (resErr, resRows) => {
+                if (resErr) {
+                    console.error(resErr);
+                    return res.status(500).send({ message: 'No se pudo validar resolución de respaldo.' });
+                }
+
+                if (resRows && resRows.length) {
+                    return res.send({
+                        disponible: true,
+                        origen: 'resolucion',
+                        correlativo: null,
+                        correlativo_fin: null,
+                        id_asignacion: null,
+                        id_empresa: null,
+                        nombre_empresa: null,
+                        mensaje: esAdmin
+                            ? 'No tienes lote asignado, pero como administrador puedes usar la resolución general.'
+                            : 'No tienes lote asignado, pero por tu rol puedes usar resolución activa compatible.'
+                    });
+                }
+
                 return res.send({
-                    disponible: true,
-                    origen: 'resolucion',
+                    disponible: false,
+                    origen: null,
                     correlativo: null,
                     correlativo_fin: null,
                     id_asignacion: null,
                     id_empresa: null,
                     nombre_empresa: null,
-                    mensaje: 'No tienes lote asignado, pero como administrador puedes usar la resolución general.'
+                    mensaje: 'No tienes correlativos asignados.'
                 });
-            }
-
-            return res.send({
-                disponible: false,
-                origen: null,
-                correlativo: null,
-                correlativo_fin: null,
-                id_asignacion: null,
-                id_empresa: null,
-                nombre_empresa: null,
-                mensaje: 'No tienes correlativos asignados.'
             });
         });
     });
@@ -211,11 +269,8 @@ router.get('/siguiente-correlativo', (req, res) => {
                 return res.status(500).send({ message: 'No se pudo validar el rol del usuario.' });
             }
 
-            const rolNormalizado = String(usuarioRows?.[0]?.nombre_rol || '')
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .trim();
+            const rolNormalizado = normalizeRole(usuarioRows?.[0]?.nombre_rol || '');
+            const roleType = getRoleType(rolNormalizado);
             const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
 
             const asignacionQuery = `
@@ -252,7 +307,8 @@ router.get('/siguiente-correlativo', (req, res) => {
                     });
                 }
 
-                if (!esAdmin) {
+                const roleFilter = getResolucionRoleFilter(roleType, esAdmin);
+                if (!esAdmin && roleFilter.sql.includes('1 = 0')) {
                     return res.send({
                         disponible: false,
                         origen: null,
@@ -269,11 +325,12 @@ router.get('/siguiente-correlativo', (req, res) => {
                       AND estado = 'activo'
                       AND correlativo_actual BETWEEN rango_inicial AND rango_final
                       AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
+                      ${roleFilter.sql}
                     ORDER BY fecha_vencimiento ASC, id_resolucion ASC
                     LIMIT 1
                 `;
 
-                db.query(resolucionQuery, [idEmpresa], (resErr, resRows) => {
+                db.query(resolucionQuery, [idEmpresa, ...roleFilter.params], (resErr, resRows) => {
                     if (resErr) {
                         console.error(resErr);
                         return res.status(500).send({ message: 'No se pudo consultar la resolución de respaldo.' });

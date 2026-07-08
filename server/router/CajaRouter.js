@@ -61,9 +61,13 @@ const obtenerContextoUsuarioCobro = (idUsuario, callback) => {
 
         const rolNormalizado = normalizeText(rows?.[0]?.nombre_rol || '');
         const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
+        const roleType = rolNormalizado.includes('jurid') || rolNormalizado.includes('legal')
+            ? 'juridico'
+            : ((rolNormalizado.includes('caja') || rolNormalizado.includes('cobro')) ? 'caja' : null);
         callback(null, {
             esAdmin,
-            nombre_rol: rows?.[0]?.nombre_rol || ''
+            nombre_rol: rows?.[0]?.nombre_rol || '',
+            role_type: roleType
         });
     });
 };
@@ -1123,9 +1127,18 @@ router.post("/procesar-pago", (req, res) => {
                                 return db.rollback(() => res.status(500).send("Error al validar permisos del usuario cobrador: " + userErr.message));
                             }
 
-                            if (!contextoUsuario?.esAdmin) {
+                            const esAdmin = Boolean(contextoUsuario?.esAdmin);
+                            const roleType = String(contextoUsuario?.role_type || '').toLowerCase();
+
+                            if (!esAdmin && roleType !== 'caja' && roleType !== 'juridico') {
                                 return db.rollback(() => res.status(400).send("Este usuario no tiene correlativos asignados para cobrar facturas. Solicita un lote de correlativos antes de registrar el cobro."));
                             }
+
+                            const rolResolucionFiltro = esAdmin
+                                ? ''
+                                : (roleType === 'juridico'
+                                    ? " AND COALESCE(rol, 'caja') IN ('juridico', 'ambos')"
+                                    : " AND COALESCE(rol, 'caja') IN ('caja', 'ambos')");
 
                             const sqlResolucion = `
                         SELECT id_resolucion, serie, correlativo_actual, rango_inicial, rango_final, fecha_vencimiento
@@ -1134,6 +1147,7 @@ router.post("/procesar-pago", (req, res) => {
                           AND estado = 'activo'
                           AND correlativo_actual BETWEEN rango_inicial AND rango_final
                           AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
+                          ${rolResolucionFiltro}
                         ORDER BY fecha_vencimiento ASC, id_resolucion ASC
                         LIMIT 1
                     `;
