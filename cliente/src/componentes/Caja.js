@@ -706,9 +706,9 @@ const Caja = () => {
             autoTable(doc, {
                 startY: y,
                 head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
-                body: (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes, total: montoTotal }]).map((item) => ([
+                body: (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: meses, total: montoTotal }]).map((item) => ([
                     String(item?.concepto || 'Pago aplicado'),
-                    String(item?.mes || mes || 'N/A'),
+                    String(item?.mes || meses || 'N/A'),
                     parseFloat(item?.total || 0).toFixed(2)
                 ])),
                 theme: 'grid',
