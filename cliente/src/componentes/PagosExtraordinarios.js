@@ -34,6 +34,13 @@ function PagosExtraordinarios() {
   const API_SERVICIOS = `${API_BASE_URL}/api/servicios`;
   const IVA_RATE = 0.12;
 
+  const cargarExtras = () => Axios.get(`${API_URL}?_=${Date.now()}`)
+    .then(res => setExtrasList(Array.isArray(res.data) ? res.data : []))
+    .catch(err => {
+      console.error('Error al cargar pagos extraordinarios:', err);
+      setExtrasList([]);
+    });
+
   const getImageFormatFromDataUrl = (dataUrl = '') => {
     const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/i);
     if (!match) return 'PNG';
@@ -143,12 +150,7 @@ function PagosExtraordinarios() {
   };
 
   useEffect(() => {
-    Axios.get(API_URL)
-      .then(res => setExtrasList(Array.isArray(res.data) ? res.data : []))
-      .catch(err => {
-        console.error('Error al cargar pagos extraordinarios:', err);
-        setExtrasList([]);
-      });
+    cargarExtras();
 
     Axios.get(`${API_BASE_URL}/api/contratos_residentes`)
       .then(res => setContratosList(Array.isArray(res.data) ? res.data : []))
@@ -166,9 +168,7 @@ function PagosExtraordinarios() {
   }, [API_URL, API_SERVICIOS]);
 
   const recargarExtras = () => {
-    Axios.get(API_URL)
-      .then(res => setExtrasList(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setExtrasList([]));
+    cargarExtras();
   };
 
   const guardar = () => {
