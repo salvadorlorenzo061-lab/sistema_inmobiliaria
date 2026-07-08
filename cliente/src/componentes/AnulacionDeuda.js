@@ -155,7 +155,7 @@ function AnulacionDeuda() {
       const x = 10;
       const w = 190;
       let y = 10;
-      const headerHeight = 28;
+      const headerHeight = 22;
       const rightHeaderWidth = 68;
       const leftHeaderWidth = w - rightHeaderWidth;
       const rightHeaderX = x + leftHeaderWidth;
@@ -166,9 +166,9 @@ function AnulacionDeuda() {
       doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
 
       const logoX = x + 3;
-      const logoY = y + 3;
+      const logoY = y + 1.5;
       const logoW = 20;
-      const logoH = 20;
+      const logoH = 18;
       if (logoProyecto) {
         try {
           doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), logoX, logoY, logoW, logoH, `anul-logo-${Date.now()}`, 'FAST');
@@ -182,119 +182,128 @@ function AnulacionDeuda() {
       const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
 
       doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.6);
+      doc.text(doc.splitTextToSize(String(nombreMarca).toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
       doc.setFontSize(10.5);
-      doc.text(doc.splitTextToSize(String(nombreMarca).toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 8, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text('ANULACION DE COBRO', rightCenterX, y + 8, { align: 'center' });
-      doc.setFontSize(11);
-      doc.text('Serie "ANU"', rightHeaderX + 6, y + 15);
+      doc.text('ANULACION DE COBRO', rightCenterX, y + 7, { align: 'center' });
+      doc.setFontSize(9.5);
+      doc.text('Serie "ANU"', rightHeaderX + 6, y + 13.5);
       doc.setTextColor(166, 35, 35);
-      doc.text(`N. ${String(anulacion.id_anulacion || '0').padStart(5, '0')}`, x + w - 2, y + 15, { align: 'right' });
+      doc.text(`N. ${String(anulacion.id_anulacion || '0').padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
       doc.setTextColor(0, 0, 0);
       doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8.5);
-      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto || 'Comprobante de anulacion de cobro'), w - 8), x + (w / 2), y + 23, { align: 'center' });
+      doc.setFontSize(7.5);
+      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto || 'Comprobante de anulacion de cobro'), w - 8), x + (w / 2), y + 18.5, { align: 'center' });
 
       // Sello visual de anulado (suave para no tapar detalle)
       doc.setTextColor(214, 86, 86);
       doc.setDrawColor(214, 86, 86);
-      doc.setLineWidth(0.35);
-      doc.line(86, 78, 164, 100);
-      doc.line(86, 100, 164, 78);
+      doc.setLineWidth(0.22);
+      doc.line(94, 70, 160, 86);
+      doc.line(94, 86, 160, 70);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(22);
-      doc.text('ANULADO', 125, 93, { align: 'center', angle: -13 });
+      doc.setFontSize(17);
+      doc.text('ANULADO', 127, 81, { align: 'center', angle: -13 });
       doc.setTextColor(0, 0, 0);
 
-      y += 34;
+      y += headerHeight + 4;
       doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, w, 8, 'F');
-      doc.rect(x, y, w, 8);
+      doc.rect(x, y, w, 6, 'F');
+      doc.rect(x, y, w, 6);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text('Datos del cliente:', x + 2, y + 5.5);
+      doc.setFontSize(8.8);
+      doc.text('Datos del cliente:', x + 2, y + 4.3);
 
-      y += 10;
+      y += 7;
       const nombreTexto = String(contratoInfo?.nombre_residente || 'N/A');
-      const nombreLineas = doc.splitTextToSize(nombreTexto, 158);
-      const nombreAltura = Math.max(11, (nombreLineas.length * 4.5) + 3.5);
+      const nombreLineas = doc.splitTextToSize(nombreTexto, 158).slice(0, 1);
+      const nombreAltura = 8;
       doc.rect(x, y, w, nombreAltura);
       doc.setFont('Helvetica', 'bold');
-      doc.text('Nombre:', x + 2, y + 5.5);
+      doc.setFontSize(9);
+      doc.text('Nombre:', x + 2, y + 5);
       doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10.5);
-      doc.text(nombreLineas, x + 22, y + 5.5);
-
-      y += nombreAltura + 4;
-      doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, 145, 8, 'F');
-      doc.rect(x + 145, y, 45, 8, 'F');
-      doc.rect(x, y, 145, 8);
-      doc.rect(x + 145, y, 45, 8);
-      doc.setFont('Helvetica', 'bold');
       doc.setFontSize(10);
-      doc.text('Fecha:', x + 2, y + 5.5);
-      doc.text('Por:', x + 147, y + 5.5);
+      doc.text(nombreLineas, x + 22, y + 5);
 
-      y += 8;
+      y += nombreAltura + 3;
+      doc.setFillColor(245, 211, 69);
+      doc.rect(x, y, 145, 6, 'F');
+      doc.rect(x + 145, y, 45, 6, 'F');
+      doc.rect(x, y, 145, 6);
+      doc.rect(x + 145, y, 45, 6);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.8);
+      doc.text('Fecha:', x + 2, y + 4.3);
+      doc.text('Por:', x + 147, y + 4.3);
+
+      y += 6;
       const fechaTexto = `Guatemala, ${fechaLargaGT(fechaDocumento)}`;
-      const fechaLineas = doc.splitTextToSize(fechaTexto, 139);
-      const fechaAltura = Math.max(11, (fechaLineas.length * 4.5) + 2.5);
+      const fechaLineas = doc.splitTextToSize(fechaTexto, 139).slice(0, 1);
+      const fechaAltura = 8;
       doc.rect(x, y, 145, fechaAltura);
       doc.rect(x + 145, y, 45, fechaAltura);
       doc.setFont('Helvetica', 'normal');
-      doc.text(fechaLineas, x + 2, y + 5.5);
+      doc.setFontSize(9.3);
+      doc.text(fechaLineas, x + 2, y + 5);
       doc.setFont('Helvetica', 'bold');
-      doc.text(`Q ${Math.abs(montoAnulado).toFixed(2)}`, x + 147, y + 5.5);
+      doc.text(`Q ${Math.abs(montoAnulado).toFixed(2)}`, x + 147, y + 5);
 
-      y += fechaAltura + 4;
+      y += fechaAltura + 3;
       const pagaTexto = 'ANULACION / REVERSION DE COBRO REGISTRADO';
-      const pagaLineas = doc.splitTextToSize(pagaTexto, 143);
-      const pagaAltura = Math.max(11, (pagaLineas.length * 4.5) + 3);
+      const pagaLineas = doc.splitTextToSize(pagaTexto, 143).slice(0, 1);
+      const pagaAltura = 8;
       doc.rect(x, y, w, pagaAltura);
       doc.setFont('Helvetica', 'bold');
-      doc.text('Paga la cantidad de:', x + 2, y + 5.5);
+      doc.setFontSize(9);
+      doc.text('Paga la cantidad de:', x + 2, y + 5);
       doc.setFont('Helvetica', 'normal');
-      doc.text(pagaLineas, x + 45, y + 5.5);
+      doc.setFontSize(10);
+      doc.text(pagaLineas, x + 45, y + 5);
 
-      y += pagaAltura + 4;
+      y += pagaAltura + 3;
       const cancelacionTexto = String(anulacion.motivo || 'Sin motivo registrado');
-      const cancelacionLineas = doc.splitTextToSize(cancelacionTexto, 143);
-      const cancelacionAltura = Math.max(12, (cancelacionLineas.length * 4.5) + 3.5);
+      const cancelacionLineas = doc.splitTextToSize(cancelacionTexto, 143).slice(0, 2);
+      const cancelacionAltura = Math.max(10, (cancelacionLineas.length * 4.2) + 2.2);
       doc.rect(x, y, w, cancelacionAltura);
       doc.setFont('Helvetica', 'bold');
-      doc.text('Por cancelacion de:', x + 2, y + 5.5);
+      doc.setFontSize(9);
+      doc.text('Por cancelacion de:', x + 2, y + 4.9);
       doc.setFont('Helvetica', 'normal');
-      doc.text(cancelacionLineas, x + 43, y + 5.5);
+      doc.setFontSize(9.8);
+      doc.text(cancelacionLineas, x + 43, y + 4.9);
 
-      y += cancelacionAltura + 4;
-      doc.rect(x, y, 65, 11);
-      doc.rect(x + 65, y, 125, 11);
+      y += cancelacionAltura + 3;
+      doc.rect(x, y, 65, 8);
+      doc.rect(x + 65, y, 125, 8);
       doc.setFont('Helvetica', 'bold');
-      doc.text('Cuota:', x + 2, y + 7);
+      doc.setFontSize(9);
+      doc.text('Cuota:', x + 2, y + 5.2);
       doc.setTextColor(166, 35, 35);
-      doc.setFontSize(13);
-      doc.text('ANULADA', x + 25, y + 7);
+      doc.setFontSize(12);
+      doc.text('ANULADA', x + 29, y + 5.2);
       doc.setTextColor(0, 0, 0);
-      doc.setFontSize(10);
-      doc.text('Abono extraordinario:', x + 67, y + 7);
+      doc.setFontSize(9);
+      doc.text('Abono extraordinario:', x + 67, y + 5.2);
       doc.setFont('Helvetica', 'normal');
-      doc.text('Q.0.00', x + 112, y + 7);
+      doc.text('Q.0.00', x + 112, y + 5.2);
 
-      y += 14;
-      const infoAltura = 28;
+      y += 10;
+      const infoAltura = 14;
       doc.rect(x, y, 60, infoAltura);
       doc.rect(x + 65, y, 60, infoAltura);
       doc.rect(x + 130, y, 60, infoAltura);
       doc.setFont('Helvetica', 'bold');
-      doc.text('Referencia:', x + 67, y + 6);
+      doc.setFontSize(8.2);
+      doc.text('Referencia:', x + 67, y + 4.5);
       doc.setFont('Helvetica', 'normal');
-      doc.text(correlativoTexto, x + 67, y + 12);
-      doc.text(`Contrato: ${contratoInfo?.codigo_contrato || `#${anulacion.id_contrato || '-'}`}`, x + 67, y + 18);
-      doc.text(`Pago: #${anulacion.id_pago || 'N/A'}`, x + 132, y + 6);
-      doc.text(`Autoriza: ${getNombreUsuario(autorizadorInfo)}`, x + 132, y + 12);
+      doc.setFontSize(8.6);
+      doc.text(doc.splitTextToSize(correlativoTexto, 56).slice(0, 1), x + 67, y + 8.8);
+      doc.text(doc.splitTextToSize(`Contrato: ${contratoInfo?.codigo_contrato || `#${anulacion.id_contrato || '-'}`}`, 56).slice(0, 1), x + 67, y + 12.6);
+      doc.text(doc.splitTextToSize(`Pago: #${anulacion.id_pago || 'N/A'}`, 56).slice(0, 1), x + 132, y + 4.8);
+      doc.text(doc.splitTextToSize(`Autoriza: ${getNombreUsuario(autorizadorInfo)}`, 56).slice(0, 2), x + 132, y + 8.6);
 
-      y += infoAltura + 6;
+      y += infoAltura + 3;
       autoTable(doc, {
         startY: y,
         head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
@@ -305,15 +314,16 @@ function AnulacionDeuda() {
         ]],
         theme: 'grid',
         headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0] },
-        styles: { fontSize: 9 },
-        margin: { left: x, right: 10 }
+        styles: { fontSize: 8.2, cellPadding: 1.1 },
+        margin: { left: x, right: 10 },
+        pageBreak: 'avoid'
       });
 
-      const footerY = doc.lastAutoTable.finalY + 10;
+      const footerY = doc.lastAutoTable.finalY + 4;
       doc.setFont('Helvetica', 'italic');
-      doc.setFontSize(8.5);
+      doc.setFontSize(7.2);
       doc.text(
-        doc.splitTextToSize('Este documento corresponde a una anulacion autorizada. Conserva el detalle del cobro revertido y su trazabilidad.', 188),
+        doc.splitTextToSize('Este documento corresponde a una anulacion autorizada. Conserva el detalle del cobro revertido y su trazabilidad.', 188).slice(0, 1),
         x,
         footerY
       );
