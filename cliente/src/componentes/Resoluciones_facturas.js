@@ -9,6 +9,15 @@ import { API_BASE_URL } from '../config';
 
 const LOTE_FACTURAS = 10000;
 
+const toDateInputValue = (value) => {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+};
+
 function Resoluciones_facturas() {
   const [id_resolucion, setId_resolucion] = useState(""); 
   const [id_empresa, setId_empresa] = useState("");
@@ -342,8 +351,8 @@ function Resoluciones_facturas() {
     setRango_inicial(val.rango_inicial); 
     setRango_final(val.rango_final);
     setCorrelativo_actual(val.correlativo_actual);
-    setFecha_autorizacion(val.fecha_autorizacion);
-    setFecha_vencimiento(val.fecha_vencimiento);
+    setFecha_autorizacion(toDateInputValue(val.fecha_autorizacion));
+    setFecha_vencimiento(toDateInputValue(val.fecha_vencimiento));
     setEstado(val.estado);
     setRol(String(val.rol || 'caja'));
     setShowEditModal(true);
