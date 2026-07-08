@@ -759,13 +759,13 @@ const Caja = () => {
             doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56).slice(0, 2), x + 132, boxY + 4.8);
             doc.text(doc.splitTextToSize(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, 56).slice(0, 1), x + 132, boxY + 12.8);
 
-            const tableY = boxY + boxH + 3;
+            const tableY = Math.max(boxY + boxH + 4, 182);
             autoTable(doc, {
                 startY: tableY,
                 head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
                 body: [[conceptoResumen, String(meses || 'N/A'), montoTotal.toFixed(2)]],
                 theme: 'grid',
-                styles: { fontSize: 8.4, cellPadding: 1.3, lineColor: [214, 120, 120], lineWidth: 0.2 },
+                styles: { fontSize: 8.1, cellPadding: 1.1, lineColor: [214, 120, 120], lineWidth: 0.2 },
                 headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
                 margin: { left: x, right: 10 },
                 tableWidth: w,
