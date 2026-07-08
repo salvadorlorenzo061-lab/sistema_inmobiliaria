@@ -579,7 +579,6 @@ const Caja = () => {
     // Generador de recibo estilo formato institucional
     const generarPDF = (recibo, residente, empresa) => {
         try {
-            const doc = new jsPDF();
             const logoEmpresa = normalizeImageDataUrl(empresa?.logo || '');
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
             const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
@@ -592,136 +591,135 @@ const Caja = () => {
             const meses = Array.isArray(recibo?.meses_pagados) && recibo.meses_pagados.length ? recibo.meses_pagados.join(', ') : (recibo?.mes_pagado || 'N/A');
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
+            const detailRows = detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: meses, total: montoTotal }];
 
-            const x = 10;
-            const w = 190;
-            let y = 10;
+            // Recibo termico de 80 mm de ancho (3 1/8 in)
+            const pageWidth = 80;
+            const estimatedHeight = Math.max(170, 112 + (detailRows.length * 7));
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [pageWidth, estimatedHeight] });
+
+            const x = 4;
+            const w = pageWidth - (x * 2);
+            let y = 4;
+
+            const drawCheck = (cx, cy, checked, label) => {
+                doc.rect(cx, cy, 3.8, 3.8);
+                if (checked) doc.text('X', cx + 1.1, cy + 3.0);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(7.8);
+                doc.text(label, cx + 5.5, cy + 3.0);
+            };
+
+            const drawPair = (label, value, valueMaxWidth = w - 19) => {
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.text(`${label}:`, x, y);
+                doc.setFont('Helvetica', 'normal');
+                doc.text(doc.splitTextToSize(String(value || 'N/A'), valueMaxWidth), x + 18, y);
+                y += 4.8;
+            };
 
             doc.setFillColor(240, 228, 167);
-            doc.rect(x, y, w, 28, 'F');
-            doc.rect(x, y, w, 28);
+            doc.rect(x, y, w, 18, 'F');
+            doc.rect(x, y, w, 18);
             if (logoEmpresa) {
                 try {
-                    doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), x + 3, y + 3, 20, 20, `rec-logo-${Date.now()}`, 'FAST');
+                    doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), x + 2, y + 2, 12, 12, `rec-logo-${Date.now()}`, 'FAST');
                 } catch {
                     // no-op
                 }
             }
             doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.7);
+            doc.text(doc.splitTextToSize(String(empresa?.nombre || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 52), x + 16, y + 5);
+            doc.setFontSize(10);
+            doc.text('RECIBO DE CAJA', x + 16, y + 11);
+            doc.setFontSize(8.2);
+            doc.text(`Serie ${serie}`, x + 16, y + 15.5);
+            doc.setTextColor(166, 35, 35);
+            doc.text(`No. ${String(numero).padStart(5, '0')}`, x + 44, y + 15.5);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(7.6);
+            doc.text(doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), w - 4), x + 2, y + 18 + 3);
+
+            y += 24;
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.8);
+            doc.text('DATOS DEL COBRO', x, y);
+            y += 4;
+            doc.line(x, y, x + w, y);
+            y += 4.5;
+
+            drawPair('Cliente', residente?.nombre || 'N/A');
+            drawPair('Contrato', residente?.codigo_contrato || 'N/A');
+            drawPair('Fecha', `Guatemala, ${fechaLargaGT(fecha)}`);
+            drawPair('Referencia', recibo?.no_referencia || 'N/A');
+            drawPair('Cuota', recibo?.numero_cuota || 'N/A');
+            drawPair('Meses', meses, w - 23);
+
+            y += 1;
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Concepto:', x, y);
+            y += 3.8;
+            doc.setFont('Helvetica', 'normal');
+            doc.text(doc.splitTextToSize(conceptos, w), x, y);
+            y += 6;
+
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Cantidad en letras:', x, y);
+            y += 3.8;
+            doc.setFont('Helvetica', 'normal');
+            doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), w), x, y);
+            y += 7;
+
+            doc.setFillColor(245, 211, 69);
+            doc.rect(x, y - 3.5, w, 8, 'F');
+            doc.rect(x, y - 3.5, w, 8);
+            doc.setFont('Helvetica', 'bold');
             doc.setFontSize(10.5);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 85), x + 26, y + 8);
-            doc.setFontSize(12);
-            doc.text('RECIBO DE CAJA', x + 145, y + 8);
-            doc.setFontSize(11);
-            doc.text(`Serie "${serie}"`, x + 145, y + 15);
-            doc.setTextColor(166, 35, 35);
-            doc.text(`N. ${String(numero).padStart(5, '0')}`, x + 173, y + 15);
-            doc.setTextColor(0, 0, 0);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8.5);
-            doc.text(doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), 115), x + 80, y + 23, { align: 'center' });
-
-            y += 34;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, w, 8, 'F');
-            doc.rect(x, y, w, 8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(10);
-            doc.text('Datos del cliente:', x + 2, y + 5.5);
-            y += 10;
-            doc.rect(x, y, w, 11);
-            doc.text('Nombre:', x + 2, y + 5.5);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(11);
-            doc.text(doc.splitTextToSize(String(residente?.nombre || 'N/A'), 150), x + 22, y + 7.2);
-
-            y += 16;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, 145, 8, 'F');
-            doc.rect(x + 145, y, 45, 8, 'F');
-            doc.rect(x, y, 145, 8);
-            doc.rect(x + 145, y, 45, 8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(10);
-            doc.text('Fecha:', x + 2, y + 5.5);
-            doc.text('Por:', x + 147, y + 5.5);
+            doc.text(`TOTAL: Q ${montoTotal.toFixed(2)}`, x + 2, y + 1.5);
             y += 8;
-            doc.rect(x, y, 145, 11);
-            doc.rect(x + 145, y, 45, 11);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(`Guatemala, ${fechaLargaGT(fecha)}`, x + 2, y + 7);
-            doc.setFont('Helvetica', 'bold');
-            doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 7);
 
-            y += 15;
-            doc.rect(x, y, w, 11);
             doc.setFont('Helvetica', 'bold');
-            doc.text('Paga la cantidad de:', x + 2, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), 132), x + 45, y + 7);
+            doc.setFontSize(8.5);
+            doc.text('Forma de pago:', x, y);
+            y += 4.5;
+            drawCheck(x, y - 2.8, metodo.includes('efectivo'), 'Efectivo');
+            drawCheck(x + 24, y - 2.8, metodo.includes('transfer'), 'Transfer.');
+            drawCheck(x + 48, y - 2.8, metodo.includes('deposit'), 'Deposito');
+            y += 6;
 
-            y += 15;
-            doc.rect(x, y, w, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Por cancelacion de:', x + 2, y + 7);
             doc.setFont('Helvetica', 'normal');
-            doc.text(doc.splitTextToSize(conceptos, 142), x + 43, y + 7);
+            doc.setFontSize(8.2);
+            doc.text(`Abono extraordinario: Q ${Math.max(abonoExtra, 0).toFixed(2)}`, x, y);
+            y += 5;
 
-            y += 15;
-            doc.rect(x, y, 65, 11);
-            doc.rect(x + 65, y, 125, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Cuota:', x + 2, y + 7);
-            doc.setTextColor(166, 35, 35);
-            doc.setFontSize(13);
-            doc.text(String(recibo?.numero_cuota || 'N/A'), x + 37, y + 7);
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(10);
-            doc.text('Abono extraordinario:', x + 67, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 7);
-
-            y += 14;
-            doc.rect(x, y, 60, 25);
-            doc.rect(x + 65, y, 60, 25);
-            doc.rect(x + 130, y, 60, 25);
-            const drawCheck = (cx, cy, checked, label) => {
-                doc.rect(cx, cy, 4.2, 4.2);
-                if (checked) doc.text('X', cx + 1.2, cy + 3.2);
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(8.8);
-                doc.text(label, cx + 6, cy + 3.3);
-            };
-            drawCheck(x + 2, y + 2, metodo.includes('efectivo'), 'Efectivo');
-            drawCheck(x + 2, y + 8, metodo.includes('transfer'), 'Transferencia');
-            drawCheck(x + 2, y + 14, metodo.includes('deposit'), 'Deposito');
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Referencia:', x + 67, y + 6);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(String(recibo?.no_referencia || 'N/A'), x + 67, y + 12);
-            doc.text(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, x + 67, y + 18);
-            doc.text(doc.splitTextToSize(`Meses: ${meses}`, 56), x + 132, y + 6);
-
-            y += 30;
             autoTable(doc, {
                 startY: y,
                 head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
-                body: (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: meses, total: montoTotal }]).map((item) => ([
+                body: detailRows.map((item) => ([
                     String(item?.concepto || 'Pago aplicado'),
                     String(item?.mes || meses || 'N/A'),
                     parseFloat(item?.total || 0).toFixed(2)
                 ])),
                 theme: 'grid',
                 headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0] },
-                styles: { fontSize: 9 },
-                margin: { left: x, right: 10 }
+                styles: { fontSize: 7.6, cellPadding: 1.2 },
+                margin: { left: x, right: x },
+                tableWidth: w,
+                columnStyles: {
+                    0: { cellWidth: 34 },
+                    1: { cellWidth: 18, halign: 'center' },
+                    2: { cellWidth: 20, halign: 'right' }
+                }
             });
 
-            const footerY = doc.lastAutoTable.finalY + 10;
+            const footerY = doc.lastAutoTable.finalY + 6;
             doc.setFont('Helvetica', 'italic');
-            doc.setFontSize(8.5);
+            doc.setFontSize(7.2);
             doc.text(
-                doc.splitTextToSize('Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico conserva el detalle completo del cobro realizado.', 188),
+                doc.splitTextToSize('Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico conserva el detalle completo del cobro realizado.', w),
                 x,
                 footerY
             );
