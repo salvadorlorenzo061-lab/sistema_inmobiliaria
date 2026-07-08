@@ -300,8 +300,10 @@ router.get("/", (req, res) => {
                    tc.nombre_tipo_contrato,
                    e.nombre_empresa AS nombre_empresa_marca,
                    p.nombre AS nombre_proyecto,
-                   COALESCE(e.logo, em.logo, er.logo) AS logo_proyecto,
-                   COALESCE(e.nombre_empresa, em.nombre_empresa, p.nombre, er.nombre_empresa) AS nombre_marca_pdf,
+                   COALESCE(e.logo, er.logo) AS logo_empresa_pdf,
+                   COALESCE(em.logo, e.logo, er.logo) AS logo_proyecto,
+                   COALESCE(e.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
+                   COALESCE(p.nombre, em.nombre_empresa, e.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf,
                    (
                        SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
                        FROM contratos_servicios cs

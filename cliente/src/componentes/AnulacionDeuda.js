@@ -148,6 +148,7 @@ function AnulacionDeuda() {
       const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
       const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;
       const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
+      const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
       const logoProyecto = normalizeImageDataUrl(contratoInfo?.logo_proyecto || '');
       const nombreMarca = contratoInfo?.nombre_marca_pdf || contratoInfo?.nombre_proyecto || 'PROYECTO INMOBILIARIO';
       const montoAnulado = parseFloat(anulacion.monto_anulado || 0);
@@ -169,16 +170,16 @@ function AnulacionDeuda() {
       const logoY = y + 1.5;
       const logoW = 20;
       const logoH = 18;
-      if (logoProyecto) {
+      if (logoEmpresa) {
         try {
-          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), logoX, logoY, logoW, logoH, `anul-logo-${Date.now()}`, 'FAST');
+          doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `anul-logo-${Date.now()}`, 'FAST');
         } catch {
           // no-op
         }
       }
 
-      const leftTextX = logoProyecto ? (logoX + logoW + 3) : (x + 3);
-      const leftTextWidth = logoProyecto ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
+      const leftTextX = logoEmpresa ? (logoX + logoW + 3) : (x + 3);
+      const leftTextWidth = logoEmpresa ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
       const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
 
       doc.setFont('Helvetica', 'bold');
@@ -329,11 +330,35 @@ function AnulacionDeuda() {
         }
       });
 
-      const footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
+      let footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
+
+      const boxY = Math.min(footerY + 3, 160);
+      const boxH = 22;
+      doc.rect(x, boxY, 60, boxH);
+      doc.rect(x + 65, boxY, 60, boxH);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text('X  Boleta No.', x + 3, boxY + 5);
+      doc.text('X  Transferencia.', x + 3, boxY + 11);
+      doc.text(String(correlativoTexto || 'N/A'), x + 3, boxY + 17);
+
+      if (logoProyecto) {
+        try {
+          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 82, boxY + 7, 25, 11, `anul-logo-proyecto-${Date.now()}`, 'FAST');
+        } catch {
+          // no-op
+        }
+      }
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.6);
+      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 5, { align: 'center' });
+
+      footerY = boxY + boxH + 5;
       doc.setFont('Helvetica', 'italic');
       doc.setFontSize(7.2);
       doc.text(
-        doc.splitTextToSize('Este documento corresponde a una anulacion autorizada. Conserva el detalle del cobro revertido y su trazabilidad.', 188).slice(0, 1),
+        doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 3),
         x,
         footerY
       );

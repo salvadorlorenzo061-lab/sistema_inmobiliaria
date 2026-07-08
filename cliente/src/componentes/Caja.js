@@ -503,8 +503,11 @@ const Caja = () => {
                 mostrarToast("¡Cobro realizado con éxito! Generando recibo...", "success");
                 const empresaPdf = {
                     ...(response.data?.empresa || {}),
-                    logo: datosDeuda?.logo_proyecto || response.data?.empresa?.logo || null,
+                    logo_empresa: datosDeuda?.logo_empresa_pdf || response.data?.empresa?.logo_empresa || response.data?.empresa?.logo || null,
+                    logo_proyecto: datosDeuda?.logo_proyecto || response.data?.empresa?.logo_proyecto || response.data?.empresa?.logo || null,
+                    logo: datosDeuda?.logo_empresa_pdf || response.data?.empresa?.logo_empresa || response.data?.empresa?.logo || null,
                     nombre_empresa: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre_empresa || response.data?.empresa?.nombre || null,
+                    nombre_proyecto: datosDeuda?.nombre_proyecto_pdf || datosDeuda?.nombre_proyecto || response.data?.empresa?.nombre_proyecto || null,
                     nombre: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre || response.data?.empresa?.nombre_empresa || null
                 };
 
@@ -588,7 +591,8 @@ const Caja = () => {
         try {
             // Carta completa (landscape) para evitar salto a segunda hoja
             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
-            const logoEmpresa = normalizeImageDataUrl(residente?.logo_proyecto || empresa?.logo || '');
+            const logoEmpresa = normalizeImageDataUrl(empresa?.logo_empresa || residente?.logo_empresa_pdf || empresa?.logo || '');
+            const logoProyecto = normalizeImageDataUrl(empresa?.logo_proyecto || residente?.logo_proyecto || '');
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
             const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
             const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
@@ -744,11 +748,35 @@ const Caja = () => {
                 pageBreak: 'avoid'
             });
 
-            const footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
+            let footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
+
+            const boxY = Math.min(footerY + 3, 160);
+            const boxH = 22;
+            doc.rect(x, boxY, 60, boxH);
+            doc.rect(x + 65, boxY, 60, boxH);
+
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 5);
+            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 11);
+            doc.text(String(recibo?.no_referencia || 'N/A'), x + 3, boxY + 17);
+
+            if (logoProyecto) {
+                try {
+                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 82, boxY + 7, 25, 11, `rec-logo-proyecto-${Date.now()}`, 'FAST');
+                } catch {
+                    // no-op
+                }
+            }
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9.6);
+            doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 5, { align: 'center' });
+
+            footerY = boxY + boxH + 5;
             doc.setFont('Helvetica', 'italic');
             doc.setFontSize(7.2);
             doc.text(
-                doc.splitTextToSize('Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico conserva el detalle completo del cobro realizado.', 188).slice(0, 1),
+                doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 3),
                 x,
                 footerY
             );

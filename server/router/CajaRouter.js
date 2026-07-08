@@ -216,8 +216,10 @@ router.get("/residentes-pendientes", (req, res) => {
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             p.nombre AS nombre_proyecto,
-            COALESCE(em.logo, ep.logo, er.logo) AS logo_proyecto,
-            COALESCE(em.nombre_empresa, ep.nombre_empresa, p.nombre, er.nombre_empresa) AS nombre_marca_pdf,
+            COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
+            COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
+            COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
+            COALESCE(p.nombre, ep.nombre_empresa, em.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf,
             COALESCE((
                 SELECT SUM(cs.monto_servicio)
                 FROM contratos_servicios cs
@@ -263,8 +265,10 @@ router.get("/buscar-residente", (req, res) => {
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             p.nombre AS nombre_proyecto,
-            COALESCE(em.logo, ep.logo, er.logo) AS logo_proyecto,
-            COALESCE(em.nombre_empresa, ep.nombre_empresa, p.nombre, er.nombre_empresa) AS nombre_marca_pdf
+            COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
+            COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
+            COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
+            COALESCE(p.nombre, ep.nombre_empresa, em.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf
         FROM residentes r
         INNER JOIN contratos_residentes c ON r.id_residente = c.id_residente
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
@@ -952,13 +956,15 @@ router.post("/procesar-pago", (req, res) => {
                                                 // Obtener empresa real del contrato para membrete/logo
                                                 const empresaQuery = `
                                                     SELECT
-                                                        COALESCE(em.nombre_empresa, ep.nombre_empresa, p.nombre, er.nombre_empresa) AS nombre_empresa,
-                                                        COALESCE(em.logo, ep.logo, er.logo) AS logo,
+                                                        COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_empresa,
+                                                        COALESCE(em.logo, er.logo) AS logo_empresa,
+                                                        COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
+                                                        COALESCE(em.logo, er.logo) AS logo,
                                                         COALESCE(em.nit, ep.nit, er.nit, 'N/A') AS nit,
                                                         COALESCE(em.pais, ep.pais, er.pais, 'Guatemala') AS pais,
                                                         COALESCE(em.moneda, ep.moneda, er.moneda, 'GTQ') AS moneda,
                                                         c.id_proyecto,
-                                                        p.nombre AS nombre_proyecto
+                                                        COALESCE(p.nombre, ep.nombre_empresa, em.nombre_empresa, er.nombre_empresa) AS nombre_proyecto
                                                     FROM contratos_residentes c
                                                     LEFT JOIN residentes r ON r.id_residente = c.id_residente
                                                     LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
