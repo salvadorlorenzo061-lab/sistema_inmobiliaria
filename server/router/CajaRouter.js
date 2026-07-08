@@ -1089,7 +1089,53 @@ router.post("/procesar-pago", (req, res) => {
                             });
                         }
 
-                        return db.rollback(() => res.status(400).send("Este usuario no tiene correlativos asignados para cobrar facturas. Solicita un lote de correlativos antes de registrar el cobro."));
+                        const sqlResolucionUsuario = `
+                            SELECT id_resolucion, serie, correlativo_actual, rango_final
+                            FROM resoluciones_facturas
+                            WHERE id_empresa = ?
+                              AND id_usuario = ?
+                              AND estado = 'activo'
+                              AND correlativo_actual BETWEEN rango_inicial AND rango_final
+                              AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
+                            ORDER BY fecha_vencimiento ASC, id_resolucion ASC
+                            LIMIT 1
+                        `;
+
+                        db.query(sqlResolucionUsuario, [idEmpresaFacturacion, idUsuarioSeguro], (resErr, resRows) => {
+                            if (resErr) {
+                                return db.rollback(() => res.status(500).send("Error al obtener resolución asignada al usuario: " + resErr.message));
+                            }
+
+                            if (!resRows || !resRows.length) {
+                                return db.rollback(() => res.status(400).send("Este usuario no tiene correlativos asignados para cobrar facturas. Solicita un lote de correlativos antes de registrar el cobro."));
+                            }
+
+                            const resolucion = resRows[0];
+                            const correlativoNumero = Number(resolucion.correlativo_actual || 0);
+                            const rangoFinal = Number(resolucion.rango_final || 0);
+
+                            if (!Number.isFinite(correlativoNumero) || correlativoNumero <= 0 || correlativoNumero > rangoFinal) {
+                                return db.rollback(() => res.status(400).send("La resolución asignada al usuario no tiene correlativo disponible."));
+                            }
+
+                            const correlativoGenerado = `${resolucion.serie}-${String(correlativoNumero).padStart(8, '0')}`;
+                            const siguienteCorrelativo = correlativoNumero + 1;
+
+                            db.query(
+                                'UPDATE resoluciones_facturas SET correlativo_actual = ? WHERE id_resolucion = ?',
+                                [siguienteCorrelativo, resolucion.id_resolucion],
+                                (updErr) => {
+                                    if (updErr) {
+                                        return db.rollback(() => res.status(500).send("No se pudo reservar correlativo de la resolución asignada al usuario."));
+                                    }
+
+                                    return continuarConInsertPago(correlativoGenerado, resolucion.id_resolucion, {
+                                        id_asignacion: null,
+                                        origen: 'resolucion_usuario'
+                                    });
+                                }
+                            );
+                        });
                     });
                 });
             });

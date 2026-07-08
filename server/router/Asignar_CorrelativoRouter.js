@@ -118,16 +118,56 @@ router.get('/estado-usuario', (req, res) => {
             });
         }
 
-        return res.send({
-            disponible: false,
-            origen: null,
-            correlativo_inicio: null,
-            correlativo: null,
-            correlativo_fin: null,
-            id_asignacion: null,
-            id_empresa: null,
-            nombre_empresa: null,
-            mensaje: 'No tienes correlativos asignados.'
+        const resolucionUsuarioQuery = `
+            SELECT
+                rf.id_resolucion,
+                rf.id_empresa,
+                rf.serie,
+                rf.correlativo_actual,
+                rf.rango_final,
+                e.nombre_empresa
+            FROM resoluciones_facturas rf
+            LEFT JOIN empresas e ON e.id_empresa = rf.id_empresa
+            WHERE rf.id_usuario = ?
+              AND rf.estado = 'activo'
+              AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final
+              AND (rf.fecha_vencimiento IS NULL OR rf.fecha_vencimiento >= CURDATE())
+            ORDER BY rf.fecha_vencimiento ASC, rf.id_resolucion ASC
+            LIMIT 1
+        `;
+
+        db.query(resolucionUsuarioQuery, [idUsuario], (resErr, resRows) => {
+            if (resErr) {
+                console.error(resErr);
+                return res.status(500).send({ message: 'No se pudo consultar resolución asignada al usuario.' });
+            }
+
+            if (resRows && resRows.length) {
+                const resolucion = resRows[0];
+                return res.send({
+                    disponible: true,
+                    origen: 'resolucion_usuario',
+                    correlativo_inicio: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
+                    correlativo: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
+                    correlativo_fin: `${resolucion.serie}-${padCorrelativo(resolucion.rango_final)}`,
+                    id_asignacion: null,
+                    id_empresa: resolucion.id_empresa,
+                    nombre_empresa: resolucion.nombre_empresa || null,
+                    mensaje: 'Tienes resolución asignada directamente con correlativos disponibles.'
+                });
+            }
+
+            return res.send({
+                disponible: false,
+                origen: null,
+                correlativo_inicio: null,
+                correlativo: null,
+                correlativo_fin: null,
+                id_asignacion: null,
+                id_empresa: null,
+                nombre_empresa: null,
+                mensaje: 'No tienes correlativos asignados.'
+            });
         });
     });
 });
@@ -200,12 +240,43 @@ router.get('/siguiente-correlativo', (req, res) => {
                 });
             }
 
-            return res.send({
-                disponible: false,
-                origen: null,
-                correlativo: null,
-                id_asignacion: null,
-                mensaje: 'Este usuario no tiene correlativos asignados para este contrato.'
+            const resolucionUsuarioQuery = `
+                SELECT serie, correlativo_actual, rango_final
+                FROM resoluciones_facturas
+                WHERE id_empresa = ?
+                  AND id_usuario = ?
+                  AND estado = 'activo'
+                  AND correlativo_actual BETWEEN rango_inicial AND rango_final
+                  AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
+                ORDER BY fecha_vencimiento ASC, id_resolucion ASC
+                LIMIT 1
+            `;
+
+            db.query(resolucionUsuarioQuery, [idEmpresa, idUsuario], (resErr, resRows) => {
+                if (resErr) {
+                    console.error(resErr);
+                    return res.status(500).send({ message: 'No se pudo consultar resolución asignada al usuario.' });
+                }
+
+                if (resRows && resRows.length) {
+                    const resolucion = resRows[0];
+                    return res.send({
+                        disponible: true,
+                        origen: 'resolucion_usuario',
+                        correlativo: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
+                        id_asignacion: null,
+                        correlativo_fin: `${resolucion.serie}-${padCorrelativo(resolucion.rango_final)}`,
+                        mensaje: 'Este correlativo de tu resolución asignada será usado al generar el cobro.'
+                    });
+                }
+
+                return res.send({
+                    disponible: false,
+                    origen: null,
+                    correlativo: null,
+                    id_asignacion: null,
+                    mensaje: 'Este usuario no tiene correlativos asignados para este contrato.'
+                });
             });
         });
     });
