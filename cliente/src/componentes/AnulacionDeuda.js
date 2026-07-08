@@ -317,10 +317,16 @@ function AnulacionDeuda() {
           `-${Math.abs(montoAnulado).toFixed(2)}`
         ]],
         theme: 'grid',
-        headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0] },
-        styles: { fontSize: 8.2, cellPadding: 1.1 },
+        styles: { fontSize: 8.6, cellPadding: 1.5, lineColor: [214, 120, 120], lineWidth: 0.2 },
+        headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
         margin: { left: x, right: 10 },
-        pageBreak: 'avoid'
+        tableWidth: w,
+        pageBreak: 'avoid',
+        columnStyles: {
+          0: { cellWidth: 100 },
+          1: { cellWidth: 45, halign: 'center' },
+          2: { cellWidth: 45, halign: 'right' }
+        }
       });
 
       const footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
