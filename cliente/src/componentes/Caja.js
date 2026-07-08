@@ -649,10 +649,9 @@ const Caja = () => {
             doc.setTextColor(0, 0, 0);
             doc.setFont('Helvetica', 'normal');
             doc.setFontSize(7.2);
-            const direccionLineas = doc.splitTextToSize(String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5'), w - 20).slice(0, 2);
-            doc.text(direccionLineas, x + (w / 2), y + headerHeight + 6, { align: 'center' });
+            doc.text('15 Avenidad "A" 24-22. Zona 13, Oficina #5 PBX: 2220-6406 Telefono 5825-5903', x + (w / 2), y + headerHeight + 5.5, { align: 'center' });
 
-            y += headerHeight + 12;
+            y += headerHeight + 10;
             doc.setFillColor(245, 211, 69);
             doc.rect(x, y, w, 6, 'F');
             doc.rect(x, y, w, 6);
