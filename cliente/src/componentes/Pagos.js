@@ -253,7 +253,9 @@ function Pagos() {
                   <select value={id_contrato} onChange={(e) => setId_contrato(e.target.value)} className="form-select">
                     <option value="">-- Seleccione el Contrato --</option>
                     {contratosList.map(c => (
-                      <option key={c.id_contrato} value={c.id_contrato}>ID: {c.id_contrato} - Residente: {c.nombre || c.id_residente}</option>
+                      <option key={c.id_contrato} value={c.id_contrato}>
+                        ID: {c.id_contrato} - Residente: {c.nombre_residente || c.nombre || c.id_residente}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -262,7 +264,10 @@ function Pagos() {
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
                     <option value="">-- Seleccione Usuario --</option>
                     {usuariosList.map(u => (
-                      <option key={u.id_usuario} value={u.id_usuario}>{u.nombre_usuario || u.usuario}</option>
+                      <option key={u.id_usuario} value={u.id_usuario}>
+                        {u.nombre || u.nombre_usuario || u.usuario || u.correo || `Usuario #${u.id_usuario}`}
+                        {u.nombre_rol ? ` (${u.nombre_rol})` : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -316,7 +321,10 @@ function Pagos() {
                   <label className="form-label fw-bold">Usuario Receptor:</label>
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
                     {usuariosList.map(u => (
-                      <option key={u.id_usuario} value={u.id_usuario}>{u.nombre_usuario || u.usuario}</option>
+                      <option key={u.id_usuario} value={u.id_usuario}>
+                        {u.nombre || u.nombre_usuario || u.usuario || u.correo || `Usuario #${u.id_usuario}`}
+                        {u.nombre_rol ? ` (${u.nombre_rol})` : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
