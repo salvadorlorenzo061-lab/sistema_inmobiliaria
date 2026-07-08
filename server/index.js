@@ -77,6 +77,8 @@ app.use('/api/estado_cuenta', estadoCuentaRouter);
 
 
 // 3. Inicialización del servidor central
-app.listen(3001, () => {
-    console.log("Servidor central corriendo perfectamente en el puerto 3001");
+const PORT = Number(process.env.PORT || 3001);
+
+app.listen(PORT, () => {
+    console.log(`Servidor central corriendo perfectamente en el puerto ${PORT}`);
 });
