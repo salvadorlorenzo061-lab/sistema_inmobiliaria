@@ -486,6 +486,8 @@ const Caja = () => {
             .filter((servicio) => serviciosSeleccionados.includes(servicio.id_servicio))
             .map((servicio) => ({
                 id_servicio: servicio.id_servicio,
+                id_pago_extra: servicio.id_pago_extra || null,
+                es_extraordinario: Boolean(servicio.es_extraordinario),
                 nombre_servicio: servicio.nombre_servicio,
                 subtotal: parseFloat(servicio.costo_servicio || 0),
                 periodicidad: servicio.periodicidad || 'mensual',

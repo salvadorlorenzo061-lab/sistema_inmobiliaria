@@ -92,7 +92,7 @@ const registrarHistorialFactura = ({
     const serviciosPorId = new Map();
     [...(serviciosSolicitados || []), ...(serviciosMesInicial || [])].forEach((servicio) => {
         const id = Number(servicio?.id_servicio);
-        if (Number.isInteger(id) && id > 0) {
+        if (Number.isInteger(id) && id !== 0) {
             serviciosPorId.set(id, String(servicio?.nombre_servicio || `Servicio #${id}`));
         }
     });
@@ -109,6 +109,8 @@ const registrarHistorialFactura = ({
             nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
         } else if (tipoConcepto === 'servicio') {
             nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Servicio #${idConceptoServicio || 'N/A'}`;
+        } else if (tipoConcepto === 'extraordinario') {
+            nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Cargo extraordinario #${Math.abs(Number(idConceptoServicio || 0)) || 'N/A'}`;
         }
 
         const evidencia = JSON.stringify({
@@ -615,7 +617,7 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
             return res.status(500).send('Error al obtener servicios del contrato.');
         }
 
-        const servicios = (rows || [])
+        const serviciosBase = (rows || [])
             .map((row) => {
                 const nombreServicio = String(row.nombre_servicio || '').trim();
                 const periodicidad = String(row.periodicidad || 'mensual').trim().toLowerCase();
@@ -629,6 +631,8 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
                     nombre_servicio: nombreServicio,
                     costo_servicio: Number(row.monto_servicio || 0),
                     periodicidad,
+                    es_extraordinario: false,
+                    id_pago_extra: null,
                     es_cobro_unico: esCobroUnico,
                     ya_pagado_mes: esCobroUnico ? solventeContrato : Number(row.ya_pagado_mes || 0) === 1,
                     ya_pagado_alguna_vez: solventeContrato
@@ -636,10 +640,37 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
             })
             .filter((servicio) => !(servicio.es_cobro_unico && servicio.ya_pagado_alguna_vez));
 
-        return res.status(200).json({
-            id_contrato: Number(id_contrato),
-            mes_consulta: mes,
-            servicios
+        const extrasQuery = `
+            SELECT id_pago_extra, concepto, monto
+            FROM pagos_extraordinarios
+            WHERE id_contrato = ?
+              AND LOWER(COALESCE(estado, 'pendiente')) = 'pendiente'
+            ORDER BY id_pago_extra ASC
+        `;
+
+        db.query(extrasQuery, [id_contrato], (extraErr, extraRows) => {
+            if (extraErr) {
+                console.error('Error al obtener cargos extraordinarios pendientes:', extraErr.message);
+                return res.status(500).send('Error al obtener cargos extraordinarios pendientes.');
+            }
+
+            const serviciosExtra = (extraRows || []).map((extra) => ({
+                id_servicio: -Number(extra.id_pago_extra || 0),
+                nombre_servicio: `Cargo extraordinario: ${String(extra.concepto || 'Concepto').trim()}`,
+                costo_servicio: Number(extra.monto || 0),
+                periodicidad: 'unico',
+                es_extraordinario: true,
+                id_pago_extra: Number(extra.id_pago_extra || 0),
+                es_cobro_unico: true,
+                ya_pagado_mes: false,
+                ya_pagado_alguna_vez: false
+            })).filter((item) => Number.isFinite(item.costo_servicio) && item.costo_servicio > 0);
+
+            return res.status(200).json({
+                id_contrato: Number(id_contrato),
+                mes_consulta: mes,
+                servicios: [...serviciosBase, ...serviciosExtra]
+            });
         });
     });
 });
@@ -680,12 +711,24 @@ router.post("/procesar-pago", (req, res) => {
         ? servicios_pagados
             .map((item) => ({
                 id_servicio: Number(item?.id_servicio),
+                id_pago_extra: Number(item?.id_pago_extra || 0),
+                es_extraordinario: Boolean(item?.es_extraordinario),
                 subtotal: Number(item?.subtotal),
                 nombre_servicio: String(item?.nombre_servicio || '').trim(),
                 periodicidad: String(item?.periodicidad || '').trim().toLowerCase(),
                 es_cobro_unico: Boolean(item?.es_cobro_unico) || esServicioCobroUnico(item?.periodicidad || '', item?.nombre_servicio || '')
             }))
-            .filter((item) => Number.isInteger(item.id_servicio) && item.id_servicio > 0 && Number.isFinite(item.subtotal) && item.subtotal > 0)
+            .filter((item) => {
+                if (!Number.isFinite(item.subtotal) || item.subtotal <= 0) {
+                    return false;
+                }
+
+                if (item.es_extraordinario && Number.isInteger(item.id_pago_extra) && item.id_pago_extra > 0) {
+                    return true;
+                }
+
+                return Number.isInteger(item.id_servicio) && item.id_servicio > 0;
+            })
         : [];
 
     let serviciosMesInicial = [];
@@ -863,10 +906,47 @@ router.post("/procesar-pago", (req, res) => {
             prepararServiciosMesInicial(() => {
 
             const validarServiciosYContinuar = () => {
-                const serviciosAValidar = [...serviciosSolicitados, ...serviciosMesInicial];
+                const serviciosExtraordinarios = serviciosSolicitados.filter((s) => s.es_extraordinario && Number.isInteger(s.id_pago_extra) && s.id_pago_extra > 0);
+                const serviciosRegularesSolicitados = serviciosSolicitados.filter((s) => !s.es_extraordinario);
+                const serviciosAValidar = [...serviciosRegularesSolicitados, ...serviciosMesInicial];
+
+                const validarExtrasPendientes = (onSuccess) => {
+                    const idsPagoExtra = [...new Set(serviciosExtraordinarios.map((s) => Number(s.id_pago_extra)).filter((id) => Number.isInteger(id) && id > 0))];
+                    if (!idsPagoExtra.length) {
+                        return onSuccess();
+                    }
+
+                    const placeholdersExtra = idsPagoExtra.map(() => '?').join(',');
+                    const sqlExtra = `
+                        SELECT id_pago_extra, estado
+                        FROM pagos_extraordinarios
+                        WHERE id_contrato = ?
+                          AND id_pago_extra IN (${placeholdersExtra})
+                        FOR UPDATE
+                    `;
+
+                    db.query(sqlExtra, [id_contrato, ...idsPagoExtra], (extraErr, extraRows) => {
+                        if (extraErr) {
+                            return db.rollback(() => res.status(500).send('Error validando cargos extraordinarios pendientes: ' + extraErr.message));
+                        }
+
+                        const idsEncontrados = new Set((extraRows || []).map((row) => Number(row.id_pago_extra)));
+                        const faltantes = idsPagoExtra.filter((id) => !idsEncontrados.has(id));
+                        if (faltantes.length) {
+                            return db.rollback(() => res.status(400).send('Algunos cargos extraordinarios ya no existen para este contrato.'));
+                        }
+
+                        const invalidos = (extraRows || []).filter((row) => String(row.estado || '').toLowerCase() !== 'pendiente');
+                        if (invalidos.length) {
+                            return db.rollback(() => res.status(400).send('Hay cargos extraordinarios que ya no están pendientes y no pueden cobrarse.'));
+                        }
+
+                        return onSuccess();
+                    });
+                };
 
                 if (!serviciosAValidar.length) {
-                    return procesarCobroPrincipal();
+                    return validarExtrasPendientes(() => procesarCobroPrincipal());
                 }
 
                 const idsServicios = [...new Set(serviciosAValidar.map((s) => s.id_servicio))];
@@ -937,7 +1017,7 @@ router.post("/procesar-pago", (req, res) => {
                         }
 
                         if (!serviciosMesInicial.length || !mesInicialContrato) {
-                            return procesarCobroPrincipal();
+                            return validarExtrasPendientes(() => procesarCobroPrincipal());
                         }
 
                         const idsServiciosInicial = [...new Set(serviciosMesInicial.map((s) => s.id_servicio))];
@@ -963,7 +1043,7 @@ router.post("/procesar-pago", (req, res) => {
                                 recalcularTotales();
                             }
 
-                            return procesarCobroPrincipal();
+                            return validarExtrasPendientes(() => procesarCobroPrincipal());
                         });
                     });
                 });
@@ -1014,8 +1094,11 @@ router.post("/procesar-pago", (req, res) => {
                                 }
 
                                 if (serviciosSolicitados.length > 0) {
-                                    const serviciosMensuales = serviciosSolicitados.filter((servicio) => !servicio.es_cobro_unico);
-                                    const serviciosUnicos = serviciosSolicitados.filter((servicio) => servicio.es_cobro_unico);
+                                    const serviciosNormales = serviciosSolicitados.filter((servicio) => !servicio.es_extraordinario);
+                                    const serviciosExtraordinarios = serviciosSolicitados.filter((servicio) => servicio.es_extraordinario);
+
+                                    const serviciosMensuales = serviciosNormales.filter((servicio) => !servicio.es_cobro_unico);
+                                    const serviciosUnicos = serviciosNormales.filter((servicio) => servicio.es_cobro_unico);
 
                                     mesesAProcesar.forEach((mes) => {
                                         serviciosMensuales.forEach((servicio) => {
@@ -1025,6 +1108,10 @@ router.post("/procesar-pago", (req, res) => {
 
                                     serviciosUnicos.forEach((servicio) => {
                                         detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal]);
+                                    });
+
+                                    serviciosExtraordinarios.forEach((servicio) => {
+                                        detalleValues.push([lastIdPago, 'extraordinario', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal]);
                                     });
                                 }
 
@@ -1191,27 +1278,57 @@ router.post("/procesar-pago", (req, res) => {
                                             }
                                         };
 
-                                        registrarHistorialFactura({
-                                            idPago: lastIdPago,
-                                            idContrato: id_contrato,
-                                            idResidente: id_residente,
-                                            idUsuario: idUsuarioSeguro,
-                                            correlativo: correlativoFinal,
-                                            detalleValues,
-                                            serviciosSolicitados,
-                                            serviciosMesInicial,
-                                            numeroRecibo: numero_recibo,
-                                            metodoPago: metodo_pago,
-                                            observaciones,
-                                            mesesPagados: mesesAProcesar,
-                                            totalTransaccion,
-                                            montoMora: moraTotal,
-                                            callback: (histErr) => {
-                                                if (histErr) {
-                                                    return db.rollback(() => res.status(500).send("No se pudo guardar evidencia fiscal inmutable del comprobante."));
-                                                }
-                                                return continuarConSaldoYCommit();
+                                        const marcarExtrasComoPagados = (onSuccess) => {
+                                            const idsPagoExtra = [...new Set(
+                                                (serviciosSolicitados || [])
+                                                    .filter((s) => s.es_extraordinario && Number.isInteger(s.id_pago_extra) && s.id_pago_extra > 0)
+                                                    .map((s) => Number(s.id_pago_extra))
+                                            )];
+
+                                            if (!idsPagoExtra.length) {
+                                                return onSuccess();
                                             }
+
+                                            const placeholdersExtra = idsPagoExtra.map(() => '?').join(',');
+                                            const sqlMarcarExtra = `
+                                                UPDATE pagos_extraordinarios
+                                                SET estado = 'pagado', fecha_pago = CURDATE()
+                                                WHERE id_contrato = ?
+                                                  AND id_pago_extra IN (${placeholdersExtra})
+                                                  AND LOWER(COALESCE(estado, 'pendiente')) = 'pendiente'
+                                            `;
+
+                                            db.query(sqlMarcarExtra, [id_contrato, ...idsPagoExtra], (extraUpdErr) => {
+                                                if (extraUpdErr) {
+                                                    return db.rollback(() => res.status(500).send("No se pudieron actualizar los cargos extraordinarios cobrados."));
+                                                }
+                                                return onSuccess();
+                                            });
+                                        };
+
+                                        marcarExtrasComoPagados(() => {
+                                            registrarHistorialFactura({
+                                                idPago: lastIdPago,
+                                                idContrato: id_contrato,
+                                                idResidente: id_residente,
+                                                idUsuario: idUsuarioSeguro,
+                                                correlativo: correlativoFinal,
+                                                detalleValues,
+                                                serviciosSolicitados,
+                                                serviciosMesInicial,
+                                                numeroRecibo: numero_recibo,
+                                                metodoPago: metodo_pago,
+                                                observaciones,
+                                                mesesPagados: mesesAProcesar,
+                                                totalTransaccion,
+                                                montoMora: moraTotal,
+                                                callback: (histErr) => {
+                                                    if (histErr) {
+                                                        return db.rollback(() => res.status(500).send("No se pudo guardar evidencia fiscal inmutable del comprobante."));
+                                                    }
+                                                    return continuarConSaldoYCommit();
+                                                }
+                                            });
                                         });
                                     }
                                 );
