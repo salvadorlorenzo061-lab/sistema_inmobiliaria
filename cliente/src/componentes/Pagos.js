@@ -3,6 +3,7 @@ import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { API_BASE_URL } from '../config';
 
 function Pagos() {
   const [id_pago, setId_pago] = useState("");
@@ -22,16 +23,16 @@ function Pagos() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
-  const API_URL = "http://localhost:3001/api/pagos";
+  const API_URL = `${API_BASE_URL}/api/pagos`;
 
   const cargarDatosRelacionales = () => {
     // Carga de contratos para los select
-    Axios.get("http://localhost:3001/api/contratos_residentes")
+    Axios.get(`${API_BASE_URL}/api/contratos_residentes`)
       .then((res) => setContratos(res.data))
       .catch((err) => console.error("Error al cargar contratos", err));
 
     // Carga de usuarios/empleados para los select
-    Axios.get("http://localhost:3001/api/usuarios")
+    Axios.get(`${API_BASE_URL}/api/usuarios`)
       .then((res) => setUsuarios(res.data))
       .catch((err) => console.error("Error al cargar usuarios", err));
   };
