@@ -8,30 +8,14 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { API_BASE_URL } from '../config';
 
 function PagosDetalle() {
-  const [id_pago_detalle, setId_pago_detalle] = useState("");
-  const [id_pago, setId_pago] = useState("");
-  const [tipo_concepto, setTipo_concepto] = useState("");
-  const [id_concepto_servicio, setId_concepto_servicio] = useState("");
-  const [mes_pagado, setMes_pagado] = useState("");
-  const [numero_cuota_afectada, setNumero_cuota_afectada] = useState("");
-  const [subtotal, setSubtotal] = useState("");
-
   const [detallesList, setDetalles] = useState([]);
-  const [pagosList, setPagos] = useState([]);
-  const [serviciosList, setServicios] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState('TODAS');
 
-  const [showEditModal, setShowEditModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
   const API_URL = `${API_BASE_URL}/api/pagos_detalle`;
-
-  const cargarSelects = useCallback(() => {
-    Axios.get(`${API_BASE_URL}/api/pagos`).then(res => setPagos(res.data));
-    Axios.get(`${API_BASE_URL}/api/servicios`).then(res => setServicios(res.data));
-  }, []);
 
   const normalizeImageDataUrl = (value = '') => {
     const cleanValue = String(value || '').trim();
@@ -50,15 +34,26 @@ function PagosDetalle() {
     return 'PNG';
   };
 
-  const generarFacturaDesdeDetalle = (detalle) => {
-    const pago = pagosList.find((p) => String(p.id_pago) === String(detalle.id_pago));
-    if (!pago) {
-      Swal.fire({ icon: 'warning', title: 'Pago no encontrado', text: 'No se encontró el pago maestro para este detalle.' });
+  const generarFacturaDesdeDetalle = async (detalle) => {
+    if (!detalle?.id_pago) {
+      Swal.fire({ icon: 'warning', title: 'Pago no válido', text: 'Este registro no tiene un pago asociado para generar PDF.' });
       return;
     }
 
-    const detallesFactura = detallesList.filter((d) => String(d.id_pago) === String(detalle.id_pago));
-    const empresaLogo = normalizeImageDataUrl(pago.logo || '');
+    let documento;
+    try {
+      const { data } = await Axios.get(`${API_URL}/documento/${detalle.id_pago}`);
+      documento = data;
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'No fue posible generar PDF',
+        text: error?.response?.data?.message || 'No se encontró evidencia histórica del documento.'
+      });
+      return;
+    }
+
+    const empresaLogo = normalizeImageDataUrl(documento?.empresa?.logo_empresa || '');
     const doc = new jsPDF();
     const margenX = 14;
     const fechaHora = new Date().toLocaleString();
@@ -66,7 +61,7 @@ function PagosDetalle() {
     if (empresaLogo) {
       try {
         const logoFormat = getImageFormatFromDataUrl(empresaLogo);
-        doc.addImage(empresaLogo, logoFormat, margenX, 10, 35, 25, `logo-${pago.id_pago}`, 'FAST');
+        doc.addImage(empresaLogo, logoFormat, margenX, 10, 35, 25, `logo-${documento?.id_pago || 'doc'}`, 'FAST');
       } catch (e) {
         console.warn('No se pudo renderizar logo de factura:', e);
       }
@@ -74,20 +69,20 @@ function PagosDetalle() {
 
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(pago.nombre_empresa || 'Inmobiliaria', 55, 16);
+    doc.text(documento?.empresa?.nombre_empresa || 'Inmobiliaria', 55, 16);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`NIT: ${pago.nit_empresa || 'N/A'}`, 55, 22);
-    doc.text(`País: ${pago.pais || 'Guatemala'}`, 55, 27);
-    doc.text(`Moneda: ${pago.moneda || 'GTQ'}`, 55, 32);
+    doc.text(`NIT: ${documento?.empresa?.nit_empresa || 'N/A'}`, 55, 22);
+    doc.text(`País: ${documento?.empresa?.pais || 'Guatemala'}`, 55, 27);
+    doc.text(`Moneda: ${documento?.empresa?.moneda || 'GTQ'}`, 55, 32);
 
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(10.5);
     doc.text('FACTURA / COMPROBANTE DE COBRO', 132, 16);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Documento No: ${pago.no_referencia || `REC-${pago.id_pago}`}`, 132, 24);
-    doc.text(`Fecha emisión: ${new Date(pago.fecha_pago || Date.now()).toLocaleDateString()}`, 132, 30);
+    doc.text(`Documento No: ${documento?.correlativo || `REC-${documento?.id_pago || '0'}`}`, 132, 24);
+    doc.text(`Fecha emisión: ${new Date(documento?.fecha_evento || Date.now()).toLocaleDateString()}`, 132, 30);
     doc.text(`Fecha/Hora impresión: ${fechaHora}`, 132, 36);
     doc.line(14, 42, 196, 42);
 
@@ -96,31 +91,29 @@ function PagosDetalle() {
     doc.text('DATOS DEL CLIENTE / RESIDENTE', 14, 52);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Nombre: ${pago.nombre_residente || 'N/A'}`, 14, 59);
-    doc.text(`Identificación: ${pago.numero_identificacion || 'N/A'}`, 14, 65);
-    doc.text(`DPI: ${pago.dpi || 'N/A'}`, 14, 71);
-    doc.text(`NIT: ${pago.nit || 'CF'}`, 14, 77);
-    doc.text(`Dirección: ${pago.direccion_notificacion || 'N/A'}`, 105, 59);
-    doc.text(`Contrato: ${pago.codigo_contrato || 'N/A'} (${pago.nombre_contrato || 'N/A'})`, 105, 65);
+    doc.text(`Nombre: ${documento?.cliente?.nombre_residente || 'N/A'}`, 14, 59);
+    doc.text(`Identificación: ${documento?.cliente?.numero_identificacion || 'N/A'}`, 14, 65);
+    doc.text(`DPI: ${documento?.cliente?.dpi || 'N/A'}`, 14, 71);
+    doc.text(`NIT: ${documento?.cliente?.nit || 'CF'}`, 14, 77);
+    doc.text(`Dirección: ${documento?.cliente?.direccion_notificacion || 'N/A'}`, 105, 59);
+    doc.text(`Contrato: ${documento?.contrato?.codigo_contrato || 'N/A'} (${documento?.contrato?.nombre_contrato || 'N/A'})`, 105, 65);
 
     doc.setFont('Helvetica', 'bold');
     doc.text('DATOS DE PAGO', 14, 88);
     doc.setFont('Helvetica', 'normal');
-    doc.text(`Método de pago: ${pago.forma_pago || 'N/A'}`, 14, 94);
-    doc.text(`Referencia: ${pago.no_referencia || 'N/A'}`, 105, 94);
-    doc.text(`Cobrado por: ${pago.nombre_usuario || `Usuario #${pago.id_usuario || 'N/A'}`}`, 14, 100);
+    doc.text(`Método de pago: ${documento?.metodo_pago || 'N/A'}`, 14, 94);
+    doc.text(`Referencia: ${documento?.correlativo || 'N/A'}`, 105, 94);
+    doc.text(`Cobrado por: ${documento?.usuario_cobro || 'N/A'}`, 14, 100);
 
+    const detallesFactura = Array.isArray(documento?.detalles) ? documento.detalles : [];
     const rows = detallesFactura.map((item) => {
       const base = parseFloat(item.subtotal || 0);
       const iva = parseFloat((base * 0.12).toFixed(2));
       const total = parseFloat((base + iva).toFixed(2));
-      let conceptoLabel = String(item.tipo_concepto || 'Concepto');
+      let conceptoLabel = String(item.nombre_concepto || item.tipo_concepto || 'Concepto');
 
-      if (item.tipo_concepto === 'cuota_terreno') {
+      if (!item.nombre_concepto && item.tipo_concepto === 'cuota_terreno') {
         conceptoLabel = `Cuota Terreno No. ${item.numero_cuota_afectada || 'N/A'}`;
-      } else if (item.tipo_concepto === 'servicio' || item.tipo_concepto === 'servicio_adicional') {
-        const servicio = serviciosList.find((s) => String(s.id_servicio) === String(item.id_concepto_servicio));
-        conceptoLabel = `Servicio: ${servicio?.nombre_servicio || `ID ${item.id_concepto_servicio || 'N/A'}`}`;
       }
 
       return [
@@ -155,7 +148,15 @@ function PagosDetalle() {
     doc.setFontSize(9);
     doc.text('Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.', 14, finalY + 28);
 
-    doc.save(`Recibo_${pago.no_referencia || `REC-${pago.id_pago}`}.pdf`);
+    if (String(documento?.estado_factura || '').toUpperCase() === 'ANULADA') {
+      doc.setTextColor(180, 0, 0);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(42);
+      doc.text('ANULADA', 105, 155, { align: 'center', angle: 20 });
+      doc.setTextColor(0, 0, 0);
+    }
+
+    doc.save(`Recibo_${documento?.correlativo || `REC-${documento?.id_pago || '0'}`}.pdf`);
   };
 
   const getDetalles = useCallback(() => {
@@ -164,16 +165,7 @@ function PagosDetalle() {
 
   useEffect(() => {
     getDetalles();
-    cargarSelects();
-  }, [getDetalles, cargarSelects]);
-
-  const actualizarDetalle = () => {
-    setShowEditModal(false);
-  };
-
-  const limpiarCampos = () => {
-    setId_pago_detalle(""); setId_pago(""); setTipo_concepto(""); setId_concepto_servicio(""); setMes_pagado(""); setNumero_cuota_afectada(""); setSubtotal("");
-  };
+  }, [getDetalles]);
 
   // Filtrado y paginación
   const detallesFiltrados = detallesList.filter((d) => {
@@ -257,7 +249,7 @@ function PagosDetalle() {
               </td>
               <td>{val.usuario_cobro || `Usuario #${val.id_usuario || 'N/A'}`}</td>
               <td>
-                <span className="text-muted small">Solo evidencia histórica</span>
+                <button onClick={() => generarFacturaDesdeDetalle(val)} className="btn btn-secondary btn-sm m-1 fw-bold">PDF</button>
               </td>
             </tr>
           ))}
@@ -273,27 +265,6 @@ function PagosDetalle() {
         endIndex={endIndex}
         itemsCount={detallesFiltrados.length}
       />
-
-      {/* MODAL EDICIÓN */}
-      {showEditModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog">
-            <div className="modal-content">
-              <div className="modal-header bg-warning text-dark"><h5 className="modal-title fw-bold">Editar Detalle #{id_pago_detalle}</h5></div>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label fw-bold">Subtotal:</label>
-                  <input type="number" step="0.01" value={subtotal} onChange={(e) => setSubtotal(e.target.value)} className="form-control" />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => { setShowEditModal(false); limpiarCampos(); }}>Cancelar</button>
-                <button type="button" className="btn btn-warning" onClick={actualizarDetalle}>Actualizar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
