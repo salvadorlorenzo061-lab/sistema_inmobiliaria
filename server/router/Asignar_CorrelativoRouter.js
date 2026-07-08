@@ -9,46 +9,6 @@ router.use(express.json());
 
 const padCorrelativo = (value) => String(Number(value) || 0).padStart(8, '0');
 
-const normalizeRole = (value = '') => String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-
-const getRoleType = (normalizedRole = '') => {
-    if (normalizedRole.includes('jurid') || normalizedRole.includes('legal')) return 'juridico';
-    if (normalizedRole.includes('caja') || normalizedRole.includes('cobro')) return 'caja';
-    return null;
-};
-
-const getResolucionRoleFilter = (roleType, esAdmin) => {
-    if (esAdmin) {
-        return {
-            sql: '',
-            params: []
-        };
-    }
-
-    if (roleType === 'juridico') {
-        return {
-            sql: " AND COALESCE(rol, 'caja') IN ('juridico', 'ambos')",
-            params: []
-        };
-    }
-
-    if (roleType === 'caja') {
-        return {
-            sql: " AND COALESCE(rol, 'caja') IN ('caja', 'ambos')",
-            params: []
-        };
-    }
-
-    return {
-        sql: ' AND 1 = 0',
-        params: []
-    };
-};
-
 const ensureAsignacionesTable = () => {
     const sql = `
         CREATE TABLE IF NOT EXISTS asignar_correlativos (
@@ -117,25 +77,7 @@ router.get('/estado-usuario', (req, res) => {
         return res.status(400).send({ message: 'Debe enviar un id_usuario válido.' });
     }
 
-    const usuarioQuery = `
-        SELECT r.nombre_rol
-        FROM usuarios u
-        LEFT JOIN roles r ON r.id_rol = u.id_rol
-        WHERE u.id_usuario = ?
-        LIMIT 1
-    `;
-
-    db.query(usuarioQuery, [idUsuario], (usuarioErr, usuarioRows) => {
-        if (usuarioErr) {
-            console.error(usuarioErr);
-            return res.status(500).send({ message: 'No se pudo validar el rol del usuario.' });
-        }
-
-        const rolNormalizado = normalizeRole(usuarioRows?.[0]?.nombre_rol || '');
-        const roleType = getRoleType(rolNormalizado);
-        const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
-
-        const asignacionQuery = `
+    const asignacionQuery = `
             SELECT
                 ac.id_asignacion,
                 ac.serie,
@@ -153,70 +95,35 @@ router.get('/estado-usuario', (req, res) => {
             LIMIT 1
         `;
 
-        db.query(asignacionQuery, [idUsuario], (asignErr, asignRows) => {
-            if (asignErr) {
-                console.error(asignErr);
-                return res.status(500).send({ message: 'No se pudo consultar el estado de correlativos del usuario.' });
-            }
+    db.query(asignacionQuery, [idUsuario], (asignErr, asignRows) => {
+        if (asignErr) {
+            console.error(asignErr);
+            return res.status(500).send({ message: 'No se pudo consultar el estado de correlativos del usuario.' });
+        }
 
-            if (asignRows && asignRows.length) {
-                const asignacion = asignRows[0];
-                return res.send({
-                    disponible: true,
-                    origen: 'asignado',
-                    correlativo: asignacion.correlativo_actual_display,
-                    correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
-                    id_asignacion: asignacion.id_asignacion,
-                    id_empresa: asignacion.id_empresa,
-                    nombre_empresa: asignacion.nombre_empresa || null,
-                    mensaje: 'Tienes correlativos asignados disponibles para cobrar.'
-                });
-            }
-
-            const roleFilter = getResolucionRoleFilter(roleType, esAdmin);
-            const resolucionGeneralQuery = `
-                SELECT id_resolucion
-                FROM resoluciones_facturas
-                WHERE estado = 'activo'
-                  AND correlativo_actual BETWEEN rango_inicial AND rango_final
-                  AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                  ${roleFilter.sql}
-                ORDER BY fecha_vencimiento ASC, id_resolucion ASC
-                LIMIT 1
-            `;
-
-            db.query(resolucionGeneralQuery, roleFilter.params, (resErr, resRows) => {
-                if (resErr) {
-                    console.error(resErr);
-                    return res.status(500).send({ message: 'No se pudo validar resolución de respaldo.' });
-                }
-
-                if (resRows && resRows.length) {
-                    return res.send({
-                        disponible: true,
-                        origen: 'resolucion',
-                        correlativo: null,
-                        correlativo_fin: null,
-                        id_asignacion: null,
-                        id_empresa: null,
-                        nombre_empresa: null,
-                        mensaje: esAdmin
-                            ? 'No tienes lote asignado, pero como administrador puedes usar la resolución general.'
-                            : 'No tienes lote asignado, pero por tu rol puedes usar resolución activa compatible.'
-                    });
-                }
-
-                return res.send({
-                    disponible: false,
-                    origen: null,
-                    correlativo: null,
-                    correlativo_fin: null,
-                    id_asignacion: null,
-                    id_empresa: null,
-                    nombre_empresa: null,
-                    mensaje: 'No tienes correlativos asignados.'
-                });
+        if (asignRows && asignRows.length) {
+            const asignacion = asignRows[0];
+            return res.send({
+                disponible: true,
+                origen: 'asignado',
+                correlativo: asignacion.correlativo_actual_display,
+                correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
+                id_asignacion: asignacion.id_asignacion,
+                id_empresa: asignacion.id_empresa,
+                nombre_empresa: asignacion.nombre_empresa || null,
+                mensaje: 'Tienes correlativos asignados disponibles para cobrar.'
             });
+        }
+
+        return res.send({
+            disponible: false,
+            origen: null,
+            correlativo: null,
+            correlativo_fin: null,
+            id_asignacion: null,
+            id_empresa: null,
+            nombre_empresa: null,
+            mensaje: 'No tienes correlativos asignados.'
         });
     });
 });
@@ -255,25 +162,7 @@ router.get('/siguiente-correlativo', (req, res) => {
             });
         }
 
-        const usuarioQuery = `
-            SELECT r.nombre_rol
-            FROM usuarios u
-            LEFT JOIN roles r ON r.id_rol = u.id_rol
-            WHERE u.id_usuario = ?
-            LIMIT 1
-        `;
-
-        db.query(usuarioQuery, [idUsuario], (usuarioErr, usuarioRows) => {
-            if (usuarioErr) {
-                console.error(usuarioErr);
-                return res.status(500).send({ message: 'No se pudo validar el rol del usuario.' });
-            }
-
-            const rolNormalizado = normalizeRole(usuarioRows?.[0]?.nombre_rol || '');
-            const roleType = getRoleType(rolNormalizado);
-            const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
-
-            const asignacionQuery = `
+        const asignacionQuery = `
                 SELECT
                     ac.id_asignacion,
                     ac.serie,
@@ -289,73 +178,30 @@ router.get('/siguiente-correlativo', (req, res) => {
                 LIMIT 1
             `;
 
-            db.query(asignacionQuery, [idUsuario, idEmpresa], (asignErr, asignRows) => {
-                if (asignErr) {
-                    console.error(asignErr);
-                    return res.status(500).send({ message: 'No se pudo consultar el correlativo asignado.' });
-                }
+        db.query(asignacionQuery, [idUsuario, idEmpresa], (asignErr, asignRows) => {
+            if (asignErr) {
+                console.error(asignErr);
+                return res.status(500).send({ message: 'No se pudo consultar el correlativo asignado.' });
+            }
 
-                if (asignRows && asignRows.length) {
-                    const asignacion = asignRows[0];
-                    return res.send({
-                        disponible: true,
-                        origen: 'asignado',
-                        correlativo: asignacion.correlativo_actual_display,
-                        id_asignacion: asignacion.id_asignacion,
-                        correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
-                        mensaje: 'Este correlativo asignado será usado al generar el cobro.'
-                    });
-                }
-
-                const roleFilter = getResolucionRoleFilter(roleType, esAdmin);
-                if (!esAdmin && roleFilter.sql.includes('1 = 0')) {
-                    return res.send({
-                        disponible: false,
-                        origen: null,
-                        correlativo: null,
-                        id_asignacion: null,
-                        mensaje: 'Este usuario no tiene correlativos asignados para este contrato.'
-                    });
-                }
-
-                const resolucionQuery = `
-                    SELECT serie, correlativo_actual, rango_final
-                    FROM resoluciones_facturas
-                    WHERE id_empresa = ?
-                      AND estado = 'activo'
-                      AND correlativo_actual BETWEEN rango_inicial AND rango_final
-                      AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                      ${roleFilter.sql}
-                    ORDER BY fecha_vencimiento ASC, id_resolucion ASC
-                    LIMIT 1
-                `;
-
-                db.query(resolucionQuery, [idEmpresa, ...roleFilter.params], (resErr, resRows) => {
-                    if (resErr) {
-                        console.error(resErr);
-                        return res.status(500).send({ message: 'No se pudo consultar la resolución de respaldo.' });
-                    }
-
-                    if (!resRows || !resRows.length) {
-                        return res.send({
-                            disponible: false,
-                            origen: null,
-                            correlativo: null,
-                            id_asignacion: null,
-                            mensaje: 'No hay correlativo asignado ni resolución activa disponible para este contrato.'
-                        });
-                    }
-
-                    const resolucion = resRows[0];
-                    return res.send({
-                        disponible: true,
-                        origen: 'resolucion',
-                        correlativo: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
-                        id_asignacion: null,
-                        correlativo_fin: `${resolucion.serie}-${padCorrelativo(resolucion.rango_final)}`,
-                        mensaje: 'No hay lote asignado. Como es administrador, se usará la resolución general.'
-                    });
+            if (asignRows && asignRows.length) {
+                const asignacion = asignRows[0];
+                return res.send({
+                    disponible: true,
+                    origen: 'asignado',
+                    correlativo: asignacion.correlativo_actual_display,
+                    id_asignacion: asignacion.id_asignacion,
+                    correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
+                    mensaje: 'Este correlativo asignado será usado al generar el cobro.'
                 });
+            }
+
+            return res.send({
+                disponible: false,
+                origen: null,
+                correlativo: null,
+                id_asignacion: null,
+                mensaje: 'Este usuario no tiene correlativos asignados para este contrato.'
             });
         });
     });
