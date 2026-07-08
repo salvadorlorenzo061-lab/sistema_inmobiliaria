@@ -180,14 +180,15 @@ function AnulacionDeuda() {
       doc.setFontSize(8.5);
       doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto || 'Comprobante de anulacion de cobro'), 115), x + 80, y + 23, { align: 'center' });
 
-      // Sello visual de anulado
-      doc.setTextColor(185, 25, 25);
-      doc.setDrawColor(185, 25, 25);
-      doc.setLineWidth(0.9);
-      doc.roundedRect(72, 50, 74, 22, 2, 2);
+      // Sello visual de anulado (suave para no tapar detalle)
+      doc.setTextColor(214, 86, 86);
+      doc.setDrawColor(214, 86, 86);
+      doc.setLineWidth(0.35);
+      doc.line(70, 49, 148, 71);
+      doc.line(70, 70, 148, 48);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(24);
-      doc.text('ANULADO', 109, 65, { align: 'center', angle: -14 });
+      doc.setFontSize(22);
+      doc.text('ANULADO', 109, 63, { align: 'center', angle: -13 });
       doc.setTextColor(0, 0, 0);
 
       y += 34;
