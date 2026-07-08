@@ -34,6 +34,8 @@ function PagosExtraordinarios() {
   const API_SERVICIOS = `${API_BASE_URL}/api/servicios`;
   const IVA_RATE = 0.12;
 
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   const cargarExtras = () => Axios.get(`${API_URL}?_=${Date.now()}`)
     .then(res => setExtrasList(Array.isArray(res.data) ? res.data : []))
     .catch(err => {
@@ -167,8 +169,20 @@ function PagosExtraordinarios() {
       });
   }, [API_URL, API_SERVICIOS]);
 
-  const recargarExtras = () => {
-    cargarExtras();
+  const recargarExtras = async (intentos = 2) => {
+    for (let i = 0; i <= intentos; i += 1) {
+      try {
+        const res = await Axios.get(`${API_URL}?_=${Date.now()}_${i}`);
+        setExtrasList(Array.isArray(res.data) ? res.data : []);
+        return;
+      } catch {
+        if (i === intentos) {
+          setExtrasList([]);
+          return;
+        }
+        await esperar(450);
+      }
+    }
   };
 
   const guardar = () => {
@@ -218,15 +232,29 @@ function PagosExtraordinarios() {
     const metodo = esEdicion ? Axios.put : Axios.post;
 
     metodo(url, { id_pago_extra, id_contrato, concepto, monto, estado })
-    .then((response) => {
-      recargarExtras();
+    .then(async (response) => {
+      if (!esEdicion && response?.data?.detalle?.id_pago_extra) {
+        const detalleNuevo = response.data.detalle;
+        setExtrasList((prev) => {
+          const base = Array.isArray(prev) ? prev : [];
+          const sinDuplicado = base.filter((item) => String(item.id_pago_extra) !== String(detalleNuevo.id_pago_extra));
+          return [detalleNuevo, ...sinDuplicado];
+        });
+      }
+
+      await recargarExtras(2);
       if (!esEdicion && response?.data?.detalle) {
         imprimirFacturaExtra(response.data.detalle);
       }
       setShowModal(false); limpiar();
+      setBusqueda('');
+      setCurrentPage(1);
       Swal.fire({
         icon: 'success',
         title: esEdicion ? 'Registro actualizado' : 'Registro guardado y factura generada',
+        text: !esEdicion && response?.data?.id_pago_extra
+          ? `ID generado: #${response.data.id_pago_extra}`
+          : '',
         timer: 2200,
         showConfirmButton: false
       });
