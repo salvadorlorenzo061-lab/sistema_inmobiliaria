@@ -39,6 +39,129 @@ const calcularComponentesFiscalmente = (total = 0) => {
     };
 };
 
+const ensureFacturasHistorialTable = () => {
+    const sql = `
+        CREATE TABLE IF NOT EXISTS facturas_historial (
+            id_historial BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_pago INT NULL,
+            id_pago_detalle INT NULL,
+            id_contrato INT NULL,
+            id_residente INT NULL,
+            id_usuario INT NULL,
+            correlativo VARCHAR(80) NULL,
+            estado_factura VARCHAR(20) NOT NULL DEFAULT 'EMITIDA',
+            tipo_concepto VARCHAR(60) NULL,
+            id_concepto_servicio INT NULL,
+            nombre_concepto VARCHAR(255) NULL,
+            mes_pagado VARCHAR(80) NULL,
+            numero_cuota_afectada INT NULL,
+            subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
+            fecha_evento DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            evidencia_json LONGTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_historial_pago (id_pago),
+            INDEX idx_historial_estado (estado_factura),
+            INDEX idx_historial_correlativo (correlativo)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `;
+
+    db.query(sql, (err) => {
+        if (err) {
+            console.error('Error asegurando tabla facturas_historial:', err.message);
+        }
+    });
+};
+
+const registrarHistorialFactura = ({
+    idPago,
+    idContrato,
+    idResidente,
+    idUsuario,
+    correlativo,
+    detalleValues,
+    serviciosSolicitados,
+    serviciosMesInicial,
+    numeroRecibo,
+    metodoPago,
+    observaciones,
+    mesesPagados,
+    totalTransaccion,
+    montoMora,
+    callback
+}) => {
+    const serviciosPorId = new Map();
+    [...(serviciosSolicitados || []), ...(serviciosMesInicial || [])].forEach((servicio) => {
+        const id = Number(servicio?.id_servicio);
+        if (Number.isInteger(id) && id > 0) {
+            serviciosPorId.set(id, String(servicio?.nombre_servicio || `Servicio #${id}`));
+        }
+    });
+
+    const rows = (detalleValues || []).map((detalle) => {
+        const tipoConcepto = String(detalle?.[1] || 'concepto');
+        const idConceptoServicio = detalle?.[2] == null ? null : Number(detalle[2]);
+        const mesPagado = String(detalle?.[3] || '');
+        const numeroCuota = detalle?.[4] == null ? null : Number(detalle[4]);
+        const subtotal = Number(detalle?.[5] || 0);
+
+        let nombreConcepto = tipoConcepto;
+        if (tipoConcepto === 'cuota_terreno') {
+            nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
+        } else if (tipoConcepto === 'servicio') {
+            nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Servicio #${idConceptoServicio || 'N/A'}`;
+        }
+
+        const evidencia = JSON.stringify({
+            numero_recibo: numeroRecibo,
+            no_referencia: correlativo,
+            metodo_pago: metodoPago,
+            observaciones: observaciones || '',
+            monto_total_pagado: Number(totalTransaccion || 0),
+            monto_mora: Number(montoMora || 0),
+            meses_pagados: mesesPagados || [],
+            detalle: {
+                tipo_concepto: tipoConcepto,
+                nombre_concepto: nombreConcepto,
+                id_concepto_servicio: idConceptoServicio,
+                mes_pagado: mesPagado,
+                numero_cuota_afectada: numeroCuota,
+                subtotal
+            }
+        });
+
+        return [
+            idPago,
+            null,
+            idContrato,
+            idResidente,
+            idUsuario,
+            correlativo,
+            'EMITIDA',
+            tipoConcepto,
+            idConceptoServicio,
+            nombreConcepto,
+            mesPagado,
+            numeroCuota,
+            subtotal,
+            evidencia
+        ];
+    });
+
+    if (!rows.length) {
+        return callback();
+    }
+
+    const sql = `
+        INSERT INTO facturas_historial (
+            id_pago, id_pago_detalle, id_contrato, id_residente, id_usuario,
+            correlativo, estado_factura, tipo_concepto, id_concepto_servicio,
+            nombre_concepto, mes_pagado, numero_cuota_afectada, subtotal, evidencia_json
+        ) VALUES ?
+    `;
+
+    db.query(sql, [rows], (err) => callback(err));
+};
+
 const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
     if (!idUsuario || !idEmpresa) {
         return callback(null, null);
@@ -143,6 +266,7 @@ const resolverColumnaCostoServicios = (callback) => {
 };
 
 ensureContratosServiciosTable();
+ensureFacturasHistorialTable();
 
 const resolverIdUsuarioValido = (idUsuario, callback) => {
     const id = Number(idUsuario);
@@ -1048,15 +1172,40 @@ router.post("/procesar-pago", (req, res) => {
                                             });
                                         };
 
-                                        if (montoTerrenoTotal > 0) {
-                                            const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
-                                            db.query(sqlRestar, [montoTerrenoTotal, id_contrato], (updErr) => {
-                                                if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
+                                        const continuarConSaldoYCommit = () => {
+                                            if (montoTerrenoTotal > 0) {
+                                                const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
+                                                db.query(sqlRestar, [montoTerrenoTotal, id_contrato], (updErr) => {
+                                                    if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
+                                                    return finalizarCommit();
+                                                });
+                                            } else {
                                                 return finalizarCommit();
-                                            });
-                                        } else {
-                                            return finalizarCommit();
-                                        }
+                                            }
+                                        };
+
+                                        registrarHistorialFactura({
+                                            idPago: lastIdPago,
+                                            idContrato: id_contrato,
+                                            idResidente: id_residente,
+                                            idUsuario: idUsuarioSeguro,
+                                            correlativo: correlativoFinal,
+                                            detalleValues,
+                                            serviciosSolicitados,
+                                            serviciosMesInicial,
+                                            numeroRecibo: numero_recibo,
+                                            metodoPago: metodo_pago,
+                                            observaciones,
+                                            mesesPagados: mesesAProcesar,
+                                            totalTransaccion,
+                                            montoMora: moraTotal,
+                                            callback: (histErr) => {
+                                                if (histErr) {
+                                                    return db.rollback(() => res.status(500).send("No se pudo guardar evidencia fiscal inmutable del comprobante."));
+                                                }
+                                                return continuarConSaldoYCommit();
+                                            }
+                                        });
                                     }
                                 );
                             };

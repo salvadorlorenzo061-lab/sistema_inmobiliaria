@@ -22,7 +22,6 @@ function PagosDetalle() {
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState('TODAS');
 
-  const [showRegModal, setShowRegModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -168,61 +167,8 @@ function PagosDetalle() {
     cargarSelects();
   }, [getDetalles, cargarSelects]);
 
-  const addDetalle = () => {
-    if (!id_pago || !tipo_concepto || !subtotal.trim()) {
-      Swal.fire({ position: "top-end", icon: "warning", title: 'CAMPOS INCOMPLETOS', showConfirmButton: false, timer: 3000 });
-      return;
-    }
-
-    Axios.post(`${API_URL}/crear`, { id_pago, tipo_concepto, id_concepto_servicio: id_concepto_servicio || null, mes_pagado, numero_cuota_afectada, subtotal })
-    .then(() => {
-      getDetalles();
-      limpiarCampos();
-      setShowRegModal(false);
-      Swal.fire({ position: "top-end", icon: "success", title: 'Desglose guardado', showConfirmButton: false, timer: 3000 });
-    })
-    .catch(err => {
-      Swal.fire({ icon: 'error', title: 'Error al insertar', text: err.response?.data?.message || 'Error de servidor' });
-    });
-  };
-
   const actualizarDetalle = () => {
-    Axios.put(`${API_URL}/actualizar`, { id_pago_detalle, id_pago, tipo_concepto, id_concepto_servicio: id_concepto_servicio || null, mes_pagado, numero_cuota_afectada, subtotal })
-    .then(() => {
-      getDetalles();
-      limpiarCampos();
-      setShowEditModal(false);
-      Swal.fire({ icon: 'success', title: 'Registro actualizado', timer: 3000, showConfirmButton: false });
-    })
-    .catch(() => Swal.fire({ icon: 'error', title: 'Error al actualizar' }));
-  };
-
-  const deleteDetalle = (val) => {
-    Swal.fire({
-      title: "¿Eliminar desglose?",
-      text: `ID Detalle: #${val.id_pago_detalle}`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Sí, borrar"
-    }).then(result => {
-      if (result.isConfirmed) {
-        Axios.delete(`${API_URL}/delete/${val.id_pago_detalle}`).then(() => {
-          getDetalles();
-          Swal.fire('Eliminado', 'El rubro fue borrado.', 'success');
-        });
-      }
-    });
-  };
-
-  const abrirEditar = (val) => {
-    setId_pago_detalle(val.id_pago_detalle);
-    setId_pago(val.id_pago);
-    setTipo_concepto(val.tipo_concepto);
-    setId_concepto_servicio(val.id_concepto_servicio || "");
-    setMes_pagado(val.mes_pagado || "");
-    setNumero_cuota_afectada(val.numero_cuota_afectada || "");
-    setSubtotal(String(val.subtotal));
-    setShowEditModal(true);
+    setShowEditModal(false);
   };
 
   const limpiarCampos = () => {
@@ -270,7 +216,7 @@ function PagosDetalle() {
           </select>
         </div>
         <div className="col-md-3 text-end">
-          <button className="btn btn-info fw-bold w-100 text-dark" onClick={() => { limpiarCampos(); setShowRegModal(true); }}>➕ AGREGAR DESGLOSE</button>
+          <button className="btn btn-secondary fw-bold w-100" disabled>HISTORIAL INMUTABLE</button>
         </div>
       </div>
       </div>
@@ -286,6 +232,7 @@ function PagosDetalle() {
             <th>PERIODO / CUOTA</th>
             <th>SUBTOTAL</th>
             <th>ESTADO</th>
+            <th>COBRADO POR</th>
             <th>ACCIONES</th>
           </tr>
         </thead>
@@ -308,16 +255,9 @@ function PagosDetalle() {
                   {val.estado_factura || 'EMITIDA'}
                 </span>
               </td>
+              <td>{val.usuario_cobro || `Usuario #${val.id_usuario || 'N/A'}`}</td>
               <td>
-                {val.estado_factura === 'ANULADA' ? (
-                  <span className="text-muted small">Factura anulada</span>
-                ) : (
-                  <>
-                    <button onClick={() => abrirEditar(val)} className="btn btn-warning btn-sm m-1 fw-bold">EDITAR</button>
-                    <button onClick={() => deleteDetalle(val)} className="btn btn-danger btn-sm m-1 fw-bold">ELIMINAR</button>
-                    <button onClick={() => generarFacturaDesdeDetalle(val)} className="btn btn-secondary btn-sm m-1 fw-bold">PDF</button>
-                  </>
-                )}
+                <span className="text-muted small">Solo evidencia histórica</span>
               </td>
             </tr>
           ))}
@@ -333,60 +273,6 @@ function PagosDetalle() {
         endIndex={endIndex}
         itemsCount={detallesFiltrados.length}
       />
-
-      {/* MODAL REGISTRO */}
-      {showRegModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog">
-            <div className="modal-content">
-              <div className="modal-header bg-info text-dark"><h5 className="modal-title fw-bold">Asignar Rubro a Pago</h5></div>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label fw-bold">Vincular al Recibo No:</label>
-                  <select value={id_pago} onChange={(e) => setId_pago(e.target.value)} className="form-select">
-                    <option value="">-- Seleccione el Pago Maestro --</option>
-                    {pagosList.map(p => <option key={p.id_pago} value={p.id_pago}>Recibo #{p.id_pago} - Total: Q{p.monto_total_pagado}</option>)}
-                  </select>
-                </div>
-                <div className="mb-3">
-                  <label className="form-label fw-bold">Tipo de Concepto:</label>
-                  <select value={tipo_concepto} onChange={(e) => setTipo_concepto(e.target.value)} className="form-select">
-                    <option value="">-- Seleccione Categoría --</option>
-                    <option value="cuota_terreno">Cuota Fija de Lote / Terreno</option>
-                    <option value="mora">Interés Moratorio</option>
-                    <option value="servicio_adicional">Servicio del Catálogo</option>
-                  </select>
-                </div>
-                {tipo_concepto === "servicio_adicional" && (
-                  <div className="mb-3">
-                    <label className="form-label fw-bold">Seleccione el Servicio Comercial:</label>
-                    <select value={id_concepto_servicio} onChange={(e) => setId_concepto_servicio(e.target.value)} className="form-select">
-                      <option value="">-- Seleccione del Catálogo --</option>
-                      {serviciosList.map(s => <option key={s.id_servicio} value={s.id_servicio}>{s.nombre_servicio}</option>)}
-                    </select>
-                  </div>
-                )}
-                <div className="mb-3">
-                  <label className="form-label fw-bold">Mes Aplicado (Opcional):</label>
-                  <input type="text" value={mes_pagado} onChange={(e) => setMes_pagado(e.target.value)} className="form-control" placeholder="Ej: Octubre 2026" />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label fw-bold">Número de Cuota Afectada (Si aplica):</label>
-                  <input type="number" value={numero_cuota_afectada} onChange={(e) => setNumero_cuota_afectada(e.target.value)} className="form-control" placeholder="Ej: 14" />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label fw-bold">Subtotal Parcial (Q):</label>
-                  <input type="number" step="0.01" value={subtotal} onChange={(e) => setSubtotal(e.target.value)} className="form-control" />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => { setShowRegModal(false); limpiarCampos(); }}>Cerrar</button>
-                <button type="button" className="btn btn-info" onClick={addDetalle}>Guardar Detalle</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL EDICIÓN */}
       {showEditModal && (
