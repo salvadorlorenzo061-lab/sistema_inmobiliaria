@@ -198,14 +198,19 @@ function AnulacionDeuda() {
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(10);
       doc.text('Datos del cliente:', x + 2, y + 5.5);
+
       y += 10;
-      doc.rect(x, y, w, 11);
+      const nombreTexto = String(contratoInfo?.nombre_residente || 'N/A');
+      const nombreLineas = doc.splitTextToSize(nombreTexto, 158);
+      const nombreAltura = Math.max(11, (nombreLineas.length * 4.5) + 3.5);
+      doc.rect(x, y, w, nombreAltura);
+      doc.setFont('Helvetica', 'bold');
       doc.text('Nombre:', x + 2, y + 5.5);
       doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(11);
-      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_residente || 'N/A'), 150), x + 22, y + 7.2);
+      doc.setFontSize(10.5);
+      doc.text(nombreLineas, x + 22, y + 5.5);
 
-      y += 16;
+      y += nombreAltura + 4;
       doc.setFillColor(245, 211, 69);
       doc.rect(x, y, 145, 8, 'F');
       doc.rect(x + 145, y, 45, 8, 'F');
@@ -215,29 +220,39 @@ function AnulacionDeuda() {
       doc.setFontSize(10);
       doc.text('Fecha:', x + 2, y + 5.5);
       doc.text('Por:', x + 147, y + 5.5);
+
       y += 8;
-      doc.rect(x, y, 145, 11);
-      doc.rect(x + 145, y, 45, 11);
+      const fechaTexto = `Guatemala, ${fechaLargaGT(fechaDocumento)}`;
+      const fechaLineas = doc.splitTextToSize(fechaTexto, 139);
+      const fechaAltura = Math.max(11, (fechaLineas.length * 4.5) + 2.5);
+      doc.rect(x, y, 145, fechaAltura);
+      doc.rect(x + 145, y, 45, fechaAltura);
       doc.setFont('Helvetica', 'normal');
-      doc.text(`Guatemala, ${fechaLargaGT(fechaDocumento)}`, x + 2, y + 7);
+      doc.text(fechaLineas, x + 2, y + 5.5);
       doc.setFont('Helvetica', 'bold');
-      doc.text(`Q ${Math.abs(montoAnulado).toFixed(2)}`, x + 147, y + 7);
+      doc.text(`Q ${Math.abs(montoAnulado).toFixed(2)}`, x + 147, y + 5.5);
 
-      y += 15;
-      doc.rect(x, y, w, 11);
+      y += fechaAltura + 4;
+      const pagaTexto = 'ANULACION / REVERSION DE COBRO REGISTRADO';
+      const pagaLineas = doc.splitTextToSize(pagaTexto, 143);
+      const pagaAltura = Math.max(11, (pagaLineas.length * 4.5) + 3);
+      doc.rect(x, y, w, pagaAltura);
       doc.setFont('Helvetica', 'bold');
-      doc.text('Paga la cantidad de:', x + 2, y + 7);
+      doc.text('Paga la cantidad de:', x + 2, y + 5.5);
       doc.setFont('Helvetica', 'normal');
-      doc.text('ANULACION / REVERSION DE COBRO REGISTRADO', x + 45, y + 7);
+      doc.text(pagaLineas, x + 45, y + 5.5);
 
-      y += 15;
-      doc.rect(x, y, w, 11);
+      y += pagaAltura + 4;
+      const cancelacionTexto = String(anulacion.motivo || 'Sin motivo registrado');
+      const cancelacionLineas = doc.splitTextToSize(cancelacionTexto, 143);
+      const cancelacionAltura = Math.max(12, (cancelacionLineas.length * 4.5) + 3.5);
+      doc.rect(x, y, w, cancelacionAltura);
       doc.setFont('Helvetica', 'bold');
-      doc.text('Por cancelacion de:', x + 2, y + 7);
+      doc.text('Por cancelacion de:', x + 2, y + 5.5);
       doc.setFont('Helvetica', 'normal');
-      doc.text(doc.splitTextToSize(String(anulacion.motivo || 'Sin motivo registrado'), 142), x + 43, y + 7);
+      doc.text(cancelacionLineas, x + 43, y + 5.5);
 
-      y += 15;
+      y += cancelacionAltura + 4;
       doc.rect(x, y, 65, 11);
       doc.rect(x + 65, y, 125, 11);
       doc.setFont('Helvetica', 'bold');
@@ -252,9 +267,10 @@ function AnulacionDeuda() {
       doc.text('Q.0.00', x + 112, y + 7);
 
       y += 14;
-      doc.rect(x, y, 60, 25);
-      doc.rect(x + 65, y, 60, 25);
-      doc.rect(x + 130, y, 60, 25);
+      const infoAltura = 28;
+      doc.rect(x, y, 60, infoAltura);
+      doc.rect(x + 65, y, 60, infoAltura);
+      doc.rect(x + 130, y, 60, infoAltura);
       doc.setFont('Helvetica', 'bold');
       doc.text('Referencia:', x + 67, y + 6);
       doc.setFont('Helvetica', 'normal');
@@ -263,7 +279,7 @@ function AnulacionDeuda() {
       doc.text(`Pago: #${anulacion.id_pago || 'N/A'}`, x + 132, y + 6);
       doc.text(`Autoriza: ${getNombreUsuario(autorizadorInfo)}`, x + 132, y + 12);
 
-      y += 30;
+      y += infoAltura + 6;
       autoTable(doc, {
         startY: y,
         head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
