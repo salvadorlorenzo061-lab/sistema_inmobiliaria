@@ -21,6 +21,7 @@ function Resoluciones_facturas() {
   const [fecha_vencimiento, setFecha_vencimiento] = useState("");
   const [estado, setEstado] = useState("");
   const [rol, setRol] = useState("caja");
+  const [empresasList, setEmpresasList] = useState([]);
   
   const [Resoluciones_facturasList, setResoluciones_facturas] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -31,6 +32,22 @@ function Resoluciones_facturas() {
   const itemsPerPage = 10; 
 
   const API_URL = `${API_BASE_URL}/api/resoluciones_facturas`;
+
+  const getEmpresas = () => {
+    Axios.get(`${API_BASE_URL}/api/empresas`)
+      .then((response) => {
+        setEmpresasList(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error al obtener empresas', error);
+        setEmpresasList([]);
+      });
+  };
+
+  const getNombreEmpresa = (empresaId) => {
+    const empresa = empresasList.find((item) => String(item.id_empresa) === String(empresaId));
+    return empresa?.nombre_empresa || `Empresa #${empresaId}`;
+  };
 
   const calcularRangoFinalPorLote = (inicio) => {
     const n = Number(inicio);
@@ -266,7 +283,10 @@ function Resoluciones_facturas() {
     .catch((error) => { console.error("Error al obtener resoluciones", error); });
   };
 
-  useEffect(() => { getResoluciones(); }, []);
+  useEffect(() => {
+    getResoluciones();
+    getEmpresas();
+  }, []);
 
   const abrirEditarModal = (val) => {
     setId_resolucion(val.id_resolucion);
@@ -347,7 +367,10 @@ function Resoluciones_facturas() {
           {resolucionesPaginadas.length > 0 ? (
             resolucionesPaginadas.map((val) => (
               <tr key={val.id_resolucion}>
-                <td>{val.id_empresa}</td>
+                <td>
+                  <div className="fw-bold">{getNombreEmpresa(val.id_empresa)}</div>
+                  <div className="small text-muted">ID: {val.id_empresa}</div>
+                </td>
                 <td>{val.numero_resolucion}</td>
                 <td>{val.serie}</td>
                 <td>{val.rango_inicial}</td>
@@ -402,8 +425,15 @@ function Resoluciones_facturas() {
               </div>
               <div className="modal-body">
                 <div className="mb-3">
-                  <label className="form-label fw-bold">EMPRESA (ID)</label>
-                  <input type="number" value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-control" placeholder="ID Empresa" />
+                  <label className="form-label fw-bold">Empresa</label>
+                  <select value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-select">
+                    <option value="">-- Seleccione empresa --</option>
+                    {empresasList.map((empresa) => (
+                      <option key={empresa.id_empresa} value={empresa.id_empresa}>
+                        {empresa.nombre_empresa} (ID: {empresa.id_empresa})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Número resolución:</label>
@@ -473,8 +503,15 @@ function Resoluciones_facturas() {
               </div>
               <div className="modal-body">
                 <div className="mb-3">
-                  <label className="form-label fw-bold">EMPRESA (ID)</label>
-                  <input type="number" value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-control" />
+                  <label className="form-label fw-bold">Empresa</label>
+                  <select value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-select">
+                    <option value="">-- Seleccione empresa --</option>
+                    {empresasList.map((empresa) => (
+                      <option key={empresa.id_empresa} value={empresa.id_empresa}>
+                        {empresa.nombre_empresa} (ID: {empresa.id_empresa})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Número resolución:</label>

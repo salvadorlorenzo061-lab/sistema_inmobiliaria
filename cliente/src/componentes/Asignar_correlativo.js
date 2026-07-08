@@ -18,10 +18,12 @@ const normalizeRole = (value = '') => String(value || '')
   .trim();
 
 function AsignarCorrelativo() {
+  const [empresasList, setEmpresasList] = useState([]);
   const [usuariosList, setUsuariosList] = useState([]);
   const [resolucionesList, setResolucionesList] = useState([]);
   const [asignacionesList, setAsignacionesList] = useState([]);
 
+  const [idEmpresa, setIdEmpresa] = useState('');
   const [idUsuario, setIdUsuario] = useState('');
   const [idResolucion, setIdResolucion] = useState('');
   const [cantidad, setCantidad] = useState('1');
@@ -36,9 +38,15 @@ function AsignarCorrelativo() {
 
   const API_URL = `${API_BASE_URL}/api/asignar_correlativo`;
 
-  const resolucionesActivas = useMemo(() => (
-    resolucionesList.filter((item) => String(item.estado || '').toLowerCase() === 'activo')
-  ), [resolucionesList]);
+  const empresaSeleccionada = useMemo(() => (
+    empresasList.find((item) => String(item.id_empresa) === String(idEmpresa)) || null
+  ), [empresasList, idEmpresa]);
+
+  const resolucionesActivas = useMemo(() => {
+    const activas = resolucionesList.filter((item) => String(item.estado || '').toLowerCase() === 'activo');
+    if (!idEmpresa) return activas;
+    return activas.filter((item) => String(item.id_empresa) === String(idEmpresa));
+  }, [resolucionesList, idEmpresa]);
 
   const resolucionSeleccionada = useMemo(() => {
     if (!idResolucion) return null;
@@ -61,10 +69,19 @@ function AsignarCorrelativo() {
     });
   }, [usuariosList, resolucionSeleccionada]);
 
+  useEffect(() => {
+    if (!idResolucion) return;
+    const existeEnFiltroActual = resolucionesActivas.some((item) => String(item.id_resolucion) === String(idResolucion));
+    if (!existeEnFiltroActual) {
+      setIdResolucion('');
+    }
+  }, [idResolucion, resolucionesActivas]);
+
   const cargarCatalogos = useCallback(async () => {
-    const [usuariosRes, resolucionesRes] = await Promise.allSettled([
+    const [usuariosRes, resolucionesRes, empresasRes] = await Promise.allSettled([
       Axios.get(`${API_BASE_URL}/api/usuarios`),
-      Axios.get(`${API_BASE_URL}/api/resoluciones_facturas`)
+      Axios.get(`${API_BASE_URL}/api/resoluciones_facturas`),
+      Axios.get(`${API_BASE_URL}/api/empresas`)
     ]);
 
     if (usuariosRes.status === 'fulfilled') {
@@ -79,7 +96,13 @@ function AsignarCorrelativo() {
       setResolucionesList([]);
     }
 
-    if (usuariosRes.status === 'rejected' || resolucionesRes.status === 'rejected') {
+    if (empresasRes.status === 'fulfilled') {
+      setEmpresasList(empresasRes.value?.data || []);
+    } else {
+      setEmpresasList([]);
+    }
+
+    if (usuariosRes.status === 'rejected' || resolucionesRes.status === 'rejected' || empresasRes.status === 'rejected') {
       throw new Error('No se pudieron cargar los catálogos del módulo. Verifica que el backend tenga habilitadas las rutas necesarias.');
     }
   }, []);
@@ -105,6 +128,7 @@ function AsignarCorrelativo() {
   }, [cargarCatalogos, cargarAsignaciones]);
 
   const limpiarFormulario = () => {
+    setIdEmpresa('');
     setIdUsuario('');
     setIdResolucion('');
     setCantidad('1');
@@ -112,13 +136,14 @@ function AsignarCorrelativo() {
   };
 
   const asignarLote = async () => {
-    if (!idUsuario || !idResolucion || !cantidad) {
-      Swal.fire({ icon: 'warning', title: 'Datos incompletos', text: 'Selecciona usuario, resolución y cantidad.' });
+    if (!idEmpresa || !idUsuario || !idResolucion || !cantidad) {
+      Swal.fire({ icon: 'warning', title: 'Datos incompletos', text: 'Selecciona empresa, persona, resolución y cantidad.' });
       return;
     }
 
     try {
       const response = await Axios.post(`${API_URL}/crear`, {
+        id_empresa: idEmpresa,
         id_usuario: idUsuario,
         id_resolucion: idResolucion,
         cantidad: Number(cantidad),
@@ -325,9 +350,24 @@ function AsignarCorrelativo() {
             <div className="card-header bg-primary text-white fw-bold">Asignación de Lote</div>
             <div className="card-body">
               <div className="mb-3">
-                <label className="form-label fw-bold">Usuario que cobrará</label>
+                <label className="form-label fw-bold">Empresa</label>
+                <select className="form-select" value={idEmpresa} onChange={(e) => setIdEmpresa(e.target.value)}>
+                  <option value="">-- Seleccione empresa --</option>
+                  {empresasList.map((item) => (
+                    <option key={item.id_empresa} value={item.id_empresa}>
+                      {item.nombre_empresa} (ID: {item.id_empresa})
+                    </option>
+                  ))}
+                </select>
+                {empresaSeleccionada && (
+                  <small className="text-muted d-block mt-1">Empresa seleccionada: <strong>{empresaSeleccionada.nombre_empresa}</strong></small>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label fw-bold">Persona que cobrará</label>
                 <select className="form-select" value={idUsuario} onChange={(e) => setIdUsuario(e.target.value)}>
-                  <option value="">-- Seleccione usuario --</option>
+                  <option value="">-- Seleccione persona --</option>
                   {usuariosDisponibles.map((item) => (
                     <option key={item.id_usuario} value={item.id_usuario}>
                       {item.nombre} - {item.correo} ({String(item.nombre_rol || 'sin rol')})
@@ -343,7 +383,18 @@ function AsignarCorrelativo() {
 
               <div className="mb-3">
                 <label className="form-label fw-bold">Resolución activa</label>
-                <select className="form-select" value={idResolucion} onChange={(e) => setIdResolucion(e.target.value)}>
+                <select
+                  className="form-select"
+                  value={idResolucion}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setIdResolucion(nextId);
+                    const resolucion = resolucionesActivas.find((item) => String(item.id_resolucion) === String(nextId));
+                    if (resolucion?.id_empresa) {
+                      setIdEmpresa(String(resolucion.id_empresa));
+                    }
+                  }}
+                >
                   <option value="">-- Seleccione resolución --</option>
                   {resolucionesActivas.map((item) => (
                     <option key={item.id_resolucion} value={item.id_resolucion}>
@@ -351,6 +402,9 @@ function AsignarCorrelativo() {
                     </option>
                   ))}
                 </select>
+                {idEmpresa && !resolucionesActivas.length && (
+                  <small className="text-danger d-block mt-1">No hay resoluciones activas para la empresa seleccionada.</small>
+                )}
               </div>
 
               <div className="mb-3">
@@ -379,6 +433,7 @@ function AsignarCorrelativo() {
                 <table className="table table-striped table-bordered m-0 align-middle">
                   <thead className="table-dark">
                     <tr>
+                      <th>Empresa</th>
                       <th>Usuario</th>
                       <th>Resolución</th>
                       <th>Rango</th>
@@ -392,13 +447,17 @@ function AsignarCorrelativo() {
                     {asignacionesList.length ? asignacionesList.map((item) => (
                       <tr key={item.id_asignacion}>
                         <td>
+                          <div className="fw-bold">{item.nombre_empresa || 'Sin empresa'}</div>
+                          <div className="small text-muted">ID: {item.id_empresa || 'N/A'}</div>
+                        </td>
+                        <td>
                           <div className="fw-bold">{item.nombre_usuario}</div>
                           <div className="small text-muted">{item.correo}</div>
                           <div className="small text-muted">Rol: {String(item.nombre_rol || 'sin rol')}</div>
                         </td>
                         <td>
                           <div>{item.numero_resolucion}</div>
-                          <div className="small text-muted">{item.nombre_empresa || 'Sin empresa'}</div>
+                          <div className="small text-muted">Serie {item.serie}</div>
                         </td>
                         <td>
                           <div>{item.correlativo_inicio_display}</div>
@@ -421,7 +480,7 @@ function AsignarCorrelativo() {
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan="7" className="text-center text-muted py-4">No hay lotes asignados todavía.</td>
+                        <td colSpan="8" className="text-center text-muted py-4">No hay lotes asignados todavía.</td>
                       </tr>
                     )}
                   </tbody>

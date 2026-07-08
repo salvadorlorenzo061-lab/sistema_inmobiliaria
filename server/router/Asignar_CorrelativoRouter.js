@@ -305,7 +305,8 @@ router.get('/siguiente-correlativo', (req, res) => {
 });
 
 router.post('/crear', (req, res) => {
-    const { id_usuario, id_resolucion, cantidad, observaciones } = req.body || {};
+    const { id_empresa, id_usuario, id_resolucion, cantidad, observaciones } = req.body || {};
+    const idEmpresaSeleccionada = Number(id_empresa || 0) || null;
     const cantidadNumerica = Number(cantidad);
 
     if (!id_usuario || !id_resolucion || !Number.isInteger(cantidadNumerica) || cantidadNumerica <= 0) {
@@ -395,6 +396,10 @@ router.post('/crear', (req, res) => {
 
                     if (String(resolucion.estado || '').toLowerCase() !== 'activo') {
                         return rollback(400, 'La resolución no está activa.');
+                    }
+
+                    if (idEmpresaSeleccionada && Number(resolucion.id_empresa || 0) !== idEmpresaSeleccionada) {
+                        return rollback(400, 'La empresa seleccionada no coincide con la empresa de la resolución.');
                     }
 
                     if (!rolCompatible) {
