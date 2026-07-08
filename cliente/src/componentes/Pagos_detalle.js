@@ -230,7 +230,7 @@ function PagosDetalle() {
 
   // Filtrado y paginación
   const detallesFiltrados = detallesList.filter(d => 
-    String(d.id_pago).includes(busqueda)
+    String(d.id_pago).includes(busqueda) || String(d.correlativo || '').toLowerCase().includes(String(busqueda || '').toLowerCase())
   );
   const { paginatedItems: detallesPaginados, totalPages, startIndex, endIndex } = getPaginatedData(detallesFiltrados, currentPage, itemsPerPage);
 
@@ -258,10 +258,12 @@ function PagosDetalle() {
           <tr>
             <th>ID DETALLE</th>
             <th>ID PAGO MAESTRO</th>
+            <th>FACTURA</th>
             <th>TIPO CONCEPTO</th>
             <th>SERVICIO ASOCIADO</th>
             <th>PERIODO / CUOTA</th>
             <th>SUBTOTAL</th>
+            <th>ESTADO</th>
             <th>ACCIONES</th>
           </tr>
         </thead>
@@ -270,14 +272,30 @@ function PagosDetalle() {
             <tr key={val.id_pago_detalle}>
               <th>#{val.id_pago_detalle}</th>
               <td>Recibo #{val.id_pago}</td>
-              <td><span className="badge bg-dark">{val.tipo_concepto.toUpperCase()}</span></td>
+              <td>{val.correlativo || <span className="text-muted">Sin correlativo</span>}</td>
+              <td>
+                <span className={`badge ${val.estado_factura === 'ANULADA' ? 'bg-danger' : 'bg-dark'}`}>
+                  {String(val.tipo_concepto || '').toUpperCase()}
+                </span>
+              </td>
               <td>{val.id_concepto_servicio ? `Servicio #${val.id_concepto_servicio}` : <span className="text-muted">Ninguno (Lote/Mora)</span>}</td>
               <td>{val.mes_pagado ? `Mes: ${val.mes_pagado}` : ''} {val.numero_cuota_afectada ? `| Cuota No. ${val.numero_cuota_afectada}` : ''}</td>
-              <td className="fw-bold text-primary">Q {parseFloat(val.subtotal).toFixed(2)}</td>
+              <td className={`fw-bold ${val.estado_factura === 'ANULADA' ? 'text-danger' : 'text-primary'}`}>Q {parseFloat(val.subtotal || 0).toFixed(2)}</td>
               <td>
-                <button onClick={() => abrirEditar(val)} className="btn btn-warning btn-sm m-1 fw-bold">EDITAR</button>
-                <button onClick={() => deleteDetalle(val)} className="btn btn-danger btn-sm m-1 fw-bold">ELIMINAR</button>
-                <button onClick={() => generarFacturaDesdeDetalle(val)} className="btn btn-secondary btn-sm m-1 fw-bold">PDF</button>
+                <span className={`badge ${val.estado_factura === 'ANULADA' ? 'bg-danger' : 'bg-success'}`}>
+                  {val.estado_factura || 'EMITIDA'}
+                </span>
+              </td>
+              <td>
+                {val.estado_factura === 'ANULADA' ? (
+                  <span className="text-muted small">Factura anulada</span>
+                ) : (
+                  <>
+                    <button onClick={() => abrirEditar(val)} className="btn btn-warning btn-sm m-1 fw-bold">EDITAR</button>
+                    <button onClick={() => deleteDetalle(val)} className="btn btn-danger btn-sm m-1 fw-bold">ELIMINAR</button>
+                    <button onClick={() => generarFacturaDesdeDetalle(val)} className="btn btn-secondary btn-sm m-1 fw-bold">PDF</button>
+                  </>
+                )}
               </td>
             </tr>
           ))}

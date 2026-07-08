@@ -91,27 +91,47 @@ router.post("/crear", (req, res) => {
             return res.status(400).send({ message: userErr.message || 'Usuario inválido.' });
         }
 
-        db.query('SELECT * FROM resoluciones_facturas WHERE numero_resolucion = ?', [numero_resolucion], (err, result) => {
-        if (err) {
-            console.log(err);
-            return res.status(500).send("Error interno del servidor");
-        }
+        const overlapQuery = `
+            SELECT id_resolucion
+            FROM resoluciones_facturas
+            WHERE id_empresa = ?
+              AND numero_resolucion = ?
+              AND serie = ?
+              AND (
+                    (? BETWEEN rango_inicial AND rango_final)
+                    OR (? BETWEEN rango_inicial AND rango_final)
+                    OR (rango_inicial BETWEEN ? AND ?)
+                    OR (rango_final BETWEEN ? AND ?)
+                  )
+            LIMIT 1
+        `;
 
-        if (result.length > 0) {
-            return res.status(400).send({ message: "La resolución ya se encuentra registrada" });
-        }
+        db.query(
+            overlapQuery,
+            [id_empresa, numero_resolucion, serie, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal],
+            (overlapErr, overlapRows) => {
+                if (overlapErr) {
+                    console.log(overlapErr);
+                    return res.status(500).send("Error interno del servidor");
+                }
 
-        const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-        const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
+                if (overlapRows && overlapRows.length) {
+                    return res.status(409).send({ message: 'Ya existe un tramo de esta misma resolución que se traslapa con el rango indicado.' });
+                }
 
-        db.query(sqlInsert, values, (insertErr, insertResult) => {
-            if (insertErr) {
-                console.log(insertErr);
-                return res.status(500).send("Error al registrar la resolución");
-            } else {
-                return res.status(200).send("Resolución registrada con éxito!!!");
+                const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
+
+                db.query(sqlInsert, values, (insertErr, insertResult) => {
+                    if (insertErr) {
+                        console.log(insertErr);
+                        return res.status(500).send("Error al registrar la resolución");
+                    } else {
+                        return res.status(200).send("Resolución registrada con éxito!!!");
+                    }
+                });
             }
-        });
+        );
     });
     });
 });
@@ -161,30 +181,61 @@ router.put("/actualizar", (req, res) => {
             return res.status(400).send({ message: userErr.message || 'Usuario inválido.' });
         }
 
-        const sqlUpdate = `UPDATE resoluciones_facturas SET 
-            id_empresa = ?, 
-            id_usuario = ?,
-            numero_resolucion = ?, 
-            serie = ?, 
-            rango_inicial = ?, 
-            rango_final = ?, 
-            correlativo_actual = ?, 
-            fecha_autorizacion = ?, 
-            fecha_vencimiento = ?, 
-            estado = ?,
-            rol = ? 
-            WHERE id_resolucion = ?`;
+        const overlapQuery = `
+            SELECT id_resolucion
+            FROM resoluciones_facturas
+            WHERE id_empresa = ?
+              AND numero_resolucion = ?
+              AND serie = ?
+              AND id_resolucion <> ?
+              AND (
+                    (? BETWEEN rango_inicial AND rango_final)
+                    OR (? BETWEEN rango_inicial AND rango_final)
+                    OR (rango_inicial BETWEEN ? AND ?)
+                    OR (rango_final BETWEEN ? AND ?)
+                  )
+            LIMIT 1
+        `;
 
-        const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol, id_resolucion];
+        db.query(
+            overlapQuery,
+            [id_empresa, numero_resolucion, serie, id_resolucion, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal],
+            (overlapErr, overlapRows) => {
+                if (overlapErr) {
+                    console.log(overlapErr);
+                    return res.status(500).send("Error al actualizar");
+                }
 
-        db.query(sqlUpdate, values, (err, result) => {
-            if (err) {
-                console.log(err);
-                res.status(500).send("Error al actualizar");
-            } else {
-                res.status(200).send("Resolución actualizada correctamente");
+                if (overlapRows && overlapRows.length) {
+                    return res.status(409).send({ message: 'El rango se traslapa con otro tramo de la misma resolución.' });
+                }
+
+                const sqlUpdate = `UPDATE resoluciones_facturas SET 
+                    id_empresa = ?, 
+                    id_usuario = ?,
+                    numero_resolucion = ?, 
+                    serie = ?, 
+                    rango_inicial = ?, 
+                    rango_final = ?, 
+                    correlativo_actual = ?, 
+                    fecha_autorizacion = ?, 
+                    fecha_vencimiento = ?, 
+                    estado = ?,
+                    rol = ? 
+                    WHERE id_resolucion = ?`;
+
+                const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol, id_resolucion];
+
+                db.query(sqlUpdate, values, (err, result) => {
+                    if (err) {
+                        console.log(err);
+                        res.status(500).send("Error al actualizar");
+                    } else {
+                        res.status(200).send("Resolución actualizada correctamente");
+                    }
+                });
             }
-        });
+        );
     });
 });
 
