@@ -123,10 +123,16 @@ const registrarHistorialFactura = ({
         const rolUsuarioEmisor = String(rolRows?.[0]?.nombre_rol || '').trim() || null;
 
         const serviciosPorId = new Map();
+        const extraordinariosPorIdPagoExtra = new Map();
         [...(serviciosSolicitados || []), ...(serviciosMesInicial || [])].forEach((servicio) => {
             const id = Number(servicio?.id_servicio);
             if (Number.isInteger(id) && id !== 0) {
                 serviciosPorId.set(id, String(servicio?.nombre_servicio || `Servicio #${id}`));
+            }
+
+            const idPagoExtra = Number(servicio?.id_pago_extra);
+            if (servicio?.es_extraordinario && Number.isInteger(idPagoExtra) && idPagoExtra > 0) {
+                extraordinariosPorIdPagoExtra.set(idPagoExtra, String(servicio?.nombre_servicio || `Cargo extraordinario #${idPagoExtra}`));
             }
         });
 
@@ -136,6 +142,7 @@ const registrarHistorialFactura = ({
             const mesPagado = String(detalle?.[3] || '');
             const numeroCuota = detalle?.[4] == null ? null : Number(detalle[4]);
             const subtotal = Number(detalle?.[5] || 0);
+            const idPagoExtra = detalle?.[6] == null ? null : Number(detalle[6]);
 
             let nombreConcepto = tipoConcepto;
             if (tipoConcepto === 'cuota_terreno') {
@@ -143,7 +150,9 @@ const registrarHistorialFactura = ({
             } else if (tipoConcepto === 'servicio') {
                 nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Servicio #${idConceptoServicio || 'N/A'}`;
             } else if (tipoConcepto === 'extraordinario') {
-                nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Cargo extraordinario #${Math.abs(Number(idConceptoServicio || 0)) || 'N/A'}`;
+                nombreConcepto = extraordinariosPorIdPagoExtra.get(idPagoExtra)
+                    || serviciosPorId.get(idConceptoServicio)
+                    || `Cargo extraordinario #${idPagoExtra || 'N/A'}`;
             }
 
             const evidencia = JSON.stringify({
@@ -159,6 +168,7 @@ const registrarHistorialFactura = ({
                     tipo_concepto: tipoConcepto,
                     nombre_concepto: nombreConcepto,
                     id_concepto_servicio: idConceptoServicio,
+                    id_pago_extra: idPagoExtra,
                     mes_pagado: mesPagado,
                     numero_cuota_afectada: numeroCuota,
                     subtotal
@@ -1126,7 +1136,7 @@ router.post("/procesar-pago", (req, res) => {
 
                                 if (montoTerrenoTotal > 0) {
                                     mesesAProcesar.forEach((mes, index) => {
-                                        detalleValues.push([lastIdPago, 'cuota_terreno', null, mes, (parseInt(numero_cuota || 1) + index), montoPorMesTerreno]);
+                                        detalleValues.push([lastIdPago, 'cuota_terreno', null, mes, (parseInt(numero_cuota || 1) + index), montoPorMesTerreno, null]);
                                     });
                                 }
 
@@ -1139,16 +1149,16 @@ router.post("/procesar-pago", (req, res) => {
 
                                     mesesAProcesar.forEach((mes) => {
                                         serviciosMensuales.forEach((servicio) => {
-                                            detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mes, null, servicio.subtotal]);
+                                            detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mes, null, servicio.subtotal, null]);
                                         });
                                     });
 
                                     serviciosUnicos.forEach((servicio) => {
-                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal]);
+                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal, null]);
                                     });
 
                                     serviciosExtraordinarios.forEach((servicio) => {
-                                        detalleValues.push([lastIdPago, 'extraordinario', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal]);
+                                        detalleValues.push([lastIdPago, 'extraordinario', null, mesesAProcesar[0], null, servicio.subtotal, servicio.id_pago_extra || null]);
                                     });
                                 }
 
@@ -1163,14 +1173,20 @@ router.post("/procesar-pago", (req, res) => {
                                         : mesesAProcesar[0];
 
                                     serviciosMesInicial.forEach((servicio) => {
-                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesInicialContrato, null, servicio.subtotal]);
+                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesInicialContrato, null, servicio.subtotal, null]);
                                     });
                                 }
 
                                 const placeholders = detalleValues.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-                                const flatValues = detalleValues.flat();
+                                const flatValues = detalleValues.map((detalle) => detalle.slice(0, 6)).flat();
 
-                                db.query(`INSERT INTO pagos_detalle (id_pago, tipo_concepto, id_concepto_servicio, mes_pagado, numero_cuota_afectada, subtotal) VALUES ${placeholders}`,
+                                const idsServiciosDetalle = [...new Set(
+                                    detalleValues
+                                        .map((detalle) => Number(detalle?.[2]))
+                                        .filter((id) => Number.isInteger(id) && id > 0)
+                                )];
+
+                                const insertarDetalles = () => db.query(`INSERT INTO pagos_detalle (id_pago, tipo_concepto, id_concepto_servicio, mes_pagado, numero_cuota_afectada, subtotal) VALUES ${placeholders}`,
                                     flatValues,
                                     (err) => {
                                         if (err) return db.rollback(() => res.status(500).send("Error en pagos_detalle: " + err.message));
@@ -1367,6 +1383,29 @@ router.post("/procesar-pago", (req, res) => {
                                                 }
                                             });
                                         });
+                                    });
+
+                                if (!idsServiciosDetalle.length) {
+                                    return insertarDetalles();
+                                }
+
+                                const placeholdersServicios = idsServiciosDetalle.map(() => '?').join(', ');
+                                db.query(
+                                    `SELECT id_servicio FROM servicios WHERE id_servicio IN (${placeholdersServicios})`,
+                                    idsServiciosDetalle,
+                                    (servCheckErr, servCheckRows) => {
+                                        if (servCheckErr) {
+                                            return db.rollback(() => res.status(500).send('Error validando conceptos de servicio antes de facturar: ' + servCheckErr.message));
+                                        }
+
+                                        const idsValidosDetalle = new Set((servCheckRows || []).map((row) => Number(row.id_servicio)));
+                                        const idsInvalidosDetalle = idsServiciosDetalle.filter((id) => !idsValidosDetalle.has(id));
+
+                                        if (idsInvalidosDetalle.length) {
+                                            return db.rollback(() => res.status(400).send(`Hay servicios invalidos en el cobro: ${idsInvalidosDetalle.join(', ')}. Actualiza los servicios asignados del contrato antes de cobrar.`));
+                                        }
+
+                                        return insertarDetalles();
                                     }
                                 );
                             };

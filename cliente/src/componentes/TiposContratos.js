@@ -3,6 +3,7 @@ import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { API_BASE_URL } from '../config';
 
 function TiposContratos() {
   const [id_tipo_contrato, setId_tipo_contrato] = useState("");
@@ -16,7 +17,7 @@ function TiposContratos() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const API_URL = "http://localhost:3001/api/tipos_contratos";
+  const API_URL = `${API_BASE_URL}/api/tipos_contratos`;
   const getNombreContrato = (item = {}) => item.nombre_contrato || item.nombre_tipo_contrato || '';
 
   const getTipos = () => { Axios.get(API_URL).then(res => setTiposList(res.data)); };

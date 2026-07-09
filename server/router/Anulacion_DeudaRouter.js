@@ -337,7 +337,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                     concepto: row.tipo_concepto === 'cuota_terreno'
                         ? `Cuota de Terreno No. ${row.numero_cuota_afectada || ''}`.trim()
                         : row.tipo_concepto === 'extraordinario'
-                            ? `Cargo extraordinario ${row.id_concepto_servicio ? `#${Math.abs(Number(row.id_concepto_servicio))}` : ''}`.trim()
+                            ? 'Cargo extraordinario'
                         : `Servicio: ${row.nombre_servicio || `ID ${row.id_concepto_servicio || 'N/A'}`}`
                 }));
 
