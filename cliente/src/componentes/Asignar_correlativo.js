@@ -8,6 +8,22 @@ import { API_BASE_URL } from '../config';
 
 const getToday = () => new Date().toISOString().slice(0, 10);
 const getCurrentMonth = () => new Date().toISOString().slice(0, 7);
+const getMonthDateRange = (monthValue = getCurrentMonth()) => {
+  const [yearRaw, monthRaw] = String(monthValue || '').split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    const today = getToday();
+    return { inicio: today, fin: today };
+  }
+
+  const inicio = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(year, month, 0).getDate();
+  const fin = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+
+  return { inicio, fin };
+};
 
 const formatMoney = (value) => `Q ${Number(value || 0).toFixed(2)}`;
 const normalizeFileSegment = (value = '') => String(value || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -32,6 +48,8 @@ function AsignarCorrelativo() {
   const [tipoCuadre, setTipoCuadre] = useState('dia');
   const [fechaCuadre, setFechaCuadre] = useState(getToday());
   const [periodoMes, setPeriodoMes] = useState(getCurrentMonth());
+  const [fechaInicioMes, setFechaInicioMes] = useState(() => getMonthDateRange(getCurrentMonth()).inicio);
+  const [fechaFinMes, setFechaFinMes] = useState(() => getMonthDateRange(getCurrentMonth()).fin);
   const [reporte, setReporte] = useState(null);
   const [loadingReporte, setLoadingReporte] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -190,9 +208,21 @@ function AsignarCorrelativo() {
   };
 
   const consultarCuadre = async () => {
+    if (tipoCuadre === 'mes') {
+      if (!fechaInicioMes || !fechaFinMes) {
+        Swal.fire({ icon: 'warning', title: 'Rango incompleto', text: 'Debes seleccionar fecha inicio y fecha fin para el cuadre del mes.' });
+        return;
+      }
+
+      if (fechaInicioMes > fechaFinMes) {
+        Swal.fire({ icon: 'warning', title: 'Rango inválido', text: 'La fecha inicio no puede ser mayor que la fecha fin.' });
+        return;
+      }
+    }
+
     const query = tipoCuadre === 'dia'
       ? `fecha=${encodeURIComponent(fechaCuadre)}`
-      : `periodo=${encodeURIComponent(periodoMes)}`;
+      : `fecha_inicio=${encodeURIComponent(fechaInicioMes)}&fecha_fin=${encodeURIComponent(fechaFinMes)}`;
 
     setLoadingReporte(true);
     try {
@@ -524,8 +554,30 @@ function AsignarCorrelativo() {
             </div>
 
             <div className="col-md-3">
-              <label className="form-label fw-bold">Mes del cuadre</label>
-              <input type="month" className="form-control" value={periodoMes} onChange={(e) => setPeriodoMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
+              <label className="form-label fw-bold">Fecha inicio</label>
+              <input type="date" className="form-control" value={fechaInicioMes} onChange={(e) => setFechaInicioMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
+            </div>
+
+            <div className="col-md-3">
+              <label className="form-label fw-bold">Fecha fin</label>
+              <input type="date" className="form-control" value={fechaFinMes} onChange={(e) => setFechaFinMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
+            </div>
+
+            <div className="col-md-3">
+              <label className="form-label fw-bold">Mes rápido</label>
+              <input
+                type="month"
+                className="form-control"
+                value={periodoMes}
+                onChange={(e) => {
+                  const month = e.target.value;
+                  setPeriodoMes(month);
+                  const range = getMonthDateRange(month);
+                  setFechaInicioMes(range.inicio);
+                  setFechaFinMes(range.fin);
+                }}
+                disabled={tipoCuadre !== 'mes'}
+              />
             </div>
 
             <div className="col-md-3">

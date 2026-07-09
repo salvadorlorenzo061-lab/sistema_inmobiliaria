@@ -510,6 +510,25 @@ const getPeriodoConfig = (scope, query) => {
         };
     }
 
+    const fechaInicio = String(query.fecha_inicio || '').trim();
+    const fechaFin = String(query.fecha_fin || '').trim();
+
+    if (fechaInicio || fechaFin) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin)) {
+            return { error: 'Debe enviar fecha_inicio y fecha_fin válidas en formato YYYY-MM-DD.' };
+        }
+
+        if (fechaInicio > fechaFin) {
+            return { error: 'La fecha de inicio no puede ser mayor que la fecha de fin.' };
+        }
+
+        return {
+            label: `${fechaInicio} a ${fechaFin}`,
+            whereSql: 'DATE(p.fecha_pago) BETWEEN ? AND ?',
+            params: [fechaInicio, fechaFin]
+        };
+    }
+
     const periodo = String(query.periodo || '').trim();
     if (!/^\d{4}-\d{2}$/.test(periodo)) {
         return { error: 'Debe enviar un período válido en formato YYYY-MM.' };
