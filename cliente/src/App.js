@@ -16,7 +16,9 @@ const MODULE_PERMISSION_ALIASES = {
   menu_general: ['menu principal', 'menu general'],
   anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
   caja_ingresos: ['caja ingresos manual'],
-  asignar_correlativo: ['asignar correlativos', 'asignar correlativo', 'cuadre del dia', 'cuadre del mes']
+  asignar_correlativo: ['asignar correlativos', 'asignar correlativo', 'cuadre del dia', 'cuadre del mes'],
+  proyectos: ['proyecto', 'proyectos', 'catalogo de proyectos', 'catalogo proyectos'],
+  empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa']
 };
 
 const getFallbackPermisosByRole = (rolNormalizado = '') => {

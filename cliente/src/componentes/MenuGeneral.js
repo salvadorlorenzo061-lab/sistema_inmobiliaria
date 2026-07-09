@@ -12,7 +12,9 @@ const normalizeText = (value = '') => value
 const MODULE_PERMISSION_ALIASES = {
   menu_general: ['menu principal', 'menu general'],
   anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
-  caja_ingresos: ['caja ingresos manual']
+  caja_ingresos: ['caja ingresos manual'],
+  proyectos: ['proyecto', 'proyectos', 'catalogo de proyectos', 'catalogo proyectos'],
+  empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa']
 };
 
 const getFallbackPermisosByRole = (rolNormalizado = '') => {
