@@ -505,7 +505,7 @@ const getPeriodoConfig = (scope, query) => {
 
         return {
             label: fecha,
-            whereSql: 'DATE(p.fecha_pago) = ?',
+            whereSqlTemplate: 'DATE(__DATE_FIELD__) = ?',
             params: [fecha]
         };
     }
@@ -524,7 +524,7 @@ const getPeriodoConfig = (scope, query) => {
 
         return {
             label: `${fechaInicio} a ${fechaFin}`,
-            whereSql: 'DATE(p.fecha_pago) BETWEEN ? AND ?',
+            whereSqlTemplate: 'DATE(__DATE_FIELD__) BETWEEN ? AND ?',
             params: [fechaInicio, fechaFin]
         };
     }
@@ -536,7 +536,7 @@ const getPeriodoConfig = (scope, query) => {
 
     return {
         label: periodo,
-        whereSql: "DATE_FORMAT(p.fecha_pago, '%Y-%m') = ?",
+        whereSqlTemplate: "DATE_FORMAT(__DATE_FIELD__, '%Y-%m') = ?",
         params: [periodo]
     };
 };
@@ -547,81 +547,122 @@ const obtenerCuadre = (scope) => (req, res) => {
         return res.status(400).send({ message: periodo.error });
     }
 
-    const detalleBase = `
-        SELECT
-            p.id_pago,
-            p.id_usuario,
-            u.nombre AS nombre_usuario,
-            p.no_referencia,
-            p.forma_pago,
-            p.fecha_pago,
-            COALESCE(SUM(pd.subtotal), 0) AS subtotal,
-            COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0) AS iva_total,
-            p.monto_total_pagado AS total_cobrado,
-            GREATEST(p.monto_total_pagado - (COALESCE(SUM(pd.subtotal), 0) + COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0)), 0) AS monto_mora
-        FROM pagos p
-        LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-        LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
-        WHERE ${periodo.whereSql}
-        GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
-    `;
+    const accion = String(req.query?.accion || 'emitio').trim().toLowerCase();
+    if (!['emitio', 'anulo'].includes(accion)) {
+        return res.status(400).send({ message: 'La acción debe ser emitio o anulo.' });
+    }
 
-    const resumenUsuariosQuery = `
-        SELECT
-            base.id_usuario,
-            base.nombre_usuario,
-            COUNT(*) AS total_facturas,
-            MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
-            MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
-            ROUND(SUM(base.subtotal), 2) AS subtotal,
-            ROUND(SUM(base.iva_total), 2) AS iva_total,
-            ROUND(SUM(base.monto_mora), 2) AS monto_mora,
-            ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
-        FROM (${detalleBase}) base
-        GROUP BY base.id_usuario, base.nombre_usuario
-        ORDER BY total_cobrado DESC, base.nombre_usuario ASC
-    `;
+    const idUsuario = Number(req.query?.id_usuario || 0);
+    const filtrarUsuario = Number.isInteger(idUsuario) && idUsuario > 0;
 
-    const totalGeneralQuery = `
-        SELECT
-            COUNT(*) AS total_facturas,
-            MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
-            MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
-            ROUND(SUM(base.subtotal), 2) AS subtotal,
-            ROUND(SUM(base.iva_total), 2) AS iva_total,
-            ROUND(SUM(base.monto_mora), 2) AS monto_mora,
-            ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
-        FROM (${detalleBase}) base
-    `;
+    const buildQueries = (detalleBase) => {
+        const resumenUsuariosQuery = `
+            SELECT
+                base.id_usuario,
+                base.nombre_usuario,
+                COUNT(*) AS total_facturas,
+                MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
+                MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
+                ROUND(SUM(base.subtotal), 2) AS subtotal,
+                ROUND(SUM(base.iva_total), 2) AS iva_total,
+                ROUND(SUM(base.monto_mora), 2) AS monto_mora,
+                ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
+            FROM (${detalleBase}) base
+            GROUP BY base.id_usuario, base.nombre_usuario
+            ORDER BY total_cobrado DESC, base.nombre_usuario ASC
+        `;
 
-    const detalleFacturasQuery = `
-        SELECT
-            base.id_pago,
-            base.nombre_usuario,
-            base.no_referencia,
-            base.forma_pago,
-            base.fecha_pago,
-            ROUND(base.subtotal, 2) AS subtotal,
-            ROUND(base.iva_total, 2) AS iva_total,
-            ROUND(base.monto_mora, 2) AS monto_mora,
-            ROUND(base.total_cobrado, 2) AS total_cobrado
-        FROM (${detalleBase}) base
-        ORDER BY base.fecha_pago ASC, base.id_pago ASC
-    `;
+        const totalGeneralQuery = `
+            SELECT
+                COUNT(*) AS total_facturas,
+                MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
+                MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
+                ROUND(SUM(base.subtotal), 2) AS subtotal,
+                ROUND(SUM(base.iva_total), 2) AS iva_total,
+                ROUND(SUM(base.monto_mora), 2) AS monto_mora,
+                ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
+            FROM (${detalleBase}) base
+        `;
 
-    db.query(resumenUsuariosQuery, periodo.params, (userErr, rowsUsuarios) => {
+        const detalleFacturasQuery = `
+            SELECT
+                base.id_pago,
+                base.nombre_usuario,
+                base.no_referencia,
+                base.forma_pago,
+                base.fecha_pago,
+                ROUND(base.subtotal, 2) AS subtotal,
+                ROUND(base.iva_total, 2) AS iva_total,
+                ROUND(base.monto_mora, 2) AS monto_mora,
+                ROUND(base.total_cobrado, 2) AS total_cobrado
+            FROM (${detalleBase}) base
+            ORDER BY base.fecha_pago ASC, base.id_pago ASC
+        `;
+
+        return { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery };
+    };
+
+    const params = [...periodo.params, ...(filtrarUsuario ? [idUsuario] : [])];
+    let detalleBase = '';
+
+    if (accion === 'emitio') {
+        const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'p.fecha_pago');
+        const filtroUsuarioSql = filtrarUsuario ? ' AND p.id_usuario = ?' : '';
+
+        detalleBase = `
+            SELECT
+                p.id_pago,
+                p.id_usuario,
+                u.nombre AS nombre_usuario,
+                p.no_referencia,
+                p.forma_pago,
+                p.fecha_pago,
+                COALESCE(SUM(pd.subtotal), 0) AS subtotal,
+                COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0) AS iva_total,
+                p.monto_total_pagado AS total_cobrado,
+                GREATEST(p.monto_total_pagado - (COALESCE(SUM(pd.subtotal), 0) + COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0)), 0) AS monto_mora
+            FROM pagos p
+            LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
+            WHERE ${whereSql}${filtroUsuarioSql}
+            GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
+        `;
+    } else {
+        const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'ad.fecha_anulacion');
+        const filtroUsuarioSql = filtrarUsuario ? ' AND ad.id_usuario_autoriza = ?' : '';
+
+        detalleBase = `
+            SELECT
+                COALESCE(ad.id_pago, ad.id_anulacion) AS id_pago,
+                ad.id_usuario_autoriza AS id_usuario,
+                u.nombre AS nombre_usuario,
+                COALESCE(ad.correlativo, CONCAT('ANU-', ad.id_anulacion)) AS no_referencia,
+                'ANULACION' AS forma_pago,
+                ad.fecha_anulacion AS fecha_pago,
+                COALESCE(ad.monto_anulado, 0) AS subtotal,
+                0 AS iva_total,
+                COALESCE(ad.monto_anulado, 0) AS total_cobrado,
+                0 AS monto_mora
+            FROM anulacion_deuda ad
+            LEFT JOIN usuarios u ON u.id_usuario = ad.id_usuario_autoriza
+            WHERE ${whereSql}${filtroUsuarioSql}
+        `;
+    }
+    const { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery } = buildQueries(detalleBase);
+
+    db.query(resumenUsuariosQuery, params, (userErr, rowsUsuarios) => {
         if (userErr) {
             console.error(userErr);
             return res.status(500).send({ message: 'No se pudo generar el resumen por usuario.' });
         }
 
-        db.query(totalGeneralQuery, periodo.params, (totalErr, rowsTotales) => {
+        db.query(totalGeneralQuery, params, (totalErr, rowsTotales) => {
             if (totalErr) {
                 console.error(totalErr);
                 return res.status(500).send({ message: 'No se pudo generar el total general.' });
             }
 
-            db.query(detalleFacturasQuery, periodo.params, (detailErr, rowsDetalle) => {
+            db.query(detalleFacturasQuery, params, (detailErr, rowsDetalle) => {
                 if (detailErr) {
                     console.error(detailErr);
                     return res.status(500).send({ message: 'No se pudo generar el detalle de facturas.' });
@@ -629,6 +670,7 @@ const obtenerCuadre = (scope) => (req, res) => {
 
                 return res.send({
                     scope,
+                    accion,
                     periodo: periodo.label,
                     resumen_por_usuario: rowsUsuarios || [],
                     total_general: rowsTotales?.[0] || {
