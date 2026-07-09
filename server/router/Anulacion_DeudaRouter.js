@@ -59,6 +59,7 @@ const ensureFacturasHistorialTable = () => {
             id_contrato INT NULL,
             id_residente INT NULL,
             id_usuario INT NULL,
+            rol_usuario_emisor VARCHAR(80) NULL,
             correlativo VARCHAR(80) NULL,
             estado_factura VARCHAR(20) NOT NULL DEFAULT 'EMITIDA',
             tipo_concepto VARCHAR(60) NULL,
@@ -83,7 +84,25 @@ const ensureFacturasHistorialTable = () => {
     });
 };
 
+const ensureFacturasHistorialRolColumn = () => {
+    db.query("SHOW COLUMNS FROM facturas_historial LIKE 'rol_usuario_emisor'", (err, rows) => {
+        if (err) {
+            console.error('Error verificando columna rol_usuario_emisor en facturas_historial (anulacion):', err.message);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            db.query('ALTER TABLE facturas_historial ADD COLUMN rol_usuario_emisor VARCHAR(80) NULL AFTER id_usuario', (alterErr) => {
+                if (alterErr) {
+                    console.error('Error creando columna rol_usuario_emisor en facturas_historial (anulacion):', alterErr.message);
+                }
+            });
+        }
+    });
+};
+
 ensureFacturasHistorialTable();
+ensureFacturasHistorialRolColumn();
 
 const registrarHistorialAnulacion = ({
     pago,
@@ -99,6 +118,7 @@ const registrarHistorialAnulacion = ({
             id_pago: Number(pago?.id_pago || 0),
             correlativo: correlativoFinal,
             id_usuario_cobro: Number(pago?.id_usuario || 0),
+            rol_usuario_emisor: pago?.rol_usuario_emisor || null,
             nombre_usuario_cobro: pago?.nombre_usuario_cobro || null,
             id_usuario_autoriza: Number(idUsuarioAutoriza || 0),
             motivo_anulacion: motivo,
@@ -111,6 +131,7 @@ const registrarHistorialAnulacion = ({
             Number(pago?.id_contrato || 0) || null,
             Number(pago?.id_residente || 0) || null,
             Number(pago?.id_usuario || 0) || null,
+            String(pago?.rol_usuario_emisor || '').trim() || null,
             correlativoFinal,
             'ANULADA',
             String(item?.tipo_concepto || ''),
@@ -129,6 +150,7 @@ const registrarHistorialAnulacion = ({
             id_pago: Number(pago?.id_pago || 0),
             correlativo: correlativoFinal,
             id_usuario_cobro: Number(pago?.id_usuario || 0),
+            rol_usuario_emisor: pago?.rol_usuario_emisor || null,
             id_usuario_autoriza: Number(idUsuarioAutoriza || 0),
             motivo_anulacion: motivo,
             detalle_original: []
@@ -140,6 +162,7 @@ const registrarHistorialAnulacion = ({
             Number(pago?.id_contrato || 0) || null,
             Number(pago?.id_residente || 0) || null,
             Number(pago?.id_usuario || 0) || null,
+            String(pago?.rol_usuario_emisor || '').trim() || null,
             correlativoFinal,
             'ANULADA',
             'anulacion_cobro',
@@ -155,6 +178,7 @@ const registrarHistorialAnulacion = ({
     const sql = `
         INSERT INTO facturas_historial (
             id_pago, id_pago_detalle, id_contrato, id_residente, id_usuario,
+            rol_usuario_emisor,
             correlativo, estado_factura, tipo_concepto, id_concepto_servicio,
             nombre_concepto, mes_pagado, numero_cuota_afectada, subtotal, evidencia_json
         ) VALUES ?
@@ -188,6 +212,15 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             p.id_usuario,
             u.nombre AS nombre_usuario_cobro,
             u.correo AS correo_usuario_cobro,
+                        ru.nombre_rol AS rol_usuario_cobro_actual,
+                        (
+                                SELECT fhh.rol_usuario_emisor
+                                FROM facturas_historial fhh
+                                WHERE fhh.id_pago = p.id_pago
+                                    AND fhh.estado_factura = 'EMITIDA'
+                                ORDER BY fhh.id_historial ASC
+                                LIMIT 1
+                        ) AS rol_usuario_emisor_historico,
             p.fecha_pago,
             p.monto_total_pagado,
             p.forma_pago,
@@ -202,10 +235,11 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
         FROM pagos p
         INNER JOIN contratos_residentes c ON c.id_contrato = p.id_contrato
         LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
+        LEFT JOIN roles ru ON ru.id_rol = u.id_rol
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE ${whereSql}
-        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, u.nombre, u.correo, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, c.codigo_contrato, c.id_residente, r.nombre
+        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, u.nombre, u.correo, ru.nombre_rol, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, c.codigo_contrato, c.id_residente, r.nombre
         ORDER BY p.id_pago DESC
         LIMIT 1
     `;
@@ -233,6 +267,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                     ad.fecha_anulacion,
                     u.nombre AS nombre_usuario_autoriza,
                     fh.id_usuario AS id_usuario_cobro,
+                    fh.rol_usuario_emisor AS rol_usuario_emisor,
                     uc.nombre AS nombre_usuario_cobro,
                     r.nombre AS nombre_residente
                 FROM anulacion_deuda ad
@@ -265,6 +300,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                     id_usuario_autoriza: Number(anulacion.id_usuario_autoriza || 0),
                     nombre_usuario_autoriza: anulacion.nombre_usuario_autoriza || null,
                     id_usuario_cobro: anulacion.id_usuario_cobro ? Number(anulacion.id_usuario_cobro) : null,
+                    rol_usuario_emisor: anulacion.rol_usuario_emisor || null,
                     nombre_usuario_cobro: anulacion.nombre_usuario_cobro || null,
                     nombre_residente: anulacion.nombre_residente || null
                 });
@@ -315,6 +351,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
 
                 return callback(null, {
                     ...pago,
+                    rol_usuario_emisor: pago.rol_usuario_emisor_historico || pago.rol_usuario_cobro_actual || null,
                     meses_pagados: mesesUnicos.join(', '),
                     detalle_cobro
                 });

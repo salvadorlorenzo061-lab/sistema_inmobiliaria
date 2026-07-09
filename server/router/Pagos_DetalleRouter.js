@@ -14,6 +14,7 @@ const ensureFacturasHistorialTable = () => {
             id_contrato INT NULL,
             id_residente INT NULL,
             id_usuario INT NULL,
+            rol_usuario_emisor VARCHAR(80) NULL,
             correlativo VARCHAR(80) NULL,
             estado_factura VARCHAR(20) NOT NULL DEFAULT 'EMITIDA',
             tipo_concepto VARCHAR(60) NULL,
@@ -38,7 +39,25 @@ const ensureFacturasHistorialTable = () => {
     });
 };
 
+const ensureFacturasHistorialRolColumn = () => {
+    db.query("SHOW COLUMNS FROM facturas_historial LIKE 'rol_usuario_emisor'", (err, rows) => {
+        if (err) {
+            console.error('Error verificando columna rol_usuario_emisor en facturas_historial (detalle):', err.message);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            db.query('ALTER TABLE facturas_historial ADD COLUMN rol_usuario_emisor VARCHAR(80) NULL AFTER id_usuario', (alterErr) => {
+                if (alterErr) {
+                    console.error('Error creando columna rol_usuario_emisor en facturas_historial (detalle):', alterErr.message);
+                }
+            });
+        }
+    });
+};
+
 ensureFacturasHistorialTable();
+ensureFacturasHistorialRolColumn();
 
 router.get("/", (req, res) => {
     const query = `
@@ -55,8 +74,9 @@ router.get("/", (req, res) => {
             fh.fecha_evento,
             fh.estado_factura,
             fh.id_usuario,
+            fh.rol_usuario_emisor,
             u.nombre AS usuario_cobro,
-            rc.nombre_rol AS rol_usuario_cobro,
+            COALESCE(fh.rol_usuario_emisor, rc.nombre_rol) AS rol_usuario_cobro,
             CASE
                 WHEN fh.estado_factura = 'ANULADA' THEN 'Documento anulado (evidencia historica)'
                 ELSE NULL
@@ -99,6 +119,7 @@ router.get('/documento/:id_pago', (req, res) => {
             fh.subtotal,
             fh.fecha_evento,
             fh.evidencia_json,
+            fh.rol_usuario_emisor,
             u.nombre AS usuario_cobro,
             rc.nombre_rol AS rol_usuario_cobro,
             r.nombre AS nombre_residente,
@@ -181,7 +202,7 @@ router.get('/documento/:id_pago', (req, res) => {
             fecha_evento: base.fecha_evento || base.fecha_pago || null,
             metodo_pago: base.forma_pago || evidenciaCabecera?.metodo_pago || 'N/A',
             usuario_cobro: base.usuario_cobro || `Usuario #${base.id_usuario || 'N/A'}`,
-            rol_usuario_cobro: base.rol_usuario_cobro || null,
+            rol_usuario_cobro: base.rol_usuario_emisor || evidenciaCabecera?.rol_usuario_emisor || base.rol_usuario_cobro || null,
             cliente: {
                 nombre_residente: base.nombre_residente || 'N/A',
                 numero_identificacion: base.numero_identificacion || 'N/A',

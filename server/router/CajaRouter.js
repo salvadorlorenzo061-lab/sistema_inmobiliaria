@@ -48,6 +48,7 @@ const ensureFacturasHistorialTable = () => {
             id_contrato INT NULL,
             id_residente INT NULL,
             id_usuario INT NULL,
+            rol_usuario_emisor VARCHAR(80) NULL,
             correlativo VARCHAR(80) NULL,
             estado_factura VARCHAR(20) NOT NULL DEFAULT 'EMITIDA',
             tipo_concepto VARCHAR(60) NULL,
@@ -72,6 +73,23 @@ const ensureFacturasHistorialTable = () => {
     });
 };
 
+const ensureFacturasHistorialRolColumn = () => {
+    db.query("SHOW COLUMNS FROM facturas_historial LIKE 'rol_usuario_emisor'", (err, rows) => {
+        if (err) {
+            console.error('Error verificando columna rol_usuario_emisor en facturas_historial:', err.message);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            db.query('ALTER TABLE facturas_historial ADD COLUMN rol_usuario_emisor VARCHAR(80) NULL AFTER id_usuario', (alterErr) => {
+                if (alterErr) {
+                    console.error('Error creando columna rol_usuario_emisor en facturas_historial:', alterErr.message);
+                }
+            });
+        }
+    });
+};
+
 const registrarHistorialFactura = ({
     idPago,
     idContrato,
@@ -89,79 +107,97 @@ const registrarHistorialFactura = ({
     montoMora,
     callback
 }) => {
-    const serviciosPorId = new Map();
-    [...(serviciosSolicitados || []), ...(serviciosMesInicial || [])].forEach((servicio) => {
-        const id = Number(servicio?.id_servicio);
-        if (Number.isInteger(id) && id !== 0) {
-            serviciosPorId.set(id, String(servicio?.nombre_servicio || `Servicio #${id}`));
-        }
-    });
+    const rolSql = `
+        SELECT r.nombre_rol
+        FROM usuarios u
+        LEFT JOIN roles r ON r.id_rol = u.id_rol
+        WHERE u.id_usuario = ?
+        LIMIT 1
+    `;
 
-    const rows = (detalleValues || []).map((detalle) => {
-        const tipoConcepto = String(detalle?.[1] || 'concepto');
-        const idConceptoServicio = detalle?.[2] == null ? null : Number(detalle[2]);
-        const mesPagado = String(detalle?.[3] || '');
-        const numeroCuota = detalle?.[4] == null ? null : Number(detalle[4]);
-        const subtotal = Number(detalle?.[5] || 0);
-
-        let nombreConcepto = tipoConcepto;
-        if (tipoConcepto === 'cuota_terreno') {
-            nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
-        } else if (tipoConcepto === 'servicio') {
-            nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Servicio #${idConceptoServicio || 'N/A'}`;
-        } else if (tipoConcepto === 'extraordinario') {
-            nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Cargo extraordinario #${Math.abs(Number(idConceptoServicio || 0)) || 'N/A'}`;
+    db.query(rolSql, [idUsuario], (rolErr, rolRows) => {
+        if (rolErr) {
+            return callback(rolErr);
         }
 
-        const evidencia = JSON.stringify({
-            numero_recibo: numeroRecibo,
-            no_referencia: correlativo,
-            metodo_pago: metodoPago,
-            observaciones: observaciones || '',
-            monto_total_pagado: Number(totalTransaccion || 0),
-            monto_mora: Number(montoMora || 0),
-            meses_pagados: mesesPagados || [],
-            detalle: {
-                tipo_concepto: tipoConcepto,
-                nombre_concepto: nombreConcepto,
-                id_concepto_servicio: idConceptoServicio,
-                mes_pagado: mesPagado,
-                numero_cuota_afectada: numeroCuota,
-                subtotal
+        const rolUsuarioEmisor = String(rolRows?.[0]?.nombre_rol || '').trim() || null;
+
+        const serviciosPorId = new Map();
+        [...(serviciosSolicitados || []), ...(serviciosMesInicial || [])].forEach((servicio) => {
+            const id = Number(servicio?.id_servicio);
+            if (Number.isInteger(id) && id !== 0) {
+                serviciosPorId.set(id, String(servicio?.nombre_servicio || `Servicio #${id}`));
             }
         });
 
-        return [
-            idPago,
-            null,
-            idContrato,
-            idResidente,
-            idUsuario,
-            correlativo,
-            'EMITIDA',
-            tipoConcepto,
-            idConceptoServicio,
-            nombreConcepto,
-            mesPagado,
-            numeroCuota,
-            subtotal,
-            evidencia
-        ];
+        const rows = (detalleValues || []).map((detalle) => {
+            const tipoConcepto = String(detalle?.[1] || 'concepto');
+            const idConceptoServicio = detalle?.[2] == null ? null : Number(detalle[2]);
+            const mesPagado = String(detalle?.[3] || '');
+            const numeroCuota = detalle?.[4] == null ? null : Number(detalle[4]);
+            const subtotal = Number(detalle?.[5] || 0);
+
+            let nombreConcepto = tipoConcepto;
+            if (tipoConcepto === 'cuota_terreno') {
+                nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
+            } else if (tipoConcepto === 'servicio') {
+                nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Servicio #${idConceptoServicio || 'N/A'}`;
+            } else if (tipoConcepto === 'extraordinario') {
+                nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Cargo extraordinario #${Math.abs(Number(idConceptoServicio || 0)) || 'N/A'}`;
+            }
+
+            const evidencia = JSON.stringify({
+                numero_recibo: numeroRecibo,
+                no_referencia: correlativo,
+                metodo_pago: metodoPago,
+                observaciones: observaciones || '',
+                rol_usuario_emisor: rolUsuarioEmisor,
+                monto_total_pagado: Number(totalTransaccion || 0),
+                monto_mora: Number(montoMora || 0),
+                meses_pagados: mesesPagados || [],
+                detalle: {
+                    tipo_concepto: tipoConcepto,
+                    nombre_concepto: nombreConcepto,
+                    id_concepto_servicio: idConceptoServicio,
+                    mes_pagado: mesPagado,
+                    numero_cuota_afectada: numeroCuota,
+                    subtotal
+                }
+            });
+
+            return [
+                idPago,
+                null,
+                idContrato,
+                idResidente,
+                idUsuario,
+                rolUsuarioEmisor,
+                correlativo,
+                'EMITIDA',
+                tipoConcepto,
+                idConceptoServicio,
+                nombreConcepto,
+                mesPagado,
+                numeroCuota,
+                subtotal,
+                evidencia
+            ];
+        });
+
+        if (!rows.length) {
+            return callback();
+        }
+
+        const sql = `
+            INSERT INTO facturas_historial (
+                id_pago, id_pago_detalle, id_contrato, id_residente, id_usuario,
+                rol_usuario_emisor, correlativo, estado_factura, tipo_concepto, id_concepto_servicio,
+                nombre_concepto, mes_pagado, numero_cuota_afectada, subtotal, evidencia_json
+            ) VALUES ?
+        `;
+
+        db.query(sql, [rows], (err) => callback(err));
     });
-
-    if (!rows.length) {
-        return callback();
-    }
-
-    const sql = `
-        INSERT INTO facturas_historial (
-            id_pago, id_pago_detalle, id_contrato, id_residente, id_usuario,
-            correlativo, estado_factura, tipo_concepto, id_concepto_servicio,
-            nombre_concepto, mes_pagado, numero_cuota_afectada, subtotal, evidencia_json
-        ) VALUES ?
-    `;
-
-    db.query(sql, [rows], (err) => callback(err));
 };
 
 const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
@@ -276,6 +312,7 @@ const resolverColumnaCostoServicios = (callback) => {
 
 ensureContratosServiciosTable();
 ensureFacturasHistorialTable();
+ensureFacturasHistorialRolColumn();
 
 const resolverIdUsuarioValido = (idUsuario, callback) => {
     const id = Number(idUsuario);
