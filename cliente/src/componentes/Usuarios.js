@@ -16,6 +16,7 @@ const PERMISOS_MODULOS = [
   'Catálogo Servicios',
   'Empresa',
   'Empresa-Proyecto',
+  'Proyectos',
   'Caja (General)',
   'Caja Ingresos Manual',
   'Mora y Atrasos',
