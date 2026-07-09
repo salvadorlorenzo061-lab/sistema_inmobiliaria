@@ -56,12 +56,14 @@ router.get("/", (req, res) => {
             fh.estado_factura,
             fh.id_usuario,
             u.nombre AS usuario_cobro,
+            rc.nombre_rol AS rol_usuario_cobro,
             CASE
                 WHEN fh.estado_factura = 'ANULADA' THEN 'Documento anulado (evidencia historica)'
                 ELSE NULL
             END AS motivo_anulacion
         FROM facturas_historial fh
         LEFT JOIN usuarios u ON u.id_usuario = fh.id_usuario
+        LEFT JOIN roles rc ON rc.id_rol = u.id_rol
         ORDER BY fh.id_historial DESC
     `;
 
@@ -98,6 +100,7 @@ router.get('/documento/:id_pago', (req, res) => {
             fh.fecha_evento,
             fh.evidencia_json,
             u.nombre AS usuario_cobro,
+            rc.nombre_rol AS rol_usuario_cobro,
             r.nombre AS nombre_residente,
             r.numero_identificacion,
             r.dpi,
@@ -115,6 +118,7 @@ router.get('/documento/:id_pago', (req, res) => {
             COALESCE(em.moneda, ep.moneda, er.moneda, 'GTQ') AS moneda_empresa
         FROM facturas_historial fh
         LEFT JOIN usuarios u ON u.id_usuario = fh.id_usuario
+        LEFT JOIN roles rc ON rc.id_rol = u.id_rol
         LEFT JOIN residentes r ON r.id_residente = fh.id_residente
         LEFT JOIN contratos_residentes c ON c.id_contrato = fh.id_contrato
         LEFT JOIN tipos_contrato tc ON tc.id_tipo_contrato = c.id_tipo_contrato
@@ -177,6 +181,7 @@ router.get('/documento/:id_pago', (req, res) => {
             fecha_evento: base.fecha_evento || base.fecha_pago || null,
             metodo_pago: base.forma_pago || evidenciaCabecera?.metodo_pago || 'N/A',
             usuario_cobro: base.usuario_cobro || `Usuario #${base.id_usuario || 'N/A'}`,
+            rol_usuario_cobro: base.rol_usuario_cobro || null,
             cliente: {
                 nombre_residente: base.nombre_residente || 'N/A',
                 numero_identificacion: base.numero_identificacion || 'N/A',
