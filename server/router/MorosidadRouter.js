@@ -59,6 +59,11 @@ const asegurarTablaMorosidad = async () => {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
+    const tieneMontoMora = await existeColumna('morosidad', 'monto_mora');
+    if (!tieneMontoMora) {
+        await queryAsync('ALTER TABLE morosidad ADD COLUMN monto_mora DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER mes_atrasado');
+    }
+
     const tieneDiasRetraso = await existeColumna('morosidad', 'dias_retraso');
     if (!tieneDiasRetraso) {
         await queryAsync('ALTER TABLE morosidad ADD COLUMN dias_retraso INT NOT NULL DEFAULT 0 AFTER monto_mora');
