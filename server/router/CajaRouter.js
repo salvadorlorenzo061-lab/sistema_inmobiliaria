@@ -1355,7 +1355,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         id_pago: lastIdPago,
                                                         id_resolucion_usada: idResolucionUsada,
                                                         id_asignacion_correlativo: correlativoMeta?.id_asignacion || null,
-                                                        origen_correlativo: correlativoMeta?.origen || (correlativoAsignado ? 'resolucion' : 'temporal'),
+                                                        origen_correlativo: correlativoMeta?.origen || null,
                                                         empresa: {
                                                             nombre: empresa.nombre_empresa,
                                                             nit: empresa.nit,
@@ -1491,17 +1491,9 @@ router.post("/procesar-pago", (req, res) => {
                                 return finalizarConDetalles();
                             }
 
-                            const correlativoTemporal = `TMP-${String(lastIdPago).padStart(8, '0')}`;
-                            db.query('UPDATE pagos SET no_referencia = ? WHERE id_pago = ?', [correlativoTemporal, lastIdPago], (updErr) => {
-                                if (updErr) return db.rollback(() => res.status(500).send("Error al asignar correlativo temporal: " + updErr.message));
-                                return finalizarConDetalles();
-                            });
+                            return db.rollback(() => res.status(400).send("No hay correlativo fiscal disponible para este usuario. Asigna correlativos antes de registrar el cobro."));
                         });
                     };
-
-                    if (!idEmpresaFacturacion) {
-                        return continuarConInsertPago(null, null);
-                    }
 
                     return reservarCorrelativoAsignado(idUsuarioSeguro, idEmpresaFacturacion, (asignErr, asignacionReservada) => {
                         if (asignErr) {
