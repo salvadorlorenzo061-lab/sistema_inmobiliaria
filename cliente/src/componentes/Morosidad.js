@@ -7,10 +7,12 @@ import { API_BASE_URL } from '../config';
 
 function Morosidad() {
   const [id_contrato, setId_contrato] = useState("");
-  const [mes_atrasado, setMes_atrasado] = useState("");
   const [monto_mora, setMonto_mora] = useState("");
   const [dias_retraso, setDias_retraso] = useState("");
   const [estado] = useState("pendiente");
+  const [mesesPendientes, setMesesPendientes] = useState([]);
+  const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
+  const [cargandoMeses, setCargandoMeses] = useState(false);
   
   const [morosidades, setMorosidades] = useState([]);
   const [contratos, setContratos] = useState([]);
@@ -20,6 +22,27 @@ function Morosidad() {
 
   const API_URL = `${API_BASE_URL}/api/morosidad`;
   const CONTRATOS_API_URL = `${API_BASE_URL}/api/contratos_residentes`;
+
+  const cargarMesesPendientes = useCallback(async (contratoId) => {
+    if (!contratoId) {
+      setMesesPendientes([]);
+      setMesesSeleccionados([]);
+      return;
+    }
+
+    setCargandoMeses(true);
+    try {
+      const res = await Axios.get(`${API_URL}/meses-pendientes`, { params: { id_contrato: contratoId } });
+      const lista = Array.isArray(res.data?.meses) ? res.data.meses : [];
+      setMesesPendientes(lista);
+      setMesesSeleccionados(lista.length ? [lista[0]] : []);
+    } catch {
+      setMesesPendientes([]);
+      setMesesSeleccionados([]);
+    } finally {
+      setCargandoMeses(false);
+    }
+  }, [API_URL]);
 
   const cargarDatos = useCallback(() => Promise.all([
     Axios.get(API_URL)
@@ -37,6 +60,12 @@ function Morosidad() {
         cargarDatos();
       });
   }, [API_URL, cargarDatos]);
+
+  useEffect(() => {
+    if (showModal) {
+      cargarMesesPendientes(id_contrato);
+    }
+  }, [showModal, id_contrato, cargarMesesPendientes]);
 
   const contratoPorId = new Map((contratos || []).map((c) => [String(c.id_contrato), c]));
 
@@ -60,12 +89,50 @@ function Morosidad() {
     });
   };
 
-  const addMora = () => {
-    Axios.post(`${API_URL}/crear`, { id_contrato, mes_atrasado, monto_mora, dias_retraso, estado })
-    .then(() => {
-        cargarDatos();
-        setShowModal(false);
-        Swal.fire("Agregado", "Mora generada manualmente", "success");
+  const addMora = async () => {
+    if (!id_contrato) {
+      Swal.fire({ icon: 'warning', title: 'Selecciona un contrato' });
+      return;
+    }
+
+    if (!mesesSeleccionados.length) {
+      Swal.fire({ icon: 'warning', title: 'Selecciona al menos un mes pendiente' });
+      return;
+    }
+
+    try {
+      await Promise.all(mesesSeleccionados.map((mes_atrasado) => Axios.post(`${API_URL}/crear`, {
+        id_contrato,
+        mes_atrasado,
+        monto_mora,
+        dias_retraso,
+        estado
+      })));
+
+      await cargarDatos();
+      setShowModal(false);
+      setId_contrato("");
+      setMesesPendientes([]);
+      setMesesSeleccionados([]);
+      setMonto_mora("");
+      setDias_retraso("");
+      Swal.fire("Agregado", "Mora generada manualmente", "success");
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'No se pudo aplicar la mora',
+        text: error?.response?.data?.detail || error?.response?.data?.message || 'Revisa el contrato y los meses seleccionados'
+      });
+    }
+  };
+
+  const toggleMesSeleccionado = (mes) => {
+    setMesesSeleccionados((actuales) => {
+      if (actuales.includes(mes)) {
+        return actuales.filter((item) => item !== mes);
+      }
+
+      return [...actuales, mes];
     });
   };
 
@@ -144,7 +211,28 @@ function Morosidad() {
                     </option>
                   ))}
                 </select>
-                <input type="text" placeholder="Mes Atrasado (Ej: Agosto 2026)" className="form-control mb-2" onChange={e => setMes_atrasado(e.target.value)} />
+                <div className="border rounded p-2 mb-2 bg-light">
+                  <div className="fw-bold mb-2">Meses pendientes</div>
+                  {cargandoMeses ? (
+                    <div className="text-muted">Cargando meses pendientes...</div>
+                  ) : mesesPendientes.length ? (
+                    <div className="d-grid gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                      {mesesPendientes.map((mes) => (
+                        <label key={mes} className="form-check d-flex align-items-center gap-2 mb-0">
+                          <input
+                            type="checkbox"
+                            className="form-check-input m-0"
+                            checked={mesesSeleccionados.includes(mes)}
+                            onChange={() => toggleMesSeleccionado(mes)}
+                          />
+                          <span className="form-check-label">{mes}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-muted">No hay meses pendientes para este contrato.</div>
+                  )}
+                </div>
                 <input type="number" placeholder="Días de Retraso" className="form-control mb-2" onChange={e => setDias_retraso(e.target.value)} />
                 <input type="number" step="0.01" placeholder="Monto Penalización (Q)" className="form-control mb-2" onChange={e => setMonto_mora(e.target.value)} />
               </div>

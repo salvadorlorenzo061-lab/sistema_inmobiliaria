@@ -77,6 +77,134 @@ const parseFecha = (value) => {
 
 const labelMes = (date) => `${NOMBRES_MESES[date.getMonth()]} ${date.getFullYear()}`;
 
+router.get('/meses-pendientes', async (req, res) => {
+    try {
+        const idContrato = Number(req.query?.id_contrato || 0);
+        const hoy = new Date();
+
+        if (!Number.isInteger(idContrato) || idContrato <= 0) {
+            return res.status(200).json({ meses: [`${NOMBRES_MESES[hoy.getMonth()]} ${hoy.getFullYear()}`] });
+        }
+
+        const contratoRows = await queryAsync(
+            'SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+            [idContrato]
+        );
+
+        if (!contratoRows.length) {
+            return res.status(404).json({ meses: [], message: 'Contrato no encontrado.' });
+        }
+
+        const contrato = contratoRows[0];
+
+        const parseFechaValida = (value) => {
+            const parsed = value ? new Date(value) : null;
+            return parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : null;
+        };
+
+        const fechaCompra = parseFechaValida(contrato.fecha_compra);
+        const fechaFin = parseFechaValida(contrato.fecha_fin);
+        const fechaFirma = parseFechaValida(contrato.fecha_firma);
+        const fechaInicioBase = fechaCompra || fechaFirma || new Date();
+        const fechaInicio = new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1);
+        const fechaLimite = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        const cuotasPactadas = Number(contrato.cuotas_pactadas || 0);
+        const saldoPendiente = Number(contrato.monto_total || 0);
+        const montoCuota = Number(contrato.monto_cuota || 0);
+        const fechaFinMes = (fechaFin && fechaFin >= fechaInicio)
+            ? new Date(fechaFin.getFullYear(), fechaFin.getMonth(), 1)
+            : null;
+
+        const candidatos = [];
+        let cursor = new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), 1);
+
+        if (fechaFinMes) {
+            while (cursor <= fechaFinMes) {
+                candidatos.push(labelMes(cursor));
+                cursor.setMonth(cursor.getMonth() + 1);
+            }
+        } else {
+            const mesesTranscurridos = Math.max(
+                ((fechaLimite.getFullYear() - fechaInicio.getFullYear()) * 12) +
+                (fechaLimite.getMonth() - fechaInicio.getMonth()) + 1,
+                1
+            );
+
+            const totalMesesObjetivo = Math.max(
+                Number.isInteger(cuotasPactadas) && cuotasPactadas > 0 ? cuotasPactadas : 0,
+                mesesTranscurridos
+            );
+
+            for (let i = 0; i < totalMesesObjetivo; i += 1) {
+                candidatos.push(labelMes(cursor));
+                cursor.setMonth(cursor.getMonth() + 1);
+            }
+        }
+
+        const tienePagos = await existeTabla('pagos');
+        const tienePagosDetalle = await existeTabla('pagos_detalle');
+        const pagosDetalleTieneMes = tienePagosDetalle ? await existeColumna('pagos_detalle', 'mes_pagado') : false;
+        const pagosDetalleTieneTipo = tienePagosDetalle ? await existeColumna('pagos_detalle', 'tipo_concepto') : false;
+
+        let mesesPagados = [];
+        if (tienePagos && tienePagosDetalle && pagosDetalleTieneMes && pagosDetalleTieneTipo) {
+            mesesPagados = await queryAsync(
+                `
+                    SELECT DISTINCT pd.mes_pagado
+                    FROM pagos p
+                    INNER JOIN pagos_detalle pd ON p.id_pago = pd.id_pago
+                    WHERE p.id_contrato = ?
+                      AND pd.tipo_concepto = 'cuota_terreno'
+                      AND pd.mes_pagado IS NOT NULL
+                      AND pd.mes_pagado != ''
+                `,
+                [idContrato]
+            );
+        }
+
+        const mesesPagadosSet = new Set();
+        (mesesPagados || []).forEach((row) => {
+            if (row?.mes_pagado && String(row.mes_pagado).trim()) {
+                mesesPagadosSet.add(String(row.mes_pagado).trim());
+            }
+        });
+
+        const pendientes = candidatos.filter((mes) => !mesesPagadosSet.has(mes));
+        const cuotasRestantesPorSaldo = (montoCuota > 0 && saldoPendiente > 0)
+            ? Math.ceil(saldoPendiente / montoCuota)
+            : 0;
+
+        if (cuotasRestantesPorSaldo > 0 && pendientes.length < cuotasRestantesPorSaldo) {
+            const pendientesSet = new Set(pendientes);
+            const base = fechaFinMes
+                ? new Date(fechaFinMes.getFullYear(), fechaFinMes.getMonth(), 1)
+                : new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), 1);
+            let offset = fechaFinMes ? 1 : candidatos.length;
+
+            while (pendientesSet.size < cuotasRestantesPorSaldo) {
+                const extra = new Date(base.getFullYear(), base.getMonth(), 1);
+                extra.setMonth(extra.getMonth() + offset);
+                const etiqueta = labelMes(extra);
+                if (!mesesPagadosSet.has(etiqueta)) {
+                    pendientesSet.add(etiqueta);
+                }
+                offset += 1;
+            }
+
+            return res.status(200).json({ meses: Array.from(pendientesSet) });
+        }
+
+        return res.status(200).json({ meses: pendientes });
+    } catch (error) {
+        console.error('Error al obtener meses pendientes de morosidad:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'No se pudieron obtener los meses pendientes.',
+            detail: error?.sqlMessage || error?.message || 'Error desconocido'
+        });
+    }
+});
+
 const calcularMorasAutomaticas = async () => {
     await asegurarTablaMorosidad();
 
