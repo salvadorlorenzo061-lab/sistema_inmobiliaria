@@ -772,7 +772,7 @@ router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
         monto_pagar, monto_terreno_pagar, monto_mora, metodo_pago, no_referencia, observaciones,
-        mes_pagado, meses_pagados, numero_cuota, servicios_pagados
+        mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
     // Normalizar meses para asegurar que tengan año completo
@@ -822,6 +822,20 @@ router.post("/procesar-pago", (req, res) => {
                 return Number.isInteger(item.id_servicio) && item.id_servicio > 0;
             })
         : [];
+
+    const morasAplicadas = Array.isArray(moras_aplicadas)
+        ? moras_aplicadas
+            .map((item) => ({
+                id_morosidad: Number(item?.id_morosidad || 0),
+                mes_atrasado: String(item?.mes_atrasado || '').trim(),
+                monto_mora: Number(item?.monto_mora || 0)
+            }))
+            .filter((item) => Number.isFinite(item.monto_mora) && item.monto_mora > 0)
+        : [];
+
+    const moraTotalSeleccionada = parseFloat(
+        morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
+    );
 
     let serviciosMesInicial = [];
 
@@ -1146,7 +1160,7 @@ router.post("/procesar-pago", (req, res) => {
                 (numero_recibo, fecha_pago, monto_pagado, monto_mora, metodo_pago, observaciones, id_residente, id_tipo_contrato) 
                 VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?)`;
 
-            db.query(sqlCaja, [numero_recibo, montoPrincipalTotal, monto_mora || 0, metodo_pago, observaciones, id_residente, id_tipo_contrato], (err, resCaja) => {
+            db.query(sqlCaja, [numero_recibo, montoPrincipalTotal, moraTotalSeleccionada, metodo_pago, observaciones, id_residente, id_tipo_contrato], (err, resCaja) => {
                 if (err) return db.rollback(() => res.status(500).send("Error en caja_ingresos: " + err.message));
 
                 const sqlEmpresaContrato = `
@@ -1167,7 +1181,7 @@ router.post("/procesar-pago", (req, res) => {
                     const continuarConInsertPago = (correlativoAsignado, idResolucionUsada = null, correlativoMeta = {}) => {
                         const sqlPago = `INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia) 
                                          VALUES (?, ?, NOW(), ?, ?, ?)`;
-                        const moraTotal = parseFloat(monto_mora || 0);
+                        const moraTotal = moraTotalSeleccionada;
                         const totalTransaccion = parseFloat((montoPrincipalTotal + moraTotal).toFixed(2));
 
                         db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (err, resPago) => {
@@ -1223,7 +1237,21 @@ router.post("/procesar-pago", (req, res) => {
                                 }
 
                                 if (moraTotal > 0) {
-                                    detalleValues.push([lastIdPago, 'mora', null, mesesAProcesar[0] || '', null, moraTotal, null]);
+                                    if (morasAplicadas.length) {
+                                        morasAplicadas.forEach((mora) => {
+                                            detalleValues.push([
+                                                lastIdPago,
+                                                'mora',
+                                                null,
+                                                mora.mes_atrasado || (mesesAProcesar[0] || ''),
+                                                null,
+                                                Number(mora.monto_mora || 0),
+                                                null
+                                            ]);
+                                        });
+                                    } else {
+                                        detalleValues.push([lastIdPago, 'mora', null, mesesAProcesar[0] || '', null, moraTotal, null]);
+                                    }
                                 }
 
                                 const placeholders = detalleValues.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
@@ -1331,6 +1359,30 @@ router.post("/procesar-pago", (req, res) => {
                                                         });
                                                     }
 
+                                                    if (moraTotal > 0) {
+                                                        if (morasAplicadas.length) {
+                                                            morasAplicadas.forEach((mora) => {
+                                                                const desgloseMora = calcularComponentesFiscalmente(Number(mora?.monto_mora || 0));
+                                                                detalleCobro.push({
+                                                                    concepto: `Mora ${mora?.mes_atrasado || ''}`.trim(),
+                                                                    mes: mora?.mes_atrasado || (mesesAProcesar[0] || ''),
+                                                                    monto_base: desgloseMora.subtotal,
+                                                                    iva: desgloseMora.iva,
+                                                                    total: desgloseMora.total
+                                                                });
+                                                            });
+                                                        } else {
+                                                            const desgloseMora = calcularComponentesFiscalmente(moraTotal);
+                                                            detalleCobro.push({
+                                                                concepto: 'Mora',
+                                                                mes: mesesAProcesar[0] || '',
+                                                                monto_base: desgloseMora.subtotal,
+                                                                iva: desgloseMora.iva,
+                                                                total: desgloseMora.total
+                                                            });
+                                                        }
+                                                    }
+
                                                     res.status(200).json({
                                                         success: true,
                                                         numero_recibo,
@@ -1342,6 +1394,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         servicios_cobrados: serviciosSolicitados,
                                                         servicios_cobrados_mes_inicial: serviciosMesInicial,
                                                         monto_mora: moraTotal,
+                                                        moras_aplicadas: morasAplicadas,
                                                         iva_total: ivaTotal,
                                                         iva_por_mes: ivaPorMes,
                                                         monto_por_mes: montoPorMesTerreno,
@@ -1370,24 +1423,40 @@ router.post("/procesar-pago", (req, res) => {
 
                                         const continuarConSaldoYCommit = () => {
                                             const sincronizarMorosidadPagada = (callbackSync) => {
-                                                const mesesAplicados = [...new Set((mesesAProcesar || [])
-                                                    .map((mes) => String(mes || '').trim())
-                                                    .filter((mes) => mes))];
+                                                const idsMorosidad = [...new Set(
+                                                    (morasAplicadas || [])
+                                                        .map((item) => Number(item?.id_morosidad || 0))
+                                                        .filter((id) => Number.isInteger(id) && id > 0)
+                                                )];
+                                                const mesesMora = [...new Set(
+                                                    (morasAplicadas || [])
+                                                        .map((item) => String(item?.mes_atrasado || '').trim())
+                                                        .filter((mes) => mes)
+                                                )];
 
-                                                if (!mesesAplicados.length) {
+                                                if (!idsMorosidad.length && !mesesMora.length) {
                                                     return callbackSync();
                                                 }
 
-                                                const placeholdersMeses = mesesAplicados.map(() => '?').join(', ');
-                                                const sqlMorosidad = `
+                                                let sqlMorosidad = `
                                                     UPDATE morosidad
                                                     SET estado = 'pagado'
                                                     WHERE id_contrato = ?
                                                       AND estado = 'pendiente'
-                                                      AND mes_atrasado IN (${placeholdersMeses})
                                                 `;
+                                                const paramsMorosidad = [id_contrato];
 
-                                                db.query(sqlMorosidad, [id_contrato, ...mesesAplicados], (moraErr) => {
+                                                if (idsMorosidad.length) {
+                                                    const placeholdersIds = idsMorosidad.map(() => '?').join(', ');
+                                                    sqlMorosidad += ` AND id_morosidad IN (${placeholdersIds})`;
+                                                    paramsMorosidad.push(...idsMorosidad);
+                                                } else if (mesesMora.length) {
+                                                    const placeholdersMeses = mesesMora.map(() => '?').join(', ');
+                                                    sqlMorosidad += ` AND mes_atrasado IN (${placeholdersMeses})`;
+                                                    paramsMorosidad.push(...mesesMora);
+                                                }
+
+                                                db.query(sqlMorosidad, paramsMorosidad, (moraErr) => {
                                                     if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
                                                         return db.rollback(() => res.status(500).send('Error al actualizar estado de morosidad despues del cobro: ' + moraErr.message));
                                                     }

@@ -452,6 +452,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                 }
 
                                 const mesesRevertirMorosidad = [...new Set((pago.detalle_cobro || [])
+                                    .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'mora')
                                     .map((item) => String(item?.mes_pagado || '').trim())
                                     .filter((mes) => mes))];
 

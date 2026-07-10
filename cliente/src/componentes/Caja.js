@@ -181,6 +181,7 @@ const Caja = () => {
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
+    const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
     const [serviciosContrato, setServiciosContrato] = useState([]);
     const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
     const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
@@ -265,6 +266,7 @@ const Caja = () => {
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMorasPendientes([]);
+        setMorasSeleccionadas([]);
         setServiciosContrato([]);
         setServiciosSeleccionados([]);
         setMontoServiciosSeleccionado(0);
@@ -369,6 +371,7 @@ const Caja = () => {
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMorasPendientes([]);
+        setMorasSeleccionadas([]);
         setMontoServiciosSeleccionado(0);
         setResumenServiciosIniciales(null);
 
@@ -424,10 +427,11 @@ const Caja = () => {
                 const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${residente.id_contrato}`);
                 const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
                 setMorasPendientes(moras);
-                setMontoMora(String(Number(morasRes?.data?.total_mora_pendiente || 0).toFixed(2)));
+                setMorasSeleccionadas(moras.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
             } catch (moraError) {
                 console.error('Error al consultar moras pendientes:', moraError);
                 setMorasPendientes([]);
+                setMorasSeleccionadas([]);
                 setMontoMora('0');
             }
 
@@ -469,6 +473,28 @@ const Caja = () => {
             return next;
         });
     };
+
+    const toggleMoraSeleccionada = (idMorosidad) => {
+        setMorasSeleccionadas((actuales) => {
+            if (actuales.includes(idMorosidad)) {
+                return actuales.filter((id) => id !== idMorosidad);
+            }
+            return [...actuales, idMorosidad];
+        });
+    };
+
+    useEffect(() => {
+        if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
+            setMontoMora('0');
+            return;
+        }
+
+        const totalSeleccionado = morasPendientes
+            .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
+            .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
+
+        setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
+    }, [morasPendientes, morasSeleccionadas]);
 
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
@@ -524,7 +550,14 @@ const Caja = () => {
             mes_pagado: mesesSeleccionados[0] || mesPagado,
             meses_pagados: mesesSeleccionados.length ? mesesSeleccionados : [mesPagado],
             numero_cuota: parseInt(numCuota),
-            servicios_pagados: serviciosPayload
+            servicios_pagados: serviciosPayload,
+            moras_aplicadas: (morasPendientes || [])
+                .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
+                .map((mora) => ({
+                    id_morosidad: Number(mora.id_morosidad || 0),
+                    mes_atrasado: String(mora.mes_atrasado || ''),
+                    monto_mora: Number(mora.monto_mora || 0)
+                }))
         };
 
         try {
@@ -604,7 +637,7 @@ const Caja = () => {
                     const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${datosDeuda.id_contrato}`);
                     const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
                     setMorasPendientes(moras);
-                    setMontoMora(String(Number(morasRes?.data?.total_mora_pendiente || 0).toFixed(2)));
+                    setMorasSeleccionadas(moras.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
                 } catch (moraError) {
                     console.error('Error al recargar moras pendientes:', moraError);
                 }
@@ -1401,11 +1434,24 @@ const Caja = () => {
                                         {/* Mora */}
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">Recargo por mora (Q):</label>
-                                            <input className="form-control" type="number" step="0.01" value={montoMora} onChange={(e) => setMontoMora(e.target.value)} />
+                                            <input className="form-control" type="number" step="0.01" value={montoMora} readOnly />
                                             {morasPendientes.length > 0 && (
-                                                <small className="text-muted d-block mt-1">
-                                                    Moras pendientes: {morasPendientes.map((mora) => mora.mes_atrasado).join(', ')}
-                                                </small>
+                                                <div className="border rounded p-2 mt-1 bg-light" style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                                    {morasPendientes.map((mora) => (
+                                                        <label key={mora.id_morosidad} className="form-check d-flex justify-content-between align-items-center mb-1">
+                                                            <div>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="form-check-input me-2"
+                                                                    checked={morasSeleccionadas.includes(Number(mora.id_morosidad))}
+                                                                    onChange={() => toggleMoraSeleccionada(Number(mora.id_morosidad))}
+                                                                />
+                                                                <span className="form-check-label">{mora.mes_atrasado}</span>
+                                                            </div>
+                                                            <span className="badge bg-danger">Q{Number(mora.monto_mora || 0).toFixed(2)}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
                                             )}
                                             {morasPendientes.length === 0 && (
                                                 <small className="text-muted d-block mt-1">
