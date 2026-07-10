@@ -50,6 +50,7 @@ const asegurarTablaMorosidad = async () => {
             id_morosidad INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
             id_contrato INT NOT NULL,
             mes_atrasado VARCHAR(80) NOT NULL,
+            monto_deuda_original DECIMAL(12,2) NOT NULL DEFAULT 0,
             monto_mora DECIMAL(12,2) NOT NULL DEFAULT 0,
             dias_retraso INT NOT NULL DEFAULT 0,
             estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
@@ -62,6 +63,14 @@ const asegurarTablaMorosidad = async () => {
     const tieneMontoMora = await existeColumna('morosidad', 'monto_mora');
     if (!tieneMontoMora) {
         await queryAsync('ALTER TABLE morosidad ADD COLUMN monto_mora DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER mes_atrasado');
+    }
+
+    const tieneMontoDeudaOriginal = await existeColumna('morosidad', 'monto_deuda_original');
+    if (!tieneMontoDeudaOriginal) {
+        await queryAsync('ALTER TABLE morosidad ADD COLUMN monto_deuda_original DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER mes_atrasado');
+    } else {
+        // Normaliza esquema legado en produccion donde la columna existe sin DEFAULT.
+        await queryAsync('ALTER TABLE morosidad MODIFY COLUMN monto_deuda_original DECIMAL(12,2) NOT NULL DEFAULT 0');
     }
 
     const tieneDiasRetraso = await existeColumna('morosidad', 'dias_retraso');
@@ -314,6 +323,7 @@ const calcularMorasAutomaticas = async () => {
                 inserts.push([
                     contrato.id_contrato,
                     etiquetaMes,
+                    saldoPendiente,
                     moraCalculada,
                     diasRetraso,
                     'pendiente'
@@ -331,7 +341,7 @@ const calcularMorasAutomaticas = async () => {
     }
 
     await queryAsync(
-        'INSERT IGNORE INTO morosidad (id_contrato, mes_atrasado, monto_mora, dias_retraso, estado) VALUES ?',
+        'INSERT IGNORE INTO morosidad (id_contrato, mes_atrasado, monto_deuda_original, monto_mora, dias_retraso, estado) VALUES ?',
         [inserts]
     );
 
@@ -395,7 +405,7 @@ router.post("/crear", async (req, res) => {
         }
 
         const existeContratoRows = await queryAsync(
-            'SELECT id_contrato FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+            'SELECT id_contrato, monto_total FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
             [idContrato]
         );
 
@@ -408,18 +418,20 @@ router.post("/crear", async (req, res) => {
             [idContrato, mesAtrasado]
         );
 
+        const montoDeudaOriginal = Number(existeContratoRows?.[0]?.monto_total || 0);
+
         if (existentes.length) {
             await queryAsync(
-                'UPDATE morosidad SET monto_mora = ?, dias_retraso = ?, estado = ? WHERE id_morosidad = ?',
-                [montoMora, diasRetraso, estado, existentes[0].id_morosidad]
+                'UPDATE morosidad SET monto_deuda_original = ?, monto_mora = ?, dias_retraso = ?, estado = ? WHERE id_morosidad = ?',
+                [montoDeudaOriginal, montoMora, diasRetraso, estado, existentes[0].id_morosidad]
             );
 
             return res.status(200).json({ success: true, message: 'Mora actualizada correctamente.' });
         }
 
         await queryAsync(
-            'INSERT INTO morosidad (id_contrato, mes_atrasado, monto_mora, dias_retraso, estado) VALUES (?, ?, ?, ?, ?)',
-            [idContrato, mesAtrasado, montoMora, diasRetraso, estado]
+            'INSERT INTO morosidad (id_contrato, mes_atrasado, monto_deuda_original, monto_mora, dias_retraso, estado) VALUES (?, ?, ?, ?, ?, ?)',
+            [idContrato, mesAtrasado, montoDeudaOriginal, montoMora, diasRetraso, estado]
         );
 
         return res.status(200).json({ success: true, message: 'Mora generada correctamente.' });
