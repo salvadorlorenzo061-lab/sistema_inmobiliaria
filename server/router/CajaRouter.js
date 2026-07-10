@@ -1915,7 +1915,7 @@ router.post("/procesar-pago", (req, res) => {
                                 }
 
                                 if (!resRows || !resRows.length) {
-                                    return callback(null, null);
+                                    return db.rollback(() => res.status(400).send("No hay correlativo fiscal disponible para este usuario. Asigna correlativos antes de registrar el cobro."));
                                 }
 
                                 const resolucion = resRows[0];
