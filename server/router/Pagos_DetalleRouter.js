@@ -132,6 +132,7 @@ router.get('/documento/:id_pago', (req, res) => {
             p.forma_pago,
             p.no_referencia,
             p.fecha_pago,
+            p.monto_mora,
             COALESCE(em.nombre_empresa, er.nombre_empresa, ep.nombre_empresa, 'Inmobiliaria') AS nombre_empresa,
             COALESCE(em.logo, er.logo, ep.logo) AS logo_empresa,
             COALESCE(em.nit, ep.nit, er.nit, 'N/A') AS nit_empresa,
@@ -194,6 +195,19 @@ router.get('/documento/:id_pago', (req, res) => {
                 subtotal: Number(item.subtotal || 0)
             };
         });
+
+        const existeDetalleMora = detalles.some((d) => String(d?.tipo_concepto || '').toLowerCase() === 'mora');
+        const montoMoraCabecera = Number(base?.monto_mora || 0);
+        if (!existeDetalleMora && montoMoraCabecera > 0) {
+            detalles.push({
+                tipo_concepto: 'mora',
+                id_concepto_servicio: null,
+                nombre_concepto: 'Mora',
+                mes_pagado: '',
+                numero_cuota_afectada: null,
+                subtotal: montoMoraCabecera
+            });
+        }
 
         return res.status(200).send({
             id_pago: base.id_pago,

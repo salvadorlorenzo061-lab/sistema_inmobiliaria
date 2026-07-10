@@ -147,6 +147,8 @@ const registrarHistorialFactura = ({
             let nombreConcepto = tipoConcepto;
             if (tipoConcepto === 'cuota_terreno') {
                 nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
+            } else if (tipoConcepto === 'mora') {
+                nombreConcepto = `Mora ${mesPagado || ''}`.trim();
             } else if (tipoConcepto === 'servicio') {
                 nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Servicio #${idConceptoServicio || 'N/A'}`;
             } else if (tipoConcepto === 'extraordinario') {
@@ -722,6 +724,49 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
     });
 });
 
+router.get('/moras-pendientes/:id_contrato', (req, res) => {
+    const idContrato = Number(req.params.id_contrato || 0);
+
+    if (!Number.isInteger(idContrato) || idContrato <= 0) {
+        return res.status(400).send({ message: 'ID de contrato invalido.' });
+    }
+
+    const sql = `
+        SELECT id_morosidad, id_contrato, mes_atrasado, dias_retraso, monto_mora, estado
+        FROM morosidad
+        WHERE id_contrato = ?
+          AND LOWER(TRIM(COALESCE(estado, 'pendiente'))) = 'pendiente'
+        ORDER BY id_morosidad ASC
+    `;
+
+    db.query(sql, [idContrato], (err, rows) => {
+        if (err) {
+            if (String(err?.code || '').toUpperCase() === 'ER_NO_SUCH_TABLE') {
+                return res.status(200).json({ id_contrato: idContrato, total_mora_pendiente: 0, moras: [] });
+            }
+            console.error('Error al obtener moras pendientes del contrato:', err.message);
+            return res.status(500).send({ message: 'No se pudieron obtener las moras pendientes.' });
+        }
+
+        const moras = (rows || []).map((row) => ({
+            id_morosidad: Number(row.id_morosidad || 0),
+            id_contrato: Number(row.id_contrato || 0),
+            mes_atrasado: String(row.mes_atrasado || ''),
+            dias_retraso: Number(row.dias_retraso || 0),
+            monto_mora: Number(row.monto_mora || 0),
+            estado: String(row.estado || 'pendiente')
+        }));
+
+        const totalMoraPendiente = moras.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
+
+        return res.status(200).json({
+            id_contrato: idContrato,
+            total_mora_pendiente: Number(totalMoraPendiente.toFixed(2)),
+            moras
+        });
+    });
+});
+
 // === PROCESAR COBRO ===
 router.post("/procesar-pago", (req, res) => {
     const { 
@@ -1177,6 +1222,10 @@ router.post("/procesar-pago", (req, res) => {
                                     });
                                 }
 
+                                if (moraTotal > 0) {
+                                    detalleValues.push([lastIdPago, 'mora', null, mesesAProcesar[0] || '', null, moraTotal, null]);
+                                }
+
                                 const placeholders = detalleValues.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
                                 const flatValues = detalleValues.map((detalle) => detalle.slice(0, 6)).flat();
 
@@ -1320,6 +1369,33 @@ router.post("/procesar-pago", (req, res) => {
                                         };
 
                                         const continuarConSaldoYCommit = () => {
+                                            const sincronizarMorosidadPagada = (callbackSync) => {
+                                                const mesesAplicados = [...new Set((mesesAProcesar || [])
+                                                    .map((mes) => String(mes || '').trim())
+                                                    .filter((mes) => mes))];
+
+                                                if (!mesesAplicados.length) {
+                                                    return callbackSync();
+                                                }
+
+                                                const placeholdersMeses = mesesAplicados.map(() => '?').join(', ');
+                                                const sqlMorosidad = `
+                                                    UPDATE morosidad
+                                                    SET estado = 'pagado'
+                                                    WHERE id_contrato = ?
+                                                      AND estado = 'pendiente'
+                                                      AND mes_atrasado IN (${placeholdersMeses})
+                                                `;
+
+                                                db.query(sqlMorosidad, [id_contrato, ...mesesAplicados], (moraErr) => {
+                                                    if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                                                        return db.rollback(() => res.status(500).send('Error al actualizar estado de morosidad despues del cobro: ' + moraErr.message));
+                                                    }
+                                                    return callbackSync();
+                                                });
+                                            };
+
+                                            sincronizarMorosidadPagada(() => {
                                             if (montoTerrenoTotal > 0) {
                                                 const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
                                                 db.query(sqlRestar, [montoTerrenoTotal, id_contrato], (updErr) => {
@@ -1329,6 +1405,7 @@ router.post("/procesar-pago", (req, res) => {
                                             } else {
                                                 return finalizarCommit();
                                             }
+                                            });
                                         };
 
                                         const marcarExtrasComoPagados = (onSuccess) => {
@@ -1460,7 +1537,10 @@ router.post("/procesar-pago", (req, res) => {
                             }
 
                             if (!resRows || !resRows.length) {
-                                return db.rollback(() => res.status(400).send("Este usuario no tiene correlativos asignados para cobrar facturas. Solicita un lote de correlativos antes de registrar el cobro."));
+                                return continuarConInsertPago(null, null, {
+                                    id_asignacion: null,
+                                    origen: 'temporal'
+                                });
                             }
 
                             const resolucion = resRows[0];
@@ -1468,7 +1548,10 @@ router.post("/procesar-pago", (req, res) => {
                             const rangoFinal = Number(resolucion.rango_final || 0);
 
                             if (!Number.isFinite(correlativoNumero) || correlativoNumero <= 0 || correlativoNumero > rangoFinal) {
-                                return db.rollback(() => res.status(400).send("La resolución asignada al usuario no tiene correlativo disponible."));
+                                return continuarConInsertPago(null, null, {
+                                    id_asignacion: null,
+                                    origen: 'temporal'
+                                });
                             }
 
                             const correlativoGenerado = `${resolucion.serie}-${String(correlativoNumero).padStart(8, '0')}`;

@@ -872,6 +872,7 @@ function AnulacionDeuda() {
                         <div><strong>Total cobrado ubicado:</strong> Q{parseFloat(detalleCorrelativo.principal_pagado || 0).toFixed(2)}</div>
                         <div><strong>Terreno a revertir:</strong> Q{parseFloat(detalleCorrelativo.principal_terreno || 0).toFixed(2)}</div>
                         <div><strong>Servicios a revertir:</strong> Q{parseFloat(detalleCorrelativo.principal_servicios || 0).toFixed(2)}</div>
+                        <div><strong>Mora a revertir:</strong> Q{parseFloat(detalleCorrelativo.principal_mora || 0).toFixed(2)}</div>
                         <div className="mb-1"><strong>Meses a revertir:</strong></div>
                         <div className="d-flex flex-wrap gap-1">
                           {getMesesCorrelativo().length ? (

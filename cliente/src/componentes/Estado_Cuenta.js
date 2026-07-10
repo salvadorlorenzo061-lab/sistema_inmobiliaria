@@ -444,6 +444,11 @@ const EstadoCuenta = () => {
           detalle?.forma_pago
         );
         const tienePago = Boolean(detalle?.fecha_pago);
+        const montoMoraFila = Number(detalle?.monto_mora || 0);
+        const montoReciboFila = Number(detalle?.monto_total_detalle || detalle?.monto_cuota || montoProgramado || 0);
+        const observacionFila = detalle?.fecha_pago
+          ? (montoMoraFila > 0 ? `Incluye mora Q ${montoMoraFila.toFixed(2)}` : '')
+          : (estaPendienteEnCaja ? 'Pendiente' : '');
 
         filas.push([
           formatoFecha(fechaProgramada),
@@ -453,10 +458,10 @@ const EstadoCuenta = () => {
           marcasForma.c,
           (detalle?.no_referencia || '').toString(),
           tienePago ? formatoFecha(detalle?.fecha_pago) : '',
-          tienePago ? formatoMoneda(Number(detalle?.monto_cuota || montoProgramado || 0)) : '',
+          tienePago ? formatoMoneda(montoReciboFila) : '',
           String(i),
           tienePago && detalle?.id_pago ? String(detalle.id_pago) : '',
-          detalle?.fecha_pago ? '' : (estaPendienteEnCaja ? 'Pendiente' : '')
+          observacionFila
         ]);
       }
 
@@ -750,11 +755,29 @@ const EstadoCuenta = () => {
                                 <span className="badge bg-success">
                                   Q{parseFloat(pago.total_cobrado).toFixed(2)}
                                 </span>
+                                {parseFloat(pago.monto_mora || 0) > 0 && (
+                                  <div className="small text-danger fw-bold mt-1">
+                                    Mora aplicada: Q{parseFloat(pago.monto_mora || 0).toFixed(2)}
+                                  </div>
+                                )}
                               </td>
                               <td>
-                                <span className="badge bg-secondary">
-                                  {pago.cantidad_conceptos} concepto(s)
-                                </span>
+                                <div className="d-flex flex-wrap gap-1">
+                                  {String(pago.tipos_concepto || '')
+                                    .split(',')
+                                    .map((item) => item.trim())
+                                    .filter(Boolean)
+                                    .map((tipo) => (
+                                      <span key={`${pago.id_pago}-${tipo}`} className={`badge ${tipo === 'mora' ? 'bg-danger' : 'bg-secondary'}`}>
+                                        {tipo.toUpperCase()}
+                                      </span>
+                                    ))}
+                                  {!String(pago.tipos_concepto || '').trim() && (
+                                    <span className="badge bg-secondary">
+                                      {pago.cantidad_conceptos} concepto(s)
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}

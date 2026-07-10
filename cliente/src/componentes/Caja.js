@@ -180,6 +180,7 @@ const Caja = () => {
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
+    const [morasPendientes, setMorasPendientes] = useState([]);
     const [serviciosContrato, setServiciosContrato] = useState([]);
     const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
     const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
@@ -260,8 +261,10 @@ const Caja = () => {
         setMesesPendientes([]);
         setMesesSeleccionados([]);
         setMontoAPagar('');
+        setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
+        setMorasPendientes([]);
         setServiciosContrato([]);
         setServiciosSeleccionados([]);
         setMontoServiciosSeleccionado(0);
@@ -362,8 +365,10 @@ const Caja = () => {
         setServiciosContrato([]);
         setServiciosSeleccionados([]);
         setNumCuota('0');
+        setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
+        setMorasPendientes([]);
         setMontoServiciosSeleccionado(0);
         setResumenServiciosIniciales(null);
 
@@ -413,6 +418,17 @@ const Caja = () => {
                 }
             } else {
                 recalcularTotalesCobro(mesesASeleccionar, [], residente);
+            }
+
+            try {
+                const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${residente.id_contrato}`);
+                const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
+                setMorasPendientes(moras);
+                setMontoMora(String(Number(morasRes?.data?.total_mora_pendiente || 0).toFixed(2)));
+            } catch (moraError) {
+                console.error('Error al consultar moras pendientes:', moraError);
+                setMorasPendientes([]);
+                setMontoMora('0');
             }
 
             const saldoPendienteResidente = parseFloat(residente?.saldo_pendiente || 0);
@@ -582,6 +598,15 @@ const Caja = () => {
                     }, servicios);
                 } catch (errMeses) {
                     console.error('Error al recargar meses pendientes:', errMeses);
+                }
+
+                try {
+                    const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${datosDeuda.id_contrato}`);
+                    const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
+                    setMorasPendientes(moras);
+                    setMontoMora(String(Number(morasRes?.data?.total_mora_pendiente || 0).toFixed(2)));
+                } catch (moraError) {
+                    console.error('Error al recargar moras pendientes:', moraError);
                 }
                 
                 setReferencia(''); 
@@ -1377,6 +1402,16 @@ const Caja = () => {
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">Recargo por mora (Q):</label>
                                             <input className="form-control" type="number" step="0.01" value={montoMora} onChange={(e) => setMontoMora(e.target.value)} />
+                                            {morasPendientes.length > 0 && (
+                                                <small className="text-muted d-block mt-1">
+                                                    Moras pendientes: {morasPendientes.map((mora) => mora.mes_atrasado).join(', ')}
+                                                </small>
+                                            )}
+                                            {morasPendientes.length === 0 && (
+                                                <small className="text-muted d-block mt-1">
+                                                    No hay moras pendientes registradas para este contrato.
+                                                </small>
+                                            )}
                                         </div>
                                         {/* Método de pago */}
                                         <div className="col-md-6">

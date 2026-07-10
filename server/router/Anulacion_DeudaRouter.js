@@ -231,6 +231,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             COALESCE(SUM(pd.subtotal), 0) AS principal_pagado,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END), 0) AS principal_terreno,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'servicio' THEN pd.subtotal ELSE 0 END), 0) AS principal_servicios,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS principal_mora,
             GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados
         FROM pagos p
         INNER JOIN contratos_residentes c ON c.id_contrato = p.id_contrato
@@ -336,6 +337,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                     subtotal: Number(row.subtotal || 0),
                     concepto: row.tipo_concepto === 'cuota_terreno'
                         ? `Cuota de Terreno No. ${row.numero_cuota_afectada || ''}`.trim()
+                        : row.tipo_concepto === 'mora'
+                            ? `Mora ${row.mes_pagado || ''}`.trim()
                         : row.tipo_concepto === 'extraordinario'
                             ? 'Cargo extraordinario'
                         : `Servicio: ${row.nombre_servicio || `ID ${row.id_concepto_servicio || 'N/A'}`}`
@@ -448,6 +451,12 @@ router.post('/anular-por-correlativo', (req, res) => {
                                     return db.rollback(() => res.status(500).send({ message: 'No se pudo eliminar el cobro principal.' }));
                                 }
 
+                                const mesesRevertirMorosidad = [...new Set((pago.detalle_cobro || [])
+                                    .map((item) => String(item?.mes_pagado || '').trim())
+                                    .filter((mes) => mes))];
+
+                                const continuarTrasMorosidad = () => {
+
                                 const correlativoFinal = pago.no_referencia || `PAGO-${pago.id_pago}`;
                                 const detalleMeses = pago.meses_pagados ? ` | Meses: ${pago.meses_pagados}` : '';
                                 const motivoCompleto = `${motivo} | Correlativo: ${correlativoFinal} | Pago #${pago.id_pago}${detalleMeses}`;
@@ -502,6 +511,28 @@ router.post('/anular-por-correlativo', (req, res) => {
                                             }
                                         );
                                     }
+                                });
+                                };
+
+                                if (!mesesRevertirMorosidad.length) {
+                                    return continuarTrasMorosidad();
+                                }
+
+                                const placeholdersMeses = mesesRevertirMorosidad.map(() => '?').join(', ');
+                                const sqlMorosidad = `
+                                    UPDATE morosidad
+                                    SET estado = 'pendiente'
+                                    WHERE id_contrato = ?
+                                      AND estado = 'pagado'
+                                      AND mes_atrasado IN (${placeholdersMeses})
+                                `;
+
+                                db.query(sqlMorosidad, [pago.id_contrato, ...mesesRevertirMorosidad], (moraErr) => {
+                                    if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                                        return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el estado de morosidad al anular.' }));
+                                    }
+
+                                    return continuarTrasMorosidad();
                                 });
                             });
                         });

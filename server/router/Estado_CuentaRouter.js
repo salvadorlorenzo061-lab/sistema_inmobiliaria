@@ -117,7 +117,9 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 p.forma_pago,
                 p.no_referencia,
                 p.monto_total_pagado AS total_cobrado,
+                COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora,
                 GROUP_CONCAT(DISTINCT pd.mes_pagado SEPARATOR ', ') as meses_pagados,
+                GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
                 COUNT(DISTINCT pd.id_pago_detalle) as cantidad_conceptos
             FROM pagos p
             INNER JOIN pagos_detalle pd ON p.id_pago = pd.id_pago
@@ -183,6 +185,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                         SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.no_referencia ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS no_referencia,
                         MIN(p.id_pago) AS id_pago,
                         SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END) AS monto_cuota,
+                        SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END) AS monto_mora,
                         SUM(pd.subtotal) AS monto_total_detalle,
                         GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados,
                         GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
