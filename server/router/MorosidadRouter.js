@@ -15,6 +15,61 @@ const queryAsync = (sql, params = []) => new Promise((resolve, reject) => {
     });
 });
 
+const existeColumna = async (tabla, columna) => {
+    const rows = await queryAsync(
+        `
+            SELECT COUNT(*) AS total
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+              AND COLUMN_NAME = ?
+        `,
+        [tabla, columna]
+    );
+
+    return Number(rows?.[0]?.total || 0) > 0;
+};
+
+const existeTabla = async (tabla) => {
+    const rows = await queryAsync(
+        `
+            SELECT COUNT(*) AS total
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+        `,
+        [tabla]
+    );
+
+    return Number(rows?.[0]?.total || 0) > 0;
+};
+
+const asegurarTablaMorosidad = async () => {
+    await queryAsync(`
+        CREATE TABLE IF NOT EXISTS morosidad (
+            id_morosidad INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_contrato INT NOT NULL,
+            mes_atrasado VARCHAR(80) NOT NULL,
+            monto_mora DECIMAL(12,2) NOT NULL DEFAULT 0,
+            dias_retraso INT NOT NULL DEFAULT 0,
+            estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_morosidad_contrato_mes (id_contrato, mes_atrasado),
+            INDEX idx_morosidad_estado (estado)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    const tieneDiasRetraso = await existeColumna('morosidad', 'dias_retraso');
+    if (!tieneDiasRetraso) {
+        await queryAsync('ALTER TABLE morosidad ADD COLUMN dias_retraso INT NOT NULL DEFAULT 0 AFTER monto_mora');
+    }
+
+    const tieneEstado = await existeColumna('morosidad', 'estado');
+    if (!tieneEstado) {
+        await queryAsync("ALTER TABLE morosidad ADD COLUMN estado VARCHAR(20) NOT NULL DEFAULT 'pendiente' AFTER dias_retraso");
+    }
+};
+
 const parseFecha = (value) => {
     const d = value ? new Date(value) : null;
     return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
@@ -23,6 +78,13 @@ const parseFecha = (value) => {
 const labelMes = (date) => `${NOMBRES_MESES[date.getMonth()]} ${date.getFullYear()}`;
 
 const calcularMorasAutomaticas = async () => {
+    await asegurarTablaMorosidad();
+
+    const tieneInteresMoratorio = await existeColumna('tipos_contrato', 'interes_moratorio');
+    const sqlInteresMoratorio = tieneInteresMoratorio
+        ? 'COALESCE(tc.interes_moratorio, 0)'
+        : '0';
+
     const contratos = await queryAsync(`
         SELECT
             c.id_contrato,
@@ -33,7 +95,7 @@ const calcularMorasAutomaticas = async () => {
             c.monto_cuota,
             c.monto_total,
             c.estado,
-            COALESCE(tc.interes_moratorio, 0) AS interes_moratorio
+            ${sqlInteresMoratorio} AS interes_moratorio
         FROM contratos_residentes c
         LEFT JOIN tipos_contrato tc ON tc.id_tipo_contrato = c.id_tipo_contrato
         WHERE c.estado = 'activo'
@@ -43,14 +105,22 @@ const calcularMorasAutomaticas = async () => {
         return { generated: 0, examinedContracts: 0 };
     }
 
-    const pagosRows = await queryAsync(`
-        SELECT DISTINCT p.id_contrato, pd.mes_pagado
-        FROM pagos p
-        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-        WHERE pd.tipo_concepto = 'cuota_terreno'
-          AND pd.mes_pagado IS NOT NULL
-          AND pd.mes_pagado != ''
-    `);
+    let pagosRows = [];
+    const tienePagos = await existeTabla('pagos');
+    const tienePagosDetalle = await existeTabla('pagos_detalle');
+    const pagosDetalleTieneMes = tienePagosDetalle ? await existeColumna('pagos_detalle', 'mes_pagado') : false;
+    const pagosDetalleTieneTipo = tienePagosDetalle ? await existeColumna('pagos_detalle', 'tipo_concepto') : false;
+
+    if (tienePagos && tienePagosDetalle && pagosDetalleTieneMes && pagosDetalleTieneTipo) {
+        pagosRows = await queryAsync(`
+            SELECT DISTINCT p.id_contrato, pd.mes_pagado
+            FROM pagos p
+            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            WHERE pd.tipo_concepto = 'cuota_terreno'
+              AND pd.mes_pagado IS NOT NULL
+              AND pd.mes_pagado != ''
+        `);
+    }
 
     const moraExistenteRows = await queryAsync(`
         SELECT id_contrato, mes_atrasado
@@ -128,7 +198,7 @@ const calcularMorasAutomaticas = async () => {
     }
 
     await queryAsync(
-        'INSERT INTO morosidad (id_contrato, mes_atrasado, monto_mora, dias_retraso, estado) VALUES ?',
+        'INSERT IGNORE INTO morosidad (id_contrato, mes_atrasado, monto_mora, dias_retraso, estado) VALUES ?',
         [inserts]
     );
 
@@ -163,22 +233,71 @@ router.post('/generar-automatico', async (req, res) => {
             ...data
         });
     } catch (error) {
-        console.error('Error al generar mora automática:', error.message);
-        return res.status(500).json({ success: false, message: 'No se pudo generar mora automática.' });
+        console.error('Error al generar mora automática:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'No se pudo generar mora automática.',
+            detail: error?.sqlMessage || error?.message || 'Error desconocido'
+        });
     }
 });
 
 // Endpoint extra para la creación manual si la necesitas
-router.post("/crear", (req, res) => {
-    const { id_contrato, mes_atrasado, monto_mora, dias_retraso, estado } = req.body;
-    db.query(
-        'INSERT INTO morosidad (id_contrato, mes_atrasado, monto_mora, dias_retraso, estado) VALUES (?, ?, ?, ?, ?)',
-        [id_contrato, mes_atrasado, monto_mora, dias_retraso, estado],
-        (err, result) => {
-            if (err) res.status(500).send("Error al generar mora");
-            else res.status(200).send("Mora generada");
+router.post("/crear", async (req, res) => {
+    try {
+        await asegurarTablaMorosidad();
+
+        const idContrato = Number(req.body?.id_contrato);
+        const mesAtrasado = String(req.body?.mes_atrasado || '').trim();
+        const montoMora = Number(req.body?.monto_mora || 0);
+        const diasRetraso = Math.max(0, Number(req.body?.dias_retraso || 0));
+        const estado = String(req.body?.estado || 'pendiente').trim() || 'pendiente';
+
+        if (!Number.isInteger(idContrato) || idContrato <= 0) {
+            return res.status(400).json({ success: false, message: 'Contrato inválido.' });
         }
-    );
+
+        if (!mesAtrasado) {
+            return res.status(400).json({ success: false, message: 'Debes indicar el mes atrasado.' });
+        }
+
+        const existeContratoRows = await queryAsync(
+            'SELECT id_contrato FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+            [idContrato]
+        );
+
+        if (!existeContratoRows.length) {
+            return res.status(400).json({ success: false, message: 'El contrato seleccionado no existe.' });
+        }
+
+        const existentes = await queryAsync(
+            'SELECT id_morosidad FROM morosidad WHERE id_contrato = ? AND mes_atrasado = ? LIMIT 1',
+            [idContrato, mesAtrasado]
+        );
+
+        if (existentes.length) {
+            await queryAsync(
+                'UPDATE morosidad SET monto_mora = ?, dias_retraso = ?, estado = ? WHERE id_morosidad = ?',
+                [montoMora, diasRetraso, estado, existentes[0].id_morosidad]
+            );
+
+            return res.status(200).json({ success: true, message: 'Mora actualizada correctamente.' });
+        }
+
+        await queryAsync(
+            'INSERT INTO morosidad (id_contrato, mes_atrasado, monto_mora, dias_retraso, estado) VALUES (?, ?, ?, ?, ?)',
+            [idContrato, mesAtrasado, montoMora, diasRetraso, estado]
+        );
+
+        return res.status(200).json({ success: true, message: 'Mora generada correctamente.' });
+    } catch (error) {
+        console.error('Error al crear mora manual:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error al generar mora manual.',
+            detail: error?.sqlMessage || error?.message || 'Error desconocido'
+        });
+    }
 });
 
 router.put("/actualizar-estado", (req, res) => {
