@@ -582,7 +582,12 @@ function Contratos_Residentes() {
 
       const contentDisposition = String(response.headers?.['content-disposition'] || '');
       const fileNameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
-      const nombreArchivo = decodeURIComponent(fileNameMatch?.[1] || fileNameMatch?.[2] || `${contrato.codigo_contrato || 'contrato'}.bin`);
+      const documentoGuardado = String(contrato?.documento_contrato || '').trim();
+      const [storedNameRaw, originalNameRaw] = documentoGuardado.split('|');
+      const originalName = String(originalNameRaw || '').trim();
+      const storedName = String(storedNameRaw || '').trim();
+      const fallbackNombre = originalName || storedName || `${contrato.codigo_contrato || 'contrato'}`;
+      const nombreArchivo = decodeURIComponent(fileNameMatch?.[1] || fileNameMatch?.[2] || fallbackNombre);
 
       const blobUrl = URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
