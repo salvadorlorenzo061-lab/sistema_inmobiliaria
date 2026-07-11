@@ -15,7 +15,7 @@ if (!fs.existsSync(contratosUploadDir)) {
     fs.mkdirSync(contratosUploadDir, { recursive: true });
 }
 
-const storageWordContrato = multer.diskStorage({
+const storageArchivoContrato = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, contratosUploadDir),
     filename: (req, file, cb) => {
         const idContrato = Number(req.params.id_contrato || 0);
@@ -24,16 +24,9 @@ const storageWordContrato = multer.diskStorage({
     }
 });
 
-const uploadWordContrato = multer({
-    storage: storageWordContrato,
-    limits: { fileSize: 10 * 1024 * 1024 },
-    fileFilter: (_req, file, cb) => {
-        const name = String(file?.originalname || '').toLowerCase();
-        if (name.endsWith('.doc') || name.endsWith('.docx')) {
-            return cb(null, true);
-        }
-        return cb(new Error('Solo se permiten archivos Word (.doc o .docx).'));
-    }
+const uploadArchivoContrato = multer({
+    storage: storageArchivoContrato,
+    limits: { fileSize: 15 * 1024 * 1024 }
 });
 
 const ensureContratosServiciosTable = () => {
@@ -479,13 +472,13 @@ router.post('/subir-word/:id_contrato', (req, res) => {
         return res.status(400).send({ message: 'Contrato invalido.' });
     }
 
-    uploadWordContrato.single('archivo')(req, res, (uploadErr) => {
+    uploadArchivoContrato.single('archivo')(req, res, (uploadErr) => {
         if (uploadErr) {
-            return res.status(400).send({ message: uploadErr.message || 'No fue posible subir el archivo Word.' });
+            return res.status(400).send({ message: uploadErr.message || 'No fue posible subir el archivo.' });
         }
 
         if (!req.file) {
-            return res.status(400).send({ message: 'Debe adjuntar un archivo Word (.doc o .docx).' });
+            return res.status(400).send({ message: 'Debe adjuntar un archivo.' });
         }
 
         const nombreOriginal = String(req.file.originalname || '').replace(/[\r\n|]/g, ' ').trim();
@@ -515,7 +508,7 @@ router.post('/subir-word/:id_contrato', (req, res) => {
                 }
 
                 return res.status(200).send({
-                    message: 'Archivo Word cargado correctamente.',
+                    message: 'Archivo cargado correctamente.',
                     documento_contrato: valorDocumento
                 });
             }
@@ -544,7 +537,7 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
 
             const docValue = String(row.documento_contrato || '').trim();
             if (!docValue) {
-                return res.status(404).send({ message: 'Este contrato no tiene archivo Word cargado.' });
+                return res.status(404).send({ message: 'Este contrato no tiene archivo cargado.' });
             }
 
             const [storedNameRaw, originalNameRaw] = docValue.split('|');
@@ -556,10 +549,10 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
 
             const absPath = path.join(contratosUploadDir, storedName);
             if (!fs.existsSync(absPath)) {
-                return res.status(404).send({ message: 'El archivo Word no existe en el servidor.' });
+                return res.status(404).send({ message: 'El archivo no existe en el servidor.' });
             }
 
-            const ext = path.extname(storedName).toLowerCase() || '.docx';
+            const ext = path.extname(storedName).toLowerCase() || '.bin';
             const safeCodigo = String(row.codigo_contrato || `CONTRATO-${idContrato}`).replace(/[^A-Za-z0-9_-]/g, '_');
             const downloadName = originalName || `${safeCodigo}${ext}`;
 

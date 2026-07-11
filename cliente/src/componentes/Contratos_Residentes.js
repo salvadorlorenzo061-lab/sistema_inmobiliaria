@@ -547,13 +547,6 @@ function Contratos_Residentes() {
       return;
     }
 
-    const nombre = String(archivo.name || '').toLowerCase();
-    if (!nombre.endsWith('.doc') && !nombre.endsWith('.docx')) {
-      Swal.fire({ icon: 'warning', title: 'Archivo invalido', text: 'Solo se permiten archivos Word (.doc o .docx).' });
-      setContratoWordTarget(null);
-      return;
-    }
-
     const formData = new FormData();
     formData.append('archivo', archivo);
 
@@ -563,12 +556,12 @@ function Contratos_Residentes() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       await cargarCatalogos();
-      Swal.fire({ icon: 'success', title: 'Archivo Word cargado', timer: 1800, showConfirmButton: false });
+      Swal.fire({ icon: 'success', title: 'Archivo cargado', timer: 1800, showConfirmButton: false });
     } catch (error) {
       Swal.fire({
         icon: 'error',
-        title: 'No se pudo cargar Word',
-        text: error?.response?.data?.message || 'Error al subir el archivo Word.'
+        title: 'No se pudo cargar el archivo',
+        text: error?.response?.data?.message || 'Error al subir el archivo.'
       });
     } finally {
       setSubiendoWordContratoId(null);
@@ -589,7 +582,7 @@ function Contratos_Residentes() {
 
       const contentDisposition = String(response.headers?.['content-disposition'] || '');
       const fileNameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
-      const nombreArchivo = decodeURIComponent(fileNameMatch?.[1] || fileNameMatch?.[2] || `${contrato.codigo_contrato || 'contrato'}.docx`);
+      const nombreArchivo = decodeURIComponent(fileNameMatch?.[1] || fileNameMatch?.[2] || `${contrato.codigo_contrato || 'contrato'}.bin`);
 
       const blobUrl = URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -602,8 +595,8 @@ function Contratos_Residentes() {
     } catch (error) {
       Swal.fire({
         icon: 'error',
-        title: 'No se pudo descargar Word',
-        text: error?.response?.data?.message || 'Error al descargar el archivo Word del contrato.'
+        title: 'No se pudo descargar el archivo',
+        text: error?.response?.data?.message || 'Error al descargar el archivo del contrato.'
       });
     }
   };
@@ -694,7 +687,6 @@ function Contratos_Residentes() {
       <input
         ref={inputWordRef}
         type="file"
-        accept=".doc,.docx"
         style={{ display: 'none' }}
         onChange={subirWordContrato}
       />
@@ -775,15 +767,15 @@ function Contratos_Residentes() {
                     onClick={() => abrirSelectorWord(val)}
                     disabled={subiendoWordContratoId === val.id_contrato}
                   >
-                    {subiendoWordContratoId === val.id_contrato ? 'SUBIENDO...' : 'SUBIR WORD'}
+                    {subiendoWordContratoId === val.id_contrato ? 'SUBIENDO...' : 'SUBIR ARCHIVO'}
                   </button>
                   <button
                     className="btn btn-sm fw-bold btn-outline-secondary ms-1"
                     onClick={() => descargarWordContrato(val)}
                     disabled={!val.documento_contrato}
-                    title={val.documento_contrato ? 'Descargar Word del contrato' : 'Este contrato no tiene archivo Word'}
+                    title={val.documento_contrato ? 'Descargar archivo del contrato' : 'Este contrato no tiene archivo cargado'}
                   >
-                    WORD
+                    ARCHIVO
                   </button>
                 </td>
               </tr>
