@@ -375,7 +375,7 @@ const EstadoCuenta = () => {
         doc.rect(158, resumenY + 8, 48, 11, 'F');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
+        doc.setFontSize(12);
         doc.setTextColor(...darkTextColor);
         doc.text((contrato.nombre || 'RESIDENTE').toUpperCase(), resumenX + (resumenW / 2), resumenY + 6, { align: 'center' });
 
@@ -387,29 +387,29 @@ const EstadoCuenta = () => {
         doc.text('CUOTA', 182, resumenY + 15.3, { align: 'center' });
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(14);
+        doc.setFontSize(12);
         doc.text(`TELEFONO: ${contrato.telefono || 'N/A'}`, 12.5, resumenY + 25.2);
         doc.text(direccionLineas.slice(0, 2), 12.5, resumenY + 34.3);
 
-        doc.text('Cada una', 80, resumenY + 25.2);
-        doc.text(formatoMoneda(montoCuota), 123.5, resumenY + 25.2, { align: 'right' });
-        doc.text('Una ultima', 80, resumenY + 34.3);
-        doc.text(formatoMoneda(ultimaCuota || montoCuota), 123.5, resumenY + 34.3, { align: 'right' });
+        doc.text('Cada una', 79, resumenY + 25.2);
+        doc.text(formatoMoneda(montoCuota), 125.2, resumenY + 25.2, { align: 'right' });
+        doc.text('Una ultima', 79, resumenY + 34.3);
+        doc.text(formatoMoneda(ultimaCuota || montoCuota), 125.2, resumenY + 34.3, { align: 'right' });
 
         doc.setFont('helvetica', 'bold');
         doc.text(String(cuotasPactadas || 0), 142.5, resumenY + 30, { align: 'center' });
 
-        doc.setFontSize(14);
-        doc.text('TOTAL:', 161, resumenY + 25.2);
-        doc.text(formatoMoneda(montoTotalContrato), 203, resumenY + 25.2, { align: 'right' });
+        doc.setFontSize(11);
+        doc.text('TOTAL:', 160.5, resumenY + 25.2);
+        doc.text(formatoMoneda(montoTotalContrato), 203.8, resumenY + 25.2, { align: 'right' });
         doc.setTextColor(198, 22, 22);
-        doc.text('ENGANCHE:', 161, resumenY + 33.2);
-        doc.text(formatoMoneda(totalEnganche), 203, resumenY + 33.2, { align: 'right' });
+        doc.text('ENGANCHE:', 160.5, resumenY + 33.2);
+        doc.text(formatoMoneda(totalEnganche), 203.8, resumenY + 33.2, { align: 'right' });
         doc.setTextColor(...darkTextColor);
-        doc.text('ABONADO:', 161, resumenY + 41.2);
-        doc.text(formatoMoneda(totalPagado), 203, resumenY + 41.2, { align: 'right' });
-        doc.text('SALDO:', 161, resumenY + 49.2);
-        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 203, resumenY + 49.2, { align: 'right' });
+        doc.text('ABONADO:', 160.5, resumenY + 41.2);
+        doc.text(formatoMoneda(totalPagado), 203.8, resumenY + 41.2, { align: 'right' });
+        doc.text('SALDO:', 160.5, resumenY + 49.2);
+        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 203.8, resumenY + 49.2, { align: 'right' });
       };
 
       const nombreResidenteTexto = String(contrato.nombre || '').trim();
@@ -428,6 +428,18 @@ const EstadoCuenta = () => {
       });
 
       const filas = [];
+      const pagosPorId = new Map();
+      (Array.isArray(estadoCuenta.pagos) ? estadoCuenta.pagos : []).forEach((pago) => {
+        const idPago = Number(pago?.id_pago || 0);
+        if (idPago > 0) {
+          pagosPorId.set(idPago, {
+            meses_pagados: String(pago?.meses_pagados || '').trim(),
+            tipos_concepto: String(pago?.tipos_concepto || '').trim(),
+            monto_mora: Number(pago?.monto_mora || 0)
+          });
+        }
+      });
+
       for (let i = 1; i <= cuotasPactadas; i += 1) {
         const detalle = detallesPorCuota.get(i);
         const fechaProgramada = agregarMeses(contrato.fecha_firma, i);
@@ -447,10 +459,12 @@ const EstadoCuenta = () => {
           detalle?.forma_pago
         );
         const tienePago = Boolean(detalle?.fecha_pago);
-        const montoMoraFila = Number(detalle?.monto_mora || 0);
+        const idPagoDetalle = Number(detalle?.id_pago || 0);
+        const pagoRef = pagosPorId.get(idPagoDetalle) || null;
+        const montoMoraFila = Math.max(Number(detalle?.monto_mora || 0), Number(pagoRef?.monto_mora || 0));
         const montoReciboFila = Number(detalle?.monto_total_detalle || detalle?.monto_cuota || montoProgramado || 0);
-        const mesesPagadosFila = String(detalle?.meses_pagados || '').trim();
-        const conceptosFila = String(detalle?.tipos_concepto || '')
+        const mesesPagadosFila = String(detalle?.meses_pagados || pagoRef?.meses_pagados || '').trim();
+        const conceptosFila = String(detalle?.tipos_concepto || pagoRef?.tipos_concepto || '')
           .split(',')
           .map((txt) => txt.trim())
           .filter(Boolean)
