@@ -98,6 +98,7 @@ router.get("/", (req, res) => {
 
 router.get('/documento/:id_pago', (req, res) => {
     const idPago = Number(req.params.id_pago || 0);
+    const estadoSolicitado = String(req.query?.estado_factura || '').trim().toUpperCase();
     if (!Number.isInteger(idPago) || idPago <= 0) {
         return res.status(400).send({ message: 'ID de pago invalido.' });
     }
@@ -132,7 +133,6 @@ router.get('/documento/:id_pago', (req, res) => {
             p.forma_pago,
             p.no_referencia,
             p.fecha_pago,
-            p.monto_mora,
             COALESCE(em.nombre_empresa, er.nombre_empresa, ep.nombre_empresa, 'Inmobiliaria') AS nombre_empresa,
             COALESCE(em.logo, er.logo, ep.logo) AS logo_empresa,
             COALESCE(em.nit, ep.nit, er.nit, 'N/A') AS nit_empresa,
@@ -163,8 +163,12 @@ router.get('/documento/:id_pago', (req, res) => {
             return res.status(404).send({ message: 'No existe evidencia historica para ese pago.' });
         }
 
-        const emitidas = rows.filter((row) => String(row.estado_factura || '').toUpperCase() === 'EMITIDA');
-        const detallesBase = emitidas.length ? emitidas : rows;
+        const rowsSeleccionadas = estadoSolicitado
+            ? rows.filter((row) => String(row.estado_factura || '').toUpperCase() === estadoSolicitado)
+            : rows;
+
+        const detallesBase = rowsSeleccionadas.length ? rowsSeleccionadas : rows;
+        const emitidas = detallesBase.filter((row) => String(row.estado_factura || '').toUpperCase() === 'EMITIDA');
         const base = detallesBase[0];
 
         let evidenciaCabecera = {};
@@ -197,7 +201,9 @@ router.get('/documento/:id_pago', (req, res) => {
         });
 
         const existeDetalleMora = detalles.some((d) => String(d?.tipo_concepto || '').toLowerCase() === 'mora');
-        const montoMoraCabecera = Number(base?.monto_mora || 0);
+        const montoMoraCabecera = detalles
+            .filter((d) => String(d?.tipo_concepto || '').toLowerCase() === 'mora')
+            .reduce((acc, item) => acc + Number(item?.subtotal || 0), 0);
         if (!existeDetalleMora && montoMoraCabecera > 0) {
             detalles.push({
                 tipo_concepto: 'mora',
@@ -217,6 +223,7 @@ router.get('/documento/:id_pago', (req, res) => {
             metodo_pago: base.forma_pago || evidenciaCabecera?.metodo_pago || 'N/A',
             usuario_cobro: base.usuario_cobro || `Usuario #${base.id_usuario || 'N/A'}`,
             rol_usuario_cobro: base.rol_usuario_emisor || evidenciaCabecera?.rol_usuario_emisor || base.rol_usuario_cobro || null,
+            monto_mora: montoMoraCabecera,
             cliente: {
                 nombre_residente: base.nombre_residente || 'N/A',
                 numero_identificacion: base.numero_identificacion || 'N/A',

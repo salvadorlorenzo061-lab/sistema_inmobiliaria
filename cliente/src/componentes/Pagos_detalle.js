@@ -102,7 +102,9 @@ function PagosDetalle() {
 
     let documento;
     try {
-      const { data } = await Axios.get(`${API_URL}/documento/${detalle.id_pago}`);
+      const estadoFactura = String(detalle?.estado_factura || '').trim();
+      const params = estadoFactura ? { estado_factura: estadoFactura } : undefined;
+      const { data } = await Axios.get(`${API_URL}/documento/${detalle.id_pago}`, params ? { params } : undefined);
       documento = data;
     } catch (error) {
       Swal.fire({
