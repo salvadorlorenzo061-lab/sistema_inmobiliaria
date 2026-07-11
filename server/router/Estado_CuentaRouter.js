@@ -7,6 +7,42 @@ const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 router.use(cors());
 router.use(express.json());
 
+const ensureFacturasHistorialTable = () => {
+    const sql = `
+        CREATE TABLE IF NOT EXISTS facturas_historial (
+            id_historial BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_pago INT NULL,
+            id_pago_detalle INT NULL,
+            id_contrato INT NULL,
+            id_residente INT NULL,
+            id_usuario INT NULL,
+            rol_usuario_emisor VARCHAR(80) NULL,
+            correlativo VARCHAR(80) NULL,
+            estado_factura VARCHAR(20) NOT NULL DEFAULT 'EMITIDA',
+            tipo_concepto VARCHAR(60) NULL,
+            id_concepto_servicio INT NULL,
+            nombre_concepto VARCHAR(255) NULL,
+            mes_pagado VARCHAR(80) NULL,
+            numero_cuota_afectada INT NULL,
+            subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
+            fecha_evento DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            evidencia_json LONGTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_historial_pago (id_pago),
+            INDEX idx_historial_estado (estado_factura),
+            INDEX idx_historial_contrato (id_contrato)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `;
+
+    db.query(sql, (err) => {
+        if (err) {
+            console.error('Error asegurando tabla facturas_historial en estado_cuenta:', err.message);
+        }
+    });
+};
+
+ensureFacturasHistorialTable();
+
 // === BUSCAR RESIDENTE PARA ESTADO DE CUENTA ===
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;
@@ -111,21 +147,23 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
 
             // Obtener todos los pagos realizados
             const queryPagos = `
-            SELECT 
-                p.id_pago,
-                p.fecha_pago,
-                p.forma_pago,
-                p.no_referencia,
-                p.monto_total_pagado AS total_cobrado,
-                COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora,
-                GROUP_CONCAT(DISTINCT pd.mes_pagado SEPARATOR ', ') as meses_pagados,
-                GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
-                COUNT(DISTINCT pd.id_pago_detalle) as cantidad_conceptos
-            FROM pagos p
-            INNER JOIN pagos_detalle pd ON p.id_pago = pd.id_pago
-            WHERE p.id_contrato = ?
-            GROUP BY p.id_pago
-            ORDER BY p.fecha_pago DESC
+            SELECT
+                fh.id_pago,
+                COALESCE(MIN(p.fecha_pago), MIN(fh.fecha_evento)) AS fecha_pago,
+                SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.forma_pago ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS forma_pago,
+                SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.no_referencia ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS no_referencia,
+                SUM(fh.subtotal) AS total_cobrado,
+                COALESCE(SUM(CASE WHEN fh.tipo_concepto = 'mora' THEN fh.subtotal ELSE 0 END), 0) AS monto_mora,
+                GROUP_CONCAT(DISTINCT fh.mes_pagado ORDER BY fh.mes_pagado SEPARATOR ', ') AS meses_pagados,
+                GROUP_CONCAT(DISTINCT fh.tipo_concepto ORDER BY fh.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
+                COUNT(DISTINCT fh.id_historial) AS cantidad_conceptos
+            FROM facturas_historial fh
+            LEFT JOIN pagos p ON p.id_pago = fh.id_pago
+            WHERE fh.id_contrato = ?
+              AND fh.estado_factura = 'EMITIDA'
+              AND fh.id_pago IS NOT NULL
+            GROUP BY fh.id_pago
+            ORDER BY fecha_pago DESC, fh.id_pago DESC
         `;
 
             // Agregar filtro de fechas si se proporcionan
@@ -133,11 +171,11 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             let filtroFechas = '';
 
             if (fecha_inicio && fecha_fin) {
-                filtroFechas = 'AND p.fecha_pago BETWEEN ? AND ?';
+                filtroFechas = 'AND DATE(fh.fecha_evento) BETWEEN ? AND ?';
                 queryPagosParams = [id_contrato, fecha_inicio, fecha_fin];
             }
 
-            const queryPagosFiltered = queryPagos.replace('WHERE p.id_contrato = ?', `WHERE p.id_contrato = ? ${filtroFechas}`);
+            const queryPagosFiltered = queryPagos.replace("AND fh.id_pago IS NOT NULL", `${filtroFechas} AND fh.id_pago IS NOT NULL`);
 
             db.query(queryPagosFiltered, queryPagosParams, (err, pagosResult) => {
                 if (err) {
@@ -146,13 +184,14 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 }
 
                 // Obtener meses pendientes
-                const queryMesesPendientes = `
-                SELECT DISTINCT pd.mes_pagado
-                FROM pagos_detalle pd
-                INNER JOIN pagos p ON pd.id_pago = p.id_pago
-                WHERE p.id_contrato = ? ${filtroFechas}
-                ORDER BY pd.mes_pagado
-            `;
+                                const queryMesesPendientes = `
+                                SELECT DISTINCT fh.mes_pagado
+                                FROM facturas_historial fh
+                                WHERE fh.id_contrato = ?
+                                    AND fh.estado_factura = 'EMITIDA'
+                                    ${filtroFechas}
+                                ORDER BY fh.mes_pagado
+                        `;
 
                 db.query(queryMesesPendientes, queryPagosParams, (err, mesesResult) => {
                     if (err) {
@@ -179,29 +218,31 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
 
                     const queryDetalleCuotas = `
                     SELECT
-                        COALESCE(pd.numero_cuota_afectada, 0) AS numero_cuota,
-                        MIN(p.fecha_pago) AS fecha_pago,
+                        COALESCE(fh.numero_cuota_afectada, 0) AS numero_cuota,
+                        COALESCE(MIN(p.fecha_pago), MIN(fh.fecha_evento)) AS fecha_pago,
                         SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.forma_pago ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS forma_pago,
                         SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.no_referencia ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS no_referencia,
-                        MIN(p.id_pago) AS id_pago,
-                        SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END) AS monto_cuota,
-                        SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END) AS monto_mora,
-                        SUM(pd.subtotal) AS monto_total_detalle,
-                        GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados,
-                        GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
+                        MIN(fh.id_pago) AS id_pago,
+                        SUM(CASE WHEN fh.tipo_concepto = 'cuota_terreno' THEN fh.subtotal ELSE 0 END) AS monto_cuota,
+                        SUM(CASE WHEN fh.tipo_concepto = 'mora' THEN fh.subtotal ELSE 0 END) AS monto_mora,
+                        SUM(fh.subtotal) AS monto_total_detalle,
+                        GROUP_CONCAT(DISTINCT fh.mes_pagado ORDER BY fh.mes_pagado SEPARATOR ', ') AS meses_pagados,
+                        GROUP_CONCAT(DISTINCT fh.tipo_concepto ORDER BY fh.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
                         GROUP_CONCAT(
                             DISTINCT CASE
-                                WHEN pd.tipo_concepto = 'servicio' THEN s.nombre_servicio
+                                WHEN fh.tipo_concepto = 'servicio' THEN s.nombre_servicio
                                 ELSE NULL
                             END
                             ORDER BY s.nombre_servicio SEPARATOR ', '
                         ) AS servicios_nombres
-                    FROM pagos_detalle pd
-                    INNER JOIN pagos p ON pd.id_pago = p.id_pago
-                    LEFT JOIN servicios s ON s.id_servicio = pd.id_concepto_servicio
-                    WHERE p.id_contrato = ? ${filtroFechas}
-                    GROUP BY COALESCE(pd.numero_cuota_afectada, 0)
-                    ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 THEN 999999 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC
+                    FROM facturas_historial fh
+                    LEFT JOIN pagos p ON p.id_pago = fh.id_pago
+                    LEFT JOIN servicios s ON s.id_servicio = fh.id_concepto_servicio
+                    WHERE fh.id_contrato = ?
+                      AND fh.estado_factura = 'EMITIDA'
+                      ${filtroFechas}
+                    GROUP BY COALESCE(fh.numero_cuota_afectada, 0)
+                    ORDER BY CASE WHEN COALESCE(fh.numero_cuota_afectada, 0) = 0 THEN 999999 ELSE COALESCE(fh.numero_cuota_afectada, 0) END ASC
                     `;
 
                     db.query(queryDetalleCuotas, queryPagosParams, (detalleErr, detalleCuotasResult) => {

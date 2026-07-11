@@ -352,64 +352,64 @@ const EstadoCuenta = () => {
         const resumenX = 10;
         const resumenY = 76;
         const resumenW = 196;
-        const resumenH = 37;
+        const resumenH = 51;
 
         doc.setDrawColor(...borderColor);
         doc.setLineWidth(0.25);
         doc.rect(resumenX, resumenY, resumenW, resumenH);
-        doc.line(resumenX, resumenY + 6, resumenX + resumenW, resumenY + 6);
-        doc.line(resumenX, resumenY + 14, resumenX + resumenW, resumenY + 14);
-        doc.line(76, resumenY + 6, 76, resumenY + resumenH);
-        doc.line(127, resumenY + 6, 127, resumenY + resumenH);
-        doc.line(158, resumenY + 6, 158, resumenY + resumenH);
-        doc.line(158, resumenY + 19.5, resumenX + resumenW, resumenY + 19.5);
-        doc.line(158, resumenY + 25, resumenX + resumenW, resumenY + 25);
-        doc.line(158, resumenY + 30.5, resumenX + resumenW, resumenY + 30.5);
+        doc.line(resumenX, resumenY + 8, resumenX + resumenW, resumenY + 8);
+        doc.line(resumenX, resumenY + 19, resumenX + resumenW, resumenY + 19);
+        doc.line(76, resumenY + 8, 76, resumenY + resumenH);
+        doc.line(127, resumenY + 8, 127, resumenY + resumenH);
+        doc.line(158, resumenY + 8, 158, resumenY + resumenH);
+        doc.line(158, resumenY + 27, resumenX + resumenW, resumenY + 27);
+        doc.line(158, resumenY + 35, resumenX + resumenW, resumenY + 35);
+        doc.line(158, resumenY + 43, resumenX + resumenW, resumenY + 43);
 
         doc.setFillColor(245, 245, 245);
-        doc.rect(resumenX, resumenY, resumenW, 6, 'F');
+        doc.rect(resumenX, resumenY, resumenW, 8, 'F');
         doc.setFillColor(230, 230, 230);
-        doc.rect(resumenX, resumenY + 6, 66, 8, 'F');
-        doc.rect(76, resumenY + 6, 51, 8, 'F');
-        doc.rect(127, resumenY + 6, 31, 8, 'F');
-        doc.rect(158, resumenY + 6, 48, 8, 'F');
+        doc.rect(resumenX, resumenY + 8, 66, 11, 'F');
+        doc.rect(76, resumenY + 8, 51, 11, 'F');
+        doc.rect(127, resumenY + 8, 31, 11, 'F');
+        doc.rect(158, resumenY + 8, 48, 11, 'F');
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
+        doc.setFontSize(14);
         doc.setTextColor(...darkTextColor);
-        doc.text((contrato.nombre || 'RESIDENTE').toUpperCase(), resumenX + (resumenW / 2), resumenY + 4.1, { align: 'center' });
+        doc.text((contrato.nombre || 'RESIDENTE').toUpperCase(), resumenX + (resumenW / 2), resumenY + 6, { align: 'center' });
 
-        doc.setFontSize(7);
-        doc.text('DIRECCION', 43, resumenY + 11, { align: 'center' });
-        doc.text('Monto de cuota', 101.5, resumenY + 11, { align: 'center' });
-        doc.text('No. DE', 142.5, resumenY + 9.4, { align: 'center' });
-        doc.text('CUOTA', 142.5, resumenY + 12.4, { align: 'center' });
-        doc.text('CUOTA', 182, resumenY + 11, { align: 'center' });
+        doc.setFontSize(10);
+        doc.text('DIRECCION', 43, resumenY + 15.3, { align: 'center' });
+        doc.text('Monto de cuota', 101.5, resumenY + 15.3, { align: 'center' });
+        doc.text('No. DE', 142.5, resumenY + 13.6, { align: 'center' });
+        doc.text('CUOTA', 142.5, resumenY + 17.1, { align: 'center' });
+        doc.text('CUOTA', 182, resumenY + 15.3, { align: 'center' });
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.6);
-        doc.text(`TELEFONO: ${contrato.telefono || 'N/A'}`, 12.5, resumenY + 18.2);
-        doc.text(direccionLineas.slice(0, 2), 12.5, resumenY + 23.2);
+        doc.setFontSize(14);
+        doc.text(`TELEFONO: ${contrato.telefono || 'N/A'}`, 12.5, resumenY + 25.2);
+        doc.text(direccionLineas.slice(0, 2), 12.5, resumenY + 34.3);
 
-        doc.text('Cada una', 80, resumenY + 18.2);
-        doc.text(formatoMoneda(montoCuota), 123.5, resumenY + 18.2, { align: 'right' });
-        doc.text('Una ultima', 80, resumenY + 25.4);
-        doc.text(formatoMoneda(ultimaCuota || montoCuota), 123.5, resumenY + 25.4, { align: 'right' });
+        doc.text('Cada una', 80, resumenY + 25.2);
+        doc.text(formatoMoneda(montoCuota), 123.5, resumenY + 25.2, { align: 'right' });
+        doc.text('Una ultima', 80, resumenY + 34.3);
+        doc.text(formatoMoneda(ultimaCuota || montoCuota), 123.5, resumenY + 34.3, { align: 'right' });
 
         doc.setFont('helvetica', 'bold');
-        doc.text(String(cuotasPactadas || 0), 142.5, resumenY + 21.8, { align: 'center' });
+        doc.text(String(cuotasPactadas || 0), 142.5, resumenY + 30, { align: 'center' });
 
-        doc.setFontSize(6.6);
-        doc.text('TOTAL:', 161, resumenY + 18.2);
-        doc.text(formatoMoneda(montoTotalContrato), 203, resumenY + 18.2, { align: 'right' });
+        doc.setFontSize(14);
+        doc.text('TOTAL:', 161, resumenY + 25.2);
+        doc.text(formatoMoneda(montoTotalContrato), 203, resumenY + 25.2, { align: 'right' });
         doc.setTextColor(198, 22, 22);
-        doc.text('ENGANCHE:', 161, resumenY + 23.7);
-        doc.text(formatoMoneda(totalEnganche), 203, resumenY + 23.7, { align: 'right' });
+        doc.text('ENGANCHE:', 161, resumenY + 33.2);
+        doc.text(formatoMoneda(totalEnganche), 203, resumenY + 33.2, { align: 'right' });
         doc.setTextColor(...darkTextColor);
-        doc.text('ABONADO:', 161, resumenY + 29.2);
-        doc.text(formatoMoneda(totalPagado), 203, resumenY + 29.2, { align: 'right' });
-        doc.text('SALDO:', 161, resumenY + 34.7);
-        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 203, resumenY + 34.7, { align: 'right' });
+        doc.text('ABONADO:', 161, resumenY + 41.2);
+        doc.text(formatoMoneda(totalPagado), 203, resumenY + 41.2, { align: 'right' });
+        doc.text('SALDO:', 161, resumenY + 49.2);
+        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 203, resumenY + 49.2, { align: 'right' });
       };
 
       const nombreResidenteTexto = String(contrato.nombre || '').trim();
@@ -494,7 +494,7 @@ const EstadoCuenta = () => {
       });
 
       autoTable(doc, {
-        startY: 114,
+        startY: 128,
         margin: { top: 44, bottom: 18, left: 10, right: 10 },
         head: [
           [
@@ -553,12 +553,12 @@ const EstadoCuenta = () => {
             }
             doc.setTextColor(45);
             doc.setFont('times', 'normal');
-            doc.setFontSize(8.4);
+            doc.setFontSize(14);
             doc.text(`Guatemala, ${fechaLarga}`, pageWidth - 14, 50, { align: 'right' });
 
             const introLines = doc.splitTextToSize(cuerpoIntro, 188);
-            doc.setFontSize(7.5);
-            doc.text(introLines, 28, 61);
+            doc.setFontSize(14);
+            doc.text(introLines, 18, 61);
             dibujarResumenContrato();
           } else {
             doc.setFont('times', 'bold');
