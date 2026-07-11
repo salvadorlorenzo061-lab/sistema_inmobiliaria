@@ -694,7 +694,13 @@ function Contratos_Residentes() {
     if (accion === 'eliminar') deleteContrato(contrato);
     if (accion === 'pdf') imprimirContrato(contrato);
     if (accion === 'subir') abrirSelectorWord(contrato);
-    if (accion === 'descargar') descargarWordContrato(contrato);
+    if (accion === 'descargar') {
+      if (!contrato.documento_contrato) {
+        Swal.fire({ icon: 'info', title: 'Sin archivo', text: 'Este contrato aun no tiene archivo cargado.' });
+        return;
+      }
+      descargarWordContrato(contrato);
+    }
   };
 
   const handleAccionContratoChange = (event, contrato) => {
@@ -791,9 +797,11 @@ function Contratos_Residentes() {
                     <option value="eliminar">Eliminar contrato</option>
                     <option value="pdf">Descargar PDF</option>
                     <option value="subir" disabled={subiendoWordContratoId === val.id_contrato}>
-                      {subiendoWordContratoId === val.id_contrato ? 'Subiendo archivo...' : 'Subir archivo'}
+                      {subiendoWordContratoId === val.id_contrato
+                        ? 'Subiendo archivo...'
+                        : (val.documento_contrato ? 'Reemplazar archivo' : 'Subir archivo')}
                     </option>
-                    <option value="descargar" disabled={!val.documento_contrato}>
+                    <option value="descargar">
                       Descargar archivo
                     </option>
                   </select>
