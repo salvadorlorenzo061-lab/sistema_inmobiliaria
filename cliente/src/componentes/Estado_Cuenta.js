@@ -379,7 +379,7 @@ const EstadoCuenta = () => {
         doc.setTextColor(...darkTextColor);
         doc.text((contrato.nombre || 'RESIDENTE').toUpperCase(), resumenX + (resumenW / 2), resumenY + 6, { align: 'center' });
 
-        doc.setFontSize(10);
+        doc.setFontSize(12);
         doc.text('DIRECCION', 43, resumenY + 15.3, { align: 'center' });
         doc.text('Monto de cuota', 101.5, resumenY + 15.3, { align: 'center' });
         doc.text('No. DE', 142.5, resumenY + 13.6, { align: 'center' });
@@ -399,17 +399,17 @@ const EstadoCuenta = () => {
         doc.setFont('helvetica', 'bold');
         doc.text(String(cuotasPactadas || 0), 142.5, resumenY + 30, { align: 'center' });
 
-        doc.setFontSize(11);
-        doc.text('TOTAL:', 160.5, resumenY + 25.2);
-        doc.text(formatoMoneda(montoTotalContrato), 203.8, resumenY + 25.2, { align: 'right' });
+        doc.setFontSize(12);
+        doc.text('TOTAL:', 159.2, resumenY + 25.2);
+        doc.text(formatoMoneda(montoTotalContrato), 204.5, resumenY + 25.2, { align: 'right' });
         doc.setTextColor(198, 22, 22);
-        doc.text('ENGANCHE:', 160.5, resumenY + 33.2);
-        doc.text(formatoMoneda(totalEnganche), 203.8, resumenY + 33.2, { align: 'right' });
+        doc.text('ENGANCHE:', 159.2, resumenY + 33.2);
+        doc.text(formatoMoneda(totalEnganche), 204.5, resumenY + 33.2, { align: 'right' });
         doc.setTextColor(...darkTextColor);
-        doc.text('ABONADO:', 160.5, resumenY + 41.2);
-        doc.text(formatoMoneda(totalPagado), 203.8, resumenY + 41.2, { align: 'right' });
-        doc.text('SALDO:', 160.5, resumenY + 49.2);
-        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 203.8, resumenY + 49.2, { align: 'right' });
+        doc.text('ABONADO:', 159.2, resumenY + 41.2);
+        doc.text(formatoMoneda(totalPagado), 204.5, resumenY + 41.2, { align: 'right' });
+        doc.text('SALDO:', 159.2, resumenY + 49.2);
+        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 204.5, resumenY + 49.2, { align: 'right' });
       };
 
       const nombreResidenteTexto = String(contrato.nombre || '').trim();
@@ -435,7 +435,9 @@ const EstadoCuenta = () => {
           pagosPorId.set(idPago, {
             meses_pagados: String(pago?.meses_pagados || '').trim(),
             tipos_concepto: String(pago?.tipos_concepto || '').trim(),
-            monto_mora: Number(pago?.monto_mora || 0)
+            monto_mora: Number(pago?.monto_mora || 0),
+            correlativo: String(pago?.correlativo || '').trim(),
+            no_referencia: String(pago?.no_referencia || '').trim()
           });
         }
       });
@@ -469,8 +471,9 @@ const EstadoCuenta = () => {
           .map((txt) => txt.trim())
           .filter(Boolean)
           .map((txt) => txt.replace(/_/g, ' '))
-          .join(', ');
+          .join(' + ');
         const serviciosFila = String(detalle?.servicios_nombres || '').trim();
+        const correlativoFila = String(detalle?.correlativo || pagoRef?.correlativo || detalle?.no_referencia || pagoRef?.no_referencia || '').trim();
         const observacionesLista = [];
 
         if (mesesPagadosFila) observacionesLista.push(`Meses: ${mesesPagadosFila}`);
@@ -487,11 +490,11 @@ const EstadoCuenta = () => {
           marcasForma.t,
           marcasForma.e,
           marcasForma.c,
-          (detalle?.no_referencia || '').toString(),
+          (detalle?.no_referencia || correlativoFila || '').toString(),
           tienePago ? formatoFecha(detalle?.fecha_pago) : (estaPendienteEnCaja ? mesCuotaEtiqueta : ''),
           tienePago ? formatoMoneda(montoReciboFila) : (estaPendienteEnCaja ? formatoMoneda(montoProgramado) : ''),
           String(i),
-          tienePago && detalle?.id_pago ? String(detalle.id_pago) : '',
+          tienePago ? correlativoFila : '',
           observacionFila
         ]);
       }
@@ -512,18 +515,18 @@ const EstadoCuenta = () => {
           marcasForma.t,
           marcasForma.e,
           marcasForma.c,
-          (item?.no_referencia || '').toString(),
+          (item?.no_referencia || item?.correlativo || '').toString(),
           formatoFecha(item?.fecha_pago),
           formatoMoneda(item?.monto_total_detalle || 0),
           '0',
-          item?.id_pago ? String(item.id_pago) : '',
+          (item?.correlativo || item?.no_referencia || '').toString(),
           'Enganche'
         ]);
       });
 
       autoTable(doc, {
         startY: 128,
-        margin: { top: 44, bottom: 18, left: 10, right: 10 },
+        margin: { top: 44, bottom: 30, left: 10, right: 10 },
         head: [
           [
             { content: 'FECHA', rowSpan: 2 },
