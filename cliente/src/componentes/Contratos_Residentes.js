@@ -687,6 +687,23 @@ function Contratos_Residentes() {
     setCurrentPage(1);
   };
 
+  const ejecutarAccionContrato = (accion, contrato) => {
+    if (!accion || !contrato) return;
+
+    if (accion === 'editar') abrirEditarModal(contrato);
+    if (accion === 'eliminar') deleteContrato(contrato);
+    if (accion === 'pdf') imprimirContrato(contrato);
+    if (accion === 'subir') abrirSelectorWord(contrato);
+    if (accion === 'descargar') descargarWordContrato(contrato);
+  };
+
+  const handleAccionContratoChange = (event, contrato) => {
+    const accion = String(event?.target?.value || '').trim();
+    if (!accion) return;
+    ejecutarAccionContrato(accion, contrato);
+    event.target.value = '';
+  };
+
   return (
     <div className="mt-4 contratos-residentes-view contratos-residentes-ejemplo">
       <input
@@ -764,24 +781,22 @@ function Contratos_Residentes() {
                   </span>
                 </td>
                 <td className="sticky-actions-col actions-buttons-cell">
-                  <button className="btn btn-sm fw-bold btn-accion-editar" onClick={() => abrirEditarModal(val)}>EDITAR</button>
-                  <button className="btn btn-sm fw-bold btn-accion-eliminar" onClick={() => deleteContrato(val)}>ELIMINAR</button>
-                  <button className="btn btn-sm fw-bold btn-accion-pdf" onClick={() => imprimirContrato(val)}>PDF</button>
-                  <button
-                    className="btn btn-sm fw-bold btn-outline-primary ms-1"
-                    onClick={() => abrirSelectorWord(val)}
-                    disabled={subiendoWordContratoId === val.id_contrato}
+                  <select
+                    className="form-select form-select-sm fw-bold"
+                    defaultValue=""
+                    onChange={(event) => handleAccionContratoChange(event, val)}
                   >
-                    {subiendoWordContratoId === val.id_contrato ? 'SUBIENDO...' : 'SUBIR ARCHIVO'}
-                  </button>
-                  <button
-                    className="btn btn-sm fw-bold btn-outline-secondary ms-1"
-                    onClick={() => descargarWordContrato(val)}
-                    disabled={!val.documento_contrato}
-                    title={val.documento_contrato ? 'Descargar archivo del contrato' : 'Este contrato no tiene archivo cargado'}
-                  >
-                    ARCHIVO
-                  </button>
+                    <option value="">ACCIONES</option>
+                    <option value="editar">Editar contrato</option>
+                    <option value="eliminar">Eliminar contrato</option>
+                    <option value="pdf">Descargar PDF</option>
+                    <option value="subir" disabled={subiendoWordContratoId === val.id_contrato}>
+                      {subiendoWordContratoId === val.id_contrato ? 'Subiendo archivo...' : 'Subir archivo'}
+                    </option>
+                    <option value="descargar" disabled={!val.documento_contrato}>
+                      Descargar archivo
+                    </option>
+                  </select>
                 </td>
               </tr>
             ))
