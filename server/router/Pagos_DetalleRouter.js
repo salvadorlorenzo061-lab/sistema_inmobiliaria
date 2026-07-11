@@ -133,6 +133,8 @@ router.get('/documento/:id_pago', (req, res) => {
             p.forma_pago,
             p.no_referencia,
             p.fecha_pago,
+            COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
+            COALESCE(pr.nombre, ep.nombre_empresa, em.nombre_empresa, er.nombre_empresa) AS nombre_proyecto,
             COALESCE(em.nombre_empresa, er.nombre_empresa, ep.nombre_empresa, 'Inmobiliaria') AS nombre_empresa,
             COALESCE(em.logo, er.logo, ep.logo) AS logo_empresa,
             COALESCE(em.nit, ep.nit, er.nit, 'N/A') AS nit_empresa,
@@ -238,6 +240,8 @@ router.get('/documento/:id_pago', (req, res) => {
             empresa: {
                 nombre_empresa: base.nombre_empresa || 'Inmobiliaria',
                 logo_empresa: base.logo_empresa || null,
+                logo_proyecto: base.logo_proyecto || null,
+                nombre_proyecto: base.nombre_proyecto || null,
                 nit_empresa: base.nit_empresa || 'N/A',
                 pais: base.pais_empresa || 'Guatemala',
                 moneda: base.moneda_empresa || 'GTQ'

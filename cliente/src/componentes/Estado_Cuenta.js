@@ -433,6 +433,9 @@ const EstadoCuenta = () => {
         const fechaProgramada = agregarMeses(contrato.fecha_firma, i);
         const mesCuotaEtiqueta = etiquetaMesCaja(fechaProgramada);
         const estaPendienteEnCaja = Boolean(mesCuotaEtiqueta && pendientesCajaSet.has(mesCuotaEtiqueta));
+        if (!detalle && !estaPendienteEnCaja) {
+          continue;
+        }
         const montoProgramado = (i === cuotasPactadas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
         const serviciosFuenteFila = [detalle?.servicios_nombres, serviciosContratoNombres, serviciosCajaNombres]
           .map((txt) => String(txt || '').trim())
@@ -457,8 +460,8 @@ const EstadoCuenta = () => {
           marcasForma.e,
           marcasForma.c,
           (detalle?.no_referencia || '').toString(),
-          tienePago ? formatoFecha(detalle?.fecha_pago) : '',
-          tienePago ? formatoMoneda(montoReciboFila) : '',
+          tienePago ? formatoFecha(detalle?.fecha_pago) : (estaPendienteEnCaja ? mesCuotaEtiqueta : ''),
+          tienePago ? formatoMoneda(montoReciboFila) : (estaPendienteEnCaja ? formatoMoneda(montoProgramado) : ''),
           String(i),
           tienePago && detalle?.id_pago ? String(detalle.id_pago) : '',
           observacionFila
@@ -509,7 +512,7 @@ const EstadoCuenta = () => {
         body: filas.length ? filas : [['', '', '', '', '', '', '', '', '', '', 'Sin pagos registrados']],
         theme: 'grid',
         styles: {
-          fontSize: 6.6,
+          fontSize: 12,
           lineColor: borderColor,
           lineWidth: 0.1,
           cellPadding: 1.3,
@@ -521,7 +524,7 @@ const EstadoCuenta = () => {
           fontStyle: 'bold',
           halign: 'center',
           valign: 'middle',
-          fontSize: 6.5
+          fontSize: 12
         },
         alternateRowStyles: {
           fillColor: [255, 255, 255]

@@ -124,6 +124,7 @@ function PagosDetalle() {
     const numero = matchRef ? matchRef[2].slice(-5) : String(documento?.id_pago || '0').padStart(5, '0');
     const fechaDoc = new Date(documento?.fecha_evento || Date.now());
     const empresaLogo = normalizeImageDataUrl(documento?.empresa?.logo_empresa || '');
+    const logoProyecto = normalizeImageDataUrl(documento?.empresa?.logo_proyecto || '');
     const nombreEmpresa = String(documento?.empresa?.nombre_empresa || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
     const rolEmisor = String(documento?.rol_usuario_cobro || '');
     const metodo = String(documento?.metodo_pago || '').toLowerCase();
@@ -272,6 +273,13 @@ function PagosDetalle() {
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.text('Firma:', filaX + 2, firmaY + 6.2);
+      if (logoProyecto) {
+        try {
+          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), filaX + 62, firmaY + 1.8, 32, 13.2, `det-jur-proy-${Date.now()}`, 'FAST');
+        } catch {
+          // no-op
+        }
+      }
 
       doc.setFont('Helvetica', 'italic');
       doc.setFontSize(6.7);
@@ -426,9 +434,17 @@ function PagosDetalle() {
         doc.text(`NO. ${String(documento?.correlativo || 'N/A')}`, x + 3, boxY + 15.8);
       }
 
+      if (logoProyecto) {
+        try {
+          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 81, boxY + 9, 28, 11, `det-logo-proyecto-${Date.now()}`, 'FAST');
+        } catch {
+          // no-op
+        }
+      }
+
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8.8);
-      doc.text(doc.splitTextToSize(String(documento?.empresa?.nombre_empresa || documento?.contrato?.codigo_contrato || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
+      doc.text(doc.splitTextToSize(String(documento?.empresa?.nombre_proyecto || documento?.empresa?.nombre_empresa || documento?.contrato?.codigo_contrato || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
 
       const footerY = 205;
       doc.setFont('Helvetica', 'italic');
