@@ -129,7 +129,7 @@ function PagosDetalle() {
     const metodo = String(documento?.metodo_pago || '').toLowerCase();
     const esJuridico = isRoleJuridico(rolEmisor);
 
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
     const fechaDocumento = fechaDoc instanceof Date && !Number.isNaN(fechaDoc.getTime()) ? fechaDoc : new Date();
     const detalleBase = detallesFactura.map((item) => ({
       tipo_concepto: String(item?.tipo_concepto || ''),

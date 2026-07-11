@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
@@ -100,8 +100,11 @@ function Contratos_Residentes() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(true); // Vista previa PDF habilitada por defecto
   const [pdfPreviewRefreshKey, setPdfPreviewRefreshKey] = useState(0);
+  const [contratoWordTarget, setContratoWordTarget] = useState(null);
+  const [subiendoWordContratoId, setSubiendoWordContratoId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const inputWordRef = useRef(null);
 
   const API_URL = `${API_BASE_URL}/api/contratos_residentes`;
 
@@ -527,6 +530,84 @@ function Contratos_Residentes() {
     }
   };
 
+  const abrirSelectorWord = (contrato) => {
+    setContratoWordTarget(contrato || null);
+    if (inputWordRef.current) {
+      inputWordRef.current.value = '';
+      inputWordRef.current.click();
+    }
+  };
+
+  const subirWordContrato = async (event) => {
+    const archivo = event?.target?.files?.[0] || null;
+    const contrato = contratoWordTarget;
+
+    if (!archivo || !contrato?.id_contrato) {
+      setContratoWordTarget(null);
+      return;
+    }
+
+    const nombre = String(archivo.name || '').toLowerCase();
+    if (!nombre.endsWith('.doc') && !nombre.endsWith('.docx')) {
+      Swal.fire({ icon: 'warning', title: 'Archivo invalido', text: 'Solo se permiten archivos Word (.doc o .docx).' });
+      setContratoWordTarget(null);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+
+    try {
+      setSubiendoWordContratoId(contrato.id_contrato);
+      await Axios.post(`${API_URL}/subir-word/${contrato.id_contrato}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      await cargarCatalogos();
+      Swal.fire({ icon: 'success', title: 'Archivo Word cargado', timer: 1800, showConfirmButton: false });
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'No se pudo cargar Word',
+        text: error?.response?.data?.message || 'Error al subir el archivo Word.'
+      });
+    } finally {
+      setSubiendoWordContratoId(null);
+      setContratoWordTarget(null);
+      if (inputWordRef.current) {
+        inputWordRef.current.value = '';
+      }
+    }
+  };
+
+  const descargarWordContrato = async (contrato) => {
+    if (!contrato?.id_contrato) return;
+
+    try {
+      const response = await Axios.get(`${API_URL}/descargar-word/${contrato.id_contrato}`, {
+        responseType: 'blob'
+      });
+
+      const contentDisposition = String(response.headers?.['content-disposition'] || '');
+      const fileNameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+      const nombreArchivo = decodeURIComponent(fileNameMatch?.[1] || fileNameMatch?.[2] || `${contrato.codigo_contrato || 'contrato'}.docx`);
+
+      const blobUrl = URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = nombreArchivo;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'No se pudo descargar Word',
+        text: error?.response?.data?.message || 'Error al descargar el archivo Word del contrato.'
+      });
+    }
+  };
+
   const abrirEditarModal = (val) => {
     const toDateInput = (dateValue) => (dateValue ? String(dateValue).split('T')[0] : '');
 
@@ -610,6 +691,13 @@ function Contratos_Residentes() {
 
   return (
     <div className="mt-4 contratos-residentes-view contratos-residentes-ejemplo">
+      <input
+        ref={inputWordRef}
+        type="file"
+        accept=".doc,.docx"
+        style={{ display: 'none' }}
+        onChange={subirWordContrato}
+      />
       <div className="module-header">
       {/* HEADER */}
       <div className="row g-3 bg-light p-3 rounded shadow-sm align-items-center mx-0">
@@ -682,6 +770,21 @@ function Contratos_Residentes() {
                   <button className="btn btn-sm fw-bold btn-accion-editar" onClick={() => abrirEditarModal(val)}>EDITAR</button>
                   <button className="btn btn-sm fw-bold btn-accion-eliminar" onClick={() => deleteContrato(val)}>ELIMINAR</button>
                   <button className="btn btn-sm fw-bold btn-accion-pdf" onClick={() => imprimirContrato(val)}>PDF</button>
+                  <button
+                    className="btn btn-sm fw-bold btn-outline-primary ms-1"
+                    onClick={() => abrirSelectorWord(val)}
+                    disabled={subiendoWordContratoId === val.id_contrato}
+                  >
+                    {subiendoWordContratoId === val.id_contrato ? 'SUBIENDO...' : 'SUBIR WORD'}
+                  </button>
+                  <button
+                    className="btn btn-sm fw-bold btn-outline-secondary ms-1"
+                    onClick={() => descargarWordContrato(val)}
+                    disabled={!val.documento_contrato}
+                    title={val.documento_contrato ? 'Descargar Word del contrato' : 'Este contrato no tiene archivo Word'}
+                  >
+                    WORD
+                  </button>
                 </td>
               </tr>
             ))

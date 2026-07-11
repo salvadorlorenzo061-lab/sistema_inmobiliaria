@@ -663,7 +663,7 @@ const Caja = () => {
     const generarPDF = (recibo, residente, empresa) => {
         try {
             // Carta completa (landscape) para evitar salto a segunda hoja
-            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
             const logoEmpresa = normalizeImageDataUrl(empresa?.logo_empresa || residente?.logo_empresa_pdf || empresa?.logo || '');
             const logoProyecto = normalizeImageDataUrl(empresa?.logo_proyecto || residente?.logo_proyecto || '');
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];

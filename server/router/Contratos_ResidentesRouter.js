@@ -2,10 +2,39 @@ const express = require("express");
 const db = require('../Conexion'); 
 const router = express.Router(); 
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 
 router.use(cors());
 router.use(express.json());
+
+const contratosUploadDir = path.join(__dirname, '..', 'uploads', 'contratos');
+if (!fs.existsSync(contratosUploadDir)) {
+    fs.mkdirSync(contratosUploadDir, { recursive: true });
+}
+
+const storageWordContrato = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, contratosUploadDir),
+    filename: (req, file, cb) => {
+        const idContrato = Number(req.params.id_contrato || 0);
+        const ext = path.extname(String(file.originalname || '')).toLowerCase();
+        cb(null, `contrato_${idContrato}_${Date.now()}${ext}`);
+    }
+});
+
+const uploadWordContrato = multer({
+    storage: storageWordContrato,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const name = String(file?.originalname || '').toLowerCase();
+        if (name.endsWith('.doc') || name.endsWith('.docx')) {
+            return cb(null, true);
+        }
+        return cb(new Error('Solo se permiten archivos Word (.doc o .docx).'));
+    }
+});
 
 const ensureContratosServiciosTable = () => {
     const createTableQuery = `
@@ -442,6 +471,101 @@ router.delete("/delete/:id_contrato", (req, res) => {
             res.status(200).send("Contrato eliminado correctamente"); 
         }
     });
+});
+
+router.post('/subir-word/:id_contrato', (req, res) => {
+    const idContrato = Number(req.params.id_contrato || 0);
+    if (!Number.isInteger(idContrato) || idContrato <= 0) {
+        return res.status(400).send({ message: 'Contrato invalido.' });
+    }
+
+    uploadWordContrato.single('archivo')(req, res, (uploadErr) => {
+        if (uploadErr) {
+            return res.status(400).send({ message: uploadErr.message || 'No fue posible subir el archivo Word.' });
+        }
+
+        if (!req.file) {
+            return res.status(400).send({ message: 'Debe adjuntar un archivo Word (.doc o .docx).' });
+        }
+
+        const nombreOriginal = String(req.file.originalname || '').replace(/[\r\n|]/g, ' ').trim();
+        const nombreServidor = String(req.file.filename || '').trim();
+        const valorDocumento = `${nombreServidor}|${nombreOriginal}`;
+
+        db.query(
+            'UPDATE contratos_residentes SET documento_contrato = ? WHERE id_contrato = ?',
+            [valorDocumento, idContrato],
+            (err, result) => {
+                if (err) {
+                    try {
+                        fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
+                    } catch {
+                        // no-op
+                    }
+                    return res.status(500).send({ message: 'No se pudo guardar el documento en el contrato.' });
+                }
+
+                if (!result?.affectedRows) {
+                    try {
+                        fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
+                    } catch {
+                        // no-op
+                    }
+                    return res.status(404).send({ message: 'Contrato no encontrado.' });
+                }
+
+                return res.status(200).send({
+                    message: 'Archivo Word cargado correctamente.',
+                    documento_contrato: valorDocumento
+                });
+            }
+        );
+    });
+});
+
+router.get('/descargar-word/:id_contrato', (req, res) => {
+    const idContrato = Number(req.params.id_contrato || 0);
+    if (!Number.isInteger(idContrato) || idContrato <= 0) {
+        return res.status(400).send({ message: 'Contrato invalido.' });
+    }
+
+    db.query(
+        'SELECT codigo_contrato, documento_contrato FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+        [idContrato],
+        (err, rows) => {
+            if (err) {
+                return res.status(500).send({ message: 'No se pudo consultar el documento del contrato.' });
+            }
+
+            const row = rows?.[0];
+            if (!row) {
+                return res.status(404).send({ message: 'Contrato no encontrado.' });
+            }
+
+            const docValue = String(row.documento_contrato || '').trim();
+            if (!docValue) {
+                return res.status(404).send({ message: 'Este contrato no tiene archivo Word cargado.' });
+            }
+
+            const [storedNameRaw, originalNameRaw] = docValue.split('|');
+            const storedName = path.basename(String(storedNameRaw || '').trim());
+            const originalName = String(originalNameRaw || '').trim();
+            if (!storedName) {
+                return res.status(404).send({ message: 'El documento del contrato no es valido.' });
+            }
+
+            const absPath = path.join(contratosUploadDir, storedName);
+            if (!fs.existsSync(absPath)) {
+                return res.status(404).send({ message: 'El archivo Word no existe en el servidor.' });
+            }
+
+            const ext = path.extname(storedName).toLowerCase() || '.docx';
+            const safeCodigo = String(row.codigo_contrato || `CONTRATO-${idContrato}`).replace(/[^A-Za-z0-9_-]/g, '_');
+            const downloadName = originalName || `${safeCodigo}${ext}`;
+
+            return res.download(absPath, downloadName);
+        }
+    );
 });
 
 module.exports = router;

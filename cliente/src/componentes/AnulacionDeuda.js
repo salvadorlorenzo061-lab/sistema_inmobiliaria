@@ -148,15 +148,16 @@ function AnulacionDeuda() {
 
   const descargarPdfAnulacion = (anulacion) => {
     try {
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       const usuarioActivo = getUsuarioActivo();
       const contratoInfo = getContratoInfo(anulacion.id_contrato);
       const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
       const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;
-      const correlativoMatch = String(correlativoTexto).match(/^(?:[A-Za-z]+-)?0*([0-9]+)$/);
+      const correlativoMatch = String(correlativoTexto).match(/^([A-Za-z]+)-([0-9]+)$/);
+      const serieCorrelativo = correlativoMatch ? correlativoMatch[1].toUpperCase() : 'B';
       const numeroCorrelativo = correlativoMatch
-        ? correlativoMatch[1]
-        : String(correlativoTexto).replace(/\D/g, '') || String(anulacion.id_anulacion || '0');
+        ? correlativoMatch[2].slice(-5)
+        : String(anulacion.id_pago || anulacion.id_anulacion || 0).padStart(5, '0');
       const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
       const usarFormatoJuridico = esRolJuridico(usuarioActivo);
       const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
@@ -347,9 +348,9 @@ function AnulacionDeuda() {
       doc.setFontSize(9.6);
       doc.text(doc.splitTextToSize(String(nombreMarca).toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
       doc.setFontSize(10.5);
-      doc.text('ANULACION DE COBRO', rightCenterX, y + 7, { align: 'center' });
+      doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
       doc.setFontSize(9.5);
-      doc.text('Serie "ANU"', rightHeaderX + 6, y + 13.5);
+      doc.text(`Serie "${serieCorrelativo}"`, rightHeaderX + 6, y + 13.5);
       doc.setTextColor(166, 35, 35);
       doc.text(`N. ${String(numeroCorrelativo || '0').padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
       doc.setTextColor(0, 0, 0);
