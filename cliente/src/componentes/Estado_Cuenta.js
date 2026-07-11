@@ -449,9 +449,23 @@ const EstadoCuenta = () => {
         const tienePago = Boolean(detalle?.fecha_pago);
         const montoMoraFila = Number(detalle?.monto_mora || 0);
         const montoReciboFila = Number(detalle?.monto_total_detalle || detalle?.monto_cuota || montoProgramado || 0);
-        const observacionFila = detalle?.fecha_pago
-          ? (montoMoraFila > 0 ? `Incluye mora Q ${montoMoraFila.toFixed(2)}` : '')
-          : (estaPendienteEnCaja ? 'Pendiente' : '');
+        const mesesPagadosFila = String(detalle?.meses_pagados || '').trim();
+        const conceptosFila = String(detalle?.tipos_concepto || '')
+          .split(',')
+          .map((txt) => txt.trim())
+          .filter(Boolean)
+          .map((txt) => txt.replace(/_/g, ' '))
+          .join(', ');
+        const serviciosFila = String(detalle?.servicios_nombres || '').trim();
+        const observacionesLista = [];
+
+        if (mesesPagadosFila) observacionesLista.push(`Meses: ${mesesPagadosFila}`);
+        if (conceptosFila) observacionesLista.push(`Conceptos: ${conceptosFila}`);
+        if (serviciosFila) observacionesLista.push(`Servicios: ${serviciosFila}`);
+        if (montoMoraFila > 0) observacionesLista.push(`Incluye mora Q ${montoMoraFila.toFixed(2)}`);
+        if (!detalle?.fecha_pago && estaPendienteEnCaja) observacionesLista.push('Pendiente');
+
+        const observacionFila = observacionesLista.join(' | ');
 
         filas.push([
           formatoFecha(fechaProgramada),
@@ -513,9 +527,12 @@ const EstadoCuenta = () => {
         theme: 'grid',
         styles: {
           fontSize: 12,
+          halign: 'center',
+          valign: 'middle',
+          overflow: 'linebreak',
           lineColor: borderColor,
           lineWidth: 0.1,
-          cellPadding: 1.3,
+          cellPadding: 0.9,
           textColor: [20, 20, 20]
         },
         headStyles: {
@@ -530,17 +547,17 @@ const EstadoCuenta = () => {
           fillColor: [255, 255, 255]
         },
         columnStyles: {
-          0: { cellWidth: 18 },
-          1: { cellWidth: 6, halign: 'center' },
-          2: { cellWidth: 6, halign: 'center' },
-          3: { cellWidth: 6, halign: 'center' },
-          4: { cellWidth: 6, halign: 'center' },
-          5: { cellWidth: 18, halign: 'center' },
-          6: { cellWidth: 20, halign: 'center' },
-          7: { cellWidth: 21, halign: 'right' },
-          8: { cellWidth: 13, halign: 'center' },
-          9: { cellWidth: 15, halign: 'center' },
-          10: { cellWidth: 27 }
+          0: { cellWidth: 20 },
+          1: { cellWidth: 7, halign: 'center' },
+          2: { cellWidth: 7, halign: 'center' },
+          3: { cellWidth: 7, halign: 'center' },
+          4: { cellWidth: 7, halign: 'center' },
+          5: { cellWidth: 22, halign: 'center' },
+          6: { cellWidth: 24, halign: 'center' },
+          7: { cellWidth: 25, halign: 'center' },
+          8: { cellWidth: 17, halign: 'center' },
+          9: { cellWidth: 18, halign: 'center' },
+          10: { cellWidth: 40, halign: 'center' }
         },
         didDrawPage: (data) => {
           dibujarMembrete(data.pageNumber);
