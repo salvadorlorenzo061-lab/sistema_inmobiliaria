@@ -580,25 +580,54 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
                 return res.status(404).send({ message: 'Este contrato no tiene archivo cargado.' });
             }
 
-            const [storedNameRaw, originalNameRaw] = docValue.split('|');
+            const [storedNameRaw, originalNameRaw] = docValue.includes('|')
+                ? docValue.split('|')
+                : [docValue, docValue];
             const storedName = path.basename(String(storedNameRaw || '').trim());
             const originalName = String(originalNameRaw || '').trim();
-            if (!storedName) {
-                return res.status(404).send({ message: 'El documento del contrato no es valido.' });
+
+            let archivoServidor = storedName;
+            let absPath = archivoServidor ? path.join(contratosUploadDir, archivoServidor) : '';
+
+            if (!archivoServidor || !fs.existsSync(absPath)) {
+                // Respaldo para registros legacy: localizar el ultimo archivo del contrato.
+                const prefijo = `contrato_${idContrato}_`;
+                const candidatos = fs.existsSync(contratosUploadDir)
+                    ? fs.readdirSync(contratosUploadDir)
+                        .filter((name) => String(name || '').startsWith(prefijo))
+                        .map((name) => ({
+                            name,
+                            abs: path.join(contratosUploadDir, name),
+                            mtime: fs.statSync(path.join(contratosUploadDir, name)).mtimeMs
+                        }))
+                        .sort((a, b) => b.mtime - a.mtime)
+                    : [];
+
+                if (candidatos.length > 0) {
+                    archivoServidor = candidatos[0].name;
+                    absPath = candidatos[0].abs;
+                }
             }
 
-            const absPath = path.join(contratosUploadDir, storedName);
-            if (!fs.existsSync(absPath)) {
-                return res.status(404).send({ message: 'El archivo no existe en el servidor.' });
+            if (!archivoServidor || !fs.existsSync(absPath)) {
+                return res.status(404).send({
+                    message: 'El archivo no existe en el servidor. Vuelve a subirlo en el contrato para descargarlo.'
+                });
             }
 
-            const ext = path.extname(storedName).toLowerCase() || '.bin';
+            const ext = path.extname(archivoServidor).toLowerCase() || '.bin';
             const safeCodigo = String(row.codigo_contrato || `CONTRATO-${idContrato}`).replace(/[^A-Za-z0-9_-]/g, '_');
             const downloadName = originalName || `${safeCodigo}${ext}`;
 
             return res.download(absPath, downloadName);
         }
     );
+});
+
+// Alias para compatibilidad con clientes legacy.
+router.get('/descargar-archivo/:id_contrato', (req, res) => {
+    req.url = `/descargar-word/${req.params.id_contrato}`;
+    return router.handle(req, res);
 });
 
 module.exports = router;

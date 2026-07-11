@@ -576,9 +576,17 @@ function Contratos_Residentes() {
     if (!contrato?.id_contrato) return;
 
     try {
-      const response = await Axios.get(`${API_URL}/descargar-word/${contrato.id_contrato}`, {
-        responseType: 'blob'
-      });
+      let response = null;
+      try {
+        response = await Axios.get(`${API_URL}/descargar-word/${contrato.id_contrato}`, {
+          responseType: 'blob'
+        });
+      } catch (primaryError) {
+        // Compatibilidad con despliegues donde exista el endpoint anterior.
+        response = await Axios.get(`${API_URL}/descargar-archivo/${contrato.id_contrato}`, {
+          responseType: 'blob'
+        });
+      }
 
       const contentDisposition = String(response.headers?.['content-disposition'] || '');
       const fileNameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
@@ -598,10 +606,22 @@ function Contratos_Residentes() {
       link.remove();
       URL.revokeObjectURL(blobUrl);
     } catch (error) {
+      let backendMessage = '';
+      const errorData = error?.response?.data;
+      if (errorData instanceof Blob) {
+        try {
+          const text = await errorData.text();
+          const json = JSON.parse(text);
+          backendMessage = String(json?.message || '').trim();
+        } catch {
+          backendMessage = '';
+        }
+      }
+
       Swal.fire({
         icon: 'error',
         title: 'No se pudo descargar el archivo',
-        text: error?.response?.data?.message || 'Error al descargar el archivo del contrato.'
+        text: backendMessage || error?.response?.data?.message || 'Error al descargar el archivo del contrato.'
       });
     }
   };
