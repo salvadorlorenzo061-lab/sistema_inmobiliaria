@@ -101,6 +101,7 @@ function Contratos_Residentes() {
   const [showPdfPreview, setShowPdfPreview] = useState(true); // Vista previa PDF habilitada por defecto
   const [pdfPreviewRefreshKey, setPdfPreviewRefreshKey] = useState(0);
   const [contratoWordTarget, setContratoWordTarget] = useState(null);
+  const [modoCargaArchivo, setModoCargaArchivo] = useState('subir');
   const [subiendoWordContratoId, setSubiendoWordContratoId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -530,8 +531,29 @@ function Contratos_Residentes() {
     }
   };
 
-  const abrirSelectorWord = (contrato) => {
+  const abrirSelectorWord = async (contrato, modo = 'subir') => {
+    if (!contrato?.id_contrato) return;
+
+    let modoFinal = modo;
+    if (String(contrato?.documento_contrato || '').trim()) {
+      const confirmacion = await Swal.fire({
+        icon: 'question',
+        title: 'Archivo existente',
+        text: 'Este contrato ya tiene un archivo. Desea reemplazar el archivo existente?',
+        showCancelButton: true,
+        confirmButtonText: 'Si, reemplazar',
+        cancelButtonText: 'No'
+      });
+
+      if (!confirmacion.isConfirmed) {
+        return;
+      }
+
+      modoFinal = 'reemplazar';
+    }
+
     setContratoWordTarget(contrato || null);
+    setModoCargaArchivo(modoFinal);
     if (inputWordRef.current) {
       inputWordRef.current.value = '';
       inputWordRef.current.click();
@@ -549,6 +571,7 @@ function Contratos_Residentes() {
 
     const formData = new FormData();
     formData.append('archivo', archivo);
+    formData.append('replace_existing', modoCargaArchivo === 'reemplazar' ? '1' : '0');
 
     try {
       setSubiendoWordContratoId(contrato.id_contrato);
@@ -556,8 +579,30 @@ function Contratos_Residentes() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       await cargarCatalogos();
-      Swal.fire({ icon: 'success', title: 'Archivo cargado', timer: 1800, showConfirmButton: false });
+      Swal.fire({ icon: 'success', title: 'Archivo guardado en base de datos', timer: 1800, showConfirmButton: false });
     } catch (error) {
+      const status = Number(error?.response?.status || 0);
+      if (status === 409) {
+        const confirmarReemplazo = await Swal.fire({
+          icon: 'warning',
+          title: 'Archivo existente',
+          text: error?.response?.data?.message || 'Este contrato ya tiene archivo. Desea reemplazarlo?',
+          showCancelButton: true,
+          confirmButtonText: 'Si, reemplazar',
+          cancelButtonText: 'No'
+        });
+
+        if (confirmarReemplazo.isConfirmed) {
+          formData.set('replace_existing', '1');
+          await Axios.post(`${API_URL}/subir-word/${contrato.id_contrato}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          await cargarCatalogos();
+          Swal.fire({ icon: 'success', title: 'Archivo reemplazado en base de datos', timer: 1800, showConfirmButton: false });
+          return;
+        }
+      }
+
       Swal.fire({
         icon: 'error',
         title: 'No se pudo cargar el archivo',
@@ -713,7 +758,7 @@ function Contratos_Residentes() {
     if (accion === 'editar') abrirEditarModal(contrato);
     if (accion === 'eliminar') deleteContrato(contrato);
     if (accion === 'pdf') imprimirContrato(contrato);
-    if (accion === 'subir') abrirSelectorWord(contrato);
+    if (accion === 'subir') abrirSelectorWord(contrato, 'subir');
     if (accion === 'descargar') {
       if (!contrato.documento_contrato) {
         Swal.fire({ icon: 'info', title: 'Sin archivo', text: 'Este contrato aun no tiene archivo cargado.' });

@@ -53,6 +53,28 @@ const ensureContratosServiciosTable = () => {
     });
 };
 
+const ensureContratosDocumentosTable = () => {
+    const createTableQuery = `
+        CREATE TABLE IF NOT EXISTS contratos_documentos (
+            id_documento BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_contrato INT NOT NULL,
+            nombre_original VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(120) NULL,
+            contenido LONGBLOB NOT NULL,
+            fecha_actualizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_contrato_documento (id_contrato),
+            INDEX idx_cd_contrato (id_contrato),
+            CONSTRAINT fk_cd_contrato FOREIGN KEY (id_contrato) REFERENCES contratos_residentes(id_contrato) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `;
+
+    db.query(createTableQuery, (err) => {
+        if (err) {
+            console.error('Error asegurando tabla contratos_documentos:', err.message);
+        }
+    });
+};
+
 const resolverColumnaCostoServicios = (callback) => {
     db.query("SHOW COLUMNS FROM servicios LIKE 'costo_servicio'", (errCostoServicio, rowsCostoServicio) => {
         if (errCostoServicio) {
@@ -309,6 +331,7 @@ ensureEmpresaMarcaColumn();
 ensureProyectoColumn();
 ensureFormatoContratoColumn();
 ensureContratosServiciosTable();
+ensureContratosDocumentosTable();
 
 // === 1. LISTAR CONTRATOS (CON JOINS) ===
 router.get("/", (req, res) => {
@@ -481,9 +504,10 @@ router.post('/subir-word/:id_contrato', (req, res) => {
             return res.status(400).send({ message: 'Debe adjuntar un archivo.' });
         }
 
+        const replaceExisting = String(req.body?.replace_existing || '').trim() === '1';
         const nombreOriginal = String(req.file.originalname || '').replace(/[\r\n|]/g, ' ').trim();
         const nombreServidor = String(req.file.filename || '').trim();
-        const valorDocumento = `${nombreServidor}|${nombreOriginal}`;
+        const valorDocumento = `db|${nombreOriginal || nombreServidor}`;
 
         db.query(
             'SELECT documento_contrato FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
@@ -509,46 +533,86 @@ router.post('/subir-word/:id_contrato', (req, res) => {
                 }
 
                 const docAnterior = String(contratoActual.documento_contrato || '').trim();
+                if (docAnterior && !replaceExisting) {
+                    try {
+                        fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
+                    } catch {
+                        // no-op
+                    }
+                    return res.status(409).send({ message: 'Este contrato ya tiene un archivo. Desea reemplazar el archivo existente?' });
+                }
                 const [oldStoredNameRaw] = docAnterior.split('|');
                 const oldStoredName = path.basename(String(oldStoredNameRaw || '').trim());
 
+                const contenido = fs.readFileSync(path.join(contratosUploadDir, nombreServidor));
+                const mimeType = String(req.file.mimetype || 'application/octet-stream').trim();
+
                 db.query(
-                    'UPDATE contratos_residentes SET documento_contrato = ? WHERE id_contrato = ?',
-                    [valorDocumento, idContrato],
-                    (err, result) => {
-                        if (err) {
+                    `
+                        INSERT INTO contratos_documentos (id_contrato, nombre_original, mime_type, contenido)
+                        VALUES (?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE
+                            nombre_original = VALUES(nombre_original),
+                            mime_type = VALUES(mime_type),
+                            contenido = VALUES(contenido),
+                            fecha_actualizacion = CURRENT_TIMESTAMP
+                    `,
+                    [idContrato, nombreOriginal || nombreServidor, mimeType, contenido],
+                    (docErr) => {
+                        if (docErr) {
                             try {
                                 fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
                             } catch {
                                 // no-op
                             }
-                            return res.status(500).send({ message: 'No se pudo guardar el documento en el contrato.' });
+                            return res.status(500).send({ message: 'No se pudo guardar el archivo en base de datos.' });
                         }
 
-                        if (!result?.affectedRows) {
-                            try {
-                                fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
-                            } catch {
-                                // no-op
-                            }
-                            return res.status(404).send({ message: 'Contrato no encontrado.' });
-                        }
+                        db.query(
+                            'UPDATE contratos_residentes SET documento_contrato = ? WHERE id_contrato = ?',
+                            [valorDocumento, idContrato],
+                            (err, result) => {
+                                if (err) {
+                                    try {
+                                        fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
+                                    } catch {
+                                        // no-op
+                                    }
+                                    return res.status(500).send({ message: 'No se pudo guardar el documento en el contrato.' });
+                                }
 
-                        if (oldStoredName && oldStoredName !== nombreServidor) {
-                            const oldFilePath = path.join(contratosUploadDir, oldStoredName);
-                            if (fs.existsSync(oldFilePath)) {
+                                if (!result?.affectedRows) {
+                                    try {
+                                        fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
+                                    } catch {
+                                        // no-op
+                                    }
+                                    return res.status(404).send({ message: 'Contrato no encontrado.' });
+                                }
+
+                                if (oldStoredName && oldStoredName !== nombreServidor) {
+                                    const oldFilePath = path.join(contratosUploadDir, oldStoredName);
+                                    if (fs.existsSync(oldFilePath)) {
+                                        try {
+                                            fs.unlinkSync(oldFilePath);
+                                        } catch {
+                                            // no-op
+                                        }
+                                    }
+                                }
+
                                 try {
-                                    fs.unlinkSync(oldFilePath);
+                                    fs.unlinkSync(path.join(contratosUploadDir, nombreServidor));
                                 } catch {
                                     // no-op
                                 }
-                            }
-                        }
 
-                        return res.status(200).send({
-                            message: 'Archivo cargado correctamente.',
-                            documento_contrato: valorDocumento
-                        });
+                                return res.status(200).send({
+                                    message: docAnterior ? 'Archivo reemplazado y guardado en base de datos.' : 'Archivo cargado y guardado en base de datos.',
+                                    documento_contrato: valorDocumento
+                                });
+                            }
+                        );
                     }
                 );
             }
@@ -563,7 +627,14 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
     }
 
     db.query(
-        'SELECT codigo_contrato, documento_contrato FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+        `
+            SELECT c.codigo_contrato, c.documento_contrato,
+                   d.nombre_original, d.mime_type, d.contenido
+            FROM contratos_residentes c
+            LEFT JOIN contratos_documentos d ON d.id_contrato = c.id_contrato
+            WHERE c.id_contrato = ?
+            LIMIT 1
+        `,
         [idContrato],
         (err, rows) => {
             if (err) {
@@ -573,6 +644,17 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
             const row = rows?.[0];
             if (!row) {
                 return res.status(404).send({ message: 'Contrato no encontrado.' });
+            }
+
+            if (row.contenido) {
+                const nombreOriginalDb = String(row.nombre_original || '').trim();
+                const safeCodigoDb = String(row.codigo_contrato || `CONTRATO-${idContrato}`).replace(/[^A-Za-z0-9_-]/g, '_');
+                const downloadNameDb = nombreOriginalDb || `${safeCodigoDb}.bin`;
+                const mimeDb = String(row.mime_type || 'application/octet-stream').trim();
+
+                res.setHeader('Content-Type', mimeDb || 'application/octet-stream');
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadNameDb)}`);
+                return res.status(200).send(row.contenido);
             }
 
             const docValue = String(row.documento_contrato || '').trim();
