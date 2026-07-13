@@ -100,11 +100,11 @@ function Contratos_Residentes() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(true); // Vista previa PDF habilitada por defecto
   const [pdfPreviewRefreshKey, setPdfPreviewRefreshKey] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [contratoWordTarget, setContratoWordTarget] = useState(null);
   const [modoCargaArchivo, setModoCargaArchivo] = useState('subir');
   const [subiendoWordContratoId, setSubiendoWordContratoId] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
   const inputWordRef = useRef(null);
 
   const API_URL = `${API_BASE_URL}/api/contratos_residentes`;
@@ -139,8 +139,7 @@ function Contratos_Residentes() {
     cargarCatalogos();
   }, [cargarCatalogos]);
 
-  // monto_cuota guarda capital por cuota.
-  // El interes se distribuye por cuota al momento de cobro en Caja.
+  // Cálculo automático del valor de cuota si cambia el monto total o las cuotas
   useEffect(() => {
     if (monto_total && cuotas_pactadas > 0) {
       const calculo = (parseFloat(monto_total) / parseInt(cuotas_pactadas)).toFixed(2);
@@ -203,16 +202,6 @@ function Contratos_Residentes() {
   const proyectoSeleccionado = proyectosDisponibles.find((proyecto) => getProyectoNombre(proyecto) === proyecto_propiedad) || null;
 
   const formatMoney = (value) => `Q${Number(value || 0).toFixed(2)}`;
-  const montoCapitalContrato = Math.max(parseFloat(monto_total || 0), 0);
-  const cuotasContrato = Math.max(parseInt(cuotas_pactadas || 0, 10), 0);
-  const porcentajeInteresContrato = Math.max(parseFloat(interes_porcentaje || 0), 0);
-  const interesTotalContrato = (montoCapitalContrato > 0 && cuotasContrato > 0)
-    ? ((montoCapitalContrato * porcentajeInteresContrato) / 100)
-    : 0;
-  const interesPorCuotaContrato = cuotasContrato > 0 ? (interesTotalContrato / cuotasContrato) : 0;
-  const cuotaTotalConInteresContrato = cuotasContrato > 0
-    ? ((montoCapitalContrato + interesTotalContrato) / cuotasContrato)
-    : 0;
 
   useEffect(() => {
     const idProyecto = Number(proyectoSeleccionado?.id_proyecto || 0);
@@ -370,7 +359,6 @@ function Contratos_Residentes() {
       monto_total,
       cuotas_pactadas, 
       monto_cuota, 
-      interes_porcentaje,
       dia_pago_limite, 
       fecha_firma,
       fecha_compra: fecha_compra || null,
@@ -446,7 +434,7 @@ function Contratos_Residentes() {
 
     Axios.put(`${API_URL}/actualizar`, {
       id_contrato, codigo_contrato, id_residente, id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null, id_proyecto: proyectoSeleccionado?.id_proyecto || null, id_tipo_contrato, formato_contrato, monto_total,
-      cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
+      cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
       servicios_contrato: serviciosContratoSeleccionados
     })
     .then(() => {
@@ -547,7 +535,7 @@ function Contratos_Residentes() {
     if (!contrato?.id_contrato) return;
 
     let modoFinal = modo;
-    if (String(contrato?.documento_contrato || '').trim()) {
+    if (contrato?.documento_contrato) {
       const confirmacion = await Swal.fire({
         icon: 'question',
         title: 'Archivo existente',
@@ -564,8 +552,9 @@ function Contratos_Residentes() {
       modoFinal = 'reemplazar';
     }
 
-    setContratoWordTarget(contrato || null);
+    setContratoWordTarget(contrato);
     setModoCargaArchivo(modoFinal);
+
     if (inputWordRef.current) {
       inputWordRef.current.value = '';
       inputWordRef.current.click();
@@ -590,10 +579,12 @@ function Contratos_Residentes() {
       await Axios.post(`${API_URL}/subir-word/${contrato.id_contrato}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+
       await cargarCatalogos();
       Swal.fire({ icon: 'success', title: 'Archivo guardado en base de datos', timer: 1800, showConfirmButton: false });
     } catch (error) {
       const status = Number(error?.response?.status || 0);
+
       if (status === 409) {
         const confirmarReemplazo = await Swal.fire({
           icon: 'warning',
@@ -618,7 +609,7 @@ function Contratos_Residentes() {
       Swal.fire({
         icon: 'error',
         title: 'No se pudo cargar el archivo',
-        text: error?.response?.data?.message || 'Error al subir el archivo.'
+        text: error?.response?.data?.message || 'Error al subir el archivo del contrato.'
       });
     } finally {
       setSubiendoWordContratoId(null);
@@ -633,25 +624,16 @@ function Contratos_Residentes() {
     if (!contrato?.id_contrato) return;
 
     try {
-      let response = null;
+      let response;
       try {
-        response = await Axios.get(`${API_URL}/descargar-word/${contrato.id_contrato}`, {
-          responseType: 'blob'
-        });
-      } catch (primaryError) {
-        // Compatibilidad con despliegues donde exista el endpoint anterior.
-        response = await Axios.get(`${API_URL}/descargar-archivo/${contrato.id_contrato}`, {
-          responseType: 'blob'
-        });
+        response = await Axios.get(`${API_URL}/descargar-word/${contrato.id_contrato}`, { responseType: 'blob' });
+      } catch {
+        response = await Axios.get(`${API_URL}/descargar-archivo/${contrato.id_contrato}`, { responseType: 'blob' });
       }
 
       const contentDisposition = String(response.headers?.['content-disposition'] || '');
       const fileNameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
-      const documentoGuardado = String(contrato?.documento_contrato || '').trim();
-      const [storedNameRaw, originalNameRaw] = documentoGuardado.split('|');
-      const originalName = String(originalNameRaw || '').trim();
-      const storedName = String(storedNameRaw || '').trim();
-      const fallbackNombre = originalName || storedName || `${contrato.codigo_contrato || 'contrato'}`;
+      const fallbackNombre = `${contrato.codigo_contrato || 'contrato'}`;
       const nombreArchivo = decodeURIComponent(fileNameMatch?.[1] || fileNameMatch?.[2] || fallbackNombre);
 
       const blobUrl = URL.createObjectURL(new Blob([response.data]));
@@ -683,6 +665,30 @@ function Contratos_Residentes() {
     }
   };
 
+  const ejecutarAccionContrato = (accion, contrato) => {
+    if (!accion || !contrato) return;
+
+    if (accion === 'editar') abrirEditarModal(contrato);
+    if (accion === 'eliminar') deleteContrato(contrato);
+    if (accion === 'pdf') imprimirContrato(contrato);
+    if (accion === 'subir') abrirSelectorWord(contrato, 'subir');
+    if (accion === 'reemplazar') abrirSelectorWord(contrato, 'reemplazar');
+    if (accion === 'descargar') {
+      if (!contrato.documento_contrato) {
+        Swal.fire({ icon: 'info', title: 'Sin archivo', text: 'Este contrato aun no tiene archivo cargado.' });
+        return;
+      }
+      descargarWordContrato(contrato);
+    }
+  };
+
+  const handleAccionContratoChange = (event, contrato) => {
+    const accion = String(event?.target?.value || '').trim();
+    if (!accion) return;
+    ejecutarAccionContrato(accion, contrato);
+    event.target.value = '';
+  };
+
   const abrirEditarModal = (val) => {
     const toDateInput = (dateValue) => (dateValue ? String(dateValue).split('T')[0] : '');
 
@@ -706,7 +712,6 @@ function Contratos_Residentes() {
     setMonto_total(val.monto_total ?? '');
     setCuotas_pactadas(val.cuotas_pactadas ?? '');
     setMonto_cuota(val.monto_cuota ?? '');
-    setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setDia_pago_limite(val.dia_pago_limite ?? '');
     setFecha_firma(toDateInput(val.fecha_firma));
     setFecha_compra(toDateInput(val.fecha_compra));
@@ -763,29 +768,6 @@ function Contratos_Residentes() {
   const handleBusquedaChange = (e) => {
     setBusqueda(e.target.value);
     setCurrentPage(1);
-  };
-
-  const ejecutarAccionContrato = (accion, contrato) => {
-    if (!accion || !contrato) return;
-
-    if (accion === 'editar') abrirEditarModal(contrato);
-    if (accion === 'eliminar') deleteContrato(contrato);
-    if (accion === 'pdf') imprimirContrato(contrato);
-    if (accion === 'subir') abrirSelectorWord(contrato, 'subir');
-    if (accion === 'descargar') {
-      if (!contrato.documento_contrato) {
-        Swal.fire({ icon: 'info', title: 'Sin archivo', text: 'Este contrato aun no tiene archivo cargado.' });
-        return;
-      }
-      descargarWordContrato(contrato);
-    }
-  };
-
-  const handleAccionContratoChange = (event, contrato) => {
-    const accion = String(event?.target?.value || '').trim();
-    if (!accion) return;
-    ejecutarAccionContrato(accion, contrato);
-    event.target.value = '';
   };
 
   return (
@@ -866,22 +848,19 @@ function Contratos_Residentes() {
                 </td>
                 <td className="sticky-actions-col actions-buttons-cell">
                   <select
-                    className="form-select form-select-sm fw-bold"
+                    className="form-select form-select-sm"
                     defaultValue=""
                     onChange={(event) => handleAccionContratoChange(event, val)}
+                    disabled={subiendoWordContratoId === val.id_contrato}
                   >
                     <option value="">ACCIONES</option>
                     <option value="editar">Editar contrato</option>
                     <option value="eliminar">Eliminar contrato</option>
                     <option value="pdf">Descargar PDF</option>
-                    <option value="subir" disabled={subiendoWordContratoId === val.id_contrato}>
-                      {subiendoWordContratoId === val.id_contrato
-                        ? 'Subiendo archivo...'
-                        : (val.documento_contrato ? 'Reemplazar archivo' : 'Subir archivo')}
+                    <option value={val.documento_contrato ? 'reemplazar' : 'subir'}>
+                      {val.documento_contrato ? 'Reemplazar archivo' : 'Subir archivo'}
                     </option>
-                    <option value="descargar">
-                      Descargar archivo
-                    </option>
+                    <option value="descargar">Descargar archivo</option>
                   </select>
                 </td>
               </tr>
@@ -1137,20 +1116,8 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Capital por Cuota (Auto):</label>
+                  <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light text-success fw-bold" value={monto_cuota} readOnly />
-                </div>
-                <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Interés Total Contrato (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={interesTotalContrato.toFixed(2)} readOnly />
-                </div>
-                <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Interés por Cuota (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={interesPorCuotaContrato.toFixed(2)} readOnly />
-                </div>
-                <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Cuota Total con Interés (Auto):</label>
-                  <input type="text" className="form-control bg-light text-primary fw-bold" value={cuotaTotalConInteresContrato.toFixed(2)} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
