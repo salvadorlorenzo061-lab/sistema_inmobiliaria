@@ -236,9 +236,10 @@ function Resoluciones_facturas() {
   //   CONTROLADORES DE BASE DE DATOS (CRUD)
   // =========================================================================
   const add = () => {
-    const empresasObjetivo = empresasSeleccionadas.length
+    const empresasObjetivoRaw = empresasSeleccionadas.length
       ? empresasSeleccionadas
       : (id_empresa ? [String(id_empresa)] : []);
+    const empresasObjetivo = [...new Set(empresasObjetivoRaw.map((item) => String(item)))];
 
     if (!empresasObjetivo.length || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({
@@ -322,9 +323,10 @@ function Resoluciones_facturas() {
   };
 
   const actualizar = () => {
-    const empresasObjetivo = empresasSeleccionadas.length
+    const empresasObjetivoRaw = empresasSeleccionadas.length
       ? empresasSeleccionadas
       : (id_empresa ? [String(id_empresa)] : []);
+    const empresasObjetivo = [...new Set(empresasObjetivoRaw.map((item) => String(item)))];
 
     if (!id_resolucion || !empresasObjetivo.length || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({ icon: 'warning', title: 'Campos incompletos' });

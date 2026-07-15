@@ -429,15 +429,26 @@ router.get("/residentes-pendientes", (req, res) => {
 
     const filtroPermisos = filtrarPorPermiso
         ? `
-            AND EXISTS (
-                SELECT 1
-                FROM asignar_correlativos ac
-                INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
-                WHERE ac.id_usuario = ?
-                  AND ac.estado = 'activo'
-                  AND ac.correlativo_actual <= ac.correlativo_fin
-                  AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                  AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+            AND (
+                EXISTS (
+                    SELECT 1
+                    FROM asignar_correlativos ac
+                    INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                    WHERE ac.id_usuario = ?
+                      AND ac.estado = 'activo'
+                      AND ac.correlativo_actual <= ac.correlativo_fin
+                      AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                      AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM resoluciones_facturas rf_directa
+                    WHERE rf_directa.id_usuario = ?
+                      AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
+                      AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
+                      AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
+                      AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                )
             )
         `
         : '';
@@ -474,7 +485,7 @@ router.get("/residentes-pendientes", (req, res) => {
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
     `;
 
-    const queryParams = filtrarPorPermiso ? [idUsuario] : [];
+    const queryParams = filtrarPorPermiso ? [idUsuario, idUsuario] : [];
 
     db.query(query, queryParams, (err, result) => {
         if (err) {
@@ -498,15 +509,26 @@ router.get("/buscar-residente", (req, res) => {
 
     const filtroPermisos = filtrarPorPermiso
         ? `
-            AND EXISTS (
-                SELECT 1
-                FROM asignar_correlativos ac
-                INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
-                WHERE ac.id_usuario = ?
-                  AND ac.estado = 'activo'
-                  AND ac.correlativo_actual <= ac.correlativo_fin
-                  AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                  AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+            AND (
+                EXISTS (
+                    SELECT 1
+                    FROM asignar_correlativos ac
+                    INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                    WHERE ac.id_usuario = ?
+                      AND ac.estado = 'activo'
+                      AND ac.correlativo_actual <= ac.correlativo_fin
+                      AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                      AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM resoluciones_facturas rf_directa
+                    WHERE rf_directa.id_usuario = ?
+                      AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
+                      AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
+                      AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
+                      AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                )
             )
         `
         : '';
@@ -544,7 +566,7 @@ router.get("/buscar-residente", (req, res) => {
 
     const searchTerm = `%${criterio}%`;
     const queryParams = filtrarPorPermiso
-        ? [idUsuario, searchTerm, searchTerm, searchTerm, searchTerm]
+        ? [idUsuario, idUsuario, searchTerm, searchTerm, searchTerm, searchTerm]
         : [searchTerm, searchTerm, searchTerm, searchTerm];
 
     db.query(query, queryParams, (err, result) => {
