@@ -322,10 +322,21 @@ function Resoluciones_facturas() {
   };
 
   const actualizar = () => {
-    if (!id_resolucion || !id_empresa || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
+    const empresasObjetivo = empresasSeleccionadas.length
+      ? empresasSeleccionadas
+      : (id_empresa ? [String(id_empresa)] : []);
+
+    if (!id_resolucion || !empresasObjetivo.length || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({ icon: 'warning', title: 'Campos incompletos' });
       return;
     }
+
+    if (empresasObjetivo.length !== 1) {
+      Swal.fire({ icon: 'warning', title: 'Seleccione una sola empresa para actualizar' });
+      return;
+    }
+
+    const idEmpresaActualizada = Number(empresasObjetivo[0]);
 
     const rInicial = Number(rango_inicial);
     const rFinal = Number(rango_final);
@@ -342,7 +353,7 @@ function Resoluciones_facturas() {
     }
 
     Axios.put(`${API_URL}/actualizar`, { 
-      id_resolucion, id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
+      id_resolucion, id_empresa: idEmpresaActualizada, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
     })
     .then(() => {
       getResoluciones();
@@ -415,7 +426,7 @@ function Resoluciones_facturas() {
   const abrirEditarModal = (val) => {
     setId_resolucion(val.id_resolucion);
     setId_empresa(val.id_empresa);
-    setEmpresasSeleccionadas([]);
+    setEmpresasSeleccionadas(val.id_empresa ? [String(val.id_empresa)] : []);
     setId_usuario(val.id_usuario ? String(val.id_usuario) : '');
     setNumero_resolucion(val.numero_resolucion);
     setSerie(val.serie);
@@ -685,7 +696,7 @@ function Resoluciones_facturas() {
                   <label className="form-label fw-bold">Empresa</label>
                   <div className="border rounded p-2 mb-2" style={{ maxHeight: '140px', overflowY: 'auto' }}>
                     {empresasList.map((empresa) => {
-                      const checked = String(id_empresa) === String(empresa.id_empresa);
+                      const checked = empresasSeleccionadas.includes(String(empresa.id_empresa));
                       return (
                         <label key={`edit-check-${empresa.id_empresa}`} className="form-check d-flex align-items-center justify-content-between mb-1">
                           <div>
@@ -693,7 +704,7 @@ function Resoluciones_facturas() {
                               className="form-check-input me-2"
                               type="checkbox"
                               checked={checked}
-                              onChange={() => setId_empresa(checked ? '' : String(empresa.id_empresa))}
+                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
                             />
                             <span className="form-check-label">{empresa.nombre_empresa}</span>
                           </div>
@@ -702,7 +713,7 @@ function Resoluciones_facturas() {
                       );
                     })}
                   </div>
-                  <small className="text-muted">Selecciona una empresa para actualizar esta resolución.</small>
+                  <small className="text-muted">Usa el mismo patrón de checkboxes. Para actualizar, deja marcada solo una empresa.</small>
                 </div>
                 {idsEmpresasObjetivo.length > 0 && (
                   <div className="mb-3 border rounded p-2 bg-light">
