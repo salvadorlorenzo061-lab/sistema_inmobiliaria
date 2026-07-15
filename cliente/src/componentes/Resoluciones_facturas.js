@@ -33,6 +33,7 @@ function Resoluciones_facturas() {
   const [rol, setRol] = useState("caja");
   const [empresasList, setEmpresasList] = useState([]);
   const [empresasSeleccionadas, setEmpresasSeleccionadas] = useState([]);
+  const [proyectosList, setProyectosList] = useState([]);
   const [usuariosList, setUsuariosList] = useState([]);
   
   const [Resoluciones_facturasList, setResoluciones_facturas] = useState([]);
@@ -67,6 +68,17 @@ function Resoluciones_facturas() {
       });
   };
 
+  const getProyectos = () => {
+    Axios.get(`${API_BASE_URL}/api/proyectos`)
+      .then((response) => {
+        setProyectosList(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error al obtener proyectos', error);
+        setProyectosList([]);
+      });
+  };
+
   const getNombreEmpresa = (empresaId) => {
     const empresa = empresasList.find((item) => String(item.id_empresa) === String(empresaId));
     return empresa?.nombre_empresa || `Empresa #${empresaId}`;
@@ -98,6 +110,23 @@ function Resoluciones_facturas() {
         : [...prev, id]
     ));
   };
+
+  const idsEmpresasObjetivo = empresasSeleccionadas.length
+    ? empresasSeleccionadas
+    : (id_empresa ? [String(id_empresa)] : []);
+
+  const proyectosPorEmpresaSeleccionada = idsEmpresasObjetivo.map((idEmp) => {
+    const empresa = empresasList.find((item) => String(item.id_empresa) === String(idEmp));
+    const proyectos = proyectosList
+      .filter((proyecto) => String(proyecto?.id_empresa) === String(idEmp))
+      .sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')));
+
+    return {
+      id_empresa: idEmp,
+      nombre_empresa: empresa?.nombre_empresa || `Empresa #${idEmp}`,
+      proyectos
+    };
+  });
 
   const calcularRangoFinalPorLote = (inicio) => {
     const n = Number(inicio);
@@ -380,6 +409,7 @@ function Resoluciones_facturas() {
     getResoluciones();
     getEmpresas();
     getUsuarios();
+    getProyectos();
   }, []);
 
   const abrirEditarModal = (val) => {
@@ -556,6 +586,27 @@ function Resoluciones_facturas() {
                   </select>
                   <small className="text-muted">Si marcas checkboxes, se creará una resolución por cada empresa seleccionada.</small>
                 </div>
+                {idsEmpresasObjetivo.length > 0 && (
+                  <div className="mb-3 border rounded p-2 bg-light">
+                    <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
+                    {proyectosPorEmpresaSeleccionada.map((grupo) => (
+                      <div key={`proy-${grupo.id_empresa}`} className="mb-2">
+                        <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
+                        {grupo.proyectos.length > 0 ? (
+                          <ul className="small mb-1 ps-3">
+                            {grupo.proyectos.map((proyecto) => (
+                              <li key={`proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`}>
+                                {proyecto.nombre} (ID: {proyecto.id_proyecto})
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="small text-muted">Sin proyectos asociados.</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="mb-3">
                   <label className="form-label fw-bold">Usuario asignado</label>
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
