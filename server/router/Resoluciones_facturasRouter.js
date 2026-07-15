@@ -70,6 +70,8 @@ const validarUsuario = (idUsuario, callback) => {
 // === CREAR RESOLUCIÓN ===
 router.post("/crear", (req, res) => {
     const { id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
+    const numeroResolucionNormalizado = String(numero_resolucion || '').trim().toUpperCase();
+    const serieNormalizada = String(serie || '').trim().toUpperCase();
     const rol = String(req.body?.rol || 'caja').trim().toLowerCase() || 'caja';
 
     // --- VALIDACIÓN DE PROTECCIÓN EN EL BACKEND ---
@@ -84,6 +86,10 @@ router.post("/crear", (req, res) => {
     if (cActual < rInicial || cActual > rFinal) {
         return res.status(400).send({ message: `El correlativo actual (${cActual}) está fuera del rango autorizado (${rInicial} - ${rFinal})` });
     }
+
+    if (!numeroResolucionNormalizado || !serieNormalizada) {
+        return res.status(400).send({ message: 'Debe enviar número de resolución y serie válidos.' });
+    }
     // ---------------------------------------------
 
     validarUsuario(id_usuario, (userErr, idUsuarioValido) => {
@@ -96,14 +102,14 @@ router.post("/crear", (req, res) => {
             FROM resoluciones_facturas
             WHERE id_empresa = ?
               AND id_usuario = ?
-              AND numero_resolucion = ?
-              AND serie = ?
+                            AND UPPER(TRIM(numero_resolucion)) = ?
+                            AND UPPER(TRIM(serie)) = ?
             LIMIT 1
         `;
 
         db.query(
             existeAsignacionQuery,
-            [id_empresa, idUsuarioValido, numero_resolucion, serie],
+            [id_empresa, idUsuarioValido, numeroResolucionNormalizado, serieNormalizada],
             (existsErr, existsRows) => {
                 if (existsErr) {
                     console.log(existsErr);
@@ -118,8 +124,8 @@ router.post("/crear", (req, res) => {
                     SELECT id_resolucion
                     FROM resoluciones_facturas
                     WHERE id_empresa = ?
-                      AND numero_resolucion = ?
-                      AND serie = ?
+                                            AND UPPER(TRIM(numero_resolucion)) = ?
+                                            AND UPPER(TRIM(serie)) = ?
                       ${idResolucionExistente ? 'AND id_resolucion <> ?' : ''}
                       AND (
                             (? BETWEEN rango_inicial AND rango_final)
@@ -131,8 +137,8 @@ router.post("/crear", (req, res) => {
                 `;
 
                 const overlapParams = idResolucionExistente
-                    ? [id_empresa, numero_resolucion, serie, idResolucionExistente, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal]
-                    : [id_empresa, numero_resolucion, serie, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal];
+                    ? [id_empresa, numeroResolucionNormalizado, serieNormalizada, idResolucionExistente, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal]
+                    : [id_empresa, numeroResolucionNormalizado, serieNormalizada, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal];
 
                 db.query(
                     overlapQuery,
@@ -180,7 +186,7 @@ router.post("/crear", (req, res) => {
                         }
 
                         const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-                        const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
+                        const values = [id_empresa, idUsuarioValido, numeroResolucionNormalizado, serieNormalizada, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
 
                         db.query(sqlInsert, values, (insertErr) => {
                             if (insertErr) {
@@ -221,6 +227,8 @@ router.get("/", (req, res) => {
 // === ACTUALIZAR RESOLUCIÓN ===
 router.put("/actualizar", (req, res) => {
     const { id_resolucion, id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado } = req.body;
+    const numeroResolucionNormalizado = String(numero_resolucion || '').trim().toUpperCase();
+    const serieNormalizada = String(serie || '').trim().toUpperCase();
     const rol = String(req.body?.rol || 'caja').trim().toLowerCase() || 'caja';
     
     // --- VALIDACIÓN DE PROTECCIÓN EN EL BACKEND ---
@@ -235,6 +243,10 @@ router.put("/actualizar", (req, res) => {
     if (cActual < rInicial || cActual > rFinal) {
         return res.status(400).send({ message: `El correlativo actual (${cActual}) está fuera del rango autorizado (${rInicial} - ${rFinal})` });
     }
+
+    if (!numeroResolucionNormalizado || !serieNormalizada) {
+        return res.status(400).send({ message: 'Debe enviar número de resolución y serie válidos.' });
+    }
     // ---------------------------------------------
 
     validarUsuario(id_usuario, (userErr, idUsuarioValido) => {
@@ -246,8 +258,8 @@ router.put("/actualizar", (req, res) => {
             SELECT id_resolucion
             FROM resoluciones_facturas
             WHERE id_empresa = ?
-              AND numero_resolucion = ?
-              AND serie = ?
+                            AND UPPER(TRIM(numero_resolucion)) = ?
+                            AND UPPER(TRIM(serie)) = ?
               AND id_resolucion <> ?
               AND (
                     (? BETWEEN rango_inicial AND rango_final)
@@ -260,7 +272,7 @@ router.put("/actualizar", (req, res) => {
 
         db.query(
             overlapQuery,
-            [id_empresa, numero_resolucion, serie, id_resolucion, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal],
+            [id_empresa, numeroResolucionNormalizado, serieNormalizada, id_resolucion, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal],
             (overlapErr, overlapRows) => {
                 if (overlapErr) {
                     console.log(overlapErr);
@@ -286,8 +298,9 @@ router.put("/actualizar", (req, res) => {
                     WHERE id_resolucion = ?`;
 
                 const values = [id_empresa, idUsuarioValido, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol, id_resolucion];
+                const valuesNormalizados = [id_empresa, idUsuarioValido, numeroResolucionNormalizado, serieNormalizada, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol, id_resolucion];
 
-                db.query(sqlUpdate, values, (err, result) => {
+                db.query(sqlUpdate, valuesNormalizados, (err, result) => {
                     if (err) {
                         console.log(err);
                         res.status(500).send("Error al actualizar");
