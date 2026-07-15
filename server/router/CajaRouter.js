@@ -283,13 +283,10 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
         SELECT id_asignacion, id_resolucion, id_empresa, serie, correlativo_actual, correlativo_fin
         FROM asignar_correlativos
         WHERE id_usuario = ?
+                    AND (? IS NULL OR id_empresa = ?)
           AND estado = 'activo'
           AND correlativo_actual <= correlativo_fin
-        ORDER BY CASE
-                    WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
-                    ELSE 1
-                 END ASC,
-                 fecha_asignacion ASC,
+                ORDER BY fecha_asignacion ASC,
                  id_asignacion ASC
         LIMIT 1
     `;
@@ -461,7 +458,9 @@ const obtenerContextoPermisosCaja = (idUsuario, callback) => {
         return callback(null, {
             idUsuario: id,
             esAdminOGerente,
-            filtrarPorPermiso: !esAdminOGerente
+            // Regla operativa: cualquier usuario autenticado (incluyendo admin/gerencia)
+            // solo debe cobrar dentro de sus empresas asignadas por correlativo/resolucion.
+            filtrarPorPermiso: true
         });
     });
 };
@@ -477,34 +476,32 @@ router.get("/residentes-pendientes", (req, res) => {
         }
 
         const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
-        const permisoSelect = filtrarPorPermiso
+        const permisoSelect = '1';
+        const filtroPermisos = filtrarPorPermiso
             ? `
-                CASE
-                    WHEN (
-                        EXISTS (
-                            SELECT 1
-                            FROM asignar_correlativos ac
-                            INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
-                            WHERE ac.id_usuario = ?
-                              AND ac.estado = 'activo'
-                              AND ac.correlativo_actual <= ac.correlativo_fin
-                              AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                              AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                        )
-                        OR EXISTS (
-                            SELECT 1
-                            FROM resoluciones_facturas rf_directa
-                            WHERE rf_directa.id_usuario = ?
-                              AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
-                              AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
-                              AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
-                              AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                        )
-                    ) THEN 1
-                    ELSE 0
-                END
+                AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM asignar_correlativos ac
+                        INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                        WHERE ac.id_usuario = ?
+                          AND ac.estado = 'activo'
+                          AND ac.correlativo_actual <= ac.correlativo_fin
+                          AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                          AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM resoluciones_facturas rf_directa
+                        WHERE rf_directa.id_usuario = ?
+                          AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
+                          AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
+                          AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
+                          AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                    )
+                )
             `
-            : '1';
+            : '';
 
         const query = `
         SELECT 
@@ -536,6 +533,7 @@ router.get("/residentes-pendientes", (req, res) => {
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
         WHERE c.estado = 'activo'
+        ${filtroPermisos}
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
     `;
 
@@ -568,34 +566,32 @@ router.get("/buscar-residente", (req, res) => {
         }
 
         const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
-        const permisoSelect = filtrarPorPermiso
+        const permisoSelect = '1';
+        const filtroPermisos = filtrarPorPermiso
             ? `
-                CASE
-                    WHEN (
-                        EXISTS (
-                            SELECT 1
-                            FROM asignar_correlativos ac
-                            INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
-                            WHERE ac.id_usuario = ?
-                              AND ac.estado = 'activo'
-                              AND ac.correlativo_actual <= ac.correlativo_fin
-                              AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                              AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                        )
-                        OR EXISTS (
-                            SELECT 1
-                            FROM resoluciones_facturas rf_directa
-                            WHERE rf_directa.id_usuario = ?
-                              AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
-                              AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
-                              AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
-                              AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                        )
-                    ) THEN 1
-                    ELSE 0
-                END
+                AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM asignar_correlativos ac
+                        INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                        WHERE ac.id_usuario = ?
+                          AND ac.estado = 'activo'
+                          AND ac.correlativo_actual <= ac.correlativo_fin
+                          AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                          AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM resoluciones_facturas rf_directa
+                        WHERE rf_directa.id_usuario = ?
+                          AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
+                          AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
+                          AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
+                          AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                    )
+                )
             `
-            : '1';
+            : '';
 
         const query = `
         SELECT 
@@ -619,6 +615,7 @@ router.get("/buscar-residente", (req, res) => {
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
         WHERE c.estado = 'activo'
+        ${filtroPermisos}
         AND (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
@@ -2026,15 +2023,11 @@ router.post("/procesar-pago", (req, res) => {
                                                         SELECT id_resolucion, id_empresa, serie, correlativo_actual, rango_final
                                                         FROM resoluciones_facturas
                                                         WHERE id_usuario = ?
+                                                            AND (? IS NULL OR id_empresa = ?)
                                                             AND estado = 'activo'
                                                             AND correlativo_actual BETWEEN rango_inicial AND rango_final
                                                             AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                                                        ORDER BY CASE
-                                                                                WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
-                                                                                ELSE 1
-                                                                         END ASC,
-                                                                         fecha_vencimiento ASC,
-                                                                         id_resolucion ASC
+                                                        ORDER BY fecha_vencimiento ASC, id_resolucion ASC
                                                         LIMIT 1
                                                 `;
 
