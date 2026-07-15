@@ -111,19 +111,6 @@ function Resoluciones_facturas() {
     ));
   };
 
-  const toggleEmpresaSeleccionadaEdicion = (idEmpresa) => {
-    const id = String(idEmpresa);
-    setEmpresasSeleccionadas((prev) => (prev.includes(id) ? [] : [id]));
-  };
-
-  const toggleEmpresaSeleccionadaEdicion = (idEmpresa) => {
-    const id = String(idEmpresa);
-    setEmpresasSeleccionadas((prev) => (
-      prev.includes(id) ? [] : [id]
-    ));
-    setId_empresa((prev) => (String(prev) === id ? '' : id));
-  };
-
   const idsEmpresasObjetivo = empresasSeleccionadas.length
     ? empresasSeleccionadas
     : (id_empresa ? [String(id_empresa)] : []);
@@ -344,11 +331,6 @@ function Resoluciones_facturas() {
       return;
     }
 
-    if (empresasObjetivo.length !== 1) {
-      Swal.fire({ icon: 'warning', title: 'En actualizar seleccione solo una empresa' });
-      return;
-    }
-
     const idEmpresaActualizada = Number(empresasObjetivo[0]);
 
     const rInicial = Number(rango_inicial);
@@ -365,9 +347,10 @@ function Resoluciones_facturas() {
       return;
     }
 
-    Axios.put(`${API_URL}/actualizar`, {
-      id_resolucion,
-      id_empresa: idEmpresaActualizada,
+    const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
+    const hayTraslape = (inicioA, finA, inicioB, finB) => Math.max(inicioA, inicioB) <= Math.min(finA, finB);
+
+    const payloadBase = {
       id_usuario,
       numero_resolucion,
       serie,
@@ -378,16 +361,82 @@ function Resoluciones_facturas() {
       fecha_vencimiento,
       estado,
       rol
-    })
-      .then(() => {
+    };
+
+    Axios.get(API_URL)
+      .then((respListado) => {
+        const resolucionesExistentes = Array.isArray(respListado?.data) ? respListado.data : [];
+        const empresasExtras = empresasObjetivo.slice(1);
+
+        const operaciones = [
+          Axios.put(`${API_URL}/actualizar`, {
+            id_resolucion,
+            id_empresa: idEmpresaActualizada,
+            ...payloadBase
+          })
+        ];
+
+        empresasExtras.forEach((empresaId) => {
+          const idEmp = Number(empresaId);
+
+          const resolucionExistente = resolucionesExistentes.find((item) => {
+            if (Number(item?.id_resolucion) === Number(id_resolucion)) return false;
+            if (Number(item?.id_empresa) !== idEmp) return false;
+            if (normalizarTexto(item?.numero_resolucion) !== normalizarTexto(numero_resolucion)) return false;
+            if (normalizarTexto(item?.serie) !== normalizarTexto(serie)) return false;
+
+            const iniItem = Number(item?.rango_inicial);
+            const finItem = Number(item?.rango_final);
+            return Number.isFinite(iniItem) && Number.isFinite(finItem) && hayTraslape(iniItem, finItem, rInicial, rFinal);
+          });
+
+          if (resolucionExistente) {
+            operaciones.push(
+              Axios.put(`${API_URL}/actualizar`, {
+                id_resolucion: Number(resolucionExistente.id_resolucion),
+                id_empresa: idEmp,
+                ...payloadBase
+              })
+            );
+            return;
+          }
+
+          operaciones.push(
+            Axios.post(`${API_URL}/crear`, {
+              id_empresa: idEmp,
+              ...payloadBase
+            })
+          );
+        });
+
+        return Promise.allSettled(operaciones);
+      })
+      .then((resultados) => {
+        const exitos = resultados.filter((item) => item.status === 'fulfilled').length;
+        const fallos = resultados.filter((item) => item.status === 'rejected');
+
         getResoluciones();
-        limpiarCampos();
-        setShowEditModal(false);
+
+        if (exitos > 0) {
+          limpiarCampos();
+          setShowEditModal(false);
+        }
+
+        if (fallos.length === 0) {
+          Swal.fire({
+            html: `<strong>¡Éxito!</strong><p>Actualización aplicada en ${exitos} empresa(s) sin duplicados.</p>`,
+            icon: 'success',
+            timer: 3200,
+            showConfirmButton: false
+          });
+          return;
+        }
+
+        const mensajeError = fallos[0]?.reason?.response?.data?.message || 'Hubo errores en parte de la operación.';
         Swal.fire({
-          html: '<strong>¡Éxito!</strong><p>Resolución actualizada correctamente</p>',
-          icon: 'success',
-          timer: 3000,
-          showConfirmButton: false
+          title: '<strong>Actualización parcial</strong>',
+          text: `${exitos} empresa(s) procesadas. ${fallos.length} con error. ${mensajeError}`,
+          icon: 'warning'
         });
       })
       .catch((error) => {
@@ -602,7 +651,7 @@ function Resoluciones_facturas() {
                               className="form-check-input me-2"
                               type="checkbox"
                               checked={checked}
-                              onChange={() => toggleEmpresaSeleccionadaEdicion(empresa.id_empresa)}
+                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
                             />
                             <span className="form-check-label">{empresa.nombre_empresa}</span>
                           </div>
@@ -728,7 +777,7 @@ function Resoluciones_facturas() {
                               className="form-check-input me-2"
                               type="checkbox"
                               checked={checked}
-                              onChange={() => toggleEmpresaSeleccionadaEdicion(empresa.id_empresa)}
+                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
                             />
                             <span className="form-check-label">{empresa.nombre_empresa}</span>
                           </div>
@@ -737,11 +786,11 @@ function Resoluciones_facturas() {
                       );
                     })}
                   </div>
-                  <small className="text-muted">En actualizar solo se modifica la empresa seleccionada para evitar duplicados.</small>
+                  <small className="text-muted">Puedes marcar varias empresas; se asignará sin duplicar resoluciones existentes.</small>
                 </div>
                 {idsEmpresasObjetivo.length > 0 && (
                   <div className="mb-3 border rounded p-2 bg-light">
-                    <div className="fw-bold mb-1">Proyectos de la empresa seleccionada</div>
+                    <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
                     {proyectosPorEmpresaSeleccionada.map((grupo) => (
                       <div key={`edit-proy-${grupo.id_empresa}`} className="mb-2">
                         <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
