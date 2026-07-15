@@ -904,7 +904,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
 router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
-        monto_pagar, monto_terreno_pagar, monto_mora, metodo_pago, no_referencia, observaciones,
+        monto_pagar, monto_terreno_pagar, monto_interes, monto_mora, metodo_pago, no_referencia, observaciones,
         mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
@@ -976,6 +976,7 @@ router.post("/procesar-pago", (req, res) => {
 
     const montoSolicitado = parseFloat(monto_pagar || 0);
     const montoTerrenoSolicitado = parseFloat(monto_terreno_pagar);
+    const montoInteresSolicitado = parseFloat(monto_interes || 0);
     const montoTerrenoTotalBase = Number.isFinite(montoTerrenoSolicitado)
         ? parseFloat(Math.max(montoTerrenoSolicitado, 0).toFixed(2))
         : parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0), 0).toFixed(2));
@@ -985,6 +986,7 @@ router.post("/procesar-pago", (req, res) => {
     let montoServiciosMesInicial = 0;
     let montoServiciosTotal = 0;
     let montoPrincipalTotal = 0;
+    let montoInteresTotal = 0;
     let montoPorMesTerreno = 0;
     let ivaTotal = 0;
     let ivaPorMes = 0;
@@ -1031,7 +1033,7 @@ router.post("/procesar-pago", (req, res) => {
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
-            db.query('SELECT monto_total, fecha_compra, fecha_firma, cuotas_pactadas, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
+            db.query('SELECT monto_total, fecha_compra, fecha_firma, cuotas_pactadas, monto_cuota, interes_porcentaje FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
             if (saldoErr) {
                 return db.rollback(() => res.status(500).send('Error al validar saldo pendiente: ' + saldoErr.message));
             }
@@ -1045,6 +1047,7 @@ router.post("/procesar-pago", (req, res) => {
             const fechaFirmaContrato = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
             const cuotasPactadasContrato = Number(saldoRows[0]?.cuotas_pactadas || 0);
             const montoCuotaContratoRaw = Number(saldoRows[0]?.monto_cuota || 0);
+            const interesPorcentajeContrato = Math.max(Number(saldoRows[0]?.interes_porcentaje || 0), 0);
             const montoCuotaBaseEntera = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
                 ? Math.floor(montoCuotaContratoRaw)
                 : 0;
@@ -1055,6 +1058,23 @@ router.post("/procesar-pago", (req, res) => {
                     : null);
 
             const redondear2 = (valor) => Number(Number(valor || 0).toFixed(2));
+
+            const cuotasRestantesContrato = (montoCuotaContratoRaw > 0 && saldoActual > 0)
+                ? Math.max(Math.ceil(saldoActual / montoCuotaContratoRaw), 1)
+                : Math.max(mesesAProcesar.length, 1);
+            const interesTotalContrato = redondear2((Math.max(saldoActual, 0) * interesPorcentajeContrato) / 100);
+            const interesPorMesContrato = cuotasRestantesContrato > 0
+                ? redondear2(interesTotalContrato / cuotasRestantesContrato)
+                : 0;
+            const mesesInteresSolicitados = montoTerrenoTotal > 0
+                ? Math.min(mesesAProcesar.length, cuotasRestantesContrato)
+                : 0;
+            const interesCalculadoContrato = redondear2(interesPorMesContrato * mesesInteresSolicitados);
+
+            // Priorizar cálculo de backend para consistencia; usar payload solo como respaldo.
+            montoInteresTotal = interesCalculadoContrato > 0
+                ? interesCalculadoContrato
+                : redondear2(Math.max(montoInteresSolicitado, 0));
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
                 const parsed = parsearEtiquetaMes(mesTexto);
@@ -1105,6 +1125,22 @@ router.post("/procesar-pago", (req, res) => {
                     montos[montos.length - 1] = redondear2(montos[montos.length - 1] + restante);
                 }
 
+                return montos;
+            };
+
+            const distribuirInteresPorMes = (mesesLista = [], montoInteres = 0) => {
+                if (!Array.isArray(mesesLista) || !mesesLista.length) return [];
+
+                const total = redondear2(Math.max(Number(montoInteres || 0), 0));
+                if (total <= 0) {
+                    return mesesLista.map(() => 0);
+                }
+
+                const base = redondear2(total / mesesLista.length);
+                const montos = mesesLista.map(() => base);
+                const acumuladoBase = redondear2(base * mesesLista.length);
+                const ajusteFinal = redondear2(total - acumuladoBase);
+                montos[montos.length - 1] = redondear2(montos[montos.length - 1] + ajusteFinal);
                 return montos;
             };
 
@@ -1350,7 +1386,8 @@ router.post("/procesar-pago", (req, res) => {
                 (numero_recibo, fecha_pago, monto_pagado, monto_mora, metodo_pago, observaciones, id_residente, id_tipo_contrato) 
                 VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?)`;
 
-            db.query(sqlCaja, [numero_recibo, montoPrincipalTotal, moraTotalSeleccionada, metodo_pago, observaciones, id_residente, id_tipo_contrato], (err, resCaja) => {
+            const montoCajaSinMora = redondear2(montoPrincipalTotal + montoInteresTotal);
+            db.query(sqlCaja, [numero_recibo, montoCajaSinMora, moraTotalSeleccionada, metodo_pago, observaciones, id_residente, id_tipo_contrato], (err, resCaja) => {
                 if (err) return db.rollback(() => res.status(500).send("Error en caja_ingresos: " + err.message));
 
                 const sqlEmpresaContrato = `
@@ -1372,7 +1409,7 @@ router.post("/procesar-pago", (req, res) => {
                         const sqlPago = `INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia) 
                                          VALUES (?, ?, NOW(), ?, ?, ?)`;
                         const moraTotal = moraTotalSeleccionada;
-                        const totalTransaccion = parseFloat((montoPrincipalTotal + moraTotal).toFixed(2));
+                        const totalTransaccion = parseFloat((montoPrincipalTotal + montoInteresTotal + moraTotal).toFixed(2));
 
                         db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (err, resPago) => {
                             if (err) return db.rollback(() => res.status(500).send("Error en tabla pagos: " + err.message));
@@ -1388,6 +1425,12 @@ router.post("/procesar-pago", (req, res) => {
                                 const montosTerrenoPorMes = montoTerrenoTotal > 0
                                     ? distribuirTerrenoPorMes(mesesAProcesar, cuotasTerrenoCalculadas, montoTerrenoTotal)
                                     : [];
+                                const mesesConTerreno = montoTerrenoTotal > 0
+                                    ? mesesAProcesar.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
+                                    : [];
+                                const montosInteresPorMes = montoInteresTotal > 0
+                                    ? distribuirInteresPorMes(mesesConTerreno, montoInteresTotal)
+                                    : [];
 
                                 if (montoTerrenoTotal > 0) {
                                     mesesAProcesar.forEach((mes, index) => {
@@ -1398,6 +1441,20 @@ router.post("/procesar-pago", (req, res) => {
                                             mes,
                                             cuotasTerrenoCalculadas[index] || null,
                                             redondear2(montosTerrenoPorMes[index] || 0),
+                                            null
+                                        ]);
+                                    });
+                                }
+
+                                if (montoInteresTotal > 0 && mesesConTerreno.length) {
+                                    mesesConTerreno.forEach((mes, index) => {
+                                        detalleValues.push([
+                                            lastIdPago,
+                                            'interes',
+                                            null,
+                                            mes,
+                                            null,
+                                            redondear2(montosInteresPorMes[index] || 0),
                                             null
                                         ]);
                                     });
@@ -1505,6 +1562,7 @@ router.post("/procesar-pago", (req, res) => {
                                                     const numeroCuotaFin = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[cuotasTerrenoCalculadas.length - 1] : null;
                                                     const cantidadCuotasPagadas = cuotasTerrenoCalculadas.length;
                                                     const totalCuotaNormal = redondear2(montosTerrenoPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
+                                                    const totalInteres = redondear2(montosInteresPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
 
                                                     mesesAProcesar.forEach((mes, index) => {
                                                         if (Number(montosTerrenoPorMes[index] || 0) > 0) {
@@ -1532,6 +1590,20 @@ router.post("/procesar-pago", (req, res) => {
                                                             });
                                                         });
                                                     });
+
+                                                    if (montoInteresTotal > 0 && mesesConTerreno.length) {
+                                                        mesesConTerreno.forEach((mes, index) => {
+                                                            const montoInteresConcepto = redondear2(montosInteresPorMes[index] || 0);
+                                                            if (montoInteresConcepto <= 0) return;
+                                                            detalleCobro.push({
+                                                                concepto: `Interés ${interesPorcentajeContrato.toFixed(2)}%`,
+                                                                mes,
+                                                                monto_base: montoInteresConcepto,
+                                                                iva: 0,
+                                                                total: montoInteresConcepto
+                                                            });
+                                                        });
+                                                    }
 
                                                     serviciosSolicitados
                                                         .filter((servicio) => servicio.es_cobro_unico)
@@ -1596,8 +1668,9 @@ router.post("/procesar-pago", (req, res) => {
                                                         success: true,
                                                         numero_recibo,
                                                         fecha: new Date().toLocaleDateString(),
-                                                        monto_pagado: montoPrincipalTotal,
+                                                        monto_pagado: redondear2(montoPrincipalTotal + montoInteresTotal),
                                                         monto_terreno_pagado: montoTerrenoTotal,
+                                                        monto_interes_pagado: montoInteresTotal,
                                                         monto_servicios_pagado: montoServiciosTotal,
                                                         monto_servicios_mes_inicial: montoServiciosMesInicial,
                                                         servicios_cobrados: serviciosSolicitados,
@@ -1613,6 +1686,8 @@ router.post("/procesar-pago", (req, res) => {
                                                         meses_pagados: mesesAProcesar,
                                                         detalle_cobro: detalleCobro,
                                                         desglose_totales: {
+                                                            capital_total: totalCuotaNormal,
+                                                            interes_total: totalInteres,
                                                             cuota_normal_total: totalCuotaNormal,
                                                             mora_total: moraTotal,
                                                             total_final: totalTransaccion

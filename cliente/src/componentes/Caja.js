@@ -179,6 +179,7 @@ const Caja = () => {
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
+    const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
     const [serviciosContrato, setServiciosContrato] = useState([]);
@@ -264,6 +265,7 @@ const Caja = () => {
         setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
+        setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
         setServiciosContrato([]);
@@ -286,6 +288,8 @@ const Caja = () => {
         const cantidadMeses = (meses || []).length;
         const saldoPendiente = parseFloat(residenteActual?.saldo_pendiente || 0);
         const montoCuota = parseFloat(residenteActual?.monto_cuota || 0);
+        const interesPorcentaje = Math.max(parseFloat(residenteActual?.interes_porcentaje || 0), 0);
+        const totalMesesPendientes = Math.max((mesesPendientes || []).length, 1);
 
         // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
         const cuotasRestantes = (saldoPendiente > 0 && montoCuota > 0)
@@ -303,10 +307,16 @@ const Caja = () => {
             .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
         const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos) : 0;
-        const total = terrenoTotal + serviciosTotal;
+        const interesTotalContrato = parseFloat(((Math.max(saldoPendiente, 0) * interesPorcentaje) / 100).toFixed(2));
+        const interesPorMes = totalMesesPendientes > 0
+            ? parseFloat((interesTotalContrato / totalMesesPendientes).toFixed(2))
+            : 0;
+        const interesSeleccionado = parseFloat((interesPorMes * mesesTerrenoACobrar).toFixed(2));
+        const total = terrenoTotal + serviciosTotal + interesSeleccionado;
 
         setMontoTerrenoSeleccionado(terrenoTotal);
         setMontoServiciosSeleccionado(serviciosTotal);
+        setMontoInteresSeleccionado(interesSeleccionado);
         setMontoTotalSeleccionado(total);
         setMontoAPagar(String(total.toFixed(2)));
     };
@@ -369,6 +379,7 @@ const Caja = () => {
         setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
+        setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
         setMontoServiciosSeleccionado(0);
@@ -542,6 +553,7 @@ const Caja = () => {
             id_usuario: obtenerUsuarioActivo(), 
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
+            monto_interes: parseFloat(montoInteresSeleccionado || 0),
             monto_mora: parseFloat(montoMora),
             metodo_pago: metodoPago,
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
@@ -1037,7 +1049,7 @@ const Caja = () => {
     const totalContratoConInteres = parseFloat((saldoTerrenoPendiente + interesCalculadoContrato).toFixed(2));
 
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
-    const interesCalculadoSeleccion = parseFloat(((capitalSeleccionado * porcentajeInteresContrato) / 100).toFixed(2));
+    const interesCalculadoSeleccion = parseFloat(montoInteresSeleccionado || 0);
     const totalSeleccionCapitalInteres = parseFloat((capitalSeleccionado + interesCalculadoSeleccion).toFixed(2));
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
@@ -1316,12 +1328,14 @@ const Caja = () => {
                                             <br />
                                             <strong>Servicios seleccionados:</strong> Q{(mesesSeleccionados.length ? (montoServiciosSeleccionado / Math.max(mesesSeleccionados.length, 1)) : 0).toFixed(2)} / mes
                                             <br />
-                                            <strong>Capital ({porcentajeInteresContrato.toFixed(2)}% interés):</strong> Q{capitalSeleccionado.toFixed(2)} + Q{interesCalculadoSeleccion.toFixed(2)}
+                                            <strong>Capital + interés ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{capitalSeleccionado.toFixed(2)} + Q{interesCalculadoSeleccion.toFixed(2)}
                                         </span>
                                         <span className="fw-bold text-success">
                                             Total ({mesesSeleccionados.length} mes(es)): Q{montoTotalSeleccionado.toFixed(2)}
                                             <br />
                                             Capital + interés: Q{totalSeleccionCapitalInteres.toFixed(2)}
+                                            <br />
+                                            Servicios: Q{montoServiciosSeleccionado.toFixed(2)}
                                             {montoMoraActual > 0 && (
                                                 <>
                                                     <br />

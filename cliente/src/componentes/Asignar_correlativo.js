@@ -74,19 +74,7 @@ function AsignarCorrelativo() {
   }, [idResolucion, resolucionesActivas]);
 
   const usuariosDisponibles = useMemo(() => {
-    const rolResolucion = normalizeRole(resolucionSeleccionada?.rol || '');
-    if (!rolResolucion || rolResolucion === 'ambos') {
-      return usuariosList;
-    }
-
-    return usuariosList.filter((item) => {
-      const rolUsuario = normalizeRole(item?.nombre_rol || '');
-      if (!rolUsuario) return false;
-      if (rolUsuario.includes('admin') || rolUsuario.includes('gerente')) return true;
-      if (rolResolucion === 'caja') return rolUsuario.includes('caja') || rolUsuario.includes('cobro');
-      if (rolResolucion === 'juridico') return rolUsuario.includes('jurid') || rolUsuario.includes('legal');
-      return true;
-    });
+    return [...usuariosList].sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')));
   }, [usuariosList, resolucionSeleccionada]);
 
   useEffect(() => {
