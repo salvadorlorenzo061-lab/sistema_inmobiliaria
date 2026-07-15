@@ -84,6 +84,59 @@ function Resoluciones_facturas() {
     return empresa?.nombre_empresa || `Empresa #${empresaId}`;
   };
 
+  const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
+
+  const agruparResoluciones = (resoluciones = []) => {
+    const mapa = new Map();
+
+    (Array.isArray(resoluciones) ? resoluciones : []).forEach((item) => {
+      const key = [
+        String(item?.id_usuario || ''),
+        normalizarTexto(item?.numero_resolucion),
+        normalizarTexto(item?.serie),
+        String(item?.rango_inicial ?? ''),
+        String(item?.rango_final ?? ''),
+        String(item?.rol || ''),
+        String(item?.estado || '')
+      ].join('|');
+
+      const empresaId = String(item?.id_empresa || '');
+      const nombreEmpresa = getNombreEmpresa(item?.id_empresa);
+
+      if (!mapa.has(key)) {
+        mapa.set(key, {
+          ...item,
+          group_key: key,
+          empresas_ids: empresaId ? [empresaId] : [],
+          empresas_nombres: nombreEmpresa ? [nombreEmpresa] : [],
+          resoluciones_ids: Number.isFinite(Number(item?.id_resolucion)) ? [Number(item.id_resolucion)] : []
+        });
+        return;
+      }
+
+      const actual = mapa.get(key);
+      if (empresaId && !actual.empresas_ids.includes(empresaId)) {
+        actual.empresas_ids.push(empresaId);
+      }
+      if (nombreEmpresa && !actual.empresas_nombres.includes(nombreEmpresa)) {
+        actual.empresas_nombres.push(nombreEmpresa);
+      }
+      if (Number.isFinite(Number(item?.id_resolucion))) {
+        actual.resoluciones_ids.push(Number(item.id_resolucion));
+      }
+
+      if (Number(item?.id_resolucion || 0) > Number(actual?.id_resolucion || 0)) {
+        actual.id_resolucion = item.id_resolucion;
+      }
+
+      if (Number(item?.correlativo_actual || 0) > Number(actual?.correlativo_actual || 0)) {
+        actual.correlativo_actual = item.correlativo_actual;
+      }
+    });
+
+    return Array.from(mapa.values());
+  };
+
   const getNombreUsuario = (usuarioId, usuarioRegistro = null) => {
     if (usuarioRegistro?.nombre_usuario) return usuarioRegistro.nombre_usuario;
     const usuario = usuariosList.find((item) => String(item.id_usuario) === String(usuarioId));
@@ -349,7 +402,6 @@ function Resoluciones_facturas() {
       return;
     }
 
-    const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
     const hayTraslape = (inicioA, finA, inicioB, finB) => Math.max(inicioA, inicioB) <= Math.min(finA, finB);
 
     const payloadBase = {
@@ -501,7 +553,9 @@ function Resoluciones_facturas() {
   const abrirEditarModal = (val) => {
     setId_resolucion(val.id_resolucion);
     setId_empresa(val.id_empresa);
-    setEmpresasSeleccionadas(val.id_empresa ? [String(val.id_empresa)] : []);
+    setEmpresasSeleccionadas(Array.isArray(val?.empresas_ids) && val.empresas_ids.length
+      ? val.empresas_ids.map((item) => String(item))
+      : (val.id_empresa ? [String(val.id_empresa)] : []));
     setId_usuario(val.id_usuario ? String(val.id_usuario) : '');
     setNumero_resolucion(val.numero_resolucion);
     setSerie(val.serie);
@@ -515,7 +569,9 @@ function Resoluciones_facturas() {
     setShowEditModal(true);
   };
 
-  const resoluciones_facturasFiltrados = Resoluciones_facturasList.filter((prov) => 
+  const resolucionesAgrupadas = agruparResoluciones(Resoluciones_facturasList);
+
+  const resoluciones_facturasFiltrados = resolucionesAgrupadas.filter((prov) => 
     prov.numero_resolucion?.toLowerCase().includes(busqueda.toLowerCase())
   );
 
@@ -579,10 +635,10 @@ function Resoluciones_facturas() {
         <tbody>
           {resolucionesPaginadas.length > 0 ? (
             resolucionesPaginadas.map((val) => (
-              <tr key={val.id_resolucion}>
+              <tr key={val.group_key || val.id_resolucion}>
                 <td>
-                  <div className="fw-bold">{getNombreEmpresa(val.id_empresa)}</div>
-                  <div className="small text-muted">ID: {val.id_empresa}</div>
+                  <div className="fw-bold">{Array.isArray(val.empresas_nombres) && val.empresas_nombres.length ? val.empresas_nombres.join(' | ') : getNombreEmpresa(val.id_empresa)}</div>
+                  <div className="small text-muted">ID: {Array.isArray(val.empresas_ids) && val.empresas_ids.length ? val.empresas_ids.join(', ') : val.id_empresa}</div>
                 </td>
                 <td>
                   <div className="fw-bold">{getNombreUsuario(val.id_usuario, val)}</div>

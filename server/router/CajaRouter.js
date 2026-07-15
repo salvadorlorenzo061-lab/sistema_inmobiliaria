@@ -13,6 +13,42 @@ const normalizeText = (value = '') => String(value || '')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
+const sincronizarCorrelativoResolucionesEquivalentes = ({ idResolucionBase, idUsuario, numeroResolucion, serie, correlativoActual }, callback) => {
+    const idRes = Number(idResolucionBase || 0);
+    const idUsr = Number(idUsuario || 0);
+    const corr = Number(correlativoActual || 0);
+    const numeroNorm = String(numeroResolucion || '').trim().toUpperCase();
+    const serieNorm = String(serie || '').trim().toUpperCase();
+
+    if (!Number.isInteger(idRes) || idRes <= 0 || !Number.isInteger(idUsr) || idUsr <= 0 || !Number.isFinite(corr) || corr <= 0 || !numeroNorm || !serieNorm) {
+        return callback();
+    }
+
+    const sql = `
+        UPDATE resoluciones_facturas rf_target
+        INNER JOIN resoluciones_facturas rf_base ON rf_base.id_resolucion = ?
+        LEFT JOIN empresas e_target ON e_target.id_empresa = rf_target.id_empresa
+        LEFT JOIN empresas e_base ON e_base.id_empresa = rf_base.id_empresa
+        SET rf_target.correlativo_actual = ?
+        WHERE rf_target.id_usuario = ?
+          AND UPPER(TRIM(COALESCE(rf_target.numero_resolucion, ''))) = ?
+          AND UPPER(TRIM(COALESCE(rf_target.serie, ''))) = ?
+          AND (
+                rf_target.id_empresa = rf_base.id_empresa
+                OR UPPER(TRIM(COALESCE(e_target.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_base.nombre_empresa, '')))
+              )
+          AND rf_target.id_resolucion <> rf_base.id_resolucion
+          AND rf_target.correlativo_actual < ?
+    `;
+
+    db.query(sql, [idRes, corr, idUsr, numeroNorm, serieNorm, corr], (err) => {
+        if (err) {
+            return callback(err);
+        }
+        return callback();
+    });
+};
+
 const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 const obtenerIndiceMes = (mesTexto = '') => {
@@ -2020,7 +2056,7 @@ router.post("/procesar-pago", (req, res) => {
                         }
 
                                                 const sqlResolucionUsuario = `
-                                                        SELECT id_resolucion, id_empresa, serie, correlativo_actual, rango_final
+                                                    SELECT id_resolucion, id_empresa, numero_resolucion, serie, correlativo_actual, rango_final
                                                         FROM resoluciones_facturas
                                                         WHERE id_usuario = ?
                                                             AND (? IS NULL OR id_empresa = ?)
@@ -2065,9 +2101,21 @@ router.post("/procesar-pago", (req, res) => {
                                         return db.rollback(() => res.status(500).send("No se pudo reservar correlativo de la resolución asignada al usuario."));
                                     }
 
-                                    return continuarConInsertPago(correlativoGenerado, resolucion.id_resolucion, {
-                                        id_asignacion: null,
-                                        origen: 'resolucion_usuario'
+                                    return sincronizarCorrelativoResolucionesEquivalentes({
+                                        idResolucionBase: resolucion.id_resolucion,
+                                        idUsuario: idUsuarioSeguro,
+                                        numeroResolucion: resolucion.numero_resolucion,
+                                        serie: resolucion.serie,
+                                        correlativoActual: siguienteCorrelativo
+                                    }, (syncErr) => {
+                                        if (syncErr) {
+                                            return db.rollback(() => res.status(500).send("No se pudo sincronizar correlativos entre empresas asignadas."));
+                                        }
+
+                                        return continuarConInsertPago(correlativoGenerado, resolucion.id_resolucion, {
+                                            id_asignacion: null,
+                                            origen: 'resolucion_usuario'
+                                        });
                                     });
                                 }
                             );
