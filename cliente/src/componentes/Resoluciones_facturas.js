@@ -111,6 +111,14 @@ function Resoluciones_facturas() {
     ));
   };
 
+  const toggleEmpresaSeleccionadaEdicion = (idEmpresa) => {
+    const id = String(idEmpresa);
+    setEmpresasSeleccionadas((prev) => (
+      prev.includes(id) ? [] : [id]
+    ));
+    setId_empresa((prev) => (String(prev) === id ? '' : id));
+  };
+
   const idsEmpresasObjetivo = empresasSeleccionadas.length
     ? empresasSeleccionadas
     : (id_empresa ? [String(id_empresa)] : []);
@@ -388,7 +396,7 @@ function Resoluciones_facturas() {
 
         if (fallos.length === 0) {
           Swal.fire({
-            html: `<strong>¡Éxito!</strong><p>Resolución aplicada en ${exitos} empresa(s).</p>`,
+            html: `<strong>¡Éxito!</strong><p>Actualizado y aplicado en ${exitos} empresa(s).</p>`,
             icon: 'success',
             timer: 3200,
             showConfirmButton: false
@@ -615,7 +623,7 @@ function Resoluciones_facturas() {
                               className="form-check-input me-2"
                               type="checkbox"
                               checked={checked}
-                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
+                              onChange={() => toggleEmpresaSeleccionadaEdicion(empresa.id_empresa)}
                             />
                             <span className="form-check-label">{empresa.nombre_empresa}</span>
                           </div>
@@ -750,7 +758,7 @@ function Resoluciones_facturas() {
                       );
                     })}
                   </div>
-                  <small className="text-muted">Puedes marcar varias empresas para aplicar la misma asignación de cobro al usuario.</small>
+                  <small className="text-muted">Puedes marcar varias empresas: se actualiza la actual y se agrega en las demás seleccionadas.</small>
                 </div>
                 {idsEmpresasObjetivo.length > 0 && (
                   <div className="mb-3 border rounded p-2 bg-light">
