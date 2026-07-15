@@ -242,8 +242,11 @@ const Caja = () => {
     // ✅ Cargar lista inicial de residentes con pagos pendientes al iniciar
     useEffect(() => {
         const cargarResidentesPendientes = async () => {
+            const idUsuario = obtenerUsuarioActivo();
             try {
-                const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`);
+                const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`, {
+                    params: idUsuario ? { id_usuario: idUsuario } : {}
+                });
                 setListaResidentesPendientes(res.data || []);
             } catch (error) {
                 console.error("Error al cargar residentes pendientes:", error);
@@ -276,7 +279,10 @@ const Caja = () => {
         setResumenServiciosIniciales(null);
 
         try {
-            const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`);
+            const idUsuario = obtenerUsuarioActivo();
+            const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`, {
+                params: idUsuario ? { id_usuario: idUsuario } : {}
+            });
             setListaResidentesPendientes(res.data || []);
         } catch (error) {
             console.error("Error al recargar residentes pendientes:", error);
@@ -347,10 +353,14 @@ const Caja = () => {
     const buscarResidente = async () => {
         if (!busqueda.trim()) return mostrarToast("Ingresa nombre, apellido, DPI o número de contrato para buscar", "warning");
         try {
+            const idUsuario = obtenerUsuarioActivo();
             setDatosDeuda(null); // Resetea selecciones anteriores
             setListaResidentesPendientes([]); // Limpia la lista inicial
             const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
-                params: { criterio: busqueda.trim() }
+                params: {
+                    criterio: busqueda.trim(),
+                    ...(idUsuario ? { id_usuario: idUsuario } : {})
+                }
             });
             
             setListaResidentes(res.data);
@@ -1124,6 +1134,8 @@ const Caja = () => {
                                     <strong className="fs-6">📦 {r.nombre}</strong>
                                     <br />
                                     <span className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
+                                    <br />
+                                    <span className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</span>
                                 </div>
                                 <span className={`badge ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-warning text-dark'}`}>
                                     {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
@@ -1162,6 +1174,8 @@ const Caja = () => {
                                     <strong>{r.nombre}</strong>
                                     <br />
                                     <small className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</small>
+                                    <br />
+                                    <small className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</small>
                                 </div>
                                 <span className="badge bg-secondary">Seleccionar</span>
                             </li>

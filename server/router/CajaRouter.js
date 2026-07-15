@@ -424,6 +424,24 @@ const resolverIdUsuarioValido = (idUsuario, callback) => {
 
 // === OBTENER LISTA INICIAL DE RESIDENTES (PENDIENTES Y SOLVENTES) ===
 router.get("/residentes-pendientes", (req, res) => {
+    const idUsuario = Number(req.query?.id_usuario || 0);
+    const filtrarPorPermiso = Number.isInteger(idUsuario) && idUsuario > 0;
+
+    const filtroPermisos = filtrarPorPermiso
+        ? `
+            AND EXISTS (
+                SELECT 1
+                FROM asignar_correlativos ac
+                INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                WHERE ac.id_usuario = ?
+                  AND ac.estado = 'activo'
+                  AND ac.correlativo_actual <= ac.correlativo_fin
+                  AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                  AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+            )
+        `
+        : '';
+
     const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
@@ -452,10 +470,13 @@ router.get("/residentes-pendientes", (req, res) => {
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
         WHERE c.estado = 'activo'
+        ${filtroPermisos}
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
     `;
 
-    db.query(query, (err, result) => {
+    const queryParams = filtrarPorPermiso ? [idUsuario] : [];
+
+    db.query(query, queryParams, (err, result) => {
         if (err) {
             console.error("Error al obtener residentes pendientes:", err.message);
             return res.status(500).send("Error al obtener residentes: " + err.message);
@@ -468,10 +489,27 @@ router.get("/residentes-pendientes", (req, res) => {
 // === BUSCAR RESIDENTE POR NOMBRE, APELLIDO, DPI O NUMERO DE CONTRATO ===
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;
+    const idUsuario = Number(req.query?.id_usuario || 0);
+    const filtrarPorPermiso = Number.isInteger(idUsuario) && idUsuario > 0;
 
     if (!criterio) {
         return res.status(400).send("Debe proporcionar un criterio de búsqueda.");
     }
+
+    const filtroPermisos = filtrarPorPermiso
+        ? `
+            AND EXISTS (
+                SELECT 1
+                FROM asignar_correlativos ac
+                INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                WHERE ac.id_usuario = ?
+                  AND ac.estado = 'activo'
+                  AND ac.correlativo_actual <= ac.correlativo_fin
+                  AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                  AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+            )
+        `
+        : '';
 
     const query = `
         SELECT 
@@ -492,7 +530,9 @@ router.get("/buscar-residente", (req, res) => {
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
-        WHERE c.estado = 'activo' AND (
+        WHERE c.estado = 'activo'
+        ${filtroPermisos}
+        AND (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
             OR r.numero_identificacion LIKE ?
@@ -503,7 +543,9 @@ router.get("/buscar-residente", (req, res) => {
     `;
 
     const searchTerm = `%${criterio}%`;
-    const queryParams = [searchTerm, searchTerm, searchTerm, searchTerm];
+    const queryParams = filtrarPorPermiso
+        ? [idUsuario, searchTerm, searchTerm, searchTerm, searchTerm]
+        : [searchTerm, searchTerm, searchTerm, searchTerm];
 
     db.query(query, queryParams, (err, result) => {
         if (err) {

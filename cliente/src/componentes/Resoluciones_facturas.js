@@ -576,14 +576,6 @@ function Resoluciones_facturas() {
                       );
                     })}
                   </div>
-                  <select value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-select">
-                    <option value="">-- Seleccione empresa --</option>
-                    {empresasList.map((empresa) => (
-                      <option key={empresa.id_empresa} value={empresa.id_empresa}>
-                        {empresa.nombre_empresa} (ID: {empresa.id_empresa})
-                      </option>
-                    ))}
-                  </select>
                   <small className="text-muted">Si marcas checkboxes, se creará una resolución por cada empresa seleccionada.</small>
                 </div>
                 {idsEmpresasObjetivo.length > 0 && (
