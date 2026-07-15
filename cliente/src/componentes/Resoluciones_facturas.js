@@ -331,11 +331,6 @@ function Resoluciones_facturas() {
       return;
     }
 
-    if (empresasObjetivo.length !== 1) {
-      Swal.fire({ icon: 'warning', title: 'Seleccione una sola empresa para actualizar' });
-      return;
-    }
-
     const idEmpresaActualizada = Number(empresasObjetivo[0]);
 
     const rInicial = Number(rango_inicial);
@@ -352,24 +347,66 @@ function Resoluciones_facturas() {
       return;
     }
 
-    Axios.put(`${API_URL}/actualizar`, { 
-      id_resolucion, id_empresa: idEmpresaActualizada, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol 
-    })
-    .then(() => {
-      getResoluciones();
-      limpiarCampos();
-      setShowEditModal(false);
-      Swal.fire({
-        html: '<strong>¡Éxito!</strong><p>Resolución actualizada correctamente</p>',
-        icon: 'success',
-        timer: 3000,
-        showConfirmButton: false
+    const payloadBase = {
+      id_usuario,
+      numero_resolucion,
+      serie,
+      rango_inicial,
+      rango_final,
+      correlativo_actual,
+      fecha_autorizacion,
+      fecha_vencimiento,
+      estado,
+      rol
+    };
+
+    const operaciones = [
+      Axios.put(`${API_URL}/actualizar`, {
+        id_resolucion,
+        id_empresa: idEmpresaActualizada,
+        ...payloadBase
+      }),
+      ...empresasObjetivo.slice(1).map((empresaId) =>
+        Axios.post(`${API_URL}/crear`, {
+          id_empresa: Number(empresaId),
+          ...payloadBase
+        })
+      )
+    ];
+
+    Promise.allSettled(operaciones)
+      .then((resultados) => {
+        const exitos = resultados.filter((item) => item.status === 'fulfilled').length;
+        const fallos = resultados.filter((item) => item.status === 'rejected');
+
+        getResoluciones();
+
+        if (exitos > 0) {
+          limpiarCampos();
+          setShowEditModal(false);
+        }
+
+        if (fallos.length === 0) {
+          Swal.fire({
+            html: `<strong>¡Éxito!</strong><p>Resolución aplicada en ${exitos} empresa(s).</p>`,
+            icon: 'success',
+            timer: 3200,
+            showConfirmButton: false
+          });
+          return;
+        }
+
+        const mensajeError = fallos[0]?.reason?.response?.data?.message || 'Hubo errores en parte de la operación.';
+        Swal.fire({
+          title: '<strong>Actualización parcial</strong>',
+          text: `${exitos} empresa(s) procesadas. ${fallos.length} con error. ${mensajeError}`,
+          icon: 'warning'
+        });
+      })
+      .catch((error) => {
+        console.error(error);
+        Swal.fire({ icon: 'error', title: 'Error al actualizar' });
       });
-    })
-    .catch((error) => {
-      console.error(error);
-      Swal.fire({ icon: 'error', title: 'Error al actualizar' });
-    });
   };
 
   const deteleResolucion = (val) => {
@@ -578,7 +615,7 @@ function Resoluciones_facturas() {
                               className="form-check-input me-2"
                               type="checkbox"
                               checked={checked}
-                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
+                              onChange={() => toggleEmpresaSeleccionadaEdicion(empresa.id_empresa)}
                             />
                             <span className="form-check-label">{empresa.nombre_empresa}</span>
                           </div>
@@ -713,11 +750,11 @@ function Resoluciones_facturas() {
                       );
                     })}
                   </div>
-                  <small className="text-muted">Usa el mismo patrón de checkboxes. Para actualizar, deja marcada solo una empresa.</small>
+                  <small className="text-muted">Puedes marcar varias empresas para aplicar la misma asignación de cobro al usuario.</small>
                 </div>
                 {idsEmpresasObjetivo.length > 0 && (
                   <div className="mb-3 border rounded p-2 bg-light">
-                    <div className="fw-bold mb-1">Proyectos de la empresa seleccionada</div>
+                    <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
                     {proyectosPorEmpresaSeleccionada.map((grupo) => (
                       <div key={`edit-proy-${grupo.id_empresa}`} className="mb-2">
                         <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
