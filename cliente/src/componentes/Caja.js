@@ -42,7 +42,308 @@ const normalizeImageDataUrl = (value = '') => {
     }
 
     return `data:${mime};base64,${cleaned}`;
+};
 
+const normalizeSearchValue = (value = '') => String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+const UNIDADES = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciseis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidos', 'veintitres', 'veinticuatro', 'veinticinco', 'veintiseis', 'veintisiete', 'veintiocho', 'veintinueve'];
+const DECENAS = ['', '', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+const CENTENAS = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+
+const cientosALetras = (n) => {
+    if (n === 100) return 'cien';
+    const c = Math.floor(n / 100);
+    const r = n % 100;
+    if (r === 0) return CENTENAS[c];
+    if (r < 30) return `${CENTENAS[c]} ${UNIDADES[r]}`.trim();
+    const d = Math.floor(r / 10);
+    const u = r % 10;
+    return `${CENTENAS[c]} ${DECENAS[d]}${u ? ` y ${UNIDADES[u]}` : ''}`.trim();
+};
+
+const numeroALetrasRecibo = (n) => {
+    const numero = Math.floor(Number(n || 0));
+    if (!Number.isFinite(numero) || numero <= 0) return 'cero';
+    let restante = numero;
+    let salida = '';
+
+    if (restante >= 1000000) {
+        const millones = Math.floor(restante / 1000000);
+        salida += `${numeroALetrasRecibo(millones)} ${millones === 1 ? 'millon' : 'millones'} `;
+        restante %= 1000000;
+    }
+    if (restante >= 1000) {
+        const miles = Math.floor(restante / 1000);
+        salida += `${miles === 1 ? 'mil' : `${cientosALetras(miles)} mil`} `;
+        restante %= 1000;
+    }
+    if (restante > 0) salida += cientosALetras(restante);
+    return salida.trim();
+};
+
+const montoALetrasRecibo = (monto) => {
+    const base = numeroALetrasRecibo(monto);
+    return `${base.charAt(0).toUpperCase()}${base.slice(1)} quetzales exactos`;
+};
+
+const fechaLargaGT = (valor) => {
+    const fecha = valor instanceof Date && !Number.isNaN(valor.getTime()) ? valor : new Date();
+    return fecha.toLocaleDateString('es-GT', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+};
+
+const getUsuarioSesion = () => {
+    try {
+        return JSON.parse(localStorage.getItem('usuario') || '{}');
+    } catch {
+        return {};
+    }
+};
+
+const esRolJuridico = (usuario = {}) => {
+    const rol = String(usuario?.nombre_rol || '').toLowerCase();
+    return rol.includes('jurid') || rol.includes('legal');
+};
+
+const Caja = () => {
+    const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
+    const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
+    const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
+        const periodicidadNormalizada = String(periodicidad || '').trim().toLowerCase();
+        if (periodicidadNormalizada === 'unico') {
+            return true;
+        }
+        if (periodicidadNormalizada === 'mensual') {
+            return false;
+        }
+
+        const nombre = String(nombreServicio || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim();
+
+        return ['derecho', 'paja', 'instalacion', 'conexion', 'matricula', 'inscripcion']
+            .some((fragmento) => nombre.includes(fragmento));
+    };
+
+    const filtrarServiciosMostrables = (servicios = []) => {
+        return (Array.isArray(servicios) ? servicios : []).filter((servicio) => {
+            const esUnico = esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
+            const yaPagadoAlgunaVez = Boolean(servicio?.ya_pagado_alguna_vez);
+            return !(esUnico && yaPagadoAlgunaVez);
+        });
+    };
+
+    // ✅ Función helper para mostrar notificaciones flotantes (toast)
+    const mostrarToast = (titulo, tipo = 'success') => {
+        Swal.fire({
+            icon: tipo,
+            title: titulo,
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true,
+            didOpen: (toast) => {
+                toast.addEventListener('mouseenter', Swal.stopTimer);
+                toast.addEventListener('mouseleave', Swal.resumeTimer);
+            }
+        });
+    };
+
+    // Estados de búsqueda
+    const [busqueda, setBusqueda] = useState(''); // Ahora acepta texto o números
+    const [listaResidentes, setListaResidentes] = useState([]); // Guarda las coincidencias
+    const [listaResidentesPendientes, setListaResidentesPendientes] = useState([]); // Lista inicial de residentes con pagos pendientes
+    const [datosDeuda, setDatosDeuda] = useState(null); // Residente seleccionado actualmente
+    const [idResidenteActivo, setIdResidenteActivo] = useState(''); // Guarda el ID del seleccionado para el pago
+
+    // Estados del formulario de cobro
+    const [montoAPagar, setMontoAPagar] = useState('');
+    const [montoMora, setMontoMora] = useState('0');
+    const [mesPagado, setMesPagado] = useState('Enero');
+    const [numCuota, setNumCuota] = useState('1');
+    const [opcionesCuota, setOpcionesCuota] = useState([]);
+    const [metodoPago, setMetodoPago] = useState('Efectivo');
+    const [referencia, setReferencia] = useState('');
+    const [mesesPendientes, setMesesPendientes] = useState([]);
+    const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
+    const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
+    const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
+    const [morasPendientes, setMorasPendientes] = useState([]);
+    const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
+    const [serviciosContrato, setServiciosContrato] = useState([]);
+    const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
+    const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
+    const [showModalCobro, setShowModalCobro] = useState(false);
+    const [estadoCorrelativoUsuario, setEstadoCorrelativoUsuario] = useState(null);
+    const [estadoCorrelativo, setEstadoCorrelativo] = useState(null);
+    const [resumenServiciosIniciales, setResumenServiciosIniciales] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+
+    useEffect(() => {
+        // Evitar que quede un mes inválido seleccionado al cambiar de residente o al recargar pendientes.
+        if (!Array.isArray(mesesPendientes) || !mesesPendientes.length) {
+            if (mesPagado) {
+                setMesPagado('');
+            }
+            return;
+        }
+
+        if (!mesPagado || !mesesPendientes.includes(mesPagado)) {
+            setMesPagado(mesesPendientes[0]);
+        }
+    }, [mesesPendientes, mesPagado]);
+
+    const obtenerUsuarioActivo = () => {
+        try {
+            const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+            const id = Number(usuario?.id_usuario);
+            return Number.isInteger(id) && id > 0 ? id : null;
+        } catch {
+            return null;
+        }
+    };
+
+    useEffect(() => {
+        const consultarEstadoCorrelativoUsuario = async () => {
+            const idUsuario = obtenerUsuarioActivo();
+            if (!idUsuario) {
+                setEstadoCorrelativoUsuario(null);
+                return;
+            }
+
+            try {
+                const res = await axios.get(`${API_BASE_URL}/api/asignar_correlativo/estado-usuario?id_usuario=${idUsuario}`);
+                setEstadoCorrelativoUsuario(res.data || null);
+            } catch (error) {
+                console.error('No se pudo consultar el estado general de correlativos del usuario:', error);
+                setEstadoCorrelativoUsuario({
+                    disponible: false,
+                    mensaje: error?.response?.data?.message || 'No se pudo consultar si tienes correlativos asignados.'
+                });
+            }
+        };
+
+        consultarEstadoCorrelativoUsuario();
+    }, []);
+
+    // ✅ Cargar lista inicial de residentes con pagos pendientes al iniciar
+    useEffect(() => {
+        const cargarResidentesPendientes = async () => {
+            try {
+                const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`);
+                setListaResidentesPendientes(res.data || []);
+            } catch (error) {
+                console.error("Error al cargar residentes pendientes:", error);
+                setListaResidentesPendientes([]);
+            }
+        };
+        
+        cargarResidentesPendientes();
+    }, []);
+
+    const limpiarBusquedaCaja = async () => {
+        setBusqueda('');
+        setListaResidentes([]);
+        setDatosDeuda(null);
+        setIdResidenteActivo('');
+        setMesesPendientes([]);
+        setMesesSeleccionados([]);
+        setMontoAPagar('');
+        setMontoMora('0');
+        setMontoTotalSeleccionado(0);
+        setMontoTerrenoSeleccionado(0);
+        setMorasPendientes([]);
+        setMorasSeleccionadas([]);
+        setServiciosContrato([]);
+        setServiciosSeleccionados([]);
+        setMontoServiciosSeleccionado(0);
+        setShowModalCobro(false);
+        setEstadoCorrelativo(null);
+        setResumenServiciosIniciales(null);
+
+        try {
+            const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`);
+            setListaResidentesPendientes(res.data || []);
+        } catch (error) {
+            console.error("Error al recargar residentes pendientes:", error);
+            setListaResidentesPendientes([]);
+        }
+    };
+
+    const recalcularTotalesCobro = (meses = mesesSeleccionados, serviciosIds = serviciosSeleccionados, residenteActual = datosDeuda, serviciosDisponibles = serviciosContrato) => {
+        const cantidadMeses = (meses || []).length;
+        const saldoPendiente = parseFloat(residenteActual?.saldo_pendiente || 0);
+        const montoCuota = parseFloat(residenteActual?.monto_cuota || 0);
+
+        // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
+        const cuotasRestantes = (saldoPendiente > 0 && montoCuota > 0)
+            ? Math.ceil(saldoPendiente / montoCuota)
+            : 0;
+        const mesesTerrenoACobrar = Math.min(cantidadMeses, cuotasRestantes);
+        const terrenoCalculado = saldoPendiente > 0 && mesesTerrenoACobrar > 0 ? (montoCuota * mesesTerrenoACobrar) : 0;
+        const terrenoTotal = Math.min(terrenoCalculado, Math.max(saldoPendiente, 0));
+        const serviciosSeleccionadosDetalle = (serviciosDisponibles || [])
+            .filter((s) => serviciosIds.includes(s.id_servicio));
+        const costoServiciosMensual = serviciosSeleccionadosDetalle
+            .filter((s) => !esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
+            .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
+        const costoServiciosUnicos = serviciosSeleccionadosDetalle
+            .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
+            .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
+        const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos) : 0;
+        const total = terrenoTotal + serviciosTotal;
+
+        setMontoTerrenoSeleccionado(terrenoTotal);
+        setMontoServiciosSeleccionado(serviciosTotal);
+        setMontoTotalSeleccionado(total);
+        setMontoAPagar(String(total.toFixed(2)));
+    };
+
+    const consultarSiguienteCorrelativo = async (idContrato) => {
+        const idUsuario = obtenerUsuarioActivo();
+        if (!idUsuario || !idContrato) {
+            setEstadoCorrelativo(null);
+            return;
+        }
+
+        try {
+            const res = await axios.get(`${API_BASE_URL}/api/asignar_correlativo/siguiente-correlativo?id_usuario=${idUsuario}&id_contrato=${idContrato}`);
+            setEstadoCorrelativo(res.data || null);
+        } catch (error) {
+            console.error('No se pudo consultar el siguiente correlativo:', error);
+            setEstadoCorrelativo({
+                disponible: false,
+                origen: null,
+                correlativo: null,
+                id_asignacion: null,
+                mensaje: error?.response?.data?.message || 'No se pudo consultar el correlativo disponible.'
+            });
+        }
+    };
+
+    // Buscar residentes por el término ingresado utilizando el puerto correcto 3001
+    const buscarResidente = async () => {
+        if (!busqueda.trim()) return mostrarToast("Ingresa nombre, apellido, DPI o número de contrato para buscar", "warning");
+        try {
+            setDatosDeuda(null); // Resetea selecciones anteriores
+            setListaResidentesPendientes([]); // Limpia la lista inicial
+            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
+                params: { criterio: busqueda.trim() }
+            });
+            
+            setListaResidentes(res.data);
             
             // Si solo encuentra uno, lo selecciona automáticamente
             if (res.data.length === 1) {
@@ -68,7 +369,6 @@ const normalizeImageDataUrl = (value = '') => {
         setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
-        setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
         setMontoServiciosSeleccionado(0);
@@ -203,16 +503,6 @@ const normalizeImageDataUrl = (value = '') => {
         const montoSolicitado = parseFloat(montoAPagar || 0);
         const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
 
-        if (!contratoTieneAsignacionValida(datosDeuda)) {
-            mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
-            return;
-        }
-
-        if (!usuarioTienePermisoCobro(datosDeuda)) {
-            mostrarToast('No se puede generar cobro: este contrato no pertenece a tus correlativos asignados.', 'warning');
-            return;
-        }
-
         if (!Number.isFinite(montoSolicitado) || montoSolicitado <= 0) {
             mostrarToast('El monto a cobrar debe ser mayor a cero.', 'warning');
             return;
@@ -252,7 +542,6 @@ const normalizeImageDataUrl = (value = '') => {
             id_usuario: obtenerUsuarioActivo(), 
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
-            monto_interes: parseFloat(montoInteresSeleccionado || 0),
             monto_mora: parseFloat(montoMora),
             metodo_pago: metodoPago,
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
@@ -370,208 +659,351 @@ const normalizeImageDataUrl = (value = '') => {
         }
     };
 
-    // Generador de recibo estilo formato institucional (modelo proporcionado)
+    // Generador de recibo estilo formato institucional
     const generarPDF = (recibo, residente, empresa) => {
         try {
-            const doc = new jsPDF();
-            const logoEmpresa = normalizeImageDataUrl(empresa?.logo || '');
+            // Carta completa (landscape) para evitar salto a segunda hoja
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+            const logoEmpresa = normalizeImageDataUrl(empresa?.logo_empresa || residente?.logo_empresa_pdf || empresa?.logo || '');
+            const logoProyecto = normalizeImageDataUrl(empresa?.logo_proyecto || residente?.logo_proyecto || '');
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
-            const montoPrincipal = parseFloat(recibo?.monto_pagado || 0);
-            const montoTotalCobrado = parseFloat(recibo?.total_cobrado || montoPrincipal || 0);
-            const montoAbonoExtra = Math.max(parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0), 0);
-            const fechaRecibo = recibo?.fecha ? new Date(recibo.fecha) : new Date();
-
+            const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
+            const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
             const referencia = String(recibo?.no_referencia || '').trim();
-            let serie = 'B';
-            let numeroRecibo = String(recibo?.numero_recibo || '').replace(/\D/g, '').slice(-5);
-            const matchSerie = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
-            if (matchSerie) {
-                serie = matchSerie[1].toUpperCase();
-                numeroRecibo = matchSerie[2].slice(-5);
-            }
-            if (!numeroRecibo) {
-                numeroRecibo = String(Date.now()).slice(-5);
-            }
-
-            const mesesPagados = Array.isArray(recibo?.meses_pagados) ? recibo.meses_pagados : [];
-            const mesesTexto = mesesPagados.length ? mesesPagados.join(', ') : (recibo?.mes_pagado || 'N/A');
-            const conceptoResumen = detalleCobro.length
-                ? [...new Set(detalleCobro.map((item) => String(item?.concepto || '').trim()).filter(Boolean))].join(', ')
-                : `Pago de cuota (${mesesTexto})`;
-
+            const matchRef = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
+            const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
+            const numero = matchRef ? matchRef[2].slice(-5) : String(Date.now()).slice(-5);
+            const fecha = recibo?.fecha ? new Date(recibo.fecha) : new Date();
+            const mesesPagadosRecibo = Array.isArray(recibo?.meses_pagados)
+                ? recibo.meses_pagados.map((mes) => String(mes || '').trim()).filter(Boolean)
+                : [];
+            const cuotaInicio = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 0);
+            const cuotaFin = Number(recibo?.numero_cuota_fin || cuotaInicio || 0);
+            const cantidadCuotasPagadas = Number(recibo?.cantidad_cuotas_pagadas || 0);
+            const cuotaDisplay = Number.isInteger(cuotaInicio) && cuotaInicio > 0
+                ? ((Number.isInteger(cuotaFin) && cuotaFin > cuotaInicio)
+                    ? `${cuotaInicio}-${cuotaFin}`
+                    : String(cuotaInicio))
+                : 'N/A';
+            const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
+            const usuarioActivo = getUsuarioSesion();
+            const usarFormatoJuridico = esRolJuridico(usuarioActivo);
+
+            if (usarFormatoJuridico) {
+                const pageW = doc.internal.pageSize.getWidth();
+                const pageH = doc.internal.pageSize.getHeight();
+                const margenX = 8;
+                const ancho = pageW - (margenX * 2);
+                const contenidoY = 36;
+                const contenidoH = 145;
+                const nombreEmpresa = String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
+                const nombreProyecto = String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto');
+                const fechaDoc = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
+                const d = String(fechaDoc.getDate()).padStart(2, '0');
+                const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
+                const yFull = String(fechaDoc.getFullYear());
+
+                doc.setDrawColor(188, 177, 117);
+                doc.setLineWidth(0.35);
+                if (typeof doc.roundedRect === 'function') {
+                    doc.roundedRect(margenX, contenidoY, ancho, contenidoH, 3, 3, 'S');
+                } else {
+                    doc.rect(margenX, contenidoY, ancho, contenidoH);
+                }
+
+                if (logoEmpresa) {
+                    try {
+                        doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), margenX + 3, 8.5, 31, 18, `jur-logo-${Date.now()}`, 'FAST');
+                    } catch {
+                        // no-op
+                    }
+                }
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(10.8);
+                doc.text(nombreEmpresa, pageW / 2, 14.5, { align: 'center' });
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(7.8);
+                doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', pageW / 2, 20, { align: 'center' });
+                doc.text('PBX: 2220-6406  Telefono: 5825-5903', pageW / 2, 24.2, { align: 'center' });
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.8);
+                doc.text('Recibo Juridico', pageW - 42.5, 14.2);
+                doc.rect(pageW - 42.5, 15.9, 37.5, 11.8);
+                doc.setTextColor(166, 35, 35);
+                doc.setFontSize(11.8);
+                doc.text(`NO. ${String(numero).padStart(5, '0')}`, pageW - 23.8, 23.9, { align: 'center' });
+                doc.setTextColor(0, 0, 0);
+
+                doc.setTextColor(195, 195, 195);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(28);
+                doc.text('CORPORACION DE', pageW / 2, 102, { align: 'center' });
+                doc.text('INVERSION INMOBILIARIA', pageW / 2, 116, { align: 'center' });
+                doc.setTextColor(0, 0, 0);
+
+                let rY = contenidoY + 8;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(11.5);
+                doc.text('DATOS DEL CLIENTE', margenX + 4, rY);
+                doc.setDrawColor(210, 190, 92);
+                doc.setLineWidth(0.45);
+                doc.line(margenX + 4, rY + 1.8, margenX + 34, rY + 1.8);
+
+                rY += 11;
+                doc.setDrawColor(60, 60, 60);
+                doc.setLineWidth(0.2);
+                doc.setFontSize(8.3);
+                doc.text('Fecha:', margenX + 4, rY);
+                const fechaX = margenX + 18;
+                const boxW = 8;
+                const boxH = 8;
+                [d[0], d[1], m[0], m[1], yFull[0], yFull[1], yFull[2], yFull[3]].forEach((char, idx) => {
+                    const offsetX = idx < 2 ? idx * (boxW + 1) : idx < 4 ? (2 * (boxW + 1)) + 4 + ((idx - 2) * (boxW + 1)) : (4 * (boxW + 1)) + 8 + ((idx - 4) * (boxW + 1));
+                    doc.rect(fechaX + offsetX, rY - 5.8, boxW, boxH);
+                    doc.text(char, fechaX + offsetX + (boxW / 2), rY - 0.4, { align: 'center' });
+                });
+                doc.text('/', fechaX + (2 * (boxW + 1)) + 1.4, rY - 0.8);
+                doc.text('/', fechaX + (4 * (boxW + 1)) + 5.2, rY - 0.8);
+
+                const amountBoxX = pageW - 47;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(11.3);
+                doc.text('Por: Q', amountBoxX - 22, rY + 0.1);
+                doc.rect(amountBoxX, rY - 5.8, 42, 8.2);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.4);
+                doc.text(montoTotal.toFixed(2), amountBoxX + 2, rY - 0.2);
+
+                const filaAncho = ancho - 4;
+                const filaX = margenX + 2;
+                const filaH = 10.5;
+                rY += 6;
+                doc.rect(filaX, rY, filaAncho, filaH);
+                doc.rect(filaX, rY + filaH, filaAncho, filaH);
+                doc.rect(filaX, rY + (filaH * 2), filaAncho, filaH);
+                doc.rect(filaX, rY + (filaH * 3), filaAncho, filaH);
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.3);
+                doc.text('Recibimos de:', filaX + 2, rY + 6.8);
+                doc.text('Cantidad de:', filaX + 2, rY + 17.3);
+                doc.text('Por cancelacion de:', filaX + 2, rY + 27.8);
+                doc.text('Proyecto:', filaX + 2, rY + 38.3);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.3);
+                doc.text(doc.splitTextToSize(String(residente?.nombre || 'N/A'), filaAncho - 34).slice(0, 1), filaX + 30, rY + 6.8);
+                doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), filaAncho - 34).slice(0, 1), filaX + 30, rY + 17.3);
+                doc.text(doc.splitTextToSize(String(conceptos), filaAncho - 40).slice(0, 1), filaX + 40, rY + 27.8);
+                doc.text(doc.splitTextToSize(nombreProyecto, filaAncho - 34).slice(0, 1), filaX + 23, rY + 38.3);
+
+                const pagosY = rY + (filaH * 4);
+                doc.rect(filaX, pagosY, filaAncho, 24);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.2);
+                doc.text('Boleta:', filaX + 2, pagosY + 5.6);
+                doc.text('Transferencia:', filaX + 52, pagosY + 5.6);
+                doc.text('Cheque:', filaX + 114, pagosY + 5.6);
+                doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
+
+                const referenciaBase = String(recibo?.no_referencia || '').trim();
+                const boletaValor = metodo.includes('deposit') ? referenciaBase : '';
+                const transferenciaValor = metodo.includes('transfer') ? referenciaBase : '';
+                const chequeValor = metodo.includes('cheque') ? referenciaBase : '';
+                const efectivoValor = metodo.includes('efectivo') ? 'X' : '';
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.1);
+                doc.text(doc.splitTextToSize(boletaValor || '', 44).slice(0, 1), filaX + 2, pagosY + 16);
+                doc.text(doc.splitTextToSize(transferenciaValor || '', 56).slice(0, 1), filaX + 52, pagosY + 16);
+                doc.text(doc.splitTextToSize(chequeValor || '', 40).slice(0, 1), filaX + 114, pagosY + 16);
+                doc.text(efectivoValor, filaX + 160, pagosY + 16);
+
+                const firmaY = pagosY + 24;
+                doc.rect(filaX, firmaY, filaAncho, 22);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.text('Firma:', filaX + 2, firmaY + 6.2);
+                if (logoProyecto) {
+                    try {
+                        doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), filaX + 62, firmaY + 1.8, 32, 13.2, `jur-proy-${Date.now()}`, 'FAST');
+                    } catch {
+                        // no-op
+                    }
+                }
+
+                doc.setFont('Helvetica', 'italic');
+                doc.setFontSize(6.7);
+                doc.text(
+                    doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo se extiende previo a la confirmacion de la transaccion bancaria.', ancho - 4).slice(0, 2),
+                    margenX + 2,
+                    pageH - 7.5
+                );
+
+                const juridicoFileName = `Recibo_Juridico_${String(recibo?.no_referencia || recibo?.numero_recibo || 'sin_numero').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
+                doc.save(juridicoFileName);
+                return;
+            }
 
             const x = 10;
             const w = 190;
             let y = 10;
+            const headerHeight = 22;
+            const rightHeaderWidth = 68;
+            const leftHeaderWidth = w - rightHeaderWidth;
+            const rightHeaderX = x + leftHeaderWidth;
 
-            const drawLabelBand = (label, top, height = 8) => {
-                doc.setFillColor(245, 211, 69);
-                doc.rect(x, top, w, height, 'F');
-                doc.setDrawColor(80, 80, 80);
-                doc.rect(x, top, w, height);
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(10);
-                doc.text(label, x + 2, top + height - 2.5);
-            };
-
-            const drawField = (label, value, top, height = 12) => {
-                doc.setDrawColor(80, 80, 80);
-                doc.rect(x, top, w, height);
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(9);
-                doc.text(label, x + 2, top + 4.5);
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(11);
-                const text = doc.splitTextToSize(String(value || 'N/A'), w - 42);
-                doc.text(text, x + 22, top + 8);
-            };
-
-            // Header del recibo
             doc.setFillColor(240, 228, 167);
-            doc.rect(x, y, w, 30, 'F');
-            doc.setDrawColor(120, 120, 120);
-            doc.rect(x, y, w, 30);
+            doc.rect(x, y, w, headerHeight, 'F');
+            doc.rect(x, y, w, headerHeight);
+            doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
 
+            const logoX = x + 3;
+            const logoY = y + 1.2;
+            const logoW = 24;
+            const logoH = 19;
             if (logoEmpresa) {
                 try {
-                    const logoFormat = getImageFormatFromDataUrl(logoEmpresa);
-                    doc.addImage(logoEmpresa, logoFormat, x + 3, y + 3, 22, 22, `logo-recibo-${Date.now()}`, 'FAST');
-                } catch (e) {
-                    console.warn('No se pudo cargar el logo del recibo:', e);
+                    doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `rec-logo-${Date.now()}`, 'FAST');
+                } catch {
+                    // no-op
                 }
             }
 
+            const leftTextX = logoEmpresa ? (logoX + logoW + 3) : (x + 3);
+            const leftTextWidth = logoEmpresa ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
+            const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
+
             doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(11);
-            const nombreEmpresa = String(empresa?.nombre || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
-            doc.text(doc.splitTextToSize(nombreEmpresa, 92), x + 28, y + 8);
-
-            doc.setFontSize(12);
-            doc.text('RECIBO DE CAJA', x + 145, y + 8);
-            doc.setFontSize(11);
-            doc.text(`Serie "${serie}"`, x + 145, y + 15);
-            doc.setTextColor(170, 35, 35);
-            doc.text(`N. ${String(numeroRecibo).padStart(5, '0')}`, x + 173, y + 15);
-            doc.setTextColor(0, 0, 0);
-
-            const direccion = String(empresa?.direccion || '15 Avenida "A" 24-22, Zona 13, Oficina #5');
-            const telefonoEmpresa = String(empresa?.telefono || 'PBX: 2220-6406  Telefono: 5825-5903');
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8.5);
-            doc.text(doc.splitTextToSize(`${direccion}  ${telefonoEmpresa}`, 120), x + 67, y + 25, { align: 'center' });
-
-            y += 38;
-            drawLabelBand('Datos del cliente:', y);
-            y += 10;
-            drawField('Nombre:', residente?.nombre || 'N/A', y);
-
-            y += 16;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, 145, 8, 'F');
-            doc.rect(x + 145, y, 45, 8, 'F');
-            doc.rect(x, y, 145, 8);
-            doc.rect(x + 145, y, 45, 8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(10);
-            doc.text('Fecha:', x + 2, y + 5.5);
-            doc.text('Por:', x + 147, y + 5.5);
-
-            y += 8;
-            doc.rect(x, y, 145, 11);
-            doc.rect(x + 145, y, 45, 11);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(9.6);
+            doc.text(doc.splitTextToSize(String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
             doc.setFontSize(10.5);
-            doc.text(`Guatemala, ${fechaLargaGuatemala(fechaRecibo)}`, x + 2, y + 7);
-            doc.setFont('Helvetica', 'bold');
-            doc.text(`Q ${montoTotalCobrado.toFixed(2)}`, x + 147, y + 7);
-
-            y += 16;
-            doc.rect(x, y, w, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Paga la cantidad de:', x + 2, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotalCobrado), 106), x + 45, y + 7);
-
-            y += 15;
-            doc.rect(x, y, w, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Por cancelacion de:', x + 2, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(doc.splitTextToSize(conceptoResumen, 138), x + 43, y + 7);
-
-            y += 15;
-            doc.rect(x, y, 65, 11);
-            doc.rect(x + 65, y, 125, 11);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Cuota:', x + 2, y + 7);
-            doc.setFontSize(14);
-            doc.setTextColor(170, 35, 35);
-            doc.text(String(recibo?.numero_cuota || 'N/A'), x + 38, y + 7);
+            doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
+            doc.setFontSize(9.5);
+            doc.text(`Serie "${serie}"`, rightHeaderX + 6, y + 13.5);
+            doc.setTextColor(166, 35, 35);
+            doc.text(`N. ${String(numero).padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
             doc.setTextColor(0, 0, 0);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(7.2);
+            doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', x + (w / 2), y + headerHeight + 4.5, { align: 'center' });
+            doc.text('PBX: 2220-6406  Telefono: 5825-5903', x + (w / 2), y + headerHeight + 8.2, { align: 'center' });
+
+            y += headerHeight + 10;
+            doc.setFillColor(245, 211, 69);
+            doc.rect(x, y, w, 6, 'F');
+            doc.rect(x, y, w, 6);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.8);
+            doc.text('Datos del cliente:', x + 2, y + 4.3);
+
+            y += 7;
+            const nombreLineas = doc.splitTextToSize(String(residente?.nombre || 'N/A'), 158).slice(0, 1);
+            const nombreAltura = 9;
+            doc.rect(x, y, w, nombreAltura);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Nombre:', x + 2, y + 5);
+            doc.setFont('Helvetica', 'normal');
             doc.setFontSize(10);
-            doc.text('Abono extraordinario:', x + 67, y + 7);
+            doc.text(nombreLineas, x + 22, y + 5);
+
+            y += nombreAltura + 2.5;
+            doc.setFillColor(245, 211, 69);
+            doc.rect(x, y, 145, 6, 'F');
+            doc.rect(x + 145, y, 45, 6, 'F');
+            doc.rect(x, y, 145, 6);
+            doc.rect(x + 145, y, 45, 6);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.8);
+            doc.text('Fecha:', x + 2, y + 4.3);
+            doc.text('Por:', x + 147, y + 4.3);
+
+            y += 6;
+            const fechaLineas = doc.splitTextToSize(`Guatemala, ${fechaLargaGT(fecha)}`, 139).slice(0, 1);
+            const fechaAltura = 9;
+            doc.rect(x, y, 145, fechaAltura);
+            doc.rect(x + 145, y, 45, fechaAltura);
             doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(9.3);
+            doc.text(fechaLineas, x + 2, y + 5);
+            doc.setFont('Helvetica', 'bold');
+            doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 5);
+
+            y += fechaAltura + 2.5;
+            const pagaLineas = doc.splitTextToSize(montoALetrasRecibo(montoTotal), 143).slice(0, 1);
+            const pagaAltura = 9;
+            doc.rect(x, y, w, pagaAltura);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Paga la cantidad de:', x + 2, y + 5);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(pagaLineas, x + 45, y + 5);
+
+            y += pagaAltura + 2.5;
+            const conceptosLineas = doc.splitTextToSize(conceptos, 143).slice(0, 2);
+            const conceptosAltura = Math.max(10, (conceptosLineas.length * 4.2) + 2.2);
+            doc.rect(x, y, w, conceptosAltura);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Por cancelacion de:', x + 2, y + 4.9);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(9.8);
+            doc.text(conceptosLineas, x + 43, y + 4.9);
+
+            y += conceptosAltura + 2.5;
+            doc.rect(x, y, 65, 8);
+            doc.rect(x + 65, y, 125, 8);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text('Cuota(s):', x + 2, y + 5.2);
+            doc.setTextColor(166, 35, 35);
             doc.setFontSize(12);
-            doc.text(`Q. ${montoAbonoExtra.toFixed(2)}`, x + 112, y + 7);
+            doc.text(cuotaDisplay, x + 29, y + 5.2);
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(9);
+            const detalleCuotasTexto = cantidadCuotasPagadas > 0
+                ? `${cantidadCuotasPagadas} cuota(s) | ${mesesPagadosRecibo.join(', ')}`
+                : '';
+            doc.text('Abono extraordinario:', x + 67, y + 3.8);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 3.8);
+            if (detalleCuotasTexto) {
+                doc.setFontSize(7.1);
+                doc.text(doc.splitTextToSize(detalleCuotasTexto, 118).slice(0, 1), x + 67, y + 7.1);
+            }
 
-            y += 16;
-            doc.rect(x, y, 60, 28);
-            doc.rect(x + 65, y, 60, 28);
-            doc.rect(x + 130, y, 60, 28);
+            const boxY = Math.min(Math.max(y + 38, 140), 160);
+            const boxH = 22;
+            doc.rect(x, boxY, 60, boxH);
+            doc.rect(x + 65, boxY, 60, boxH);
 
-            const drawCheck = (cx, cy, checked, label) => {
-                doc.rect(cx, cy, 4.5, 4.5);
-                if (checked) {
-                    doc.setTextColor(190, 0, 0);
-                    doc.text('X', cx + 1.4, cy + 3.6);
-                    doc.setTextColor(0, 0, 0);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(8.6);
+            doc.text(`${metodo.includes('deposit') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 4.8);
+            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 10.2);
+            if (!metodo.includes('efectivo')) {
+                doc.text(`NO. ${String(recibo?.no_referencia || 'N/A')}`, x + 3, boxY + 15.8);
+            }
+
+            if (logoProyecto) {
+                try {
+                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 81, boxY + 9, 28, 11, `rec-logo-proyecto-${Date.now()}`, 'FAST');
+                } catch {
+                    // no-op
                 }
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(9);
-                doc.text(label, cx + 6, cy + 3.7);
-            };
-
-            drawCheck(x + 2, y + 2, metodo.includes('efectivo'), 'Efectivo');
-            drawCheck(x + 2, y + 9, metodo.includes('transfer'), 'Transferencia');
-            drawCheck(x + 2, y + 16, metodo.includes('deposit'), 'Deposito');
-
+            }
             doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Referencia bancaria:', x + 67, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(String(recibo?.no_referencia || 'N/A'), x + 67, y + 14);
-            doc.text(`Contrato: ${residente?.codigo_contrato || 'N/A'}`, x + 67, y + 21);
+            doc.setFontSize(8.8);
+            doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
 
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Meses pagados:', x + 132, y + 7);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(doc.splitTextToSize(mesesTexto, 56), x + 132, y + 13);
-
-            y += 34;
-            autoTable(doc, {
-                startY: y,
-                head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
-                body: (detalleCobro.length ? detalleCobro : [{ concepto: 'Pago aplicado', mes: mesesTexto, total: montoTotalCobrado }]).map((item) => ([
-                    String(item?.concepto || 'Pago aplicado'),
-                    String(item?.mes || mesesTexto || 'N/A'),
-                    parseFloat(item?.total || 0).toFixed(2)
-                ])),
-                theme: 'grid',
-                styles: { fontSize: 9 },
-                headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0] },
-                margin: { left: x, right: 10 }
-            });
-
-            const footerY = doc.lastAutoTable.finalY + 10;
+            const footerY = 205;
             doc.setFont('Helvetica', 'italic');
-            doc.setFontSize(8.5);
+            doc.setFontSize(6.8);
             doc.text(
-                doc.splitTextToSize(
-                    'Los pagos mediante cheque estan sujetos a verificacion bancaria. Este recibo electronico se extiende previo a la confirmacion de la transaccion y conserva el detalle completo del cobro realizado.',
-                    188
-                ),
+                doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 2),
                 x,
                 footerY
             );
@@ -599,21 +1031,11 @@ const normalizeImageDataUrl = (value = '') => {
     };
 
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
-    const planFinancieroContrato = calcularPlanFinancieroContrato(datosDeuda || {});
-    const saldoTerrenoPendiente = planFinancieroContrato.saldoPendiente;
-    const porcentajeInteresContrato = planFinancieroContrato.interesPorcentaje;
-    const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
-    const interesPorCuotaContrato = planFinancieroContrato.interesPorCuota;
-    const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
-
-    const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
-    const interesCalculadoSeleccion = parseFloat(montoInteresSeleccionado || 0);
-    const totalSeleccionCapitalInteres = parseFloat((capitalSeleccionado + interesCalculadoSeleccion).toFixed(2));
+    const saldoTerrenoPendiente = parseFloat(datosDeuda?.saldo_pendiente || 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
-    const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
-    const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes) && tienePermisoCobroSeleccion;
+    const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes);
     const posibleCobroServiciosIniciales =
         !!datosDeuda
         && mesesSeleccionados.includes(mesesPendientes[0] || '')
@@ -673,9 +1095,6 @@ const normalizeImageDataUrl = (value = '') => {
                     </div>
                     <ul className="list-group list-group-flush" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         {listaResidentesPaginada.map((r) => (
-                            (() => {
-                                const tieneAsignacion = contratoTieneAsignacionValida(r);
-                                return (
                             <li
                                 key={r.id_residente}
                                 className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
@@ -686,27 +1105,11 @@ const normalizeImageDataUrl = (value = '') => {
                                     <strong className="fs-6">📦 {r.nombre}</strong>
                                     <br />
                                     <span className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
-                                    <br />
-                                    <span className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</span>
-                                    {!tieneAsignacion && (
-                                        <>
-                                            <br />
-                                            <span className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</span>
-                                        </>
-                                    )}
-                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
-                                        <>
-                                            <br />
-                                            <span className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</span>
-                                        </>
-                                    )}
                                 </div>
                                 <span className={`badge ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-warning text-dark'}`}>
                                     {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
                                 </span>
                             </li>
-                                );
-                            })()
                         ))}
                     </ul>
                     <div className="card-footer bg-white">
@@ -730,9 +1133,6 @@ const normalizeImageDataUrl = (value = '') => {
                     </div>
                     <ul className="list-group list-group-flush">
                         {listaResidentes.map((r) => (
-                            (() => {
-                                const tieneAsignacion = contratoTieneAsignacionValida(r);
-                                return (
                             <li
                                 key={r.id_residente}
                                 className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
@@ -743,27 +1143,9 @@ const normalizeImageDataUrl = (value = '') => {
                                     <strong>{r.nombre}</strong>
                                     <br />
                                     <small className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</small>
-                                    <br />
-                                    <small className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</small>
-                                    {!tieneAsignacion && (
-                                        <>
-                                            <br />
-                                            <small className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</small>
-                                        </>
-                                    )}
-                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
-                                        <>
-                                            <br />
-                                            <small className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</small>
-                                        </>
-                                    )}
                                 </div>
-                                <span className={`badge ${!tieneAsignacion ? 'bg-danger' : usuarioTienePermisoCobro(r) ? 'bg-secondary' : 'bg-warning text-dark'}`}>
-                                    {!tieneAsignacion ? 'Solo consulta' : usuarioTienePermisoCobro(r) ? 'Seleccionar' : 'Ver sin cobro'}
-                                </span>
+                                <span className="badge bg-secondary">Seleccionar</span>
                             </li>
-                                );
-                            })()
                         ))}
                     </ul>
                 </div>
@@ -782,12 +1164,8 @@ const normalizeImageDataUrl = (value = '') => {
                                 <div><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</div>
                             </div>
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
-                                <div><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
-                                <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
-                                <div><strong>Capital por cuota:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</div>
-                                <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
-                                <div><strong>Interés por cuota:</strong> Q{interesPorCuotaContrato.toFixed(2)}</div>
-                                <div><strong>Total financiado:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
+                                <div><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
+                                <div><strong>Cuota:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</div>
                             </div>
                         </div>
                         <hr />
@@ -801,21 +1179,11 @@ const normalizeImageDataUrl = (value = '') => {
                                 ℹ️ Terreno solvente. Puede cobrar únicamente servicios (agua/drenaje u otros asignados).
                             </div>
                         )}
-                        {!contratoTieneAsignacionValida(datosDeuda) && (
-                            <div className="alert alert-warning text-center fw-bold mb-3">
-                                ⚠️ Este contrato no tiene empresa y/o proyecto asignado. Puede consultarse, pero no se permite generar cobro.
-                            </div>
-                        )}
-                        {contratoTieneAsignacionValida(datosDeuda) && !tienePermisoCobroSeleccion && (
-                            <div className="alert alert-warning text-center fw-bold mb-3">
-                                ⚠️ Este contrato no está dentro de tus correlativos asignados. Puedes verlo en Caja, pero no generar cobro.
-                            </div>
-                        )}
                         <div className="d-flex justify-content-end">
                             <button
                                 className="btn btn-success fw-bold"
                                 onClick={() => setShowModalCobro(true)}
-                                disabled={!puedeGenerarCobro || !contratoTieneAsignacionValida(datosDeuda) || !tienePermisoCobroSeleccion}
+                                disabled={!puedeGenerarCobro}
                             >
                                 💳 Generar Cobro
                             </button>
@@ -843,9 +1211,8 @@ const normalizeImageDataUrl = (value = '') => {
                                             <br /><small><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</small>
                                         </div>
                                         <div className="col-md-6 text-end">
-                                            <small><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
-                                            <small><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
-                                            <small><strong>Cuota con interés:</strong> Q{planFinancieroContrato.cuotaTotalConInteres.toFixed(2)}</small><br />
+                                            <small><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
+                                            <small><strong>Cuota fija:</strong> Q{parseFloat(datosDeuda.monto_cuota).toFixed(2)}</small><br />
                                             <small><strong>Mora aplicada:</strong> Q{montoMoraActual.toFixed(2)}</small>
                                         </div>
                                     </div>
@@ -936,18 +1303,12 @@ const normalizeImageDataUrl = (value = '') => {
                                     {/* Monto fijo y total a pagar */}
                                     <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Capital por mes:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}
+                                            <strong>Terreno por mes:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}
                                             <br />
                                             <strong>Servicios seleccionados:</strong> Q{(mesesSeleccionados.length ? (montoServiciosSeleccionado / Math.max(mesesSeleccionados.length, 1)) : 0).toFixed(2)} / mes
-                                            <br />
-                                            <strong>Total financiado seleccionado ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{capitalSeleccionado.toFixed(2)} + Q{interesCalculadoSeleccion.toFixed(2)}
                                         </span>
                                         <span className="fw-bold text-success">
                                             Total ({mesesSeleccionados.length} mes(es)): Q{montoTotalSeleccionado.toFixed(2)}
-                                            <br />
-                                            Total financiado: Q{totalSeleccionCapitalInteres.toFixed(2)}
-                                            <br />
-                                            Servicios: Q{montoServiciosSeleccionado.toFixed(2)}
                                             {montoMoraActual > 0 && (
                                                 <>
                                                     <br />

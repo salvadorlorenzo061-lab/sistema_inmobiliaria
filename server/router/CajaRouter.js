@@ -13,42 +13,6 @@ const normalizeText = (value = '') => String(value || '')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-const sincronizarCorrelativoResolucionesEquivalentes = ({ idResolucionBase, idUsuario, numeroResolucion, serie, correlativoActual }, callback) => {
-    const idRes = Number(idResolucionBase || 0);
-    const idUsr = Number(idUsuario || 0);
-    const corr = Number(correlativoActual || 0);
-    const numeroNorm = String(numeroResolucion || '').trim().toUpperCase();
-    const serieNorm = String(serie || '').trim().toUpperCase();
-
-    if (!Number.isInteger(idRes) || idRes <= 0 || !Number.isInteger(idUsr) || idUsr <= 0 || !Number.isFinite(corr) || corr <= 0 || !numeroNorm || !serieNorm) {
-        return callback();
-    }
-
-    const sql = `
-        UPDATE resoluciones_facturas rf_target
-        INNER JOIN resoluciones_facturas rf_base ON rf_base.id_resolucion = ?
-        LEFT JOIN empresas e_target ON e_target.id_empresa = rf_target.id_empresa
-        LEFT JOIN empresas e_base ON e_base.id_empresa = rf_base.id_empresa
-        SET rf_target.correlativo_actual = ?
-        WHERE rf_target.id_usuario = ?
-          AND UPPER(TRIM(COALESCE(rf_target.numero_resolucion, ''))) = ?
-          AND UPPER(TRIM(COALESCE(rf_target.serie, ''))) = ?
-          AND (
-                rf_target.id_empresa = rf_base.id_empresa
-                OR UPPER(TRIM(COALESCE(e_target.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_base.nombre_empresa, '')))
-              )
-          AND rf_target.id_resolucion <> rf_base.id_resolucion
-          AND rf_target.correlativo_actual < ?
-    `;
-
-    db.query(sql, [idRes, corr, idUsr, numeroNorm, serieNorm, corr], (err) => {
-        if (err) {
-            return callback(err);
-        }
-        return callback();
-    });
-};
-
 const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 const obtenerIndiceMes = (mesTexto = '') => {
@@ -110,8 +74,8 @@ const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
 
 const calcularComponentesFiscalmente = (total = 0) => {
     const montoTotal = parseFloat(Number(total || 0).toFixed(2));
-    const iva = 0;
-    const subtotal = montoTotal;
+    const iva = parseFloat((montoTotal * 0.12).toFixed(2));
+    const subtotal = parseFloat((montoTotal - iva).toFixed(2));
 
     return {
         subtotal,
@@ -165,23 +129,6 @@ const ensureFacturasHistorialRolColumn = () => {
             db.query('ALTER TABLE facturas_historial ADD COLUMN rol_usuario_emisor VARCHAR(80) NULL AFTER id_usuario', (alterErr) => {
                 if (alterErr) {
                     console.error('Error creando columna rol_usuario_emisor en facturas_historial:', alterErr.message);
-                }
-            });
-        }
-    });
-};
-
-const ensureInteresPorcentajeContratoColumn = () => {
-    db.query("SHOW COLUMNS FROM contratos_residentes LIKE 'interes_porcentaje'", (err, rows) => {
-        if (err) {
-            console.error('Error verificando columna interes_porcentaje en contratos_residentes:', err.message);
-            return;
-        }
-
-        if (!rows || rows.length === 0) {
-            db.query('ALTER TABLE contratos_residentes ADD COLUMN interes_porcentaje DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER monto_cuota', (alterErr) => {
-                if (alterErr) {
-                    console.error('Error creando columna interes_porcentaje en contratos_residentes:', alterErr.message);
                 }
             });
         }
@@ -316,32 +263,23 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
     }
 
     const query = `
-        SELECT ac.id_asignacion, ac.id_resolucion, ac.id_empresa, ac.serie,
-               COALESCE(ac.correlativo_actual, ac.correlativo_inicio) AS correlativo_actual,
-               ac.correlativo_fin
-        FROM asignar_correlativos ac
-        WHERE ac.id_usuario = ?
-                    AND ac.id_empresa = ?
-                    AND (
-                                EXISTS (
-                                        SELECT 1
-                                        FROM resoluciones_facturas rf_match
-                                        WHERE rf_match.id_resolucion = ac.id_resolucion
-                                            AND rf_match.id_usuario = ac.id_usuario
-                                            AND rf_match.id_empresa = ac.id_empresa
-                                            AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
-                                )
-                            )
-                    AND ac.estado = 'activo'
-                    AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
-                ORDER BY ac.fecha_asignacion ASC,
-                                 ac.id_asignacion ASC
+        SELECT id_asignacion, id_resolucion, id_empresa, serie, correlativo_actual, correlativo_fin
+        FROM asignar_correlativos
+        WHERE id_usuario = ?
+          AND estado = 'activo'
+          AND correlativo_actual <= correlativo_fin
+        ORDER BY CASE
+                    WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
+                    ELSE 1
+                 END ASC,
+                 fecha_asignacion ASC,
+                 id_asignacion ASC
         LIMIT 1
     `;
 
     const idEmpresaNormalizado = idEmpresa ? Number(idEmpresa) : null;
 
-    db.query(query, [idUsuario, idEmpresaNormalizado], (err, rows) => {
+    db.query(query, [idUsuario, idEmpresaNormalizado, idEmpresaNormalizado], (err, rows) => {
         if (err) {
             return callback(err);
         }
@@ -365,7 +303,7 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
                     return callback(updateErr);
                 }
 
-                    return callback(null, {
+                return callback(null, {
                     correlativo: correlativoTexto,
                     id_resolucion: asignacion.id_resolucion,
                     id_asignacion: asignacion.id_asignacion,
@@ -432,7 +370,6 @@ const resolverColumnaCostoServicios = (callback) => {
 ensureContratosServiciosTable();
 ensureFacturasHistorialTable();
 ensureFacturasHistorialRolColumn();
-ensureInteresPorcentajeContratoColumn();
 
 const resolverIdUsuarioValido = (idUsuario, callback) => {
     const id = Number(idUsuario);
@@ -467,100 +404,15 @@ const resolverIdUsuarioValido = (idUsuario, callback) => {
     });
 };
 
-const obtenerContextoPermisosCaja = (idUsuario, callback) => {
-    const id = Number(idUsuario || 0);
-    if (!Number.isInteger(id) || id <= 0) {
-        return callback(null, {
-            idUsuario: null,
-            esAdminOGerente: false,
-            filtrarPorPermiso: false
-        });
-    }
-
-    const sql = `
-        SELECT
-            u.id_usuario,
-            COALESCE(r.nombre_rol, '') AS nombre_rol
-        FROM usuarios u
-        LEFT JOIN roles r ON r.id_rol = u.id_rol
-        WHERE u.id_usuario = ?
-        LIMIT 1
-    `;
-
-    db.query(sql, [id], (err, rows) => {
-        if (err) {
-            return callback(err);
-        }
-
-        if (!rows || !rows.length) {
-            return callback(null, {
-                idUsuario: id,
-                esAdminOGerente: false,
-                filtrarPorPermiso: true
-            });
-        }
-
-        const rol = normalizeText(rows[0].nombre_rol || '');
-        const esAdminOGerente = rol.includes('admin') || rol.includes('gerente');
-
-        return callback(null, {
-            idUsuario: id,
-            esAdminOGerente,
-            // Regla operativa: cualquier usuario autenticado (incluyendo admin/gerencia)
-            // solo debe cobrar dentro de sus empresas asignadas por correlativo/resolucion.
-            filtrarPorPermiso: true
-        });
-    });
-};
-
 // === OBTENER LISTA INICIAL DE RESIDENTES (PENDIENTES Y SOLVENTES) ===
 router.get("/residentes-pendientes", (req, res) => {
-    const idUsuario = Number(req.query?.id_usuario || 0);
-
-    obtenerContextoPermisosCaja(idUsuario, (ctxErr, contextoPermisos) => {
-        if (ctxErr) {
-            console.error('Error validando permisos de Caja:', ctxErr.message);
-            return res.status(500).send('Error validando permisos de Caja.');
-        }
-
-        const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
-        const permisoSelect = '1';
-        const filtroPermisos = filtrarPorPermiso
-            ? `
-                AND (
-                    EXISTS (
-                        SELECT 1
-                        FROM asignar_correlativos ac
-                        INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
-                        WHERE ac.id_usuario = ?
-                          AND ac.estado = 'activo'
-                          AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
-                          AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
-                          AND rf_ac.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                    )
-                    OR EXISTS (
-                        SELECT 1
-                        FROM resoluciones_facturas rf_directa
-                        WHERE rf_directa.id_usuario = ?
-                          AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
-                          AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
-                          AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
-                          AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                    )
-                )
-                AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
-            `
-            : '';
-
-        const query = `
+    const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
-            c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
-            COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
-            ${permisoSelect} AS permiso_cobro_usuario,
             p.nombre AS nombre_proyecto,
             COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
@@ -582,78 +434,34 @@ router.get("/residentes-pendientes", (req, res) => {
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
         WHERE c.estado = 'activo'
-        AND COALESCE(c.id_proyecto, 0) > 0
-        AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
-        ${filtroPermisos}
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
-        `;
+    `;
 
-        const queryParams = filtrarPorPermiso ? [idUsuario, idUsuario] : [];
+    db.query(query, (err, result) => {
+        if (err) {
+            console.error("Error al obtener residentes pendientes:", err.message);
+            return res.status(500).send("Error al obtener residentes: " + err.message);
+        }
 
-        db.query(query, queryParams, (err, result) => {
-            if (err) {
-                console.error("Error al obtener residentes pendientes:", err.message);
-                return res.status(500).send("Error al obtener residentes: " + err.message);
-            }
-
-            return res.status(200).json(result || []);
-        });
+        return res.status(200).json(result || []);
     });
 });
 
 // === BUSCAR RESIDENTE POR NOMBRE, APELLIDO, DPI O NUMERO DE CONTRATO ===
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;
-    const idUsuario = Number(req.query?.id_usuario || 0);
 
     if (!criterio) {
         return res.status(400).send("Debe proporcionar un criterio de búsqueda.");
     }
 
-    obtenerContextoPermisosCaja(idUsuario, (ctxErr, contextoPermisos) => {
-        if (ctxErr) {
-            console.error('Error validando permisos de Caja:', ctxErr.message);
-            return res.status(500).send('Error validando permisos de Caja.');
-        }
-
-        const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
-        const permisoSelect = '1';
-        const filtroPermisos = filtrarPorPermiso
-            ? `
-                AND (
-                    EXISTS (
-                        SELECT 1
-                        FROM asignar_correlativos ac
-                        INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
-                        WHERE ac.id_usuario = ?
-                          AND ac.estado = 'activo'
-                          AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
-                          AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
-                          AND rf_ac.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                    )
-                    OR EXISTS (
-                        SELECT 1
-                        FROM resoluciones_facturas rf_directa
-                        WHERE rf_directa.id_usuario = ?
-                          AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
-                          AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
-                          AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
-                          AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                    )
-                )
-                AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
-            `
-            : '';
-
-        const query = `
+    const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
-            c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
-            COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
-            ${permisoSelect} AS permiso_cobro_usuario,
             p.nombre AS nombre_proyecto,
             COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
@@ -666,11 +474,7 @@ router.get("/buscar-residente", (req, res) => {
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
-        WHERE c.estado = 'activo'
-        AND COALESCE(c.id_proyecto, 0) > 0
-        AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
-        ${filtroPermisos}
-        AND (
+        WHERE c.estado = 'activo' AND (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
             OR r.numero_identificacion LIKE ?
@@ -680,20 +484,17 @@ router.get("/buscar-residente", (req, res) => {
         LIMIT 50
     `;
 
-        const searchTerm = `%${criterio}%`;
-        const queryParams = filtrarPorPermiso
-            ? [idUsuario, idUsuario, searchTerm, searchTerm, searchTerm, searchTerm]
-            : [searchTerm, searchTerm, searchTerm, searchTerm];
+    const searchTerm = `%${criterio}%`;
+    const queryParams = [searchTerm, searchTerm, searchTerm, searchTerm];
 
-        db.query(query, queryParams, (err, result) => {
-            if (err) {
-                console.error("Error en la consulta:", err.message);
-                return res.status(500).send("Error al consultar el residente: " + err.message);
-            }
-            if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
-            
-            return res.status(200).json(result);
-        });
+    db.query(query, queryParams, (err, result) => {
+        if (err) {
+            console.error("Error en la consulta:", err.message);
+            return res.status(500).send("Error al consultar el residente: " + err.message);
+        }
+        if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
+        
+        res.status(200).json(result);
     });
 });
 
@@ -1085,7 +886,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
 router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
-        monto_pagar, monto_terreno_pagar, monto_interes, monto_mora, metodo_pago, no_referencia, observaciones,
+        monto_pagar, monto_terreno_pagar, monto_mora, metodo_pago, no_referencia, observaciones,
         mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
@@ -1157,7 +958,6 @@ router.post("/procesar-pago", (req, res) => {
 
     const montoSolicitado = parseFloat(monto_pagar || 0);
     const montoTerrenoSolicitado = parseFloat(monto_terreno_pagar);
-    const montoInteresSolicitado = parseFloat(monto_interes || 0);
     const montoTerrenoTotalBase = Number.isFinite(montoTerrenoSolicitado)
         ? parseFloat(Math.max(montoTerrenoSolicitado, 0).toFixed(2))
         : parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0), 0).toFixed(2));
@@ -1167,7 +967,6 @@ router.post("/procesar-pago", (req, res) => {
     let montoServiciosMesInicial = 0;
     let montoServiciosTotal = 0;
     let montoPrincipalTotal = 0;
-    let montoInteresTotal = 0;
     let montoPorMesTerreno = 0;
     let ivaTotal = 0;
     let ivaPorMes = 0;
@@ -1187,8 +986,8 @@ router.post("/procesar-pago", (req, res) => {
 
         montoPrincipalTotal = parseFloat((montoTerrenoTotal + montoServiciosTotal).toFixed(2));
         montoPorMesTerreno = parseFloat((montoTerrenoTotal / cantidadMeses).toFixed(2));
-        ivaTotal = 0;
-        ivaPorMes = 0;
+        ivaTotal = parseFloat((montoPrincipalTotal * 0.12).toFixed(2));
+        ivaPorMes = parseFloat((ivaTotal / cantidadMeses).toFixed(2));
     };
 
     recalcularTotales();
@@ -1214,23 +1013,7 @@ router.post("/procesar-pago", (req, res) => {
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
-            const sqlContratoCobro = `
-                SELECT
-                    c.monto_total,
-                    c.fecha_compra,
-                    c.fecha_firma,
-                    c.cuotas_pactadas,
-                    c.monto_cuota,
-                    c.interes_porcentaje,
-                    c.id_proyecto,
-                    COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
-                FROM contratos_residentes c
-                LEFT JOIN residentes r ON r.id_residente = c.id_residente
-                WHERE c.id_contrato = ?
-                LIMIT 1
-            `;
-
-            db.query(sqlContratoCobro, [id_contrato], (saldoErr, saldoRows) => {
+            db.query('SELECT monto_total, fecha_compra, fecha_firma, cuotas_pactadas, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
             if (saldoErr) {
                 return db.rollback(() => res.status(500).send('Error al validar saldo pendiente: ' + saldoErr.message));
             }
@@ -1239,61 +1022,11 @@ router.post("/procesar-pago", (req, res) => {
                 return db.rollback(() => res.status(404).send('No se encontró el contrato para aplicar el cobro.'));
             }
 
-            const idProyectoContrato = Number(saldoRows[0]?.id_proyecto || 0);
-            const idEmpresaFacturacionContrato = Number(saldoRows[0]?.id_empresa_facturacion || 0);
-
-            if (!Number.isInteger(idProyectoContrato) || idProyectoContrato <= 0 || !Number.isInteger(idEmpresaFacturacionContrato) || idEmpresaFacturacionContrato <= 0) {
-                return db.rollback(() => res.status(400).send('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.'));
-            }
-
-                        const sqlPermisoCobroContrato = `
-                                SELECT 1
-                                FROM contratos_residentes c
-                                LEFT JOIN residentes r ON r.id_residente = c.id_residente
-                                LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
-                                WHERE c.id_contrato = ?
-                                    AND COALESCE(c.id_proyecto, 0) > 0
-                                    AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
-                                    AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
-                                    AND (
-                                        EXISTS (
-                                                SELECT 1
-                                                FROM asignar_correlativos ac
-                                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
-                                                WHERE ac.id_usuario = ?
-                                                    AND ac.estado = 'activo'
-                                                    AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
-                                                    AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
-                                                    AND rf_ac.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                                        )
-                                        OR EXISTS (
-                                                SELECT 1
-                                                FROM resoluciones_facturas rf_directa
-                                                WHERE rf_directa.id_usuario = ?
-                                                    AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
-                                                    AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
-                                                    AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
-                                                    AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
-                                        )
-                                    )
-                                LIMIT 1
-                        `;
-
-                        return db.query(sqlPermisoCobroContrato, [id_contrato, idUsuarioSeguro, idUsuarioSeguro], (permisoErr, permisoRows) => {
-                                if (permisoErr) {
-                                        return db.rollback(() => res.status(500).send('Error validando permisos de cobro del usuario: ' + permisoErr.message));
-                                }
-
-                                if (!permisoRows || !permisoRows.length) {
-                                        return db.rollback(() => res.status(403).send('No se puede generar cobro: este contrato no pertenece a tus empresas/proyectos con correlativos activos asignados.'));
-                                }
-
-                        const saldoActual = parseFloat(saldoRows[0].monto_total || 0);
+            const saldoActual = parseFloat(saldoRows[0].monto_total || 0);
             const fechaCompraContrato = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
             const fechaFirmaContrato = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
             const cuotasPactadasContrato = Number(saldoRows[0]?.cuotas_pactadas || 0);
             const montoCuotaContratoRaw = Number(saldoRows[0]?.monto_cuota || 0);
-            const interesPorcentajeContrato = Math.max(Number(saldoRows[0]?.interes_porcentaje || 0), 0);
             const montoCuotaBaseEntera = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
                 ? Math.floor(montoCuotaContratoRaw)
                 : 0;
@@ -1304,29 +1037,6 @@ router.post("/procesar-pago", (req, res) => {
                     : null);
 
             const redondear2 = (valor) => Number(Number(valor || 0).toFixed(2));
-
-            const cuotasRestantesContrato = (montoCuotaContratoRaw > 0 && saldoActual > 0)
-                ? Math.max(Math.ceil(saldoActual / montoCuotaContratoRaw), 1)
-                : Math.max(mesesAProcesar.length, 1);
-            const cuotasBaseInteres = Number.isInteger(cuotasPactadasContrato) && cuotasPactadasContrato > 0
-                ? cuotasPactadasContrato
-                : Math.max(mesesAProcesar.length, 1);
-            const capitalBaseContrato = (montoCuotaContratoRaw > 0 && cuotasBaseInteres > 0)
-                ? redondear2(montoCuotaContratoRaw * cuotasBaseInteres)
-                : redondear2(Math.max(saldoActual, 0));
-            const interesTotalContrato = redondear2((capitalBaseContrato * interesPorcentajeContrato) / 100);
-            const interesPorMesContrato = cuotasBaseInteres > 0
-                ? redondear2(interesTotalContrato / cuotasBaseInteres)
-                : 0;
-            const mesesInteresSolicitados = montoTerrenoTotal > 0
-                ? Math.min(mesesAProcesar.length, cuotasRestantesContrato)
-                : 0;
-            const interesCalculadoContrato = redondear2(interesPorMesContrato * mesesInteresSolicitados);
-
-            // Priorizar cálculo de backend para consistencia; usar payload solo como respaldo.
-            montoInteresTotal = interesCalculadoContrato > 0
-                ? interesCalculadoContrato
-                : redondear2(Math.max(montoInteresSolicitado, 0));
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
                 const parsed = parsearEtiquetaMes(mesTexto);
@@ -1377,22 +1087,6 @@ router.post("/procesar-pago", (req, res) => {
                     montos[montos.length - 1] = redondear2(montos[montos.length - 1] + restante);
                 }
 
-                return montos;
-            };
-
-            const distribuirInteresPorMes = (mesesLista = [], montoInteres = 0) => {
-                if (!Array.isArray(mesesLista) || !mesesLista.length) return [];
-
-                const total = redondear2(Math.max(Number(montoInteres || 0), 0));
-                if (total <= 0) {
-                    return mesesLista.map(() => 0);
-                }
-
-                const base = redondear2(total / mesesLista.length);
-                const montos = mesesLista.map(() => base);
-                const acumuladoBase = redondear2(base * mesesLista.length);
-                const ajusteFinal = redondear2(total - acumuladoBase);
-                montos[montos.length - 1] = redondear2(montos[montos.length - 1] + ajusteFinal);
                 return montos;
             };
 
@@ -1491,30 +1185,14 @@ router.post("/procesar-pago", (req, res) => {
 
             const validarServiciosYContinuar = () => {
                 const serviciosExtraordinarios = serviciosSolicitados.filter((s) => s.es_extraordinario && Number.isInteger(s.id_pago_extra) && s.id_pago_extra > 0);
-                const idsPagoExtra = [...new Set(serviciosExtraordinarios.map((s) => Number(s.id_pago_extra)).filter((id) => Number.isInteger(id) && id > 0))];
+                const serviciosRegularesSolicitados = serviciosSolicitados.filter((s) => !s.es_extraordinario);
+                const serviciosAValidar = [...serviciosRegularesSolicitados, ...serviciosMesInicial];
 
-                // Primero validar que los servicios solicitados (si los hay) estén asignados al contrato
-                const idsServicios = [...new Set((serviciosSolicitados || []).map((s) => Number(s.id_servicio)).filter((id) => Number.isInteger(id) && id > 0))];
-
-                const validarExtrasYContinuar = (extraRows) => {
-                    if (extraRows == null) return procesarCobroPrincipal();
-
-                    const idsEncontrados = new Set((extraRows || []).map((row) => Number(row.id_pago_extra)));
-                    const faltantes = idsPagoExtra.filter((id) => !idsEncontrados.has(id));
-                    if (faltantes.length) {
-                        return db.rollback(() => res.status(400).send('Algunos cargos extraordinarios ya no existen para este contrato.'));
+                const validarExtrasPendientes = (onSuccess) => {
+                    const idsPagoExtra = [...new Set(serviciosExtraordinarios.map((s) => Number(s.id_pago_extra)).filter((id) => Number.isInteger(id) && id > 0))];
+                    if (!idsPagoExtra.length) {
+                        return onSuccess();
                     }
-
-                    const invalidos = (extraRows || []).filter((row) => String(row.estado || '').toLowerCase() !== 'pendiente');
-                    if (invalidos.length) {
-                        return db.rollback(() => res.status(400).send('Hay cargos extraordinarios que ya no están pendientes y no pueden cobrarse.'));
-                    }
-
-                    return procesarCobroPrincipal();
-                };
-
-                const consultarExtras = () => {
-                    if (!idsPagoExtra.length) return validarExtrasYContinuar(null);
 
                     const placeholdersExtra = idsPagoExtra.map(() => '?').join(',');
                     const sqlExtra = `
@@ -1525,467 +1203,245 @@ router.post("/procesar-pago", (req, res) => {
                         FOR UPDATE
                     `;
 
-                    return db.query(sqlExtra, [id_contrato, ...idsPagoExtra], (extraErr, extraRows) => {
+                    db.query(sqlExtra, [id_contrato, ...idsPagoExtra], (extraErr, extraRows) => {
                         if (extraErr) {
                             return db.rollback(() => res.status(500).send('Error validando cargos extraordinarios pendientes: ' + extraErr.message));
                         }
-                        return validarExtrasYContinuar(extraRows);
+
+                        const idsEncontrados = new Set((extraRows || []).map((row) => Number(row.id_pago_extra)));
+                        const faltantes = idsPagoExtra.filter((id) => !idsEncontrados.has(id));
+                        if (faltantes.length) {
+                            return db.rollback(() => res.status(400).send('Algunos cargos extraordinarios ya no existen para este contrato.'));
+                        }
+
+                        const invalidos = (extraRows || []).filter((row) => String(row.estado || '').toLowerCase() !== 'pendiente');
+                        if (invalidos.length) {
+                            return db.rollback(() => res.status(400).send('Hay cargos extraordinarios que ya no están pendientes y no pueden cobrarse.'));
+                        }
+
+                        return onSuccess();
                     });
                 };
 
-                if (!idsServicios.length) {
-                    return consultarExtras();
+                if (!serviciosAValidar.length) {
+                    return validarExtrasPendientes(() => procesarCobroPrincipal());
                 }
 
+                const idsServicios = [...new Set(serviciosAValidar.map((s) => s.id_servicio))];
                 const placeholdersIds = idsServicios.map(() => '?').join(',');
+                const placeholdersMeses = mesesAProcesar.map(() => '?').join(',');
+
+                const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
+                const fechaFirma = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+                const fechaInicioValida = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
+                    ? fechaCompra
+                    : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
+                const mesInicialContrato = fechaInicioValida
+                    ? etiquetaMesDesdeFecha(new Date(fechaInicioValida.getFullYear(), fechaInicioValida.getMonth(), 1))
+                    : null;
+
                 const sqlServiciosAsignados = `
-                    SELECT DISTINCT base.id_servicio
-                    FROM (
-                        SELECT cs.id_servicio
-                        FROM contratos_servicios cs
-                        INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
-                        WHERE cs.id_contrato = ?
-                          AND cs.estado = 'activo'
-                          AND s.estado = 'activo'
+                                        SELECT DISTINCT base.id_servicio
+                                        FROM (
+                                                SELECT cs.id_servicio
+                                                FROM contratos_servicios cs
+                                                INNER JOIN servicios s ON s.id_servicio = cs.id_servicio
+                                                WHERE cs.id_contrato = ?
+                                                    AND cs.estado = 'activo'
+                                                    AND s.estado = 'activo'
 
-                        UNION
+                                                UNION
 
-                        SELECT ps.id_servicio
-                        FROM contratos_residentes c
-                        INNER JOIN proyecto_servicios ps ON ps.id_proyecto = c.id_proyecto
-                        INNER JOIN servicios s ON s.id_servicio = ps.id_servicio
-                        WHERE c.id_contrato = ?
-                          AND ps.estado = 'activo'
-                          AND s.estado = 'activo'
-                    ) AS base
-                    WHERE base.id_servicio IN (${placeholdersIds})
+                                                SELECT ps.id_servicio
+                                                FROM contratos_residentes c
+                                                INNER JOIN proyecto_servicios ps ON ps.id_proyecto = c.id_proyecto
+                                                INNER JOIN servicios s ON s.id_servicio = ps.id_servicio
+                                                WHERE c.id_contrato = ?
+                                                    AND ps.estado = 'activo'
+                                                    AND s.estado = 'activo'
+                                        ) AS base
+                                        WHERE base.id_servicio IN (${placeholdersIds})
                 `;
 
-                db.query(sqlServiciosAsignados, [id_contrato, id_contrato, ...idsServicios], (servErr, servRows) => {
+                                db.query(sqlServiciosAsignados, [id_contrato, id_contrato, ...idsServicios], (servErr, servRows) => {
                     if (servErr) {
                         return db.rollback(() => res.status(500).send('Error validando servicios del contrato: ' + servErr.message));
                     }
 
-                    const idsEncontradosServicios = new Set((servRows || []).map((r) => Number(r.id_servicio)));
-                    const faltantesServicios = idsServicios.filter((id) => !idsEncontradosServicios.has(id));
-                    if (faltantesServicios.length) {
-                        return db.rollback(() => res.status(400).send('Algunos servicios incluidos en el cobro no están asignados al contrato o proyecto.'));
+                    const idsValidos = new Set((servRows || []).map((r) => Number(r.id_servicio)));
+                    const idsNoValidos = idsServicios.filter((id) => !idsValidos.has(id));
+                    if (idsNoValidos.length) {
+                        return db.rollback(() => res.status(400).send('Hay servicios que no estan asignados o activos en este contrato.'));
                     }
 
-                    return consultarExtras();
+                    const sqlDuplicados = `
+                        SELECT DISTINCT pd.id_concepto_servicio, pd.mes_pagado
+                        FROM pagos_detalle pd
+                        INNER JOIN pagos p ON p.id_pago = pd.id_pago
+                        WHERE p.id_contrato = ?
+                          AND pd.tipo_concepto = 'servicio'
+                          AND pd.id_concepto_servicio IN (${placeholdersIds})
+                          AND pd.mes_pagado IN (${placeholdersMeses})
+                    `;
+
+                    db.query(sqlDuplicados, [id_contrato, ...idsServicios, ...mesesAProcesar], (dupErr, dupRows) => {
+                        if (dupErr) {
+                            return db.rollback(() => res.status(500).send('Error validando duplicidad de cobro de servicios: ' + dupErr.message));
+                        }
+
+                        if (dupRows && dupRows.length) {
+                            const detalleDuplicado = dupRows.map((d) => `servicio ${d.id_concepto_servicio} (${d.mes_pagado})`).join(', ');
+                            return db.rollback(() => res.status(400).send(`Ya existen cobros registrados para: ${detalleDuplicado}.`));
+                        }
+
+                        if (!serviciosMesInicial.length || !mesInicialContrato) {
+                            return validarExtrasPendientes(() => procesarCobroPrincipal());
+                        }
+
+                        const idsServiciosInicial = [...new Set(serviciosMesInicial.map((s) => s.id_servicio))];
+                        const placeholdersIniciales = idsServiciosInicial.map(() => '?').join(',');
+                        const sqlDuplicadosInicial = `
+                            SELECT DISTINCT pd.id_concepto_servicio
+                            FROM pagos_detalle pd
+                            INNER JOIN pagos p ON p.id_pago = pd.id_pago
+                            WHERE p.id_contrato = ?
+                              AND pd.tipo_concepto = 'servicio'
+                              AND pd.id_concepto_servicio IN (${placeholdersIniciales})
+                              AND pd.mes_pagado = ?
+                        `;
+
+                        db.query(sqlDuplicadosInicial, [id_contrato, ...idsServiciosInicial, mesInicialContrato], (dupIniErr, dupIniRows) => {
+                            if (dupIniErr) {
+                                return db.rollback(() => res.status(500).send('Error validando servicios del mes inicial: ' + dupIniErr.message));
+                            }
+
+                            if (dupIniRows && dupIniRows.length) {
+                                const idsDuplicados = new Set((dupIniRows || []).map((r) => Number(r.id_concepto_servicio)));
+                                serviciosMesInicial = serviciosMesInicial.filter((item) => !idsDuplicados.has(Number(item.id_servicio)));
+                                recalcularTotales();
+                            }
+
+                            return validarExtrasPendientes(() => procesarCobroPrincipal());
+                        });
+                    });
                 });
             };
 
             const procesarCobroPrincipal = () => {
-                const sqlCaja = `
-                    INSERT INTO caja_ingresos 
-                    (numero_recibo, fecha_pago, monto_pagado, monto_mora, metodo_pago, observaciones, id_residente, id_tipo_contrato) 
-                    VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?)
+            const sqlCaja = `INSERT INTO caja_ingresos 
+                (numero_recibo, fecha_pago, monto_pagado, monto_mora, metodo_pago, observaciones, id_residente, id_tipo_contrato) 
+                VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?)`;
+
+            db.query(sqlCaja, [numero_recibo, montoPrincipalTotal, moraTotalSeleccionada, metodo_pago, observaciones, id_residente, id_tipo_contrato], (err, resCaja) => {
+                if (err) return db.rollback(() => res.status(500).send("Error en caja_ingresos: " + err.message));
+
+                const sqlEmpresaContrato = `
+                    SELECT COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
+                    FROM contratos_residentes c
+                    LEFT JOIN residentes r ON r.id_residente = c.id_residente
+                    WHERE c.id_contrato = ?
+                    LIMIT 1
                 `;
 
-                const montoCajaSinMora = redondear2(montoPrincipalTotal + montoInteresTotal);
-
-                return db.query(sqlCaja, [numero_recibo, montoCajaSinMora, moraTotalSeleccionada, metodo_pago, observaciones, id_residente, id_tipo_contrato], (errCaja) => {
-                    if (errCaja) {
-                        return db.rollback(() => res.status(500).send('Error en caja_ingresos: ' + errCaja.message));
+                db.query(sqlEmpresaContrato, [id_contrato], (empresaErr, empresaRows) => {
+                    if (empresaErr) {
+                        return db.rollback(() => res.status(500).send("Error al obtener empresa del contrato: " + empresaErr.message));
                     }
 
-                    const sqlEmpresaContrato = `
-                        SELECT COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
-                        FROM contratos_residentes c
-                        LEFT JOIN residentes r ON r.id_residente = c.id_residente
-                        WHERE c.id_contrato = ?
-                        LIMIT 1
-                    `;
+                    const idEmpresaFacturacion = empresaRows?.[0]?.id_empresa_facturacion || null;
 
-                    return db.query(sqlEmpresaContrato, [id_contrato], (empresaErr, empresaRows) => {
-                        if (empresaErr) {
-                            return db.rollback(() => res.status(500).send('Error al obtener empresa del contrato: ' + empresaErr.message));
-                        }
+                    const continuarConInsertPago = (correlativoAsignado, idResolucionUsada = null, correlativoMeta = {}) => {
+                        const sqlPago = `INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia) 
+                                         VALUES (?, ?, NOW(), ?, ?, ?)`;
+                        const moraTotal = moraTotalSeleccionada;
+                        const totalTransaccion = parseFloat((montoPrincipalTotal + moraTotal).toFixed(2));
 
-                        const idEmpresaFacturacion = empresaRows?.[0]?.id_empresa_facturacion || null;
+                        db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (err, resPago) => {
+                            if (err) return db.rollback(() => res.status(500).send("Error en tabla pagos: " + err.message));
 
-                        const obtenerMesInicialContrato = () => {
-                            const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
-                            const fechaFirma = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
-                            const fechaInicioValida = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
-                                ? fechaCompra
-                                : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
-                            return fechaInicioValida
-                                ? etiquetaMesDesdeFecha(new Date(fechaInicioValida.getFullYear(), fechaInicioValida.getMonth(), 1))
-                                : (mesesAProcesar[0] || '');
-                        };
+                            const lastIdPago = resPago.insertId;
+                            const correlativoFinal = correlativoAsignado || `TMP-${String(lastIdPago).padStart(8, '0')}`;
 
-                        const construirDetalleValues = (lastIdPago, moraTotal) => {
-                            const detalleValues = [];
-                            const cuotasTerrenoCalculadas = montoTerrenoTotal > 0
-                                ? mesesAProcesar.map((mes, index) => obtenerNumeroCuotaParaMes(mes, index))
-                                : [];
-                            const montosTerrenoPorMes = montoTerrenoTotal > 0
-                                ? distribuirTerrenoPorMes(mesesAProcesar, cuotasTerrenoCalculadas, montoTerrenoTotal)
-                                : [];
-                            const mesesConTerreno = montoTerrenoTotal > 0
-                                ? mesesAProcesar.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
-                                : [];
-                            const montosInteresPorMes = montoInteresTotal > 0
-                                ? distribuirInteresPorMes(mesesConTerreno, montoInteresTotal)
-                                : [];
+                            const finalizarConDetalles = () => {
+                                const detalleValues = [];
+                                const cuotasTerrenoCalculadas = montoTerrenoTotal > 0
+                                    ? mesesAProcesar.map((mes, index) => obtenerNumeroCuotaParaMes(mes, index))
+                                    : [];
+                                const montosTerrenoPorMes = montoTerrenoTotal > 0
+                                    ? distribuirTerrenoPorMes(mesesAProcesar, cuotasTerrenoCalculadas, montoTerrenoTotal)
+                                    : [];
 
-                            if (montoTerrenoTotal > 0) {
-                                mesesAProcesar.forEach((mes, index) => {
-                                    detalleValues.push([
-                                        lastIdPago,
-                                        'cuota_terreno',
-                                        null,
-                                        mes,
-                                        cuotasTerrenoCalculadas[index] || null,
-                                        redondear2(montosTerrenoPorMes[index] || 0),
-                                        null
-                                    ]);
-                                });
-                            }
-
-                            if (montoInteresTotal > 0 && mesesConTerreno.length) {
-                                mesesConTerreno.forEach((mes, index) => {
-                                    detalleValues.push([
-                                        lastIdPago,
-                                        'interes',
-                                        null,
-                                        mes,
-                                        null,
-                                        redondear2(montosInteresPorMes[index] || 0),
-                                        null
-                                    ]);
-                                });
-                            }
-
-                            if (serviciosSolicitados.length > 0) {
-                                const serviciosNormales = serviciosSolicitados.filter((servicio) => !servicio.es_extraordinario);
-                                const serviciosExtra = serviciosSolicitados.filter((servicio) => servicio.es_extraordinario);
-                                const serviciosMensuales = serviciosNormales.filter((servicio) => !servicio.es_cobro_unico);
-                                const serviciosUnicos = serviciosNormales.filter((servicio) => servicio.es_cobro_unico);
-
-                                mesesAProcesar.forEach((mes) => {
-                                    serviciosMensuales.forEach((servicio) => {
-                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mes, null, redondear2(servicio.subtotal), null]);
-                                    });
-                                });
-
-                                serviciosUnicos.forEach((servicio) => {
-                                    detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesAProcesar[0], null, redondear2(servicio.subtotal), null]);
-                                });
-
-                                serviciosExtra.forEach((servicio) => {
-                                    detalleValues.push([lastIdPago, 'extraordinario', null, mesesAProcesar[0], null, redondear2(servicio.subtotal), servicio.id_pago_extra || null]);
-                                });
-                            }
-
-                            if (serviciosMesInicial.length > 0) {
-                                const mesInicialContrato = obtenerMesInicialContrato();
-                                serviciosMesInicial.forEach((servicio) => {
-                                    detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesInicialContrato, null, redondear2(servicio.subtotal), null]);
-                                });
-                            }
-
-                            if (moraTotal > 0) {
-                                if (morasAplicadas.length) {
-                                    morasAplicadas.forEach((mora) => {
+                                if (montoTerrenoTotal > 0) {
+                                    mesesAProcesar.forEach((mes, index) => {
                                         detalleValues.push([
                                             lastIdPago,
-                                            'mora',
+                                            'cuota_terreno',
                                             null,
-                                            mora.mes_atrasado || (mesesAProcesar[0] || ''),
-                                            null,
-                                            redondear2(Number(mora.monto_mora || 0)),
+                                            mes,
+                                            cuotasTerrenoCalculadas[index] || null,
+                                            redondear2(montosTerrenoPorMes[index] || 0),
                                             null
                                         ]);
                                     });
-                                } else {
-                                    detalleValues.push([lastIdPago, 'mora', null, mesesAProcesar[0] || '', null, redondear2(moraTotal), null]);
-                                }
-                            }
-
-                            return {
-                                detalleValues,
-                                cuotasTerrenoCalculadas,
-                                montosTerrenoPorMes,
-                                mesesConTerreno,
-                                montosInteresPorMes
-                            };
-                        };
-
-                        const finalizarRespuesta = ({
-                            lastIdPago,
-                            correlativoFinal,
-                            idResolucionUsada,
-                            correlativoMeta,
-                            totalTransaccion,
-                            moraTotal,
-                            cuotasTerrenoCalculadas,
-                            montosTerrenoPorMes,
-                            mesesConTerreno,
-                            montosInteresPorMes
-                        }) => {
-                            const empresaQuery = `
-                                SELECT
-                                    COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_empresa,
-                                    COALESCE(em.logo, er.logo) AS logo_empresa,
-                                    COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
-                                    COALESCE(em.logo, er.logo) AS logo,
-                                    COALESCE(em.nit, ep.nit, er.nit, 'N/A') AS nit,
-                                    COALESCE(em.pais, ep.pais, er.pais, 'Guatemala') AS pais,
-                                    COALESCE(em.moneda, ep.moneda, er.moneda, 'GTQ') AS moneda,
-                                    COALESCE(p.nombre, ep.nombre_empresa, em.nombre_empresa, er.nombre_empresa) AS nombre_proyecto
-                                FROM contratos_residentes c
-                                LEFT JOIN residentes r ON r.id_residente = c.id_residente
-                                LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
-                                LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
-                                LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
-                                LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
-                                WHERE c.id_contrato = ?
-                                LIMIT 1
-                            `;
-
-                            return db.query(empresaQuery, [id_contrato], (_empresaErr, resEmpresa) => {
-                                const empresa = resEmpresa?.[0] || { nombre_empresa: 'INMOBILIARIA ALFA S.A.', logo: null, nit: 'N/A', pais: 'Guatemala', moneda: 'GTQ' };
-                                const detalleCobro = [];
-                                const numeroCuotaInicio = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[0] : null;
-                                const numeroCuotaFin = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[cuotasTerrenoCalculadas.length - 1] : null;
-                                const cantidadCuotasPagadas = cuotasTerrenoCalculadas.length;
-                                const totalCuotaNormal = redondear2(montosTerrenoPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
-                                const totalInteres = redondear2(montosInteresPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
-
-                                mesesAProcesar.forEach((mes, index) => {
-                                    if (Number(montosTerrenoPorMes[index] || 0) > 0) {
-                                        const montoTerrenoConcepto = redondear2(montosTerrenoPorMes[index]);
-                                        const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);
-                                        detalleCobro.push({
-                                            concepto: `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
-                                            mes,
-                                            monto_base: desgloseTerreno.subtotal,
-                                            iva: desgloseTerreno.iva,
-                                            total: desgloseTerreno.total
-                                        });
-                                    }
-
-                                    serviciosSolicitados
-                                        .filter((servicio) => !servicio.es_cobro_unico)
-                                        .forEach((servicio) => {
-                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
-                                            detalleCobro.push({
-                                                concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
-                                                mes,
-                                                monto_base: desgloseServicio.subtotal,
-                                                iva: desgloseServicio.iva,
-                                                total: desgloseServicio.total
-                                            });
-                                        });
-                                });
-
-                                if (montoInteresTotal > 0 && mesesConTerreno.length) {
-                                    mesesConTerreno.forEach((mes, index) => {
-                                        const montoInteresConcepto = redondear2(montosInteresPorMes[index] || 0);
-                                        if (montoInteresConcepto <= 0) return;
-                                        detalleCobro.push({
-                                            concepto: `Interés ${interesPorcentajeContrato.toFixed(2)}%`,
-                                            mes,
-                                            monto_base: montoInteresConcepto,
-                                            iva: 0,
-                                            total: montoInteresConcepto
-                                        });
-                                    });
                                 }
 
-                                serviciosSolicitados
-                                    .filter((servicio) => servicio.es_cobro_unico)
-                                    .forEach((servicio) => {
-                                        const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
-                                        detalleCobro.push({
-                                            concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
-                                            mes: mesesAProcesar[0],
-                                            monto_base: desgloseServicio.subtotal,
-                                            iva: desgloseServicio.iva,
-                                            total: desgloseServicio.total
+                                if (serviciosSolicitados.length > 0) {
+                                    const serviciosNormales = serviciosSolicitados.filter((servicio) => !servicio.es_extraordinario);
+                                    const serviciosExtraordinarios = serviciosSolicitados.filter((servicio) => servicio.es_extraordinario);
+
+                                    const serviciosMensuales = serviciosNormales.filter((servicio) => !servicio.es_cobro_unico);
+                                    const serviciosUnicos = serviciosNormales.filter((servicio) => servicio.es_cobro_unico);
+
+                                    mesesAProcesar.forEach((mes) => {
+                                        serviciosMensuales.forEach((servicio) => {
+                                            detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mes, null, servicio.subtotal, null]);
                                         });
                                     });
+
+                                    serviciosUnicos.forEach((servicio) => {
+                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal, null]);
+                                    });
+
+                                    serviciosExtraordinarios.forEach((servicio) => {
+                                        detalleValues.push([lastIdPago, 'extraordinario', null, mesesAProcesar[0], null, servicio.subtotal, servicio.id_pago_extra || null]);
+                                    });
+                                }
 
                                 if (serviciosMesInicial.length > 0) {
-                                    const mesInicialContrato = obtenerMesInicialContrato();
+                                    const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
+                                    const fechaFirma = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+                                    const fechaInicioValida = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
+                                        ? fechaCompra
+                                        : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
+                                    const mesInicialContrato = fechaInicioValida
+                                        ? etiquetaMesDesdeFecha(new Date(fechaInicioValida.getFullYear(), fechaInicioValida.getMonth(), 1))
+                                        : mesesAProcesar[0];
+
                                     serviciosMesInicial.forEach((servicio) => {
-                                        const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
-                                        detalleCobro.push({
-                                            concepto: `Servicio inicial: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
-                                            mes: mesInicialContrato,
-                                            monto_base: desgloseServicio.subtotal,
-                                            iva: desgloseServicio.iva,
-                                            total: desgloseServicio.total
-                                        });
+                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesInicialContrato, null, servicio.subtotal, null]);
                                     });
                                 }
 
                                 if (moraTotal > 0) {
                                     if (morasAplicadas.length) {
                                         morasAplicadas.forEach((mora) => {
-                                            const desgloseMora = calcularComponentesFiscalmente(Number(mora?.monto_mora || 0));
-                                            detalleCobro.push({
-                                                concepto: `Mora ${mora?.mes_atrasado || ''}`.trim(),
-                                                mes: mora?.mes_atrasado || (mesesAProcesar[0] || ''),
-                                                monto_base: desgloseMora.subtotal,
-                                                iva: desgloseMora.iva,
-                                                total: desgloseMora.total
-                                            });
+                                            detalleValues.push([
+                                                lastIdPago,
+                                                'mora',
+                                                null,
+                                                mora.mes_atrasado || (mesesAProcesar[0] || ''),
+                                                null,
+                                                Number(mora.monto_mora || 0),
+                                                null
+                                            ]);
                                         });
                                     } else {
-                                        const desgloseMora = calcularComponentesFiscalmente(moraTotal);
-                                        detalleCobro.push({
-                                            concepto: 'Mora',
-                                            mes: mesesAProcesar[0] || '',
-                                            monto_base: desgloseMora.subtotal,
-                                            iva: desgloseMora.iva,
-                                            total: desgloseMora.total
-                                        });
+                                        detalleValues.push([lastIdPago, 'mora', null, mesesAProcesar[0] || '', null, moraTotal, null]);
                                     }
                                 }
 
-                                return res.status(200).json({
-                                    success: true,
-                                    numero_recibo,
-                                    fecha: new Date().toLocaleDateString(),
-                                    monto_pagado: redondear2(montoPrincipalTotal + montoInteresTotal),
-                                    monto_terreno_pagado: montoTerrenoTotal,
-                                    monto_interes_pagado: montoInteresTotal,
-                                    monto_servicios_pagado: montoServiciosTotal,
-                                    monto_servicios_mes_inicial: montoServiciosMesInicial,
-                                    servicios_cobrados: serviciosSolicitados,
-                                    servicios_cobrados_mes_inicial: serviciosMesInicial,
-                                    monto_mora: moraTotal,
-                                    moras_aplicadas: morasAplicadas,
-                                    iva_total: ivaTotal,
-                                    iva_por_mes: ivaPorMes,
-                                    monto_por_mes: montoPorMesTerreno,
-                                    monto_cuota_base_entera: montoCuotaBaseEntera,
-                                    total_cobrado: totalTransaccion,
-                                    mes_pagado: mesesAProcesar[0],
-                                    meses_pagados: mesesAProcesar,
-                                    detalle_cobro: detalleCobro,
-                                    desglose_totales: {
-                                        capital_total: totalCuotaNormal,
-                                        interes_total: totalInteres,
-                                        cuota_normal_total: totalCuotaNormal,
-                                        mora_total: moraTotal,
-                                        total_final: totalTransaccion
-                                    },
-                                    numero_cuota: numeroCuotaInicio,
-                                    numero_cuota_inicio: numeroCuotaInicio,
-                                    numero_cuota_fin: numeroCuotaFin,
-                                    cantidad_cuotas_pagadas: cantidadCuotasPagadas,
-                                    metodo_pago,
-                                    no_referencia: correlativoFinal,
-                                    id_pago: lastIdPago,
-                                    id_resolucion_usada: idResolucionUsada,
-                                    id_asignacion_correlativo: correlativoMeta?.id_asignacion || null,
-                                    origen_correlativo: correlativoMeta?.origen || null,
-                                    empresa: {
-                                        nombre: empresa.nombre_empresa,
-                                        nit: empresa.nit,
-                                        logo: empresa.logo,
-                                        pais: empresa.pais,
-                                        moneda: empresa.moneda
-                                    }
-                                });
-                            });
-                        };
-
-                        const reservarResolucionDirecta = (callback) => {
-                            const sqlResolucionUsuario = `
-                                SELECT rf.id_resolucion, rf.id_empresa, rf.numero_resolucion, rf.serie, rf.correlativo_actual, rf.rango_final
-                                FROM resoluciones_facturas rf
-                                WHERE rf.id_usuario = ?
-                                  AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                                  AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final
-                                  AND (rf.fecha_vencimiento IS NULL OR rf.fecha_vencimiento >= CURDATE())
-                                  AND (? IS NULL OR rf.id_empresa = ?)
-                                ORDER BY rf.fecha_vencimiento ASC, rf.id_resolucion ASC
-                                LIMIT 1
-                            `;
-
-                            return db.query(sqlResolucionUsuario, [idUsuarioSeguro, idEmpresaFacturacion, idEmpresaFacturacion], (resErr, resRows) => {
-                                if (resErr) {
-                                    return callback(resErr);
-                                }
-
-                                if (!resRows || !resRows.length) {
-                                    return db.rollback(() => res.status(400).send("No hay correlativo fiscal disponible para este usuario. Asigna correlativos antes de registrar el cobro."));
-                                }
-
-                                const resolucion = resRows[0];
-                                const correlativoNumero = Number(resolucion.correlativo_actual || 0);
-                                const rangoFinal = Number(resolucion.rango_final || 0);
-
-                                if (!Number.isFinite(correlativoNumero) || correlativoNumero <= 0 || correlativoNumero > rangoFinal) {
-                                    return callback(null, null);
-                                }
-
-                                const correlativoGenerado = `${resolucion.serie}-${String(correlativoNumero).padStart(8, '0')}`;
-                                const siguienteCorrelativo = correlativoNumero + 1;
-
-                                return db.query(
-                                    'UPDATE resoluciones_facturas SET correlativo_actual = ? WHERE id_resolucion = ?',
-                                    [siguienteCorrelativo, resolucion.id_resolucion],
-                                    (updErr) => {
-                                        if (updErr) {
-                                            return callback(updErr);
-                                        }
-
-                                        return sincronizarCorrelativoResolucionesEquivalentes({
-                                            idResolucionBase: resolucion.id_resolucion,
-                                            idUsuario: idUsuarioSeguro,
-                                            numeroResolucion: resolucion.numero_resolucion,
-                                            serie: resolucion.serie,
-                                            correlativoActual: siguienteCorrelativo
-                                        }, (syncErr) => {
-                                            if (syncErr) {
-                                                return callback(syncErr);
-                                            }
-
-                                            return callback(null, {
-                                                correlativo: correlativoGenerado,
-                                                id_resolucion: resolucion.id_resolucion,
-                                                id_asignacion: null,
-                                                origen: 'resolucion_usuario'
-                                            });
-                                        });
-                                    }
-                                );
-                            });
-                        };
-
-                        const continuarConInsertPago = (correlativoAsignado, idResolucionUsada = null, correlativoMeta = {}) => {
-                            const sqlPago = `
-                                INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia)
-                                VALUES (?, ?, NOW(), ?, ?, ?)
-                            `;
-                            const moraTotal = moraTotalSeleccionada;
-                            const totalTransaccion = redondear2(montoPrincipalTotal + montoInteresTotal + moraTotal);
-
-                            return db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (errPago, resPago) => {
-                                if (errPago) {
-                                    return db.rollback(() => res.status(500).send('Error en tabla pagos: ' + errPago.message));
-                                }
-
-                                const lastIdPago = resPago.insertId;
-                                const correlativoFinal = correlativoAsignado || `TMP-${String(lastIdPago).padStart(8, '0')}`;
-                                const {
-                                    detalleValues,
-                                    cuotasTerrenoCalculadas,
-                                    montosTerrenoPorMes,
-                                    mesesConTerreno,
-                                    montosInteresPorMes
-                                } = construirDetalleValues(lastIdPago, moraTotal);
-
-                                if (!detalleValues.length) {
-                                    return db.rollback(() => res.status(400).send('No hay detalle válido para registrar el cobro.'));
-                                }
+                                const placeholders = detalleValues.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+                                const flatValues = detalleValues.map((detalle) => detalle.slice(0, 6)).flat();
 
                                 const idsServiciosDetalle = [...new Set(
                                     detalleValues
@@ -1993,187 +1449,400 @@ router.post("/procesar-pago", (req, res) => {
                                         .filter((id) => Number.isInteger(id) && id > 0)
                                 )];
 
-                                const insertarDetalles = () => {
-                                    const placeholders = detalleValues.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-                                    const flatValues = detalleValues.map((detalle) => detalle.slice(0, 6)).flat();
+                                const insertarDetalles = () => db.query(`INSERT INTO pagos_detalle (id_pago, tipo_concepto, id_concepto_servicio, mes_pagado, numero_cuota_afectada, subtotal) VALUES ${placeholders}`,
+                                    flatValues,
+                                    (err) => {
+                                        if (err) return db.rollback(() => res.status(500).send("Error en pagos_detalle: " + err.message));
 
-                                    return db.query(
-                                        `INSERT INTO pagos_detalle (id_pago, tipo_concepto, id_concepto_servicio, mes_pagado, numero_cuota_afectada, subtotal) VALUES ${placeholders}`,
-                                        flatValues,
-                                        (errDetalle) => {
-                                            if (errDetalle) {
-                                                return db.rollback(() => res.status(500).send('Error en pagos_detalle: ' + errDetalle.message));
+                                        const finalizarCommit = () => {
+                                            db.commit((err) => {
+                                                if (err) return db.rollback(() => res.status(500).send("Error al confirmar base de datos."));
+
+                                                // Obtener empresa real del contrato para membrete/logo
+                                                const empresaQuery = `
+                                                    SELECT
+                                                        COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_empresa,
+                                                        COALESCE(em.logo, er.logo) AS logo_empresa,
+                                                        COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
+                                                        COALESCE(em.logo, er.logo) AS logo,
+                                                        COALESCE(em.nit, ep.nit, er.nit, 'N/A') AS nit,
+                                                        COALESCE(em.pais, ep.pais, er.pais, 'Guatemala') AS pais,
+                                                        COALESCE(em.moneda, ep.moneda, er.moneda, 'GTQ') AS moneda,
+                                                        c.id_proyecto,
+                                                        COALESCE(p.nombre, ep.nombre_empresa, em.nombre_empresa, er.nombre_empresa) AS nombre_proyecto
+                                                    FROM contratos_residentes c
+                                                    LEFT JOIN residentes r ON r.id_residente = c.id_residente
+                                                    LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
+                                                    LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
+                                                    LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
+                                                    LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
+                                                    WHERE c.id_contrato = ?
+                                                    LIMIT 1
+                                                `;
+
+                                                db.query(empresaQuery, [id_contrato], (errEmpresa, resEmpresa) => {
+                                                    const empresa = resEmpresa?.[0] || { nombre_empresa: 'INMOBILIARIA ALFA S.A.', logo: null, nit: 'N/A', pais: 'Guatemala', moneda: 'GTQ' };
+                                                    const detalleCobro = [];
+                                                    const numeroCuotaInicio = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[0] : null;
+                                                    const numeroCuotaFin = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[cuotasTerrenoCalculadas.length - 1] : null;
+                                                    const cantidadCuotasPagadas = cuotasTerrenoCalculadas.length;
+                                                    const totalCuotaNormal = redondear2(montosTerrenoPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
+
+                                                    mesesAProcesar.forEach((mes, index) => {
+                                                        if (Number(montosTerrenoPorMes[index] || 0) > 0) {
+                                                            const montoTerrenoConcepto = redondear2(montosTerrenoPorMes[index]);
+                                                            const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);
+                                                            detalleCobro.push({
+                                                                concepto: `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
+                                                                mes,
+                                                                monto_base: desgloseTerreno.subtotal,
+                                                                iva: desgloseTerreno.iva,
+                                                                total: desgloseTerreno.total
+                                                            });
+                                                        }
+
+                                                        serviciosSolicitados
+                                                            .filter((servicio) => !servicio.es_cobro_unico)
+                                                            .forEach((servicio) => {
+                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
+                                                            detalleCobro.push({
+                                                                concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                mes,
+                                                                monto_base: desgloseServicio.subtotal,
+                                                                iva: desgloseServicio.iva,
+                                                                total: desgloseServicio.total
+                                                            });
+                                                        });
+                                                    });
+
+                                                    serviciosSolicitados
+                                                        .filter((servicio) => servicio.es_cobro_unico)
+                                                        .forEach((servicio) => {
+                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
+                                                            detalleCobro.push({
+                                                                concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                mes: mesesAProcesar[0],
+                                                                monto_base: desgloseServicio.subtotal,
+                                                                iva: desgloseServicio.iva,
+                                                                total: desgloseServicio.total
+                                                            });
+                                                        });
+
+                                                    if (serviciosMesInicial.length > 0) {
+                                                        const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
+                                                        const fechaFirma = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+                                                        const fechaInicioValida = (fechaCompra && !Number.isNaN(fechaCompra.getTime()))
+                                                            ? fechaCompra
+                                                            : ((fechaFirma && !Number.isNaN(fechaFirma.getTime())) ? fechaFirma : null);
+                                                        const mesInicialContrato = fechaInicioValida
+                                                            ? etiquetaMesDesdeFecha(new Date(fechaInicioValida.getFullYear(), fechaInicioValida.getMonth(), 1))
+                                                            : mesesAProcesar[0];
+
+                                                        serviciosMesInicial.forEach((servicio) => {
+                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
+                                                            detalleCobro.push({
+                                                                concepto: `Servicio inicial: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                mes: mesInicialContrato,
+                                                                monto_base: desgloseServicio.subtotal,
+                                                                iva: desgloseServicio.iva,
+                                                                total: desgloseServicio.total
+                                                            });
+                                                        });
+                                                    }
+
+                                                    if (moraTotal > 0) {
+                                                        if (morasAplicadas.length) {
+                                                            morasAplicadas.forEach((mora) => {
+                                                                const desgloseMora = calcularComponentesFiscalmente(Number(mora?.monto_mora || 0));
+                                                                detalleCobro.push({
+                                                                    concepto: `Mora ${mora?.mes_atrasado || ''}`.trim(),
+                                                                    mes: mora?.mes_atrasado || (mesesAProcesar[0] || ''),
+                                                                    monto_base: desgloseMora.subtotal,
+                                                                    iva: desgloseMora.iva,
+                                                                    total: desgloseMora.total
+                                                                });
+                                                            });
+                                                        } else {
+                                                            const desgloseMora = calcularComponentesFiscalmente(moraTotal);
+                                                            detalleCobro.push({
+                                                                concepto: 'Mora',
+                                                                mes: mesesAProcesar[0] || '',
+                                                                monto_base: desgloseMora.subtotal,
+                                                                iva: desgloseMora.iva,
+                                                                total: desgloseMora.total
+                                                            });
+                                                        }
+                                                    }
+
+                                                    res.status(200).json({
+                                                        success: true,
+                                                        numero_recibo,
+                                                        fecha: new Date().toLocaleDateString(),
+                                                        monto_pagado: montoPrincipalTotal,
+                                                        monto_terreno_pagado: montoTerrenoTotal,
+                                                        monto_servicios_pagado: montoServiciosTotal,
+                                                        monto_servicios_mes_inicial: montoServiciosMesInicial,
+                                                        servicios_cobrados: serviciosSolicitados,
+                                                        servicios_cobrados_mes_inicial: serviciosMesInicial,
+                                                        monto_mora: moraTotal,
+                                                        moras_aplicadas: morasAplicadas,
+                                                        iva_total: ivaTotal,
+                                                        iva_por_mes: ivaPorMes,
+                                                        monto_por_mes: montoPorMesTerreno,
+                                                        monto_cuota_base_entera: montoCuotaBaseEntera,
+                                                        total_cobrado: totalTransaccion,
+                                                        mes_pagado: mesesAProcesar[0],
+                                                        meses_pagados: mesesAProcesar,
+                                                        detalle_cobro: detalleCobro,
+                                                        desglose_totales: {
+                                                            cuota_normal_total: totalCuotaNormal,
+                                                            mora_total: moraTotal,
+                                                            total_final: totalTransaccion
+                                                        },
+                                                        numero_cuota: numeroCuotaInicio,
+                                                        numero_cuota_inicio: numeroCuotaInicio,
+                                                        numero_cuota_fin: numeroCuotaFin,
+                                                        cantidad_cuotas_pagadas: cantidadCuotasPagadas,
+                                                        metodo_pago: metodo_pago,
+                                                        no_referencia: correlativoFinal,
+                                                        id_pago: lastIdPago,
+                                                        id_resolucion_usada: idResolucionUsada,
+                                                        id_asignacion_correlativo: correlativoMeta?.id_asignacion || null,
+                                                        origen_correlativo: correlativoMeta?.origen || null,
+                                                        empresa: {
+                                                            nombre: empresa.nombre_empresa,
+                                                            nit: empresa.nit,
+                                                            logo: empresa.logo,
+                                                            pais: empresa.pais,
+                                                            moneda: empresa.moneda
+                                                        }
+                                                    });
+                                                });
+                                            });
+                                        };
+
+                                        const continuarConSaldoYCommit = () => {
+                                            const sincronizarMorosidadPagada = (callbackSync) => {
+                                                const idsMorosidad = [...new Set(
+                                                    (morasAplicadas || [])
+                                                        .map((item) => Number(item?.id_morosidad || 0))
+                                                        .filter((id) => Number.isInteger(id) && id > 0)
+                                                )];
+                                                const mesesMora = [...new Set(
+                                                    (morasAplicadas || [])
+                                                        .map((item) => String(item?.mes_atrasado || '').trim())
+                                                        .filter((mes) => mes)
+                                                )];
+
+                                                if (!idsMorosidad.length && !mesesMora.length) {
+                                                    return callbackSync();
+                                                }
+
+                                                let sqlMorosidad = `
+                                                    UPDATE morosidad
+                                                    SET estado = 'pagado'
+                                                    WHERE id_contrato = ?
+                                                      AND estado = 'pendiente'
+                                                `;
+                                                const paramsMorosidad = [id_contrato];
+
+                                                if (idsMorosidad.length) {
+                                                    const placeholdersIds = idsMorosidad.map(() => '?').join(', ');
+                                                    sqlMorosidad += ` AND id_morosidad IN (${placeholdersIds})`;
+                                                    paramsMorosidad.push(...idsMorosidad);
+                                                } else if (mesesMora.length) {
+                                                    const placeholdersMeses = mesesMora.map(() => '?').join(', ');
+                                                    sqlMorosidad += ` AND mes_atrasado IN (${placeholdersMeses})`;
+                                                    paramsMorosidad.push(...mesesMora);
+                                                }
+
+                                                db.query(sqlMorosidad, paramsMorosidad, (moraErr) => {
+                                                    if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                                                        return db.rollback(() => res.status(500).send('Error al actualizar estado de morosidad despues del cobro: ' + moraErr.message));
+                                                    }
+                                                    return callbackSync();
+                                                });
+                                            };
+
+                                            sincronizarMorosidadPagada(() => {
+                                            if (montoTerrenoTotal > 0) {
+                                                const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
+                                                db.query(sqlRestar, [montoTerrenoTotal, id_contrato], (updErr) => {
+                                                    if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
+                                                    return finalizarCommit();
+                                                });
+                                            } else {
+                                                return finalizarCommit();
                                             }
+                                            });
+                                        };
 
-                                            const idsPagoExtraMarcados = [...new Set(
+                                        const marcarExtrasComoPagados = (onSuccess) => {
+                                            const idsPagoExtra = [...new Set(
                                                 (serviciosSolicitados || [])
                                                     .filter((s) => s.es_extraordinario && Number.isInteger(s.id_pago_extra) && s.id_pago_extra > 0)
                                                     .map((s) => Number(s.id_pago_extra))
                                             )];
 
-                                            const continuarPostExtras = () => {
-                                                registrarHistorialFactura({
-                                                    idPago: lastIdPago,
-                                                    idContrato: id_contrato,
-                                                    idResidente: id_residente,
-                                                    idUsuario: idUsuarioSeguro,
-                                                    correlativo: correlativoFinal,
-                                                    detalleValues,
-                                                    serviciosSolicitados,
-                                                    serviciosMesInicial,
-                                                    numeroRecibo: numero_recibo,
-                                                    metodoPago: metodo_pago,
-                                                    observaciones,
-                                                    mesesPagados: mesesAProcesar,
-                                                    totalTransaccion,
-                                                    montoMora: moraTotal,
-                                                    callback: (histErr) => {
-                                                        if (histErr) {
-                                                            return db.rollback(() => res.status(500).send('No se pudo guardar evidencia fiscal inmutable del comprobante.'));
-                                                        }
+                                            if (!idsPagoExtra.length) {
+                                                return onSuccess();
+                                            }
 
-                                                        const idsMorosidad = [...new Set(
-                                                            (morasAplicadas || [])
-                                                                .map((item) => Number(item?.id_morosidad || 0))
-                                                                .filter((id) => Number.isInteger(id) && id > 0)
-                                                        )];
+                                            const placeholdersExtra = idsPagoExtra.map(() => '?').join(',');
+                                            const sqlMarcarExtra = `
+                                                UPDATE pagos_extraordinarios
+                                                SET estado = 'pagado', fecha_pago = CURDATE()
+                                                WHERE id_contrato = ?
+                                                  AND id_pago_extra IN (${placeholdersExtra})
+                                                  AND LOWER(COALESCE(estado, 'pendiente')) = 'pendiente'
+                                            `;
 
-                                                        const actualizarSaldoYCommit = () => {
-                                                            const commitFinal = () => db.commit((commitErr) => {
-                                                                if (commitErr) {
-                                                                    return db.rollback(() => res.status(500).send('Error al confirmar base de datos.'));
-                                                                }
+                                            db.query(sqlMarcarExtra, [id_contrato, ...idsPagoExtra], (extraUpdErr) => {
+                                                if (extraUpdErr) {
+                                                    return db.rollback(() => res.status(500).send("No se pudieron actualizar los cargos extraordinarios cobrados."));
+                                                }
+                                                return onSuccess();
+                                            });
+                                        };
 
-                                                                return finalizarRespuesta({
-                                                                    lastIdPago,
-                                                                    correlativoFinal,
-                                                                    idResolucionUsada,
-                                                                    correlativoMeta,
-                                                                    totalTransaccion,
-                                                                    moraTotal,
-                                                                    cuotasTerrenoCalculadas,
-                                                                    montosTerrenoPorMes,
-                                                                    mesesConTerreno,
-                                                                    montosInteresPorMes
-                                                                });
-                                                            });
-
-                                                            if (montoTerrenoTotal > 0) {
-                                                                return db.query(
-                                                                    'UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?',
-                                                                    [montoTerrenoTotal, id_contrato],
-                                                                    (saldoUpdErr) => {
-                                                                        if (saldoUpdErr) {
-                                                                            return db.rollback(() => res.status(500).send('Error al actualizar saldo: ' + saldoUpdErr.message));
-                                                                        }
-                                                                        return commitFinal();
-                                                                    }
-                                                                );
-                                                            }
-
-                                                            return commitFinal();
-                                                        };
-
-                                                        if (idsMorosidad.length) {
-                                                            const placeholdersMora = idsMorosidad.map(() => '?').join(', ');
-                                                            return db.query(
-                                                                `UPDATE morosidad SET estado = 'pagado' WHERE id_contrato = ? AND estado = 'pendiente' AND id_morosidad IN (${placeholdersMora})`,
-                                                                [id_contrato, ...idsMorosidad],
-                                                                (moraErr) => {
-                                                                    if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
-                                                                        return db.rollback(() => res.status(500).send('Error al actualizar estado de morosidad despues del cobro: ' + moraErr.message));
-                                                                    }
-                                                                    return actualizarSaldoYCommit();
-                                                                }
-                                                            );
-                                                        }
-
-                                                        return actualizarSaldoYCommit();
+                                        marcarExtrasComoPagados(() => {
+                                            registrarHistorialFactura({
+                                                idPago: lastIdPago,
+                                                idContrato: id_contrato,
+                                                idResidente: id_residente,
+                                                idUsuario: idUsuarioSeguro,
+                                                correlativo: correlativoFinal,
+                                                detalleValues,
+                                                serviciosSolicitados,
+                                                serviciosMesInicial,
+                                                numeroRecibo: numero_recibo,
+                                                metodoPago: metodo_pago,
+                                                observaciones,
+                                                mesesPagados: mesesAProcesar,
+                                                totalTransaccion,
+                                                montoMora: moraTotal,
+                                                callback: (histErr) => {
+                                                    if (histErr) {
+                                                        return db.rollback(() => res.status(500).send("No se pudo guardar evidencia fiscal inmutable del comprobante."));
                                                     }
-                                                });
-                                            };
+                                                    return continuarConSaldoYCommit();
+                                                }
+                                            });
+                                        });
+                                    });
 
-                                            if (idsPagoExtraMarcados.length) {
-                                                const placeholdersExtra = idsPagoExtraMarcados.map(() => '?').join(',');
-                                                return db.query(
-                                                    `UPDATE pagos_extraordinarios SET estado = 'pagado', fecha_pago = CURDATE() WHERE id_contrato = ? AND id_pago_extra IN (${placeholdersExtra}) AND LOWER(COALESCE(estado, 'pendiente')) = 'pendiente'`,
-                                                    [id_contrato, ...idsPagoExtraMarcados],
-                                                    (extraUpdErr) => {
-                                                        if (extraUpdErr) {
-                                                            return db.rollback(() => res.status(500).send('No se pudieron actualizar los cargos extraordinarios cobrados.'));
-                                                        }
-                                                        return continuarPostExtras();
-                                                    }
-                                                );
-                                            }
-
-                                            return continuarPostExtras();
-                                        }
-                                    );
-                                };
-
-                                if (idsServiciosDetalle.length) {
-                                    const placeholdersServicios = idsServiciosDetalle.map(() => '?').join(', ');
-                                    return db.query(
-                                        `SELECT id_servicio FROM servicios WHERE id_servicio IN (${placeholdersServicios})`,
-                                        idsServiciosDetalle,
-                                        (servCheckErr, servCheckRows) => {
-                                            if (servCheckErr) {
-                                                return db.rollback(() => res.status(500).send('Error validando conceptos de servicio antes de facturar: ' + servCheckErr.message));
-                                            }
-
-                                            const idsValidosDetalle = new Set((servCheckRows || []).map((row) => Number(row.id_servicio)));
-                                            const idsInvalidosDetalle = idsServiciosDetalle.filter((id) => !idsValidosDetalle.has(id));
-                                            if (idsInvalidosDetalle.length) {
-                                                return db.rollback(() => res.status(400).send(`Hay servicios invalidos en el cobro: ${idsInvalidosDetalle.join(', ')}. Actualiza los servicios asignados del contrato antes de cobrar.`));
-                                            }
-
-                                            return insertarDetalles();
-                                        }
-                                    );
+                                if (!idsServiciosDetalle.length) {
+                                    return insertarDetalles();
                                 }
 
-                                return insertarDetalles();
+                                const placeholdersServicios = idsServiciosDetalle.map(() => '?').join(', ');
+                                db.query(
+                                    `SELECT id_servicio FROM servicios WHERE id_servicio IN (${placeholdersServicios})`,
+                                    idsServiciosDetalle,
+                                    (servCheckErr, servCheckRows) => {
+                                        if (servCheckErr) {
+                                            return db.rollback(() => res.status(500).send('Error validando conceptos de servicio antes de facturar: ' + servCheckErr.message));
+                                        }
+
+                                        const idsValidosDetalle = new Set((servCheckRows || []).map((row) => Number(row.id_servicio)));
+                                        const idsInvalidosDetalle = idsServiciosDetalle.filter((id) => !idsValidosDetalle.has(id));
+
+                                        if (idsInvalidosDetalle.length) {
+                                            return db.rollback(() => res.status(400).send(`Hay servicios invalidos en el cobro: ${idsInvalidosDetalle.join(', ')}. Actualiza los servicios asignados del contrato antes de cobrar.`));
+                                        }
+
+                                        return insertarDetalles();
+                                    }
+                                );
+                            };
+
+                            if (correlativoAsignado) {
+                                return finalizarConDetalles();
+                            }
+
+                            return db.rollback(() => res.status(400).send("No hay correlativo fiscal disponible para este usuario. Asigna correlativos antes de registrar el cobro."));
+                        });
+                    };
+
+                    return reservarCorrelativoAsignado(idUsuarioSeguro, idEmpresaFacturacion, (asignErr, asignacionReservada) => {
+                        if (asignErr) {
+                            return db.rollback(() => res.status(500).send("Error al obtener correlativo asignado al usuario: " + asignErr.message));
+                        }
+
+                        if (asignacionReservada?.correlativo) {
+                            return continuarConInsertPago(asignacionReservada.correlativo, asignacionReservada.id_resolucion, {
+                                id_asignacion: asignacionReservada.id_asignacion,
+                                origen: 'asignado'
                             });
-                        };
+                        }
 
-                        return reservarCorrelativoAsignado(idUsuarioSeguro, idEmpresaFacturacion, (asignErr, asignacionReservada) => {
-                            if (asignErr) {
-                                return db.rollback(() => res.status(500).send('Error al obtener correlativo asignado al usuario: ' + asignErr.message));
+                                                const sqlResolucionUsuario = `
+                                                        SELECT id_resolucion, id_empresa, serie, correlativo_actual, rango_final
+                                                        FROM resoluciones_facturas
+                                                        WHERE id_usuario = ?
+                                                            AND estado = 'activo'
+                                                            AND correlativo_actual BETWEEN rango_inicial AND rango_final
+                                                            AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
+                                                        ORDER BY CASE
+                                                                                WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
+                                                                                ELSE 1
+                                                                         END ASC,
+                                                                         fecha_vencimiento ASC,
+                                                                         id_resolucion ASC
+                                                        LIMIT 1
+                                                `;
+
+                                                db.query(sqlResolucionUsuario, [idUsuarioSeguro, idEmpresaFacturacion, idEmpresaFacturacion], (resErr, resRows) => {
+                            if (resErr) {
+                                return db.rollback(() => res.status(500).send("Error al obtener resolución asignada al usuario: " + resErr.message));
                             }
 
-                            if (asignacionReservada?.correlativo) {
-                                return continuarConInsertPago(asignacionReservada.correlativo, asignacionReservada.id_resolucion, {
-                                    id_asignacion: asignacionReservada.id_asignacion,
-                                    origen: 'asignado'
-                                });
-                            }
-
-                            return reservarResolucionDirecta((reservaErr, resolucionReservada) => {
-                                if (reservaErr) {
-                                    return db.rollback(() => res.status(500).send('Error al obtener resolución asignada al usuario: ' + reservaErr.message));
-                                }
-
-                                if (!resolucionReservada?.correlativo) {
-                                    return db.rollback(() => res.status(400).send('No hay correlativo fiscal disponible para este usuario. Asigna correlativos antes de registrar el cobro.'));
-                                }
-
-                                return continuarConInsertPago(resolucionReservada.correlativo, resolucionReservada.id_resolucion, {
+                            if (!resRows || !resRows.length) {
+                                return continuarConInsertPago(null, null, {
                                     id_asignacion: null,
-                                    origen: 'resolucion_usuario'
+                                    origen: 'temporal'
                                 });
-                            });
+                            }
+
+                            const resolucion = resRows[0];
+                            const correlativoNumero = Number(resolucion.correlativo_actual || 0);
+                            const rangoFinal = Number(resolucion.rango_final || 0);
+
+                            if (!Number.isFinite(correlativoNumero) || correlativoNumero <= 0 || correlativoNumero > rangoFinal) {
+                                return continuarConInsertPago(null, null, {
+                                    id_asignacion: null,
+                                    origen: 'temporal'
+                                });
+                            }
+
+                            const correlativoGenerado = `${resolucion.serie}-${String(correlativoNumero).padStart(8, '0')}`;
+                            const siguienteCorrelativo = correlativoNumero + 1;
+
+                            db.query(
+                                'UPDATE resoluciones_facturas SET correlativo_actual = ? WHERE id_resolucion = ?',
+                                [siguienteCorrelativo, resolucion.id_resolucion],
+                                (updErr) => {
+                                    if (updErr) {
+                                        return db.rollback(() => res.status(500).send("No se pudo reservar correlativo de la resolución asignada al usuario."));
+                                    }
+
+                                    return continuarConInsertPago(correlativoGenerado, resolucion.id_resolucion, {
+                                        id_asignacion: null,
+                                        origen: 'resolucion_usuario'
+                                    });
+                                }
+                            );
                         });
                     });
                 });
+            });
             };
 
             return validarServiciosYContinuar();
             });
+            });
         });
     });
-    });
-});
 });
 
 module.exports = router;
