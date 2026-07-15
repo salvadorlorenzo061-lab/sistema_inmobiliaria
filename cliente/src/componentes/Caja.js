@@ -1032,6 +1032,13 @@ const Caja = () => {
 
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
     const saldoTerrenoPendiente = parseFloat(datosDeuda?.saldo_pendiente || 0);
+    const porcentajeInteresContrato = Math.max(parseFloat(datosDeuda?.interes_porcentaje || 0), 0);
+    const interesCalculadoContrato = parseFloat(((saldoTerrenoPendiente * porcentajeInteresContrato) / 100).toFixed(2));
+    const totalContratoConInteres = parseFloat((saldoTerrenoPendiente + interesCalculadoContrato).toFixed(2));
+
+    const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
+    const interesCalculadoSeleccion = parseFloat(((capitalSeleccionado * porcentajeInteresContrato) / 100).toFixed(2));
+    const totalSeleccionCapitalInteres = parseFloat((capitalSeleccionado + interesCalculadoSeleccion).toFixed(2));
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
@@ -1166,6 +1173,8 @@ const Caja = () => {
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
                                 <div><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
                                 <div><strong>Cuota:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</div>
+                                <div><strong>Interés ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
+                                <div><strong>Capital + Interés:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
                             </div>
                         </div>
                         <hr />
@@ -1306,9 +1315,13 @@ const Caja = () => {
                                             <strong>Terreno por mes:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}
                                             <br />
                                             <strong>Servicios seleccionados:</strong> Q{(mesesSeleccionados.length ? (montoServiciosSeleccionado / Math.max(mesesSeleccionados.length, 1)) : 0).toFixed(2)} / mes
+                                            <br />
+                                            <strong>Capital ({porcentajeInteresContrato.toFixed(2)}% interés):</strong> Q{capitalSeleccionado.toFixed(2)} + Q{interesCalculadoSeleccion.toFixed(2)}
                                         </span>
                                         <span className="fw-bold text-success">
                                             Total ({mesesSeleccionados.length} mes(es)): Q{montoTotalSeleccionado.toFixed(2)}
+                                            <br />
+                                            Capital + interés: Q{totalSeleccionCapitalInteres.toFixed(2)}
                                             {montoMoraActual > 0 && (
                                                 <>
                                                     <br />

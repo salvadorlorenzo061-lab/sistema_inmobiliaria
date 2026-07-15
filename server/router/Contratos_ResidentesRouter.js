@@ -327,9 +327,50 @@ const ensureProyectoColumn = () => {
     });
 };
 
+const ensureInteresPorcentajeColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'interes_porcentaje'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna interes_porcentaje:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) return;
+
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de interes_porcentaje.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN interes_porcentaje DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER monto_cuota
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna interes_porcentaje:', alterErr);
+                    return;
+                }
+                console.log('Columna interes_porcentaje creada en contratos_residentes.');
+            });
+        });
+    });
+};
+
 ensureEmpresaMarcaColumn();
 ensureProyectoColumn();
 ensureFormatoContratoColumn();
+ensureInteresPorcentajeColumn();
 ensureContratosServiciosTable();
 ensureContratosDocumentosTable();
 
@@ -338,7 +379,7 @@ router.get("/", (req, res) => {
     const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
-                   c.monto_total, c.cuotas_pactadas, c.monto_cuota, c.dia_pago_limite,
+                   c.monto_total, c.cuotas_pactadas, c.monto_cuota, c.interes_porcentaje, c.dia_pago_limite,
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
                    r.nombre AS nombre_residente,
@@ -385,7 +426,7 @@ router.get("/", (req, res) => {
 router.post("/crear", (req, res) => {
     const { 
         codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
-        cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
     } = req.body;
 
@@ -401,12 +442,12 @@ router.post("/crear", (req, res) => {
 
         const queryInsert = `
             INSERT INTO contratos_residentes 
-            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         db.query(
             queryInsert,
-            [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null],
+            [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, Number(interes_porcentaje || 0), dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null],
             (insertErr, insertResult) => {
                 if (insertErr) {
                     console.error(insertErr);
@@ -439,19 +480,19 @@ router.post("/crear", (req, res) => {
 router.put("/actualizar", (req, res) => {
     const { 
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
-        cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
     } = req.body;
     
     const queryUpdate = `
         UPDATE contratos_residentes SET 
         codigo_contrato=?, id_residente=?, id_empresa_marca=?, id_proyecto=?, id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
-        cuotas_pactadas=?, monto_cuota=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
+        cuotas_pactadas=?, monto_cuota=?, interes_porcentaje=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
         WHERE id_contrato=?
     `;
     db.query(
         queryUpdate,
-        [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null, id_contrato],
+        [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, Number(interes_porcentaje || 0), dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null, id_contrato],
         (err, result) => {
             if (err) {
                 console.error(err);

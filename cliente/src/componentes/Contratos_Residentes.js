@@ -359,6 +359,7 @@ function Contratos_Residentes() {
       monto_total,
       cuotas_pactadas, 
       monto_cuota, 
+      interes_porcentaje,
       dia_pago_limite, 
       fecha_firma,
       fecha_compra: fecha_compra || null,
@@ -434,7 +435,7 @@ function Contratos_Residentes() {
 
     Axios.put(`${API_URL}/actualizar`, {
       id_contrato, codigo_contrato, id_residente, id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null, id_proyecto: proyectoSeleccionado?.id_proyecto || null, id_tipo_contrato, formato_contrato, monto_total,
-      cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
+      cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
       servicios_contrato: serviciosContratoSeleccionados
     })
     .then(() => {
@@ -694,6 +695,7 @@ function Contratos_Residentes() {
     setMonto_total(val.monto_total ?? '');
     setCuotas_pactadas(val.cuotas_pactadas ?? '');
     setMonto_cuota(val.monto_cuota ?? '');
+    setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setDia_pago_limite(val.dia_pago_limite ?? '');
     setFecha_firma(toDateInput(val.fecha_firma));
     setFecha_compra(toDateInput(val.fecha_compra));

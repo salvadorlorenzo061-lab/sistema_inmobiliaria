@@ -135,6 +135,23 @@ const ensureFacturasHistorialRolColumn = () => {
     });
 };
 
+const ensureInteresPorcentajeContratoColumn = () => {
+    db.query("SHOW COLUMNS FROM contratos_residentes LIKE 'interes_porcentaje'", (err, rows) => {
+        if (err) {
+            console.error('Error verificando columna interes_porcentaje en contratos_residentes:', err.message);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            db.query('ALTER TABLE contratos_residentes ADD COLUMN interes_porcentaje DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER monto_cuota', (alterErr) => {
+                if (alterErr) {
+                    console.error('Error creando columna interes_porcentaje en contratos_residentes:', alterErr.message);
+                }
+            });
+        }
+    });
+};
+
 const registrarHistorialFactura = ({
     idPago,
     idContrato,
@@ -370,6 +387,7 @@ const resolverColumnaCostoServicios = (callback) => {
 ensureContratosServiciosTable();
 ensureFacturasHistorialTable();
 ensureFacturasHistorialRolColumn();
+ensureInteresPorcentajeContratoColumn();
 
 const resolverIdUsuarioValido = (idUsuario, callback) => {
     const id = Number(idUsuario);
@@ -410,7 +428,7 @@ router.get("/residentes-pendientes", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
-            c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             p.nombre AS nombre_proyecto,
@@ -459,7 +477,7 @@ router.get("/buscar-residente", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
-            c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             p.nombre AS nombre_proyecto,
