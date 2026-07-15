@@ -615,7 +615,7 @@ function Resoluciones_facturas() {
                               className="form-check-input me-2"
                               type="checkbox"
                               checked={checked}
-                              onChange={() => toggleEmpresaSeleccionadaEdicion(empresa.id_empresa)}
+                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
                             />
                             <span className="form-check-label">{empresa.nombre_empresa}</span>
                           </div>
