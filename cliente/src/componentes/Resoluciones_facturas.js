@@ -683,14 +683,26 @@ function Resoluciones_facturas() {
               <div className="modal-body">
                 <div className="mb-3">
                   <label className="form-label fw-bold">Empresa</label>
-                  <select value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-select">
-                    <option value="">-- Seleccione empresa --</option>
-                    {empresasList.map((empresa) => (
-                      <option key={empresa.id_empresa} value={empresa.id_empresa}>
-                        {empresa.nombre_empresa} (ID: {empresa.id_empresa})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="border rounded p-2 mb-2" style={{ maxHeight: '140px', overflowY: 'auto' }}>
+                    {empresasList.map((empresa) => {
+                      const checked = String(id_empresa) === String(empresa.id_empresa);
+                      return (
+                        <label key={`edit-check-${empresa.id_empresa}`} className="form-check d-flex align-items-center justify-content-between mb-1">
+                          <div>
+                            <input
+                              className="form-check-input me-2"
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setId_empresa(checked ? '' : String(empresa.id_empresa))}
+                            />
+                            <span className="form-check-label">{empresa.nombre_empresa}</span>
+                          </div>
+                          <small className="text-muted">ID: {empresa.id_empresa}</small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <small className="text-muted">Selecciona una empresa para actualizar esta resolución.</small>
                 </div>
                 {idsEmpresasObjetivo.length > 0 && (
                   <div className="mb-3 border rounded p-2 bg-light">
