@@ -422,10 +422,61 @@ const resolverIdUsuarioValido = (idUsuario, callback) => {
     });
 };
 
+const obtenerContextoPermisosCaja = (idUsuario, callback) => {
+    const id = Number(idUsuario || 0);
+    if (!Number.isInteger(id) || id <= 0) {
+        return callback(null, {
+            idUsuario: null,
+            esAdminOGerente: false,
+            filtrarPorPermiso: false
+        });
+    }
+
+    const sql = `
+        SELECT
+            u.id_usuario,
+            COALESCE(r.nombre_rol, '') AS nombre_rol
+        FROM usuarios u
+        LEFT JOIN roles r ON r.id_rol = u.id_rol
+        WHERE u.id_usuario = ?
+        LIMIT 1
+    `;
+
+    db.query(sql, [id], (err, rows) => {
+        if (err) {
+            return callback(err);
+        }
+
+        if (!rows || !rows.length) {
+            return callback(null, {
+                idUsuario: id,
+                esAdminOGerente: false,
+                filtrarPorPermiso: true
+            });
+        }
+
+        const rol = normalizeText(rows[0].nombre_rol || '');
+        const esAdminOGerente = rol.includes('admin') || rol.includes('gerente');
+
+        return callback(null, {
+            idUsuario: id,
+            esAdminOGerente,
+            filtrarPorPermiso: !esAdminOGerente
+        });
+    });
+};
+
 // === OBTENER LISTA INICIAL DE RESIDENTES (PENDIENTES Y SOLVENTES) ===
 router.get("/residentes-pendientes", (req, res) => {
     const idUsuario = Number(req.query?.id_usuario || 0);
-    const filtrarPorPermiso = Number.isInteger(idUsuario) && idUsuario > 0;
+
+    obtenerContextoPermisosCaja(idUsuario, (ctxErr, contextoPermisos) => {
+        if (ctxErr) {
+            console.error('Error validando permisos de Caja:', ctxErr.message);
+            return res.status(500).send('Error validando permisos de Caja.');
+        }
+
+        const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
 
     const filtroPermisos = filtrarPorPermiso
         ? `
@@ -453,13 +504,14 @@ router.get("/residentes-pendientes", (req, res) => {
         `
         : '';
 
-    const query = `
+        const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
             c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
+            COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
             p.nombre AS nombre_proyecto,
             COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
@@ -485,15 +537,16 @@ router.get("/residentes-pendientes", (req, res) => {
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
     `;
 
-    const queryParams = filtrarPorPermiso ? [idUsuario, idUsuario] : [];
+        const queryParams = filtrarPorPermiso ? [idUsuario, idUsuario] : [];
 
-    db.query(query, queryParams, (err, result) => {
-        if (err) {
-            console.error("Error al obtener residentes pendientes:", err.message);
-            return res.status(500).send("Error al obtener residentes: " + err.message);
-        }
+        db.query(query, queryParams, (err, result) => {
+            if (err) {
+                console.error("Error al obtener residentes pendientes:", err.message);
+                return res.status(500).send("Error al obtener residentes: " + err.message);
+            }
 
-        return res.status(200).json(result || []);
+            return res.status(200).json(result || []);
+        });
     });
 });
 
@@ -501,14 +554,21 @@ router.get("/residentes-pendientes", (req, res) => {
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;
     const idUsuario = Number(req.query?.id_usuario || 0);
-    const filtrarPorPermiso = Number.isInteger(idUsuario) && idUsuario > 0;
 
     if (!criterio) {
         return res.status(400).send("Debe proporcionar un criterio de búsqueda.");
     }
 
-    const filtroPermisos = filtrarPorPermiso
-        ? `
+    obtenerContextoPermisosCaja(idUsuario, (ctxErr, contextoPermisos) => {
+        if (ctxErr) {
+            console.error('Error validando permisos de Caja:', ctxErr.message);
+            return res.status(500).send('Error validando permisos de Caja.');
+        }
+
+        const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
+
+        const filtroPermisos = filtrarPorPermiso
+            ? `
             AND (
                 EXISTS (
                     SELECT 1
@@ -530,16 +590,17 @@ router.get("/buscar-residente", (req, res) => {
                       AND rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
                 )
             )
-        `
-        : '';
+            `
+            : '';
 
-    const query = `
+        const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
             c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
+            COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
             p.nombre AS nombre_proyecto,
             COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
@@ -564,19 +625,20 @@ router.get("/buscar-residente", (req, res) => {
         LIMIT 50
     `;
 
-    const searchTerm = `%${criterio}%`;
-    const queryParams = filtrarPorPermiso
-        ? [idUsuario, idUsuario, searchTerm, searchTerm, searchTerm, searchTerm]
-        : [searchTerm, searchTerm, searchTerm, searchTerm];
+        const searchTerm = `%${criterio}%`;
+        const queryParams = filtrarPorPermiso
+            ? [idUsuario, idUsuario, searchTerm, searchTerm, searchTerm, searchTerm]
+            : [searchTerm, searchTerm, searchTerm, searchTerm];
 
-    db.query(query, queryParams, (err, result) => {
-        if (err) {
-            console.error("Error en la consulta:", err.message);
-            return res.status(500).send("Error al consultar el residente: " + err.message);
-        }
-        if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
-        
-        res.status(200).json(result);
+        db.query(query, queryParams, (err, result) => {
+            if (err) {
+                console.error("Error en la consulta:", err.message);
+                return res.status(500).send("Error al consultar el residente: " + err.message);
+            }
+            if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
+            
+            return res.status(200).json(result);
+        });
     });
 });
 
@@ -1097,13 +1159,36 @@ router.post("/procesar-pago", (req, res) => {
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
-            db.query('SELECT monto_total, fecha_compra, fecha_firma, cuotas_pactadas, monto_cuota, interes_porcentaje FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
+            const sqlContratoCobro = `
+                SELECT
+                    c.monto_total,
+                    c.fecha_compra,
+                    c.fecha_firma,
+                    c.cuotas_pactadas,
+                    c.monto_cuota,
+                    c.interes_porcentaje,
+                    c.id_proyecto,
+                    COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
+                FROM contratos_residentes c
+                LEFT JOIN residentes r ON r.id_residente = c.id_residente
+                WHERE c.id_contrato = ?
+                LIMIT 1
+            `;
+
+            db.query(sqlContratoCobro, [id_contrato], (saldoErr, saldoRows) => {
             if (saldoErr) {
                 return db.rollback(() => res.status(500).send('Error al validar saldo pendiente: ' + saldoErr.message));
             }
 
             if (!saldoRows || !saldoRows.length) {
                 return db.rollback(() => res.status(404).send('No se encontró el contrato para aplicar el cobro.'));
+            }
+
+            const idProyectoContrato = Number(saldoRows[0]?.id_proyecto || 0);
+            const idEmpresaFacturacionContrato = Number(saldoRows[0]?.id_empresa_facturacion || 0);
+
+            if (!Number.isInteger(idProyectoContrato) || idProyectoContrato <= 0 || !Number.isInteger(idEmpresaFacturacionContrato) || idEmpresaFacturacionContrato <= 0) {
+                return db.rollback(() => res.status(400).send('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.'));
             }
 
             const saldoActual = parseFloat(saldoRows[0].monto_total || 0);

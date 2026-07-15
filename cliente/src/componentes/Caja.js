@@ -216,6 +216,12 @@ const Caja = () => {
         }
     };
 
+    const contratoTieneAsignacionValida = (registro = {}) => {
+        const idProyecto = Number(registro?.id_proyecto || 0);
+        const idEmpresaFacturacion = Number(registro?.id_empresa_facturacion || 0);
+        return Number.isInteger(idProyecto) && idProyecto > 0 && Number.isInteger(idEmpresaFacturacion) && idEmpresaFacturacion > 0;
+    };
+
     useEffect(() => {
         const consultarEstadoCorrelativoUsuario = async () => {
             const idUsuario = obtenerUsuarioActivo();
@@ -524,6 +530,11 @@ const Caja = () => {
         const montoSolicitado = parseFloat(montoAPagar || 0);
         const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
 
+        if (!contratoTieneAsignacionValida(datosDeuda)) {
+            mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
+            return;
+        }
+
         if (!Number.isFinite(montoSolicitado) || montoSolicitado <= 0) {
             mostrarToast('El monto a cobrar debe ser mayor a cero.', 'warning');
             return;
@@ -691,6 +702,7 @@ const Caja = () => {
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
             const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
             const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
+            const interesAplicado = parseFloat(recibo?.monto_interes_pagado || 0);
             const referencia = String(recibo?.no_referencia || '').trim();
             const matchRef = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
             const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
@@ -820,6 +832,12 @@ const Caja = () => {
                 doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), filaAncho - 34).slice(0, 1), filaX + 30, rY + 17.3);
                 doc.text(doc.splitTextToSize(String(conceptos), filaAncho - 40).slice(0, 1), filaX + 40, rY + 27.8);
                 doc.text(doc.splitTextToSize(nombreProyecto, filaAncho - 34).slice(0, 1), filaX + 23, rY + 38.3);
+
+                const mesesJuridicoTexto = mesesPagadosRecibo.length ? mesesPagadosRecibo.join(', ') : (String(recibo?.mes_pagado || '').trim() || 'N/A');
+                const resumenCuotasInteres = `Cuota(s): ${cuotaDisplay} | Mes(es): ${mesesJuridicoTexto} | Interes aplicado: Q${Math.max(interesAplicado, 0).toFixed(2)}`;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(7.7);
+                doc.text(doc.splitTextToSize(resumenCuotasInteres, filaAncho - 4).slice(0, 1), filaX + 2, rY + (filaH * 4) - 1.2);
 
                 const pagosY = rY + (filaH * 4);
                 doc.rect(filaX, pagosY, filaAncho, 24);
@@ -989,12 +1007,18 @@ const Caja = () => {
             const detalleCuotasTexto = cantidadCuotasPagadas > 0
                 ? `${cantidadCuotasPagadas} cuota(s) | ${mesesPagadosRecibo.join(', ')}`
                 : '';
+            const mesesReciboTexto = mesesPagadosRecibo.length ? mesesPagadosRecibo.join(', ') : (String(recibo?.mes_pagado || '').trim() || 'N/A');
             doc.text('Abono extraordinario:', x + 67, y + 3.8);
             doc.setFont('Helvetica', 'normal');
             doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 3.8);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(7.1);
+            doc.text(`Mes(es): ${mesesReciboTexto}`, x + 67, y + 7.1);
+            doc.text(`Interes aplicado: Q${Math.max(interesAplicado, 0).toFixed(2)}`, x + 125, y + 7.1);
+            doc.setFont('Helvetica', 'normal');
             if (detalleCuotasTexto) {
-                doc.setFontSize(7.1);
-                doc.text(doc.splitTextToSize(detalleCuotasTexto, 118).slice(0, 1), x + 67, y + 7.1);
+                doc.setFontSize(6.8);
+                doc.text(doc.splitTextToSize(detalleCuotasTexto, 118).slice(0, 1), x + 67, y + 10.2);
             }
 
             const boxY = Math.min(Math.max(y + 38, 140), 160);
@@ -1124,6 +1148,9 @@ const Caja = () => {
                     </div>
                     <ul className="list-group list-group-flush" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         {listaResidentesPaginada.map((r) => (
+                            (() => {
+                                const tieneAsignacion = contratoTieneAsignacionValida(r);
+                                return (
                             <li
                                 key={r.id_residente}
                                 className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
@@ -1136,11 +1163,19 @@ const Caja = () => {
                                     <span className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
                                     <br />
                                     <span className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</span>
+                                    {!tieneAsignacion && (
+                                        <>
+                                            <br />
+                                            <span className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</span>
+                                        </>
+                                    )}
                                 </div>
                                 <span className={`badge ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-warning text-dark'}`}>
                                     {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
                                 </span>
                             </li>
+                                );
+                            })()
                         ))}
                     </ul>
                     <div className="card-footer bg-white">
@@ -1164,6 +1199,9 @@ const Caja = () => {
                     </div>
                     <ul className="list-group list-group-flush">
                         {listaResidentes.map((r) => (
+                            (() => {
+                                const tieneAsignacion = contratoTieneAsignacionValida(r);
+                                return (
                             <li
                                 key={r.id_residente}
                                 className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
@@ -1176,9 +1214,17 @@ const Caja = () => {
                                     <small className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</small>
                                     <br />
                                     <small className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</small>
+                                    {!tieneAsignacion && (
+                                        <>
+                                            <br />
+                                            <small className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</small>
+                                        </>
+                                    )}
                                 </div>
-                                <span className="badge bg-secondary">Seleccionar</span>
+                                <span className={`badge ${tieneAsignacion ? 'bg-secondary' : 'bg-danger'}`}>{tieneAsignacion ? 'Seleccionar' : 'Solo consulta'}</span>
                             </li>
+                                );
+                            })()
                         ))}
                     </ul>
                 </div>
@@ -1214,11 +1260,16 @@ const Caja = () => {
                                 ℹ️ Terreno solvente. Puede cobrar únicamente servicios (agua/drenaje u otros asignados).
                             </div>
                         )}
+                        {!contratoTieneAsignacionValida(datosDeuda) && (
+                            <div className="alert alert-warning text-center fw-bold mb-3">
+                                ⚠️ Este contrato no tiene empresa y/o proyecto asignado. Puede consultarse, pero no se permite generar cobro.
+                            </div>
+                        )}
                         <div className="d-flex justify-content-end">
                             <button
                                 className="btn btn-success fw-bold"
                                 onClick={() => setShowModalCobro(true)}
-                                disabled={!puedeGenerarCobro}
+                                disabled={!puedeGenerarCobro || !contratoTieneAsignacionValida(datosDeuda)}
                             >
                                 💳 Generar Cobro
                             </button>
