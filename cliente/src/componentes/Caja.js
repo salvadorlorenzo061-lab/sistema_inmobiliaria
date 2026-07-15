@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
@@ -616,6 +615,7 @@ const Caja = () => {
                     setMesesPendientes(mesesActualizados);
                     setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
                     setNumCuota(mesesActualizados.length ? '1' : '0');
+                    setOpcionesCuota(mesesActualizados.length ? mesesActualizados.map((mes, index) => ({ value: String(index + 1), label: `Cuota ${index + 1} - ${mes}` })) : [{ value: '0', label: 'Sin cuotas pendientes' }]);
                     if (mesesActualizados.length) {
                         setMesPagado(mesesActualizados[0]);
                     }
@@ -674,14 +674,21 @@ const Caja = () => {
             const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
             const numero = matchRef ? matchRef[2].slice(-5) : String(Date.now()).slice(-5);
             const fecha = recibo?.fecha ? new Date(recibo.fecha) : new Date();
-            const meses = Array.isArray(recibo?.meses_pagados) && recibo.meses_pagados.length ? recibo.meses_pagados.join(', ') : (recibo?.mes_pagado || 'N/A');
+            const mesesPagadosRecibo = Array.isArray(recibo?.meses_pagados)
+                ? recibo.meses_pagados.map((mes) => String(mes || '').trim()).filter(Boolean)
+                : [];
+            const cuotaInicio = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 0);
+            const cuotaFin = Number(recibo?.numero_cuota_fin || cuotaInicio || 0);
+            const cantidadCuotasPagadas = Number(recibo?.cantidad_cuotas_pagadas || 0);
+            const cuotaDisplay = Number.isInteger(cuotaInicio) && cuotaInicio > 0
+                ? ((Number.isInteger(cuotaFin) && cuotaFin > cuotaInicio)
+                    ? `${cuotaInicio}-${cuotaFin}`
+                    : String(cuotaInicio))
+                : 'N/A';
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
             const usuarioActivo = getUsuarioSesion();
             const usarFormatoJuridico = esRolJuridico(usuarioActivo);
-            const conceptoResumen = String(conceptos || 'Pago de cuota').length > 78
-                ? `${String(conceptos || 'Pago de cuota').slice(0, 75)}...`
-                : String(conceptos || 'Pago de cuota');
 
             if (usarFormatoJuridico) {
                 const pageW = doc.internal.pageSize.getWidth();
@@ -951,15 +958,22 @@ const Caja = () => {
             doc.rect(x + 65, y, 125, 8);
             doc.setFont('Helvetica', 'bold');
             doc.setFontSize(9);
-            doc.text('Cuota:', x + 2, y + 5.2);
+            doc.text('Cuota(s):', x + 2, y + 5.2);
             doc.setTextColor(166, 35, 35);
             doc.setFontSize(12);
-            doc.text(String(recibo?.numero_cuota || 'N/A'), x + 29, y + 5.2);
+            doc.text(cuotaDisplay, x + 29, y + 5.2);
             doc.setTextColor(0, 0, 0);
             doc.setFontSize(9);
-            doc.text('Abono extraordinario:', x + 67, y + 5.2);
+            const detalleCuotasTexto = cantidadCuotasPagadas > 0
+                ? `${cantidadCuotasPagadas} cuota(s) | ${mesesPagadosRecibo.join(', ')}`
+                : '';
+            doc.text('Abono extraordinario:', x + 67, y + 3.8);
             doc.setFont('Helvetica', 'normal');
-            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 5.2);
+            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 3.8);
+            if (detalleCuotasTexto) {
+                doc.setFontSize(7.1);
+                doc.text(doc.splitTextToSize(detalleCuotasTexto, 118).slice(0, 1), x + 67, y + 7.1);
+            }
 
             const boxY = Math.min(Math.max(y + 38, 140), 160);
             const boxH = 22;

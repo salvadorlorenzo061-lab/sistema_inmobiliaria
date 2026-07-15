@@ -617,10 +617,32 @@ const obtenerCuadre = (scope) => (req, res) => {
                 p.no_referencia,
                 p.forma_pago,
                 p.fecha_pago,
-                COALESCE(SUM(pd.subtotal), 0) AS subtotal,
-                COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0) AS iva_total,
+                ROUND(
+                    GREATEST(
+                        COALESCE(SUM(pd.subtotal), 0)
+                        - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
+                        0
+                    ) / 1.12,
+                    2
+                ) AS subtotal,
+                ROUND(
+                    GREATEST(
+                        COALESCE(SUM(pd.subtotal), 0)
+                        - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
+                        0
+                    )
+                    - ROUND(
+                        GREATEST(
+                            COALESCE(SUM(pd.subtotal), 0)
+                            - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
+                            0
+                        ) / 1.12,
+                        2
+                    ),
+                    2
+                ) AS iva_total,
                 p.monto_total_pagado AS total_cobrado,
-                GREATEST(p.monto_total_pagado - (COALESCE(SUM(pd.subtotal), 0) + COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0)), 0) AS monto_mora
+                COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora
             FROM pagos p
             LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario

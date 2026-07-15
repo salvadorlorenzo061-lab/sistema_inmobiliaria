@@ -13,6 +13,51 @@ const normalizeText = (value = '') => String(value || '')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
+const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+const obtenerIndiceMes = (mesTexto = '') => {
+    const objetivo = normalizeText(mesTexto);
+    if (!objetivo) return -1;
+    return NOMBRES_MESES.findIndex((nombre) => normalizeText(nombre) === objetivo);
+};
+
+const parsearEtiquetaMes = (mesTexto = '') => {
+    const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+    if (!limpio) return null;
+
+    const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+    if (conAnio) {
+        const indiceMes = obtenerIndiceMes(conAnio[1]);
+        const anio = Number(conAnio[2]);
+        if (indiceMes >= 0 && Number.isInteger(anio)) {
+            return new Date(anio, indiceMes, 1);
+        }
+    }
+
+    const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+    if (soloMes) {
+        const indiceMes = obtenerIndiceMes(soloMes[1]);
+        if (indiceMes >= 0) {
+            return { indiceMes };
+        }
+    }
+
+    return null;
+};
+
+const etiquetaMesDesdeFecha = (fecha) => `${NOMBRES_MESES[fecha.getMonth()]} ${fecha.getFullYear()}`;
+
+const obtenerNumeroCuotaDesdeFechas = (fechaInicioContrato, fechaMes) => {
+    if (!(fechaInicioContrato instanceof Date) || Number.isNaN(fechaInicioContrato.getTime())) return null;
+    if (!(fechaMes instanceof Date) || Number.isNaN(fechaMes.getTime())) return null;
+
+    const inicio = new Date(fechaInicioContrato.getFullYear(), fechaInicioContrato.getMonth(), 1);
+    const mes = new Date(fechaMes.getFullYear(), fechaMes.getMonth(), 1);
+
+    const diferenciaMeses = ((mes.getFullYear() - inicio.getFullYear()) * 12) + (mes.getMonth() - inicio.getMonth());
+    return Math.max(diferenciaMeses + 1, 1);
+};
+
 const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
     const periodicidadNormalizada = normalizeText(periodicidad);
     if (periodicidadNormalizada === 'unico') {
@@ -456,11 +501,19 @@ router.get("/buscar-residente", (req, res) => {
 // === OBTENER MESES PENDIENTES ===
 router.get("/meses-pendientes", (req, res) => {
     const { id_contrato } = req.query;
-    const nombreMeses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
     if (!id_contrato) {
         const hoy = new Date();
-        return res.status(200).json({ meses: [nombreMeses[hoy.getMonth()] + ' ' + hoy.getFullYear()] });
+        const etiqueta = etiquetaMesDesdeFecha(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+        return res.status(200).json({
+            meses: [etiqueta],
+            meses_detalle: [{ mes: etiqueta, numero_cuota: 1 }],
+            meses_pagados: [],
+            total_cuotas: 1,
+            cuotas_pagadas: 0,
+            cuotas_pendientes: 1,
+            siguiente_mes_pendiente: etiqueta
+        });
     }
 
     // Traer datos de contrato para calcular todos los meses cobrables del contrato
@@ -507,9 +560,21 @@ router.get("/meses-pendientes", (req, res) => {
             ? new Date(fechaFin.getFullYear(), fechaFin.getMonth(), 1)
             : null;
 
+        const candidatosMeta = [];
+
+        const registrarCandidato = (fechaMes) => {
+            const etiqueta = etiquetaMesDesdeFecha(fechaMes);
+            candidatosMeta.push({
+                mes: etiqueta,
+                numero_cuota: obtenerNumeroCuotaDesdeFechas(fechaInicio, fechaMes) || (candidatosMeta.length + 1),
+                fecha: new Date(fechaMes.getFullYear(), fechaMes.getMonth(), 1)
+            });
+            candidatos.push(etiqueta);
+        };
+
         if (fechaFinMes) {
             while (cursor <= fechaFinMes) {
-                candidatos.push(`${nombreMeses[cursor.getMonth()]} ${cursor.getFullYear()}`);
+                registrarCandidato(cursor);
                 cursor.setMonth(cursor.getMonth() + 1);
             }
         } else {
@@ -519,7 +584,7 @@ router.get("/meses-pendientes", (req, res) => {
             );
 
             for (let i = 0; i < totalMesesObjetivo; i += 1) {
-                candidatos.push(`${nombreMeses[cursor.getMonth()]} ${cursor.getFullYear()}`);
+                registrarCandidato(cursor);
                 cursor.setMonth(cursor.getMonth() + 1);
             }
         }
@@ -542,42 +607,92 @@ router.get("/meses-pendientes", (req, res) => {
             }
 
             // Crear un Set con meses pagados de cuota de terreno
-            const mesasPagadosSet = new Set();
+            const mesesPagadosSet = new Set();
+            const legacySoloMes = [];
+
             (result || []).forEach(row => {
-                if (row.mes_pagado && row.mes_pagado.trim()) {
-                    mesasPagadosSet.add(row.mes_pagado.trim());
+                const bruto = String(row?.mes_pagado || '').trim();
+                if (!bruto) return;
+
+                const parsed = parsearEtiquetaMes(bruto);
+                if (parsed instanceof Date) {
+                    mesesPagadosSet.add(etiquetaMesDesdeFecha(new Date(parsed.getFullYear(), parsed.getMonth(), 1)));
+                    return;
+                }
+
+                if (parsed && Number.isInteger(parsed.indiceMes)) {
+                    legacySoloMes.push(parsed.indiceMes);
                 }
             });
 
+            // Compatibilidad con datos historicos guardados solo como "Mes" sin año.
+            // Se asigna cada mes legado a la primera ocurrencia cronologica no marcada.
+            if (legacySoloMes.length) {
+                const usados = new Set(mesesPagadosSet);
+                legacySoloMes.forEach((indiceMesLegacy) => {
+                    const match = candidatosMeta.find((item) => item.fecha.getMonth() === indiceMesLegacy && !usados.has(item.mes));
+                    if (match) {
+                        usados.add(match.mes);
+                        mesesPagadosSet.add(match.mes);
+                    }
+                });
+            }
+
             // Filtrar: solo retornar meses que NO estén en pagados
-            const pendientes = candidatos.filter(mes => !mesasPagadosSet.has(mes));
+            let pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
 
             // Si hay saldo pendiente, asegurar que existan meses pendientes suficientes para poder cobrar.
             const cuotasRestantesPorSaldo = (montoCuota > 0 && saldoPendiente > 0)
                 ? Math.ceil(saldoPendiente / montoCuota)
                 : 0;
 
-            if (cuotasRestantesPorSaldo > 0 && pendientes.length < cuotasRestantesPorSaldo) {
-                const pendientesSet = new Set(pendientes);
+            if (cuotasRestantesPorSaldo > 0 && pendientesMeta.length < cuotasRestantesPorSaldo) {
+                const pendientesSet = new Set(pendientesMeta.map((item) => item.mes));
                 const base = fechaFinMes
                     ? new Date(fechaFinMes.getFullYear(), fechaFinMes.getMonth(), 1)
                     : new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), 1);
                 let offset = fechaFinMes ? 1 : candidatos.length;
 
-                while (pendientesSet.size < cuotasRestantesPorSaldo) {
+                while (pendientesMeta.length < cuotasRestantesPorSaldo) {
                     const extra = new Date(base.getFullYear(), base.getMonth(), 1);
                     extra.setMonth(extra.getMonth() + offset);
-                    const etiqueta = `${nombreMeses[extra.getMonth()]} ${extra.getFullYear()}`;
-                    if (!mesasPagadosSet.has(etiqueta)) {
+                    const etiqueta = etiquetaMesDesdeFecha(extra);
+                    if (!mesesPagadosSet.has(etiqueta) && !pendientesSet.has(etiqueta)) {
                         pendientesSet.add(etiqueta);
+                        pendientesMeta.push({
+                            mes: etiqueta,
+                            numero_cuota: obtenerNumeroCuotaDesdeFechas(fechaInicio, extra) || (candidatosMeta.length + pendientesMeta.length + 1),
+                            fecha: new Date(extra.getFullYear(), extra.getMonth(), 1)
+                        });
                     }
                     offset += 1;
                 }
-
-                return res.status(200).json({ meses: Array.from(pendientesSet) });
             }
 
-            return res.status(200).json({ meses: pendientes });
+            pendientesMeta = pendientesMeta.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+            const mesesPendientes = pendientesMeta.map((item) => item.mes);
+
+            const mesesPagadosOrdenados = candidatosMeta
+                .filter((item) => mesesPagadosSet.has(item.mes))
+                .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
+                .map((item) => item.mes);
+
+            const totalCuotasContrato = (Number.isInteger(cuotasPactadas) && cuotasPactadas > 0)
+                ? cuotasPactadas
+                : Math.max(candidatosMeta.length, mesesPagadosOrdenados.length + mesesPendientes.length, 1);
+
+            const cuotasPagadasContrato = Math.min(mesesPagadosOrdenados.length, totalCuotasContrato);
+            const cuotasPendientesContrato = Math.max(totalCuotasContrato - cuotasPagadasContrato, 0);
+
+            return res.status(200).json({
+                meses: mesesPendientes,
+                meses_detalle: pendientesMeta.map((item) => ({ mes: item.mes, numero_cuota: item.numero_cuota })),
+                meses_pagados: mesesPagadosOrdenados,
+                total_cuotas: totalCuotasContrato,
+                cuotas_pagadas: cuotasPagadasContrato,
+                cuotas_pendientes: cuotasPendientesContrato,
+                siguiente_mes_pendiente: mesesPendientes[0] || null
+            });
         });
     });
 });
@@ -775,24 +890,26 @@ router.post("/procesar-pago", (req, res) => {
         mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
-    // Normalizar meses para asegurar que tengan año completo
+    // Normalizar etiquetas de mes preservando el año enviado por la UI.
+    // Si llega un mes sin año (dato legacy), se mantiene para no inventar años incorrectos.
     const normalizarMeses = (meses) => {
-        const nombreMeses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-        const hoy = new Date();
-        const yearActual = hoy.getFullYear();
-        
-        return meses.map(mes => {
-            // Si ya tiene año (contiene espacio), devolverlo tal cual
-            if (mes.includes(' ') && !isNaN(mes.split(' ')[1])) {
+        return (meses || [])
+            .map((mes) => String(mes || '').trim().replace(/\s+/g, ' '))
+            .filter(Boolean)
+            .map((mes) => {
+                const parsed = parsearEtiquetaMes(mes);
+                if (parsed instanceof Date) {
+                    return etiquetaMesDesdeFecha(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+                }
+
+                const soloMes = String(mes || '').match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+                if (soloMes) {
+                    const idx = obtenerIndiceMes(soloMes[1]);
+                    return idx >= 0 ? NOMBRES_MESES[idx] : mes;
+                }
+
                 return mes;
-            }
-            // Si es solo el nombre del mes, agregar el año actual
-            if (nombreMeses.includes(mes)) {
-                return `${mes} ${yearActual}`;
-            }
-            // En cualquier otro caso, devolverlo como está
-            return mes;
-        });
+            });
     };
 
     const meses = Array.isArray(meses_pagados) && meses_pagados.length ? meses_pagados : (mes_pagado ? [mes_pagado] : []);
@@ -875,23 +992,6 @@ router.post("/procesar-pago", (req, res) => {
 
     recalcularTotales();
 
-    const parseMesEtiqueta = (mesTexto = '') => {
-        const nombreMeses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-        const limpio = String(mesTexto || '').trim();
-        if (!limpio) return null;
-        const partes = limpio.split(' ');
-        if (partes.length < 2) return null;
-        const mesNombre = partes[0];
-        const anio = Number(partes[1]);
-        const idx = nombreMeses.findIndex((m) => m.toLowerCase() === mesNombre.toLowerCase());
-        if (idx < 0 || !Number.isInteger(anio)) return null;
-        return new Date(anio, idx, 1);
-    };
-
-    const etiquetaMesDesdeFecha = (fecha) => {
-        const nombreMeses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-        return `${nombreMeses[fecha.getMonth()]} ${fecha.getFullYear()}`;
-    };
     const numero_recibo = "REC-" + Math.floor(100000 + Math.random() * 900000);
 
     if (!id_contrato || !id_residente) {
@@ -913,7 +1013,7 @@ router.post("/procesar-pago", (req, res) => {
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
-            db.query('SELECT monto_total, fecha_compra, fecha_firma FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
+            db.query('SELECT monto_total, fecha_compra, fecha_firma, cuotas_pactadas, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
             if (saldoErr) {
                 return db.rollback(() => res.status(500).send('Error al validar saldo pendiente: ' + saldoErr.message));
             }
@@ -923,6 +1023,72 @@ router.post("/procesar-pago", (req, res) => {
             }
 
             const saldoActual = parseFloat(saldoRows[0].monto_total || 0);
+            const fechaCompraContrato = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
+            const fechaFirmaContrato = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+            const cuotasPactadasContrato = Number(saldoRows[0]?.cuotas_pactadas || 0);
+            const montoCuotaContratoRaw = Number(saldoRows[0]?.monto_cuota || 0);
+            const montoCuotaBaseEntera = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
+                ? Math.floor(montoCuotaContratoRaw)
+                : 0;
+            const fechaInicioContrato = (fechaCompraContrato && !Number.isNaN(fechaCompraContrato.getTime()))
+                ? new Date(fechaCompraContrato.getFullYear(), fechaCompraContrato.getMonth(), 1)
+                : ((fechaFirmaContrato && !Number.isNaN(fechaFirmaContrato.getTime()))
+                    ? new Date(fechaFirmaContrato.getFullYear(), fechaFirmaContrato.getMonth(), 1)
+                    : null);
+
+            const redondear2 = (valor) => Number(Number(valor || 0).toFixed(2));
+
+            const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
+                const parsed = parsearEtiquetaMes(mesTexto);
+                if (parsed instanceof Date && fechaInicioContrato) {
+                    const cuotaCalculada = obtenerNumeroCuotaDesdeFechas(fechaInicioContrato, parsed);
+                    if (Number.isInteger(cuotaCalculada) && cuotaCalculada > 0) {
+                        return cuotaCalculada;
+                    }
+                }
+
+                const cuotaBasePayload = Number.parseInt(numero_cuota, 10);
+                const base = Number.isInteger(cuotaBasePayload) && cuotaBasePayload > 0 ? cuotaBasePayload : 1;
+                return base + fallbackIndex;
+            };
+
+            const distribuirTerrenoPorMes = (mesesLista = [], cuotasLista = [], montoTerreno = 0) => {
+                const montos = [];
+                let restante = redondear2(Math.max(Number(montoTerreno || 0), 0));
+
+                for (let idx = 0; idx < mesesLista.length; idx += 1) {
+                    if (restante <= 0) {
+                        montos.push(0);
+                        continue;
+                    }
+
+                    const cuotaNumero = Number(cuotasLista[idx] || 0);
+                    const esUltimaCuotaContrato = Number.isInteger(cuotasPactadasContrato)
+                        && cuotasPactadasContrato > 0
+                        && cuotaNumero >= cuotasPactadasContrato;
+                    const esUltimoMesSeleccionado = idx === (mesesLista.length - 1);
+
+                    let montoAsignado = 0;
+                    if (esUltimaCuotaContrato || esUltimoMesSeleccionado) {
+                        montoAsignado = redondear2(restante);
+                        restante = 0;
+                    } else {
+                        const sugerido = montoCuotaBaseEntera > 0
+                            ? montoCuotaBaseEntera
+                            : redondear2(Number(montoTerreno || 0) / Math.max(mesesLista.length, 1));
+                        montoAsignado = redondear2(Math.min(sugerido, restante));
+                        restante = redondear2(restante - montoAsignado);
+                    }
+
+                    montos.push(montoAsignado);
+                }
+
+                if (restante > 0 && montos.length > 0) {
+                    montos[montos.length - 1] = redondear2(montos[montos.length - 1] + restante);
+                }
+
+                return montos;
+            };
 
             if (montoTerrenoTotal > 0) {
                 if (!Number.isFinite(saldoActual) || saldoActual <= 0) {
@@ -953,7 +1119,13 @@ router.post("/procesar-pago", (req, res) => {
                 }
 
                 const mesesOrdenados = [...mesesAProcesar]
-                    .map((item) => ({ etiqueta: item, fecha: parseMesEtiqueta(item) }))
+                    .map((item) => {
+                        const parsed = parsearEtiquetaMes(item);
+                        return {
+                            etiqueta: item,
+                            fecha: parsed instanceof Date ? parsed : null
+                        };
+                    })
                     .filter((item) => item.fecha instanceof Date)
                     .sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
 
@@ -1192,10 +1364,24 @@ router.post("/procesar-pago", (req, res) => {
 
                             const finalizarConDetalles = () => {
                                 const detalleValues = [];
+                                const cuotasTerrenoCalculadas = montoTerrenoTotal > 0
+                                    ? mesesAProcesar.map((mes, index) => obtenerNumeroCuotaParaMes(mes, index))
+                                    : [];
+                                const montosTerrenoPorMes = montoTerrenoTotal > 0
+                                    ? distribuirTerrenoPorMes(mesesAProcesar, cuotasTerrenoCalculadas, montoTerrenoTotal)
+                                    : [];
 
                                 if (montoTerrenoTotal > 0) {
                                     mesesAProcesar.forEach((mes, index) => {
-                                        detalleValues.push([lastIdPago, 'cuota_terreno', null, mes, (parseInt(numero_cuota || 1) + index), montoPorMesTerreno, null]);
+                                        detalleValues.push([
+                                            lastIdPago,
+                                            'cuota_terreno',
+                                            null,
+                                            mes,
+                                            cuotasTerrenoCalculadas[index] || null,
+                                            redondear2(montosTerrenoPorMes[index] || 0),
+                                            null
+                                        ]);
                                     });
                                 }
 
@@ -1297,12 +1483,17 @@ router.post("/procesar-pago", (req, res) => {
                                                 db.query(empresaQuery, [id_contrato], (errEmpresa, resEmpresa) => {
                                                     const empresa = resEmpresa?.[0] || { nombre_empresa: 'INMOBILIARIA ALFA S.A.', logo: null, nit: 'N/A', pais: 'Guatemala', moneda: 'GTQ' };
                                                     const detalleCobro = [];
+                                                    const numeroCuotaInicio = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[0] : null;
+                                                    const numeroCuotaFin = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[cuotasTerrenoCalculadas.length - 1] : null;
+                                                    const cantidadCuotasPagadas = cuotasTerrenoCalculadas.length;
+                                                    const totalCuotaNormal = redondear2(montosTerrenoPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
 
                                                     mesesAProcesar.forEach((mes, index) => {
-                                                        if (montoPorMesTerreno > 0) {
-                                                            const desgloseTerreno = calcularComponentesFiscalmente(montoPorMesTerreno);
+                                                        if (Number(montosTerrenoPorMes[index] || 0) > 0) {
+                                                            const montoTerrenoConcepto = redondear2(montosTerrenoPorMes[index]);
+                                                            const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);
                                                             detalleCobro.push({
-                                                                concepto: `Cuota de Terreno No. ${parseInt(numero_cuota || 1, 10) + index}`,
+                                                                concepto: `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
                                                                 mes,
                                                                 monto_base: desgloseTerreno.subtotal,
                                                                 iva: desgloseTerreno.iva,
@@ -1398,11 +1589,20 @@ router.post("/procesar-pago", (req, res) => {
                                                         iva_total: ivaTotal,
                                                         iva_por_mes: ivaPorMes,
                                                         monto_por_mes: montoPorMesTerreno,
+                                                        monto_cuota_base_entera: montoCuotaBaseEntera,
                                                         total_cobrado: totalTransaccion,
                                                         mes_pagado: mesesAProcesar[0],
                                                         meses_pagados: mesesAProcesar,
                                                         detalle_cobro: detalleCobro,
-                                                        numero_cuota,
+                                                        desglose_totales: {
+                                                            cuota_normal_total: totalCuotaNormal,
+                                                            mora_total: moraTotal,
+                                                            total_final: totalTransaccion
+                                                        },
+                                                        numero_cuota: numeroCuotaInicio,
+                                                        numero_cuota_inicio: numeroCuotaInicio,
+                                                        numero_cuota_fin: numeroCuotaFin,
+                                                        cantidad_cuotas_pagadas: cantidadCuotasPagadas,
                                                         metodo_pago: metodo_pago,
                                                         no_referencia: correlativoFinal,
                                                         id_pago: lastIdPago,
