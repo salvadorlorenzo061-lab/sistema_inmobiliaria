@@ -222,6 +222,8 @@ const Caja = () => {
         return Number.isInteger(idProyecto) && idProyecto > 0 && Number.isInteger(idEmpresaFacturacion) && idEmpresaFacturacion > 0;
     };
 
+    const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
+
     useEffect(() => {
         const consultarEstadoCorrelativoUsuario = async () => {
             const idUsuario = obtenerUsuarioActivo();
@@ -532,6 +534,11 @@ const Caja = () => {
 
         if (!contratoTieneAsignacionValida(datosDeuda)) {
             mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
+            return;
+        }
+
+        if (!usuarioTienePermisoCobro(datosDeuda)) {
+            mostrarToast('No se puede generar cobro: este contrato no pertenece a tus correlativos asignados.', 'warning');
             return;
         }
 
@@ -1088,7 +1095,8 @@ const Caja = () => {
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
-    const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes);
+    const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
+    const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes) && tienePermisoCobroSeleccion;
     const posibleCobroServiciosIniciales =
         !!datosDeuda
         && mesesSeleccionados.includes(mesesPendientes[0] || '')
@@ -1169,6 +1177,12 @@ const Caja = () => {
                                             <span className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</span>
                                         </>
                                     )}
+                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
+                                        <>
+                                            <br />
+                                            <span className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</span>
+                                        </>
+                                    )}
                                 </div>
                                 <span className={`badge ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-warning text-dark'}`}>
                                     {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
@@ -1220,8 +1234,16 @@ const Caja = () => {
                                             <small className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</small>
                                         </>
                                     )}
+                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
+                                        <>
+                                            <br />
+                                            <small className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</small>
+                                        </>
+                                    )}
                                 </div>
-                                <span className={`badge ${tieneAsignacion ? 'bg-secondary' : 'bg-danger'}`}>{tieneAsignacion ? 'Seleccionar' : 'Solo consulta'}</span>
+                                <span className={`badge ${!tieneAsignacion ? 'bg-danger' : usuarioTienePermisoCobro(r) ? 'bg-secondary' : 'bg-warning text-dark'}`}>
+                                    {!tieneAsignacion ? 'Solo consulta' : usuarioTienePermisoCobro(r) ? 'Seleccionar' : 'Ver sin cobro'}
+                                </span>
                             </li>
                                 );
                             })()
@@ -1265,11 +1287,16 @@ const Caja = () => {
                                 ⚠️ Este contrato no tiene empresa y/o proyecto asignado. Puede consultarse, pero no se permite generar cobro.
                             </div>
                         )}
+                        {contratoTieneAsignacionValida(datosDeuda) && !tienePermisoCobroSeleccion && (
+                            <div className="alert alert-warning text-center fw-bold mb-3">
+                                ⚠️ Este contrato no está dentro de tus correlativos asignados. Puedes verlo en Caja, pero no generar cobro.
+                            </div>
+                        )}
                         <div className="d-flex justify-content-end">
                             <button
                                 className="btn btn-success fw-bold"
                                 onClick={() => setShowModalCobro(true)}
-                                disabled={!puedeGenerarCobro || !contratoTieneAsignacionValida(datosDeuda)}
+                                disabled={!puedeGenerarCobro || !contratoTieneAsignacionValida(datosDeuda) || !tienePermisoCobroSeleccion}
                             >
                                 💳 Generar Cobro
                             </button>
