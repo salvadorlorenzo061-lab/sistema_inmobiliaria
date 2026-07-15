@@ -692,6 +692,27 @@ function Resoluciones_facturas() {
                     ))}
                   </select>
                 </div>
+                {idsEmpresasObjetivo.length > 0 && (
+                  <div className="mb-3 border rounded p-2 bg-light">
+                    <div className="fw-bold mb-1">Proyectos de la empresa seleccionada</div>
+                    {proyectosPorEmpresaSeleccionada.map((grupo) => (
+                      <div key={`edit-proy-${grupo.id_empresa}`} className="mb-2">
+                        <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
+                        {grupo.proyectos.length > 0 ? (
+                          <ul className="small mb-1 ps-3">
+                            {grupo.proyectos.map((proyecto) => (
+                              <li key={`edit-proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`}>
+                                {proyecto.nombre} (ID: {proyecto.id_proyecto})
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="small text-muted">Sin proyectos asociados.</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="mb-3">
                   <label className="form-label fw-bold">Usuario asignado</label>
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
