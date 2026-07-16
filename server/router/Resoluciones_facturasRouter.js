@@ -100,22 +100,17 @@ router.post("/crear", (req, res) => {
                 const existeAsignacionQuery = `
                         SELECT rf.id_resolucion
                         FROM resoluciones_facturas rf
-                        LEFT JOIN empresas e_rf ON e_rf.id_empresa = rf.id_empresa
-                        LEFT JOIN empresas e_sel ON e_sel.id_empresa = ?
                         WHERE rf.id_usuario = ?
+                            AND rf.id_empresa = ?
                             AND UPPER(TRIM(rf.numero_resolucion)) = ?
                             AND UPPER(TRIM(rf.serie)) = ?
-                            AND (
-                                        rf.id_empresa = ?
-                                        OR UPPER(TRIM(COALESCE(e_rf.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_sel.nombre_empresa, '')))
-                                    )
                         ORDER BY rf.id_resolucion DESC
                         LIMIT 1
                 `;
 
         db.query(
             existeAsignacionQuery,
-            [id_empresa, idUsuarioValido, numeroResolucionNormalizado, serieNormalizada, id_empresa],
+            [idUsuarioValido, id_empresa, numeroResolucionNormalizado, serieNormalizada],
             (existsErr, existsRows) => {
                 if (existsErr) {
                     console.log(existsErr);
@@ -127,29 +122,24 @@ router.post("/crear", (req, res) => {
                     : null;
 
                                 const overlapQuery = `
-                                        SELECT rf.id_resolucion
-                                        FROM resoluciones_facturas rf
-                                        LEFT JOIN empresas e_rf ON e_rf.id_empresa = rf.id_empresa
-                                        LEFT JOIN empresas e_sel ON e_sel.id_empresa = ?
-                                        WHERE (
-                                                        rf.id_empresa = ?
-                                                        OR UPPER(TRIM(COALESCE(e_rf.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_sel.nombre_empresa, '')))
-                                                    )
-                                            AND UPPER(TRIM(rf.numero_resolucion)) = ?
-                                            AND UPPER(TRIM(rf.serie)) = ?
-                                            ${idResolucionExistente ? 'AND rf.id_resolucion <> ?' : ''}
-                                            AND (
-                                                        (? BETWEEN rf.rango_inicial AND rf.rango_final)
-                                                        OR (? BETWEEN rf.rango_inicial AND rf.rango_final)
-                                                        OR (rf.rango_inicial BETWEEN ? AND ?)
-                                                        OR (rf.rango_final BETWEEN ? AND ?)
-                                                    )
-                                        LIMIT 1
+                                    SELECT rf.id_resolucion
+                                    FROM resoluciones_facturas rf
+                                    WHERE rf.id_empresa = ?
+                                        AND UPPER(TRIM(rf.numero_resolucion)) = ?
+                                        AND UPPER(TRIM(rf.serie)) = ?
+                                        ${idResolucionExistente ? 'AND rf.id_resolucion <> ?' : ''}
+                                        AND (
+                                            (? BETWEEN rf.rango_inicial AND rf.rango_final)
+                                            OR (? BETWEEN rf.rango_inicial AND rf.rango_final)
+                                            OR (rf.rango_inicial BETWEEN ? AND ?)
+                                            OR (rf.rango_final BETWEEN ? AND ?)
+                                            )
+                                    LIMIT 1
                                 `;
 
                 const overlapParams = idResolucionExistente
-                    ? [id_empresa, id_empresa, numeroResolucionNormalizado, serieNormalizada, idResolucionExistente, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal]
-                    : [id_empresa, id_empresa, numeroResolucionNormalizado, serieNormalizada, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal];
+                    ? [id_empresa, numeroResolucionNormalizado, serieNormalizada, idResolucionExistente, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal]
+                    : [id_empresa, numeroResolucionNormalizado, serieNormalizada, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal];
 
                 db.query(
                     overlapQuery,
@@ -270,11 +260,8 @@ router.put("/actualizar", (req, res) => {
                 const overlapQuery = `
                         SELECT rf.id_resolucion
                         FROM resoluciones_facturas rf
-                        LEFT JOIN empresas e_rf ON e_rf.id_empresa = rf.id_empresa
-                        LEFT JOIN empresas e_sel ON e_sel.id_empresa = ?
                         WHERE (
                                         rf.id_empresa = ?
-                                        OR UPPER(TRIM(COALESCE(e_rf.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_sel.nombre_empresa, '')))
                                     )
                             AND UPPER(TRIM(rf.numero_resolucion)) = ?
                             AND UPPER(TRIM(rf.serie)) = ?
@@ -290,7 +277,7 @@ router.put("/actualizar", (req, res) => {
 
         db.query(
             overlapQuery,
-            [id_empresa, id_empresa, numeroResolucionNormalizado, serieNormalizada, id_resolucion, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal],
+            [id_empresa, numeroResolucionNormalizado, serieNormalizada, id_resolucion, rInicial, rFinal, rInicial, rFinal, rInicial, rFinal],
             (overlapErr, overlapRows) => {
                 if (overlapErr) {
                     console.log(overlapErr);

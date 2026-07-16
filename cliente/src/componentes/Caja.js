@@ -758,7 +758,7 @@ const Caja = () => {
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
             const usuarioActivo = getUsuarioSesion();
-            const usarFormatoJuridico = esRolJuridico(usuarioActivo);
+            const usarFormatoJuridico = true;
 
             if (usarFormatoJuridico) {
                 const pageW = doc.internal.pageSize.getWidth();

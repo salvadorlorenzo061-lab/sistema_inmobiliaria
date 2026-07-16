@@ -319,24 +319,17 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
         SELECT ac.id_asignacion, ac.id_resolucion, ac.id_empresa, ac.serie,
                COALESCE(ac.correlativo_actual, ac.correlativo_inicio) AS correlativo_actual,
                ac.correlativo_fin
-                FROM asignar_correlativos ac
-                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
-                LEFT JOIN empresas e_req ON e_req.id_empresa = ?
+        FROM asignar_correlativos ac
         WHERE ac.id_usuario = ?
+                    AND ac.id_empresa = ?
                     AND (
-                                ? IS NULL
-                                OR EXISTS (
+                                EXISTS (
                                         SELECT 1
                                         FROM resoluciones_facturas rf_match
-                                        LEFT JOIN empresas e_match ON e_match.id_empresa = rf_match.id_empresa
-                                        WHERE rf_match.id_usuario = ac.id_usuario
+                                        WHERE rf_match.id_resolucion = ac.id_resolucion
+                                            AND rf_match.id_usuario = ac.id_usuario
+                                            AND rf_match.id_empresa = ac.id_empresa
                                             AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
-                                            AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
-                                            AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
-                                            AND (
-                                                rf_match.id_empresa = ?
-                                                OR UPPER(TRIM(COALESCE(e_match.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_req.nombre_empresa, '')))
-                                            )
                                 )
                             )
                     AND ac.estado = 'activo'
@@ -348,7 +341,7 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
 
     const idEmpresaNormalizado = idEmpresa ? Number(idEmpresa) : null;
 
-    db.query(query, [idEmpresaNormalizado, idUsuario, idEmpresaNormalizado, idEmpresaNormalizado], (err, rows) => {
+    db.query(query, [idUsuario, idEmpresaNormalizado], (err, rows) => {
         if (err) {
             return callback(err);
         }
@@ -372,7 +365,7 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
                     return callback(updateErr);
                 }
 
-                return callback(null, {
+                    return callback(null, {
                     correlativo: correlativoTexto,
                     id_resolucion: asignacion.id_resolucion,
                     id_asignacion: asignacion.id_asignacion,

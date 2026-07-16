@@ -159,7 +159,7 @@ function AnulacionDeuda() {
         ? correlativoMatch[2].slice(-5)
         : String(anulacion.id_pago || anulacion.id_anulacion || 0).padStart(5, '0');
       const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
-      const usarFormatoJuridico = esRolJuridico(usuarioActivo);
+      const usarFormatoJuridico = true;
       const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
       const logoProyecto = normalizeImageDataUrl(contratoInfo?.logo_proyecto || '');
       const nombreMarca = contratoInfo?.nombre_marca_pdf || contratoInfo?.nombre_proyecto || 'PROYECTO INMOBILIARIO';
