@@ -1301,7 +1301,7 @@ const Caja = () => {
                                 <div><strong>Capital por cuota:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</div>
                                 <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
                                 <div><strong>Interés por cuota:</strong> Q{interesPorCuotaContrato.toFixed(2)}</div>
-                                <div><strong>Capital + Interés:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
+                                <div><strong>Total financiado:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
                             </div>
                         </div>
                         <hr />
@@ -1454,12 +1454,12 @@ const Caja = () => {
                                             <br />
                                             <strong>Servicios seleccionados:</strong> Q{(mesesSeleccionados.length ? (montoServiciosSeleccionado / Math.max(mesesSeleccionados.length, 1)) : 0).toFixed(2)} / mes
                                             <br />
-                                            <strong>Capital + interés ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{capitalSeleccionado.toFixed(2)} + Q{interesCalculadoSeleccion.toFixed(2)}
+                                            <strong>Total financiado seleccionado ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{capitalSeleccionado.toFixed(2)} + Q{interesCalculadoSeleccion.toFixed(2)}
                                         </span>
                                         <span className="fw-bold text-success">
                                             Total ({mesesSeleccionados.length} mes(es)): Q{montoTotalSeleccionado.toFixed(2)}
                                             <br />
-                                            Capital + interés: Q{totalSeleccionCapitalInteres.toFixed(2)}
+                                            Total financiado: Q{totalSeleccionCapitalInteres.toFixed(2)}
                                             <br />
                                             Servicios: Q{montoServiciosSeleccionado.toFixed(2)}
                                             {montoMoraActual > 0 && (
