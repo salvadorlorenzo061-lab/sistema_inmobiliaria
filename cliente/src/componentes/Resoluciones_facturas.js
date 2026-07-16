@@ -811,7 +811,7 @@ function Resoluciones_facturas() {
                       </option>
                     ))}
                   </select>
-                  <small className="text-muted">Se muestran todos los usuarios; el rol de resolución sigue validándose al asignar correlativos.</small>
+                  <small className="text-muted">Se muestran todos los usuarios; el control de cobro se define por las empresas seleccionadas (checkboxes) y sus lotes asignados.</small>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Número resolución:</label>

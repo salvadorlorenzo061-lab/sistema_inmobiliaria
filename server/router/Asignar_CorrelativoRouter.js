@@ -82,17 +82,17 @@ router.get('/estado-usuario', (req, res) => {
                 ac.id_asignacion,
                 ac.serie,
                 ac.correlativo_inicio,
-                ac.correlativo_actual,
+                                COALESCE(ac.correlativo_actual, ac.correlativo_inicio) AS correlativo_actual,
                 ac.correlativo_fin,
                 ac.id_empresa,
                 e.nombre_empresa,
                 CONCAT(ac.serie, '-', LPAD(ac.correlativo_inicio, 8, '0')) AS correlativo_inicio_display,
-                CONCAT(ac.serie, '-', LPAD(ac.correlativo_actual, 8, '0')) AS correlativo_actual_display
+                                CONCAT(ac.serie, '-', LPAD(COALESCE(ac.correlativo_actual, ac.correlativo_inicio), 8, '0')) AS correlativo_actual_display
             FROM asignar_correlativos ac
             LEFT JOIN empresas e ON e.id_empresa = ac.id_empresa
             WHERE ac.id_usuario = ?
               AND ac.estado = 'activo'
-              AND ac.correlativo_actual <= ac.correlativo_fin
+                            AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
             ORDER BY ac.fecha_asignacion ASC, ac.id_asignacion ASC
             LIMIT 1
         `;
@@ -198,28 +198,47 @@ router.get('/siguiente-correlativo', (req, res) => {
         const idEmpresaRaw = Number(empresaRows?.[0]?.id_empresa_facturacion || 0);
         const idEmpresa = idEmpresaRaw > 0 ? idEmpresaRaw : null;
 
-        const asignacionQuery = `
+                const asignacionQuery = `
                 SELECT
                     ac.id_asignacion,
                     ac.id_empresa,
                     ac.serie,
-                    ac.correlativo_actual,
+                                        COALESCE(ac.correlativo_actual, ac.correlativo_inicio) AS correlativo_actual,
                     ac.correlativo_fin,
-                    CONCAT(ac.serie, '-', LPAD(ac.correlativo_actual, 8, '0')) AS correlativo_actual_display
+                                        CONCAT(ac.serie, '-', LPAD(COALESCE(ac.correlativo_actual, ac.correlativo_inicio), 8, '0')) AS correlativo_actual_display
                 FROM asignar_correlativos ac
+                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
+                                LEFT JOIN empresas e_contract ON e_contract.id_empresa = ?
                 WHERE ac.id_usuario = ?
                   AND ac.estado = 'activo'
-                  AND ac.correlativo_actual <= ac.correlativo_fin
+                                    AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                                    AND (
+                                                ? IS NULL
+                                                OR EXISTS (
+                                                        SELECT 1
+                                                        FROM resoluciones_facturas rf_match
+                                                        LEFT JOIN empresas e_match ON e_match.id_empresa = rf_match.id_empresa
+                                                        WHERE rf_match.id_usuario = ac.id_usuario
+                                                            AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                                            AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                                            AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                                            AND (
+                                                                        rf_match.id_empresa = ?
+                                                                        OR UPPER(TRIM(COALESCE(e_match.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contract.nombre_empresa, '')))
+                                                            )
+                                                )
+                                    )
                 ORDER BY CASE
-                            WHEN ? IS NOT NULL AND ac.id_empresa = ? THEN 0
-                            ELSE 1
+                                                        WHEN ? IS NOT NULL AND ac.id_empresa = ? THEN 0
+                                                        WHEN ? IS NOT NULL THEN 1
+                                                        ELSE 2
                          END ASC,
                          ac.fecha_asignacion ASC,
                          ac.id_asignacion ASC
                 LIMIT 1
             `;
 
-        db.query(asignacionQuery, [idUsuario, idEmpresa, idEmpresa], (asignErr, asignRows) => {
+                db.query(asignacionQuery, [idEmpresa, idUsuario, idEmpresa, idEmpresa, idEmpresa, idEmpresa, idEmpresa], (asignErr, asignRows) => {
             if (asignErr) {
                 console.error(asignErr);
                 return res.status(500).send({ message: 'No se pudo consultar el correlativo asignado.' });
@@ -240,23 +259,31 @@ router.get('/siguiente-correlativo', (req, res) => {
                 });
             }
 
-            const resolucionUsuarioQuery = `
-                SELECT id_empresa, serie, correlativo_actual, rango_final
-                FROM resoluciones_facturas
-                WHERE id_usuario = ?
-                  AND estado = 'activo'
-                  AND correlativo_actual BETWEEN rango_inicial AND rango_final
-                  AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                ORDER BY CASE
-                            WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
-                            ELSE 1
-                         END ASC,
-                         fecha_vencimiento ASC,
-                         id_resolucion ASC
-                LIMIT 1
-            `;
+                        const resolucionUsuarioQuery = `
+                                SELECT rf.id_empresa, rf.serie, rf.correlativo_actual, rf.rango_final
+                                FROM resoluciones_facturas rf
+                                LEFT JOIN empresas e_rf ON e_rf.id_empresa = rf.id_empresa
+                                LEFT JOIN empresas e_contract ON e_contract.id_empresa = ?
+                                WHERE rf.id_usuario = ?
+                                    AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                                    AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final
+                                    AND (rf.fecha_vencimiento IS NULL OR rf.fecha_vencimiento >= CURDATE())
+                                    AND (
+                                                ? IS NULL
+                                                OR rf.id_empresa = ?
+                                                OR UPPER(TRIM(COALESCE(e_rf.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contract.nombre_empresa, '')))
+                                    )
+                                ORDER BY CASE
+                                                        WHEN ? IS NOT NULL AND rf.id_empresa = ? THEN 0
+                                                        WHEN ? IS NOT NULL THEN 1
+                                                        ELSE 2
+                                                 END ASC,
+                                                 rf.fecha_vencimiento ASC,
+                                                 rf.id_resolucion ASC
+                                LIMIT 1
+                        `;
 
-            db.query(resolucionUsuarioQuery, [idUsuario, idEmpresa, idEmpresa], (resErr, resRows) => {
+                        db.query(resolucionUsuarioQuery, [idEmpresa, idUsuario, idEmpresa, idEmpresa, idEmpresa, idEmpresa, idEmpresa], (resErr, resRows) => {
                 if (resErr) {
                     console.error(resErr);
                     return res.status(500).send({ message: 'No se pudo consultar resolución asignada al usuario.' });
@@ -361,23 +388,6 @@ router.post('/crear', (req, res) => {
                     const correlativoFin = correlativoInicio + cantidadNumerica - 1;
                     const rangoFinal = Number(resolucion.rango_final || 0);
                     const rangoInicial = Number(resolucion.rango_inicial || 0);
-                    const rolUsuario = String(userRows?.[0]?.nombre_rol || '')
-                        .toLowerCase()
-                        .normalize('NFD')
-                        .replace(/[\u0300-\u036f]/g, '')
-                        .trim();
-                    const rolResolucion = String(resolucion.rol || 'caja')
-                        .toLowerCase()
-                        .normalize('NFD')
-                        .replace(/[\u0300-\u036f]/g, '')
-                        .trim();
-                    const esAdminOGerente = rolUsuario.includes('admin') || rolUsuario.includes('gerente');
-                    const usuarioEsCaja = rolUsuario.includes('caja') || rolUsuario.includes('cobro');
-                    const usuarioEsJuridico = rolUsuario.includes('jurid') || rolUsuario.includes('legal');
-                    const rolCompatible = rolResolucion === 'ambos'
-                        || (rolResolucion === 'caja' && usuarioEsCaja)
-                        || (rolResolucion === 'juridico' && usuarioEsJuridico)
-                        || esAdminOGerente;
 
                     if (String(resolucion.estado || '').toLowerCase() !== 'activo') {
                         return rollback(400, 'La resolución no está activa.');
@@ -385,10 +395,6 @@ router.post('/crear', (req, res) => {
 
                     if (idEmpresaSeleccionada && Number(resolucion.id_empresa || 0) !== idEmpresaSeleccionada) {
                         return rollback(400, 'La empresa seleccionada no coincide con la empresa de la resolución.');
-                    }
-
-                    if (!rolCompatible) {
-                        return rollback(400, `La resolución está configurada para rol ${resolucion.rol || 'caja'} y el usuario no coincide con ese rol.`);
                     }
 
                     if (resolucion.fecha_vencimiento && new Date(resolucion.fecha_vencimiento) < new Date()) {
