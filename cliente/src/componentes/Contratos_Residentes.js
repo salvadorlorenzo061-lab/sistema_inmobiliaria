@@ -139,7 +139,8 @@ function Contratos_Residentes() {
     cargarCatalogos();
   }, [cargarCatalogos]);
 
-  // Cálculo automático del valor de cuota si cambia el monto total o las cuotas
+  // monto_cuota guarda capital por cuota.
+  // El interes se distribuye por cuota al momento de cobro en Caja.
   useEffect(() => {
     if (monto_total && cuotas_pactadas > 0) {
       const calculo = (parseFloat(monto_total) / parseInt(cuotas_pactadas)).toFixed(2);
@@ -202,6 +203,16 @@ function Contratos_Residentes() {
   const proyectoSeleccionado = proyectosDisponibles.find((proyecto) => getProyectoNombre(proyecto) === proyecto_propiedad) || null;
 
   const formatMoney = (value) => `Q${Number(value || 0).toFixed(2)}`;
+  const montoCapitalContrato = Math.max(parseFloat(monto_total || 0), 0);
+  const cuotasContrato = Math.max(parseInt(cuotas_pactadas || 0, 10), 0);
+  const porcentajeInteresContrato = Math.max(parseFloat(interes_porcentaje || 0), 0);
+  const interesTotalContrato = (montoCapitalContrato > 0 && cuotasContrato > 0)
+    ? ((montoCapitalContrato * porcentajeInteresContrato) / 100)
+    : 0;
+  const interesPorCuotaContrato = cuotasContrato > 0 ? (interesTotalContrato / cuotasContrato) : 0;
+  const cuotaTotalConInteresContrato = cuotasContrato > 0
+    ? ((montoCapitalContrato + interesTotalContrato) / cuotasContrato)
+    : 0;
 
   useEffect(() => {
     const idProyecto = Number(proyectoSeleccionado?.id_proyecto || 0);
@@ -1126,8 +1137,20 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
+                  <label className="form-label fw-bold">Capital por Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light text-success fw-bold" value={monto_cuota} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Interés Total Contrato (Auto):</label>
+                  <input type="text" className="form-control bg-light" value={interesTotalContrato.toFixed(2)} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Interés por Cuota (Auto):</label>
+                  <input type="text" className="form-control bg-light" value={interesPorCuotaContrato.toFixed(2)} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Cuota Total con Interés (Auto):</label>
+                  <input type="text" className="form-control bg-light text-primary fw-bold" value={cuotaTotalConInteresContrato.toFixed(2)} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>

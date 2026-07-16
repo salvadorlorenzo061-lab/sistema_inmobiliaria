@@ -1276,9 +1276,15 @@ router.post("/procesar-pago", (req, res) => {
             const cuotasRestantesContrato = (montoCuotaContratoRaw > 0 && saldoActual > 0)
                 ? Math.max(Math.ceil(saldoActual / montoCuotaContratoRaw), 1)
                 : Math.max(mesesAProcesar.length, 1);
-            const interesTotalContrato = redondear2((Math.max(saldoActual, 0) * interesPorcentajeContrato) / 100);
-            const interesPorMesContrato = cuotasRestantesContrato > 0
-                ? redondear2(interesTotalContrato / cuotasRestantesContrato)
+            const cuotasBaseInteres = Number.isInteger(cuotasPactadasContrato) && cuotasPactadasContrato > 0
+                ? cuotasPactadasContrato
+                : Math.max(mesesAProcesar.length, 1);
+            const capitalBaseContrato = (montoCuotaContratoRaw > 0 && cuotasBaseInteres > 0)
+                ? redondear2(montoCuotaContratoRaw * cuotasBaseInteres)
+                : redondear2(Math.max(saldoActual, 0));
+            const interesTotalContrato = redondear2((capitalBaseContrato * interesPorcentajeContrato) / 100);
+            const interesPorMesContrato = cuotasBaseInteres > 0
+                ? redondear2(interesTotalContrato / cuotasBaseInteres)
                 : 0;
             const mesesInteresSolicitados = montoTerrenoTotal > 0
                 ? Math.min(mesesAProcesar.length, cuotasRestantesContrato)

@@ -116,6 +116,41 @@ const esRolJuridico = (usuario = {}) => {
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
+    const calcularPlanFinancieroContrato = (contrato = {}) => {
+        const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
+        const capitalPorCuota = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
+        const cuotasPactadas = Math.max(parseInt(contrato?.cuotas_pactadas || 0, 10), 0);
+        const interesPorcentaje = Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
+
+        const capitalTotalContrato = (capitalPorCuota > 0 && cuotasPactadas > 0)
+            ? parseFloat((capitalPorCuota * cuotasPactadas).toFixed(2))
+            : parseFloat(saldoPendiente.toFixed(2));
+        const interesTotalContrato = (capitalTotalContrato > 0 && interesPorcentaje > 0)
+            ? parseFloat(((capitalTotalContrato * interesPorcentaje) / 100).toFixed(2))
+            : 0;
+        const interesPorCuota = cuotasPactadas > 0
+            ? parseFloat((interesTotalContrato / cuotasPactadas).toFixed(2))
+            : 0;
+        const cuotaTotalConInteres = parseFloat((capitalPorCuota + interesPorCuota).toFixed(2));
+        const cuotasRestantes = (saldoPendiente > 0 && capitalPorCuota > 0)
+            ? Math.max(Math.ceil(saldoPendiente / capitalPorCuota), 0)
+            : 0;
+        const totalContratoConInteres = parseFloat((capitalTotalContrato + interesTotalContrato).toFixed(2));
+
+        return {
+            saldoPendiente,
+            capitalPorCuota,
+            cuotasPactadas,
+            interesPorcentaje,
+            capitalTotalContrato,
+            interesTotalContrato,
+            interesPorCuota,
+            cuotaTotalConInteres,
+            cuotasRestantes,
+            totalContratoConInteres
+        };
+    };
+
     const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
         const periodicidadNormalizada = String(periodicidad || '').trim().toLowerCase();
         if (periodicidadNormalizada === 'unico') {
@@ -300,17 +335,15 @@ const Caja = () => {
 
     const recalcularTotalesCobro = (meses = mesesSeleccionados, serviciosIds = serviciosSeleccionados, residenteActual = datosDeuda, serviciosDisponibles = serviciosContrato) => {
         const cantidadMeses = (meses || []).length;
-        const saldoPendiente = parseFloat(residenteActual?.saldo_pendiente || 0);
-        const montoCuota = parseFloat(residenteActual?.monto_cuota || 0);
-        const interesPorcentaje = Math.max(parseFloat(residenteActual?.interes_porcentaje || 0), 0);
-        const totalMesesPendientes = Math.max((mesesPendientes || []).length, 1);
+        const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
+        const saldoPendiente = planContrato.saldoPendiente;
+        const capitalPorCuota = planContrato.capitalPorCuota;
+        const interesPorCuota = planContrato.interesPorCuota;
 
         // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
-        const cuotasRestantes = (saldoPendiente > 0 && montoCuota > 0)
-            ? Math.ceil(saldoPendiente / montoCuota)
-            : 0;
+        const cuotasRestantes = planContrato.cuotasRestantes;
         const mesesTerrenoACobrar = Math.min(cantidadMeses, cuotasRestantes);
-        const terrenoCalculado = saldoPendiente > 0 && mesesTerrenoACobrar > 0 ? (montoCuota * mesesTerrenoACobrar) : 0;
+        const terrenoCalculado = saldoPendiente > 0 && mesesTerrenoACobrar > 0 ? (capitalPorCuota * mesesTerrenoACobrar) : 0;
         const terrenoTotal = Math.min(terrenoCalculado, Math.max(saldoPendiente, 0));
         const serviciosSeleccionadosDetalle = (serviciosDisponibles || [])
             .filter((s) => serviciosIds.includes(s.id_servicio));
@@ -321,11 +354,7 @@ const Caja = () => {
             .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
         const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos) : 0;
-        const interesTotalContrato = parseFloat(((Math.max(saldoPendiente, 0) * interesPorcentaje) / 100).toFixed(2));
-        const interesPorMes = totalMesesPendientes > 0
-            ? parseFloat((interesTotalContrato / totalMesesPendientes).toFixed(2))
-            : 0;
-        const interesSeleccionado = parseFloat((interesPorMes * mesesTerrenoACobrar).toFixed(2));
+        const interesSeleccionado = parseFloat((interesPorCuota * mesesTerrenoACobrar).toFixed(2));
         const total = terrenoTotal + serviciosTotal + interesSeleccionado;
 
         setMontoTerrenoSeleccionado(terrenoTotal);
@@ -1084,10 +1113,12 @@ const Caja = () => {
     };
 
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
-    const saldoTerrenoPendiente = parseFloat(datosDeuda?.saldo_pendiente || 0);
-    const porcentajeInteresContrato = Math.max(parseFloat(datosDeuda?.interes_porcentaje || 0), 0);
-    const interesCalculadoContrato = parseFloat(((saldoTerrenoPendiente * porcentajeInteresContrato) / 100).toFixed(2));
-    const totalContratoConInteres = parseFloat((saldoTerrenoPendiente + interesCalculadoContrato).toFixed(2));
+    const planFinancieroContrato = calcularPlanFinancieroContrato(datosDeuda || {});
+    const saldoTerrenoPendiente = planFinancieroContrato.saldoPendiente;
+    const porcentajeInteresContrato = planFinancieroContrato.interesPorcentaje;
+    const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
+    const interesPorCuotaContrato = planFinancieroContrato.interesPorCuota;
+    const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
 
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
     const interesCalculadoSeleccion = parseFloat(montoInteresSeleccionado || 0);
@@ -1266,8 +1297,9 @@ const Caja = () => {
                             </div>
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
                                 <div><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
-                                <div><strong>Cuota:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</div>
-                                <div><strong>Interés ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
+                                <div><strong>Capital por cuota:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</div>
+                                <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
+                                <div><strong>Interés por cuota:</strong> Q{interesPorCuotaContrato.toFixed(2)}</div>
                                 <div><strong>Capital + Interés:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
                             </div>
                         </div>
@@ -1416,7 +1448,7 @@ const Caja = () => {
                                     {/* Monto fijo y total a pagar */}
                                     <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Terreno por mes:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}
+                                            <strong>Capital por mes:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}
                                             <br />
                                             <strong>Servicios seleccionados:</strong> Q{(mesesSeleccionados.length ? (montoServiciosSeleccionado / Math.max(mesesSeleccionados.length, 1)) : 0).toFixed(2)} / mes
                                             <br />
