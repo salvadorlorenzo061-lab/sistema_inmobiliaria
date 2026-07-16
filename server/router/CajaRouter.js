@@ -316,14 +316,26 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
     }
 
     const query = `
-        SELECT id_asignacion, id_resolucion, id_empresa, serie, correlativo_actual, correlativo_fin
-        FROM asignar_correlativos
-        WHERE id_usuario = ?
-                    AND (? IS NULL OR id_empresa = ?)
-          AND estado = 'activo'
-          AND correlativo_actual <= correlativo_fin
-                ORDER BY fecha_asignacion ASC,
-                 id_asignacion ASC
+        SELECT ac.id_asignacion, ac.id_resolucion, ac.id_empresa, ac.serie, ac.correlativo_actual, ac.correlativo_fin
+                FROM asignar_correlativos ac
+                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
+        WHERE ac.id_usuario = ?
+                    AND (
+                                ? IS NULL
+                                OR EXISTS (
+                                        SELECT 1
+                                        FROM resoluciones_facturas rf_match
+                                        WHERE rf_match.id_usuario = ac.id_usuario
+                                            AND rf_match.id_empresa = ?
+                                            AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                            AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                            AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                )
+                            )
+                    AND ac.estado = 'activo'
+                    AND ac.correlativo_actual <= ac.correlativo_fin
+                ORDER BY ac.fecha_asignacion ASC,
+                                 ac.id_asignacion ASC
         LIMIT 1
     `;
 
@@ -519,12 +531,20 @@ router.get("/residentes-pendientes", (req, res) => {
                     EXISTS (
                         SELECT 1
                         FROM asignar_correlativos ac
-                        INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
                         WHERE ac.id_usuario = ?
                           AND ac.estado = 'activo'
                           AND ac.correlativo_actual <= ac.correlativo_fin
-                          AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                          AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                    AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
+                                                    AND EXISTS (
+                                                                SELECT 1
+                                                                FROM resoluciones_facturas rf_match
+                                                                WHERE rf_match.id_usuario = ac.id_usuario
+                                                                    AND rf_match.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                    AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                                    )
                     )
                     OR EXISTS (
                         SELECT 1
@@ -609,12 +629,20 @@ router.get("/buscar-residente", (req, res) => {
                     EXISTS (
                         SELECT 1
                         FROM asignar_correlativos ac
-                        INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
                         WHERE ac.id_usuario = ?
                           AND ac.estado = 'activo'
                           AND ac.correlativo_actual <= ac.correlativo_fin
-                          AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                          AND rf.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                    AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
+                                                    AND EXISTS (
+                                                                SELECT 1
+                                                                FROM resoluciones_facturas rf_match
+                                                                WHERE rf_match.id_usuario = ac.id_usuario
+                                                                    AND rf_match.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                    AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                                    )
                     )
                     OR EXISTS (
                         SELECT 1
