@@ -35,6 +35,7 @@ function Resoluciones_facturas() {
   const [empresasSeleccionadas, setEmpresasSeleccionadas] = useState([]);
   const [proyectosList, setProyectosList] = useState([]);
   const [usuariosList, setUsuariosList] = useState([]);
+  const [resolucionesEdicionGrupo, setResolucionesEdicionGrupo] = useState([]);
   
   const [Resoluciones_facturasList, setResoluciones_facturas] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -419,8 +420,6 @@ function Resoluciones_facturas() {
       return;
     }
 
-    const idEmpresaActualizada = Number(empresasObjetivo[0]);
-
     const rInicial = Number(rango_inicial);
     const rFinal = Number(rango_final);
     const cActual = Number(correlativo_actual);
@@ -453,22 +452,45 @@ function Resoluciones_facturas() {
     Axios.get(API_URL)
       .then((respListado) => {
         const resolucionesExistentes = Array.isArray(respListado?.data) ? respListado.data : [];
-        const empresasExtras = empresasObjetivo.slice(1);
+        const resolucionesGrupoActual = Array.isArray(resolucionesEdicionGrupo) && resolucionesEdicionGrupo.length
+          ? resolucionesEdicionGrupo
+          : resolucionesExistentes.filter((item) => Number(item?.id_resolucion) === Number(id_resolucion));
 
-        const operaciones = [
-          Axios.put(`${API_URL}/actualizar`, {
-            id_resolucion,
-            id_empresa: idEmpresaActualizada,
-            ...payloadBase
-          })
-        ];
+        const operaciones = [];
+        const empresasSeleccionadasSet = new Set(empresasObjetivo.map((item) => String(item)));
+        const empresasExistentesSet = new Set(
+          resolucionesGrupoActual
+            .map((item) => String(item?.id_empresa || ''))
+            .filter(Boolean)
+        );
 
-        empresasExtras.forEach((empresaId) => {
-          const idEmp = Number(empresaId);
+        resolucionesGrupoActual.forEach((item) => {
+          const idEmp = String(item?.id_empresa || '');
+          const idResolucionActual = Number(item?.id_resolucion || 0);
+          if (!idEmp || !idResolucionActual) return;
+
+          if (!empresasSeleccionadasSet.has(idEmp)) {
+            operaciones.push(Axios.delete(`${API_URL}/delete/${idResolucionActual}`));
+            return;
+          }
+
+          operaciones.push(
+            Axios.put(`${API_URL}/actualizar`, {
+              id_resolucion: idResolucionActual,
+              id_empresa: Number(idEmp),
+              ...payloadBase
+            })
+          );
+        });
+
+        empresasObjetivo.forEach((empresaId) => {
+          const idEmp = String(empresaId);
+          if (empresasExistentesSet.has(idEmp)) {
+            return;
+          }
 
           const resolucionExistente = resolucionesExistentes.find((item) => {
-            if (Number(item?.id_resolucion) === Number(id_resolucion)) return false;
-            if (Number(item?.id_empresa) !== idEmp) return false;
+            if (Number(item?.id_empresa) !== Number(idEmp)) return false;
             if (normalizarTexto(item?.numero_resolucion) !== normalizarTexto(numero_resolucion)) return false;
             if (normalizarTexto(item?.serie) !== normalizarTexto(serie)) return false;
 
@@ -477,11 +499,11 @@ function Resoluciones_facturas() {
             return Number.isFinite(iniItem) && Number.isFinite(finItem) && hayTraslape(iniItem, finItem, rInicial, rFinal);
           });
 
-          if (resolucionExistente) {
+          if (resolucionExistente?.id_resolucion) {
             operaciones.push(
               Axios.put(`${API_URL}/actualizar`, {
                 id_resolucion: Number(resolucionExistente.id_resolucion),
-                id_empresa: idEmp,
+                id_empresa: Number(idEmp),
                 ...payloadBase
               })
             );
@@ -490,7 +512,7 @@ function Resoluciones_facturas() {
 
           operaciones.push(
             Axios.post(`${API_URL}/crear`, {
-              id_empresa: idEmp,
+              id_empresa: Number(idEmp),
               ...payloadBase
             })
           );
@@ -568,6 +590,7 @@ function Resoluciones_facturas() {
     setFecha_vencimiento("");
     setEstado("");
     setRol('caja');
+    setResolucionesEdicionGrupo([]);
   };
 
   const getResoluciones = () => {
@@ -584,6 +607,9 @@ function Resoluciones_facturas() {
   }, []);
 
   const abrirEditarModal = (val) => {
+    const resolucionesGrupo = (Array.isArray(Resoluciones_facturasList) ? Resoluciones_facturasList : [])
+      .filter((item) => val?.resoluciones_ids?.includes(Number(item?.id_resolucion)));
+
     setId_resolucion(val.id_resolucion);
     setId_empresa(val.id_empresa);
     setEmpresasSeleccionadas(Array.isArray(val?.empresas_ids) && val.empresas_ids.length
@@ -599,6 +625,7 @@ function Resoluciones_facturas() {
     setFecha_vencimiento(toDateInputValue(val.fecha_vencimiento));
     setEstado(val.estado);
     setRol(String(val.rol || 'caja'));
+    setResolucionesEdicionGrupo(resolucionesGrupo);
     setShowEditModal(true);
   };
 
