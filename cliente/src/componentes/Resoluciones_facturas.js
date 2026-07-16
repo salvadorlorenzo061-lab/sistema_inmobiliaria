@@ -46,6 +46,7 @@ function Resoluciones_facturas() {
   const itemsPerPage = 10; 
 
   const API_URL = `${API_BASE_URL}/api/resoluciones_facturas`;
+  const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
 
   const getEmpresas = () => {
     Axios.get(`${API_BASE_URL}/api/empresas`)
@@ -271,7 +272,6 @@ function Resoluciones_facturas() {
     Axios.get(API_URL)
       .then((respListado) => {
         const resolucionesExistentes = Array.isArray(respListado?.data) ? respListado.data : [];
-        const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
 
         const operaciones = empresasObjetivo.map((empresaId) => {
           const idEmp = Number(empresaId);
