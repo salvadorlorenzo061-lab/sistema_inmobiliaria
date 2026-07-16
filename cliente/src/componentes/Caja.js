@@ -1296,7 +1296,8 @@ const Caja = () => {
                                 <div><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</div>
                             </div>
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
-                                <div><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
+                                <div><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
+                                <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
                                 <div><strong>Capital por cuota:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</div>
                                 <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
                                 <div><strong>Interés por cuota:</strong> Q{interesPorCuotaContrato.toFixed(2)}</div>
@@ -1356,8 +1357,9 @@ const Caja = () => {
                                             <br /><small><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</small>
                                         </div>
                                         <div className="col-md-6 text-end">
-                                            <small><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
-                                            <small><strong>Cuota fija:</strong> Q{parseFloat(datosDeuda.monto_cuota).toFixed(2)}</small><br />
+                                            <small><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
+                                            <small><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
+                                            <small><strong>Cuota con interés:</strong> Q{planFinancieroContrato.cuotaTotalConInteres.toFixed(2)}</small><br />
                                             <small><strong>Mora aplicada:</strong> Q{montoMoraActual.toFixed(2)}</small>
                                         </div>
                                     </div>
