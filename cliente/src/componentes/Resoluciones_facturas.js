@@ -319,21 +319,54 @@ function Resoluciones_facturas() {
       return;
     }
 
-    Promise.allSettled(
-      empresasObjetivo.map((empresaId) => Axios.post(`${API_URL}/crear`, {
-        id_empresa: Number(empresaId),
-        id_usuario,
-        numero_resolucion,
-        serie,
-        rango_inicial,
-        rango_final,
-        correlativo_actual,
-        fecha_autorizacion,
-        fecha_vencimiento,
-        estado,
-        rol
-      }))
-    )
+    Axios.get(API_URL)
+      .then((respListado) => {
+        const resolucionesExistentes = Array.isArray(respListado?.data) ? respListado.data : [];
+        const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
+
+        const operaciones = empresasObjetivo.map((empresaId) => {
+          const idEmp = Number(empresaId);
+          const existente = resolucionesExistentes.find((item) => (
+            Number(item?.id_empresa) === idEmp
+            && Number(item?.id_usuario) === Number(id_usuario)
+            && normalizarTexto(item?.numero_resolucion) === normalizarTexto(numero_resolucion)
+            && normalizarTexto(item?.serie) === normalizarTexto(serie)
+          ));
+
+          if (existente?.id_resolucion) {
+            return Axios.put(`${API_URL}/actualizar`, {
+              id_resolucion: Number(existente.id_resolucion),
+              id_empresa: idEmp,
+              id_usuario,
+              numero_resolucion,
+              serie,
+              rango_inicial,
+              rango_final,
+              correlativo_actual,
+              fecha_autorizacion,
+              fecha_vencimiento,
+              estado,
+              rol
+            });
+          }
+
+          return Axios.post(`${API_URL}/crear`, {
+            id_empresa: idEmp,
+            id_usuario,
+            numero_resolucion,
+            serie,
+            rango_inicial,
+            rango_final,
+            correlativo_actual,
+            fecha_autorizacion,
+            fecha_vencimiento,
+            estado,
+            rol
+          });
+        });
+
+        return Promise.allSettled(operaciones);
+      })
       .then((resultados) => {
         const exitos = resultados.filter((item) => item.status === 'fulfilled').length;
         const fallos = resultados.filter((item) => item.status === 'rejected');
