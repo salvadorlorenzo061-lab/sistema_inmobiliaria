@@ -100,6 +100,23 @@ const fechaLargaGT = (valor) => {
     });
 };
 
+const formatearEtiquetaCuotaMes = (item, fallbackIndex = null) => {
+    if (item && typeof item === 'object') {
+        const cuota = Number(item.numero_cuota);
+        const mes = String(item.mes || item.mes_pagado || '').trim();
+        if (Number.isFinite(cuota) && mes) return `Cuota ${cuota} — ${mes}`;
+        if (Number.isFinite(cuota)) return `Cuota ${cuota}`;
+        if (mes) return mes;
+        return 'Cuota N/A';
+    }
+
+    if (typeof item === 'string') {
+        return fallbackIndex != null ? `Cuota ${fallbackIndex + 1} — ${item}` : String(item);
+    }
+
+    return 'Cuota N/A';
+};
+
 const getUsuarioSesion = () => {
     try {
         return JSON.parse(localStorage.getItem('usuario') || '{}');
@@ -463,8 +480,8 @@ const Caja = () => {
                 setMesPagado('');
             }
             setOpcionesCuota(mesesDetalle.length
-                ? mesesDetalle.map((item) => ({ value: String(item.numero_cuota), label: `${item.mes} - Cuota ${item.numero_cuota}` }))
-                : (meses.length ? meses.map((mes, index) => ({ value: String(index + 1), label: `Cuota ${index + 1} - ${mes}` })) : [{ value: '0', label: 'Sin cuotas pendientes' }]));
+                ? mesesDetalle.map((item) => ({ value: String(item.numero_cuota), label: formatearEtiquetaCuotaMes(item) }))
+                : (meses.length ? meses.map((mes, index) => ({ value: String(index + 1), label: formatearEtiquetaCuotaMes(mes, index) })) : [{ value: '0', label: 'Sin cuotas pendientes' }]));
 
             const primerMes = mesesASeleccionar[0] || meses[0] || '';
             if (primerMes) {
@@ -758,7 +775,7 @@ const Caja = () => {
                 .map((item) => {
                     const mes = String(item?.mes || item?.mes_pagado || '').trim();
                     const cuota = Number(item?.numero_cuota_afectada);
-                    return `${mes ? `${mes} - ` : ''}Cuota ${cuota}`;
+                    return `Cuota ${cuota}${mes ? ` — ${mes}` : ''}`;
                 })
                 .filter(Boolean);
             const mesesPagadosRecibo = cuotasEtiquetas.length
@@ -1548,33 +1565,37 @@ const Caja = () => {
                                         <div className="border rounded-3 p-3 bg-light">
                                             {mesesPendientes.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">
-                                                    {mesesPendientes.map((mes) => (
-                                                        <div 
-                                                            key={mes} 
-                                                            className={`d-flex align-items-center p-3 border rounded-2 cursor-pointer transition ${
-                                                                mesesSeleccionados.includes(mes) 
-                                                                    ? 'bg-success bg-opacity-10 border-success border-2' 
-                                                                    : 'bg-white border-secondary'
-                                                            }`}
-                                                            style={{ cursor: 'pointer' }}
-                                                            onClick={() => toggleMesSeleccionado(mes)}
-                                                        >
-                                                            <input
-                                                                type="checkbox"
-                                                                className="form-check-input me-3"
-                                                                checked={mesesSeleccionados.includes(mes)}
-                                                                onChange={() => toggleMesSeleccionado(mes)}
-                                                                style={{ cursor: 'pointer', width: '20px', height: '20px' }}
-                                                            />
-                                                            <div className="flex-grow-1">
-                                                                <span className="fw-bold fs-5 text-dark">{mes}</span>
+                                                    {mesesPendientes.map((mes, index) => {
+                                                        const detalle = mesesPendientesDetalle.find((item) => String(item.mes) === String(mes));
+                                                        const etiquetaMes = detalle ? formatearEtiquetaCuotaMes(detalle) : formatearEtiquetaCuotaMes(mes, index);
+                                                        return (
+                                                            <div 
+                                                                key={mes} 
+                                                                className={`d-flex align-items-center p-3 border rounded-2 cursor-pointer transition ${
+                                                                    mesesSeleccionados.includes(mes) 
+                                                                        ? 'bg-success bg-opacity-10 border-success border-2' 
+                                                                        : 'bg-white border-secondary'
+                                                                }`}
+                                                                style={{ cursor: 'pointer' }}
+                                                                onClick={() => toggleMesSeleccionado(mes)}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="form-check-input me-3"
+                                                                    checked={mesesSeleccionados.includes(mes)}
+                                                                    onChange={() => toggleMesSeleccionado(mes)}
+                                                                    style={{ cursor: 'pointer', width: '20px', height: '20px' }}
+                                                                />
+                                                                <div className="flex-grow-1">
+                                                                    <span className="fw-bold fs-5 text-dark">{etiquetaMes}</span>
+                                                                </div>
+                                                                <span className="badge bg-primary">Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</span>
+                                                                {mesesSeleccionados.includes(mes) && (
+                                                                    <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
+                                                                )}
                                                             </div>
-                                                            <span className="badge bg-primary">Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</span>
-                                                            {mesesSeleccionados.includes(mes) && (
-                                                                <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
-                                                            )}
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             ) : (
                                                 <div className="text-center py-4 text-muted">

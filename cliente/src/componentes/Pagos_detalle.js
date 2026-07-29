@@ -117,7 +117,20 @@ function PagosDetalle() {
 
     const detallesFactura = Array.isArray(documento?.detalles) ? documento.detalles : [];
     const montoTotal = detallesFactura.reduce((acc, item) => acc + Number(item?.subtotal || 0), 0);
-    const conceptos = [...new Set(detallesFactura.map((d) => String(d?.nombre_concepto || d?.tipo_concepto || '').trim()).filter(Boolean))].join(', ') || 'Pago de cuota';
+    const cuotasEtiquetas = detallesFactura
+      .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'cuota_terreno' && Number.isFinite(Number(item?.numero_cuota_afectada)))
+      .map((item) => {
+        const mes = String(item?.mes_pagado || item?.mes || '').trim();
+        const cuota = Number(item?.numero_cuota_afectada);
+        return `${mes ? `${mes} - ` : ''}Cuota ${cuota}`;
+      })
+      .filter(Boolean);
+    const conceptos = [...new Set(
+      detallesFactura
+        .filter((item) => String(item?.tipo_concepto || '').toLowerCase() !== 'interes')
+        .map((d) => String(d?.nombre_concepto || d?.tipo_concepto || '').trim())
+        .filter(Boolean)
+    )].join(', ') || 'Pago de cuota';
     const correlativo = String(documento?.correlativo || `REC-${documento?.id_pago || '0'}`);
     const matchRef = correlativo.match(/^([A-Za-z]+)-([0-9]+)$/);
     const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
@@ -409,12 +422,13 @@ function PagosDetalle() {
       doc.rect(x + 65, y, 125, 8);
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(9);
-      const cuotaEncontrada = detallesFactura.find((d) => String(d?.tipo_concepto || '') === 'cuota_terreno' && Number.isFinite(Number(d?.numero_cuota_afectada)));
+      const cuotaEncontrada = detallesFactura.find((d) => String(d?.tipo_concepto || '').toLowerCase() === 'cuota_terreno' && Number.isFinite(Number(d?.numero_cuota_afectada)));
       const cuotaMostrar = cuotaEncontrada?.numero_cuota_afectada || 'N/A';
-      doc.text('Cuota:', x + 2, y + 5.2);
+      const cuotaInfo = cuotasEtiquetas.length ? cuotasEtiquetas.join(', ') : `Cuota ${cuotaMostrar}`;
+      doc.text('Cuota(s):', x + 2, y + 5.2);
       doc.setTextColor(166, 35, 35);
-      doc.setFontSize(12);
-      doc.text(String(cuotaMostrar), x + 29, y + 5.2);
+      doc.setFontSize(10);
+      doc.text(doc.splitTextToSize(cuotaInfo, 90).slice(0, 1), x + 29, y + 5.2);
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
       doc.text('Abono extraordinario:', x + 67, y + 5.2);
@@ -548,7 +562,7 @@ function PagosDetalle() {
                 </span>
               </td>
               <td>{val.id_concepto_servicio ? `Servicio #${val.id_concepto_servicio}` : <span className="text-muted">Ninguno (Lote/Mora)</span>}</td>
-              <td>{val.mes_pagado ? `Mes: ${val.mes_pagado}` : ''} {val.numero_cuota_afectada ? `| Cuota No. ${val.numero_cuota_afectada}` : ''}</td>
+              <td>{val.mes_pagado ? `${val.mes_pagado}${val.numero_cuota_afectada ? ` - Cuota ${val.numero_cuota_afectada}` : ''}` : (val.numero_cuota_afectada ? `Cuota ${val.numero_cuota_afectada}` : '')}</td>
               <td className={`fw-bold ${val.estado_factura === 'ANULADA' ? 'text-danger' : 'text-primary'}`}>Q {parseFloat(val.subtotal || 0).toFixed(2)}</td>
               <td>
                 <span className={`badge ${val.estado_factura === 'ANULADA' ? 'bg-danger' : 'bg-success'}`}>
