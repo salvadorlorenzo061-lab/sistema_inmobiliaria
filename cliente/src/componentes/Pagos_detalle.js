@@ -297,17 +297,179 @@ function PagosDetalle() {
         doc.setTextColor(0, 0, 0);
       }
     } else {
-      const x = 10;
-      const w = 190;
-      let y = 10;
-      const headerHeight = 22;
-      const rightHeaderWidth = 68;
-      const leftHeaderWidth = w - rightHeaderWidth;
-      const rightHeaderX = x + leftHeaderWidth;
+      // === NUEVO FORMATO: FACTURA / COMPROBANTE DE COBRO ===
+      const pW = doc.internal.pageSize.getWidth();
+      const goldColor = [173, 136, 38];
+      const fechaFmt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+      const fechaHoraFmt = (d) => { const n = new Date(); return `${fechaFmt(d)}, ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`; };
 
-      doc.setFillColor(240, 228, 167);
-      doc.rect(x, y, w, headerHeight, 'F');
-      doc.rect(x, y, w, headerHeight);
+      let y = 12;
+      doc.setFillColor(...goldColor);
+      doc.rect(0, 0, pW, 5, 'F');
+
+      if (empresaLogo) {
+        try { doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), 10, y, 28, 18, `det-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
+      }
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(nombreEmpresa, 46, y + 5);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.text(`NIT: ${documento?.empresa?.nit || 'N/A'}`, 46, y + 10);
+      doc.text(`País: ${documento?.empresa?.pais || 'Guatemala'}`, 46, y + 14.5);
+      doc.text(`Moneda: ${documento?.empresa?.moneda || 'GTQ'}`, 46, y + 19);
+
+      doc.setFillColor(245, 245, 245);
+      doc.rect(140, y - 2, 63, 30, 'F');
+      doc.setDrawColor(180, 180, 180);
+      doc.rect(140, y - 2, 63, 30);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('FACTURA / COMPROBANTE', 171.5, y + 4, { align: 'center' });
+      doc.text('DE COBRO', 171.5, y + 9, { align: 'center' });
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8.2);
+      doc.text(`Documento No: ${correlativo}`, 171.5, y + 15, { align: 'center' });
+      doc.text(`Fecha emisión: ${fechaFmt(fechaDocumento)}`, 171.5, y + 20, { align: 'center' });
+      doc.text(`Fecha/Hora impresión: ${fechaHoraFmt(fechaDocumento)}`, 171.5, y + 25, { align: 'center' });
+
+      y += 36;
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineWidth(0.3);
+      doc.line(10, y, pW - 10, y);
+      y += 5;
+
+      // Datos del cliente
+      doc.setFillColor(240, 240, 240);
+      doc.rect(10, y, pW - 20, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('DATOS DEL CLIENTE / RESIDENTE', 12, y + 5);
+      y += 10;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Nombre:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(documento?.cliente?.nombre_residente || 'N/A'), 35, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Dirección:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(documento?.cliente?.direccion || 'N/A').slice(0, 38), 143, y);
+      y += 6;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Identificación:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(documento?.cliente?.numero_identificacion || 'N/A'), 42, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Contrato:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(documento?.contrato?.codigo_contrato || 'N/A'), 143, y);
+      y += 6;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('DPI:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(documento?.cliente?.dpi || 'N/A'), 24, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('NIT:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(documento?.cliente?.nit || 'CF'), 131, y);
+      y += 8;
+
+      // Datos de pago
+      doc.setFillColor(240, 240, 240);
+      doc.rect(10, y, pW - 20, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('DATOS DE PAGO', 12, y + 5);
+      y += 10;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Método de pago:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(documento?.metodo_pago || 'N/A'), 48, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Referencia:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(correlativo || 'N/A', 143, y);
+      y += 10;
+
+      // Tabla de detalle
+      const filasDet = detallesFactura.length > 0
+        ? detallesFactura.map((item) => [
+            String(item?.nombre_concepto || item?.tipo_concepto || 'Pago aplicado').replace(/_/g, ' '),
+            String(item?.mes_pagado || 'N/A'),
+            `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`,
+            'Q 0.00',
+            `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`
+          ])
+        : [['Pago de cuota', 'N/A', `Q ${montoTotal.toFixed(2)}`, 'Q 0.00', `Q ${montoTotal.toFixed(2)}`]];
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Concepto / Cuota', 'Mes Afectado', 'Monto Base', 'IVA 12%', 'Total por Mes']],
+        body: filasDet,
+        theme: 'grid',
+        styles: { fontSize: 8.5, cellPadding: 2 },
+        headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { cellWidth: 75 },
+          1: { cellWidth: 40, halign: 'center' },
+          2: { cellWidth: 25, halign: 'right' },
+          3: { cellWidth: 20, halign: 'right' },
+          4: { cellWidth: 25, halign: 'right' }
+        },
+        margin: { left: 10, right: 10 }
+      });
+
+      y = doc.lastAutoTable.finalY + 8;
+
+      // Resumen
+      const resX = pW - 90;
+      const resW = 80;
+      const lineH = 7;
+      const drawResLine = (label, valor, bold = false, rojo = false) => {
+        doc.setFont('Helvetica', bold ? 'bold' : 'normal');
+        doc.setFontSize(8.8);
+        doc.setTextColor(rojo ? 180 : 40, rojo ? 0 : 40, rojo ? 0 : 40);
+        doc.text(`${label}:`, resX, y);
+        doc.text(`Q${parseFloat(valor || 0).toFixed(2)}`, resX + resW, y, { align: 'right' });
+        doc.setTextColor(40, 40, 40);
+        y += lineH;
+      };
+
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.2);
+      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
+      drawResLine('Subtotal deuda pagada', montoTotal);
+      drawResLine('IVA 12%', 0);
+      const moraDet = detallesFactura.filter((d) => d.tipo_concepto === 'mora').reduce((s, d) => s + Number(d.subtotal || 0), 0);
+      if (moraDet > 0) drawResLine('Mora Aplicada', moraDet);
+      drawResLine('Total Cobrado Hoy', montoTotal, true);
+      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
+
+      // Sello ANULADA si aplica
+      if (String(documento?.estado_factura || '').toUpperCase() === 'ANULADA') {
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(38);
+        doc.setTextColor(200, 30, 30);
+        doc.text('ANULADA', pW / 2, 150, { align: 'center', angle: -20 });
+        doc.setTextColor(40, 40, 40);
+      }
+
+      // Pie
+      const pH = doc.internal.pageSize.getHeight();
+      doc.setFont('Helvetica', 'italic');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.', 10, pH - 10);
+      doc.setFillColor(...goldColor);
+      doc.rect(0, pH - 5, pW, 5, 'F');
+    }
       doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
 
       const logoX = x + 3;
@@ -322,149 +484,9 @@ function PagosDetalle() {
         }
       }
 
-      const leftTextX = empresaLogo ? (logoX + logoW + 3) : (x + 3);
-      const leftTextWidth = empresaLogo ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
-      const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9.6);
-      doc.text(doc.splitTextToSize(nombreEmpresa, leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
-      doc.setFontSize(10.5);
-      doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
-      doc.setFontSize(9.5);
-      doc.text(`Serie "${serie}"`, rightHeaderX + 6, y + 13.5);
-      doc.setTextColor(166, 35, 35);
-      doc.text(`N. ${String(numero).padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
-      doc.setTextColor(0, 0, 0);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(7.2);
-      doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', x + (w / 2), y + headerHeight + 4.5, { align: 'center' });
-      doc.text('PBX: 2220-6406  Telefono: 5825-5903', x + (w / 2), y + headerHeight + 8.2, { align: 'center' });
-
-      y += headerHeight + 10;
-      doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, w, 6, 'F');
-      doc.rect(x, y, w, 6);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.8);
-      doc.text('Datos del cliente:', x + 2, y + 4.3);
-
-      y += 7;
-      const nombreLineas = doc.splitTextToSize(String(documento?.cliente?.nombre_residente || 'N/A'), 158).slice(0, 1);
-      const nombreAltura = 9;
-      doc.rect(x, y, w, nombreAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Nombre:', x + 2, y + 5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(nombreLineas, x + 22, y + 5);
-
-      y += nombreAltura + 2.5;
-      doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, 145, 6, 'F');
-      doc.rect(x + 145, y, 45, 6, 'F');
-      doc.rect(x, y, 145, 6);
-      doc.rect(x + 145, y, 45, 6);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.8);
-      doc.text('Fecha:', x + 2, y + 4.3);
-      doc.text('Por:', x + 147, y + 4.3);
-
-      y += 6;
-      const fechaLineas = doc.splitTextToSize(`Guatemala, ${fechaLargaGT(fechaDocumento)}`, 139).slice(0, 1);
-      const fechaAltura = 9;
-      doc.rect(x, y, 145, fechaAltura);
-      doc.rect(x + 145, y, 45, fechaAltura);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(9.3);
-      doc.text(fechaLineas, x + 2, y + 5);
-      doc.setFont('Helvetica', 'bold');
-      doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 5);
-
-      y += fechaAltura + 2.5;
-      const pagaLineas = doc.splitTextToSize(montoALetrasRecibo(montoTotal), 143).slice(0, 1);
-      const pagaAltura = 9;
-      doc.rect(x, y, w, pagaAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Paga la cantidad de:', x + 2, y + 5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(pagaLineas, x + 45, y + 5);
-
-      y += pagaAltura + 2.5;
-      const conceptosLineas = doc.splitTextToSize(conceptos, 143).slice(0, 2);
-      const conceptosAltura = Math.max(10, (conceptosLineas.length * 4.2) + 2.2);
-      doc.rect(x, y, w, conceptosAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Por cancelacion de:', x + 2, y + 4.9);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(9.8);
-      doc.text(conceptosLineas, x + 43, y + 4.9);
-
-      y += conceptosAltura + 2.5;
-      doc.rect(x, y, 65, 8);
-      doc.rect(x + 65, y, 125, 8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      const cuotaEncontrada = detallesFactura.find((d) => String(d?.tipo_concepto || '') === 'cuota_terreno' && Number.isFinite(Number(d?.numero_cuota_afectada)));
-      const cuotaMostrar = cuotaEncontrada?.numero_cuota_afectada || 'N/A';
-      doc.text('Cuota:', x + 2, y + 5.2);
-      doc.setTextColor(166, 35, 35);
-      doc.setFontSize(12);
-      doc.text(String(cuotaMostrar), x + 29, y + 5.2);
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(9);
-      doc.text('Abono extraordinario:', x + 67, y + 5.2);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 5.2);
-
-      const boxY = Math.min(Math.max(y + 38, 140), 160);
-      const boxH = 22;
-      doc.rect(x, boxY, 60, boxH);
-      doc.rect(x + 65, boxY, 60, boxH);
-
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8.6);
-      doc.text(`${metodo.includes('deposit') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 4.8);
-      doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 10.2);
-      if (!metodo.includes('efectivo')) {
-        doc.text(`NO. ${String(documento?.correlativo || 'N/A')}`, x + 3, boxY + 15.8);
-      }
-
-      if (logoProyecto) {
-        try {
-          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 81, boxY + 9, 28, 11, `det-logo-proyecto-${Date.now()}`, 'FAST');
-        } catch {
-          // no-op
-        }
-      }
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.8);
-      doc.text(doc.splitTextToSize(String(documento?.empresa?.nombre_proyecto || documento?.empresa?.nombre_empresa || documento?.contrato?.codigo_contrato || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
-
-      const footerY = 205;
-      doc.setFont('Helvetica', 'italic');
-      doc.setFontSize(6.8);
-      doc.text(
-        doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 2),
-        x,
-        footerY
-      );
-
-      if (String(documento?.estado_factura || '').toUpperCase() === 'ANULADA') {
-        doc.setTextColor(180, 0, 0);
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(42);
-        doc.text('ANULADA', 105, 140, { align: 'center', angle: 20 });
-        doc.setTextColor(0, 0, 0);
-      }
     }
 
-    doc.save(`Recibo_${correlativo.replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
+    doc.save(`Factura_${correlativo.replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
   };
 
   const getDetalles = useCallback(() => {

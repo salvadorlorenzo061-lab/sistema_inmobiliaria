@@ -149,389 +149,187 @@ function AnulacionDeuda() {
   const descargarPdfAnulacion = (anulacion) => {
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
-      const usuarioActivo = getUsuarioActivo();
       const contratoInfo = getContratoInfo(anulacion.id_contrato);
       const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
       const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;
-      const correlativoMatch = String(correlativoTexto).match(/^([A-Za-z]+)-([0-9]+)$/);
-      const serieCorrelativo = correlativoMatch ? correlativoMatch[1].toUpperCase() : 'B';
-      const numeroCorrelativo = correlativoMatch
-        ? correlativoMatch[2].slice(-5)
-        : String(anulacion.id_pago || anulacion.id_anulacion || 0).padStart(5, '0');
       const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
-      const usarFormatoJuridico = true;
       const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
-      const logoProyecto = normalizeImageDataUrl(contratoInfo?.logo_proyecto || '');
-      const nombreMarca = contratoInfo?.nombre_marca_pdf || contratoInfo?.nombre_proyecto || 'PROYECTO INMOBILIARIO';
+      const nombreMarca = String(contratoInfo?.nombre_marca_pdf || contratoInfo?.nombre_proyecto || 'PROYECTO INMOBILIARIO').toUpperCase();
       const montoAnulado = parseFloat(anulacion.monto_anulado || 0);
+      const pW = doc.internal.pageSize.getWidth();
+      const goldColor = [173, 136, 38];
 
-      if (usarFormatoJuridico) {
-        const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
-        const margenX = 8;
-        const ancho = pageW - (margenX * 2);
-        const contenidoY = 36;
-        const contenidoH = 145;
-        const nombreEmpresa = String(nombreMarca || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
-        const nombreProyecto = String(contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto || 'Proyecto');
-        const fechaDoc = fechaDocumento instanceof Date && !Number.isNaN(fechaDocumento.getTime()) ? fechaDocumento : new Date();
-        const d = String(fechaDoc.getDate()).padStart(2, '0');
-        const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
-        const yFull = String(fechaDoc.getFullYear());
+      const fechaFmt = (d) => {
+        if (!d || Number.isNaN(d.getTime())) return 'N/A';
+        return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      };
+      const fechaHoraFmt = (d) => {
+        const now = new Date();
+        return `${fechaFmt(d)}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      };
 
-        doc.setDrawColor(188, 177, 117);
-        doc.setLineWidth(0.35);
-        if (typeof doc.roundedRect === 'function') {
-          doc.roundedRect(margenX, contenidoY, ancho, contenidoH, 3, 3, 'S');
-        } else {
-          doc.rect(margenX, contenidoY, ancho, contenidoH);
-        }
+      // === ENCABEZADO ===
+      let y = 12;
+      doc.setFillColor(...goldColor);
+      doc.rect(0, 0, pW, 5, 'F');
 
-        if (logoEmpresa) {
-          try {
-            doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), margenX + 3, 8.5, 31, 18, `anu-jur-logo-${Date.now()}`, 'FAST');
-          } catch {
-            // no-op
-          }
-        }
-
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(10.8);
-        doc.text(nombreEmpresa, pageW / 2, 14.5, { align: 'center' });
-        doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(7.8);
-        doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', pageW / 2, 20, { align: 'center' });
-        doc.text('PBX: 2220-6406  Telefono: 5825-5903', pageW / 2, 24.2, { align: 'center' });
-
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(8.8);
-        doc.text('Recibo Juridico', pageW - 42.5, 14.2);
-        doc.rect(pageW - 42.5, 15.9, 37.5, 11.8);
-        doc.setTextColor(166, 35, 35);
-        doc.setFontSize(11.8);
-        doc.text(`NO. ${String(numeroCorrelativo || '0').padStart(5, '0')}`, pageW - 23.8, 23.9, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
-
-        doc.setTextColor(195, 195, 195);
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(28);
-        doc.text('CORPORACION DE', pageW / 2, 102, { align: 'center' });
-        doc.text('INVERSION INMOBILIARIA', pageW / 2, 116, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
-
-        let rY = contenidoY + 8;
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(11.5);
-        doc.text('DATOS DEL CLIENTE', margenX + 4, rY);
-        doc.setDrawColor(210, 190, 92);
-        doc.setLineWidth(0.45);
-        doc.line(margenX + 4, rY + 1.8, margenX + 34, rY + 1.8);
-
-        rY += 11;
-        doc.setDrawColor(60, 60, 60);
-        doc.setLineWidth(0.2);
-        doc.setFontSize(8.3);
-        doc.text('Fecha:', margenX + 4, rY);
-        const fechaX = margenX + 18;
-        const boxW = 8;
-        const boxH = 8;
-        [d[0], d[1], m[0], m[1], yFull[0], yFull[1], yFull[2], yFull[3]].forEach((char, idx) => {
-          const offsetX = idx < 2 ? idx * (boxW + 1) : idx < 4 ? (2 * (boxW + 1)) + 4 + ((idx - 2) * (boxW + 1)) : (4 * (boxW + 1)) + 8 + ((idx - 4) * (boxW + 1));
-          doc.rect(fechaX + offsetX, rY - 5.8, boxW, boxH);
-          doc.text(char, fechaX + offsetX + (boxW / 2), rY - 0.4, { align: 'center' });
-        });
-        doc.text('/', fechaX + (2 * (boxW + 1)) + 1.4, rY - 0.8);
-        doc.text('/', fechaX + (4 * (boxW + 1)) + 5.2, rY - 0.8);
-
-        const amountBoxX = pageW - 47;
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(11.3);
-        doc.text('Por: Q', amountBoxX - 22, rY + 0.1);
-        doc.rect(amountBoxX, rY - 5.8, 42, 8.2);
-        doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(10.4);
-        doc.text(Math.abs(montoAnulado).toFixed(2), amountBoxX + 2, rY - 0.2);
-
-        const filaAncho = ancho - 4;
-        const filaX = margenX + 2;
-        const filaH = 10.5;
-        rY += 6;
-        doc.rect(filaX, rY, filaAncho, filaH);
-        doc.rect(filaX, rY + filaH, filaAncho, filaH);
-        doc.rect(filaX, rY + (filaH * 2), filaAncho, filaH);
-        doc.rect(filaX, rY + (filaH * 3), filaAncho, filaH);
-
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(8.3);
-        doc.text('Recibimos de:', filaX + 2, rY + 6.8);
-        doc.text('Cantidad de:', filaX + 2, rY + 17.3);
-        doc.text('Por cancelacion de:', filaX + 2, rY + 27.8);
-        doc.text('Proyecto:', filaX + 2, rY + 38.3);
-        doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(10.3);
-        doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_residente || 'N/A'), filaAncho - 34).slice(0, 1), filaX + 30, rY + 6.8);
-        doc.text('ANULACION DE COBRO REGISTRADO', filaX + 30, rY + 17.3);
-        doc.text(doc.splitTextToSize(String(anulacion.motivo || 'Sin motivo registrado'), filaAncho - 40).slice(0, 1), filaX + 40, rY + 27.8);
-        doc.text(doc.splitTextToSize(nombreProyecto, filaAncho - 34).slice(0, 1), filaX + 23, rY + 38.3);
-
-        const pagosY = rY + (filaH * 4);
-        doc.rect(filaX, pagosY, filaAncho, 24);
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(8.2);
-        doc.text('Boleta:', filaX + 2, pagosY + 5.6);
-        doc.text('Transferencia:', filaX + 52, pagosY + 5.6);
-        doc.text('Cheque:', filaX + 114, pagosY + 5.6);
-        doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
-        doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(10.1);
-        doc.text(doc.splitTextToSize(String(correlativoTexto || 'N/A'), 56).slice(0, 1), filaX + 52, pagosY + 16);
-
-        const firmaY = pagosY + 24;
-        doc.rect(filaX, firmaY, filaAncho, 22);
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.text('Firma:', filaX + 2, firmaY + 6.2);
-        doc.setFontSize(15);
-        doc.setTextColor(20, 20, 20);
-        doc.text('CANCELADO', filaX + 28, firmaY + 13);
-        doc.setTextColor(0, 0, 0);
-        if (logoProyecto) {
-          try {
-            doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), filaX + 62, firmaY + 1.8, 32, 13.2, `anu-jur-proy-${Date.now()}`, 'FAST');
-          } catch {
-            // no-op
-          }
-        }
-
-        doc.setFont('Helvetica', 'italic');
-        doc.setFontSize(6.7);
-        doc.text(
-          doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo se extiende previo a la confirmacion de la transaccion bancaria.', ancho - 4).slice(0, 2),
-          margenX + 2,
-          pageH - 7.5
-        );
-
-        doc.save(`Anulacion_Juridica_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
-        return;
-      }
-
-      const x = 10;
-      const w = 190;
-      let y = 10;
-      const headerHeight = 22;
-      const rightHeaderWidth = 68;
-      const leftHeaderWidth = w - rightHeaderWidth;
-      const rightHeaderX = x + leftHeaderWidth;
-
-      doc.setFillColor(240, 228, 167);
-      doc.rect(x, y, w, headerHeight, 'F');
-      doc.rect(x, y, w, headerHeight);
-      doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
-
-      const logoX = x + 3;
-      const logoY = y + 1.2;
-      const logoW = 24;
-      const logoH = 19;
       if (logoEmpresa) {
-        try {
-          doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `anul-logo-${Date.now()}`, 'FAST');
-        } catch {
-          // no-op
-        }
+        try { doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), 10, y, 28, 18, `anu-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
       }
 
-      const leftTextX = logoEmpresa ? (logoX + logoW + 3) : (x + 3);
-      const leftTextWidth = logoEmpresa ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
-      const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
-
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9.6);
-      doc.text(doc.splitTextToSize(String(nombreMarca).toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
-      doc.setFontSize(10.5);
-      doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
-      doc.setFontSize(9.5);
-      doc.text(`Serie "${serieCorrelativo}"`, rightHeaderX + 6, y + 13.5);
-      doc.setTextColor(166, 35, 35);
-      doc.text(`N. ${String(numeroCorrelativo || '0').padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
-      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(11);
+      doc.text(nombreMarca, 46, y + 5);
       doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto || 'Comprobante de anulacion de cobro'), w - 8), x + (w / 2), y + 18.5, { align: 'center' });
+      doc.setFontSize(8.5);
+      doc.text(`NIT: ${contratoInfo?.nit || 'N/A'}`, 46, y + 10);
+      doc.text('País: Guatemala', 46, y + 14.5);
+      doc.text('Moneda: GTQ', 46, y + 19);
 
-      // Sello visual de anulado (suave para no tapar detalle)
-      doc.setTextColor(214, 86, 86);
-      doc.setDrawColor(214, 86, 86);
-      doc.setLineWidth(0.22);
-      doc.line(94, 70, 160, 86);
-      doc.line(94, 86, 160, 70);
+      doc.setFillColor(245, 245, 245);
+      doc.rect(140, y - 2, 63, 30, 'F');
+      doc.setDrawColor(180, 180, 180);
+      doc.rect(140, y - 2, 63, 30);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(17);
-      doc.text('ANULADO', 127, 81, { align: 'center', angle: -13 });
-      doc.setTextColor(0, 0, 0);
-
-      y += headerHeight + 4;
-      doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, w, 6, 'F');
-      doc.rect(x, y, w, 6);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.8);
-      doc.text('Datos del cliente:', x + 2, y + 4.3);
-
-      y += 7;
-      const nombreTexto = String(contratoInfo?.nombre_residente || 'N/A');
-      const nombreLineas = doc.splitTextToSize(nombreTexto, 158).slice(0, 1);
-      const nombreAltura = 8;
-      doc.rect(x, y, w, nombreAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Nombre:', x + 2, y + 5);
-      doc.setFont('Helvetica', 'normal');
       doc.setFontSize(10);
-      doc.text(nombreLineas, x + 22, y + 5);
-
-      y += nombreAltura + 3;
-      doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, 145, 6, 'F');
-      doc.rect(x + 145, y, 45, 6, 'F');
-      doc.rect(x, y, 145, 6);
-      doc.rect(x + 145, y, 45, 6);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.8);
-      doc.text('Fecha:', x + 2, y + 4.3);
-      doc.text('Por:', x + 147, y + 4.3);
-
-      y += 6;
-      const fechaTexto = `Guatemala, ${fechaLargaGT(fechaDocumento)}`;
-      const fechaLineas = doc.splitTextToSize(fechaTexto, 139).slice(0, 1);
-      const fechaAltura = 8;
-      doc.rect(x, y, 145, fechaAltura);
-      doc.rect(x + 145, y, 45, fechaAltura);
+      doc.text('NOTA DE ANULACIÓN', 171.5, y + 4, { align: 'center' });
+      doc.text('DE COBRO', 171.5, y + 9, { align: 'center' });
       doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(9.3);
-      doc.text(fechaLineas, x + 2, y + 5);
-      doc.setFont('Helvetica', 'bold');
-      doc.text(`Q ${Math.abs(montoAnulado).toFixed(2)}`, x + 147, y + 5);
-
-      y += fechaAltura + 3;
-      const pagaTexto = 'ANULACION / REVERSION DE COBRO REGISTRADO';
-      const pagaLineas = doc.splitTextToSize(pagaTexto, 143).slice(0, 1);
-      const pagaAltura = 8;
-      doc.rect(x, y, w, pagaAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Paga la cantidad de:', x + 2, y + 5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(pagaLineas, x + 45, y + 5);
-
-      y += pagaAltura + 3;
-      const cancelacionTexto = String(anulacion.motivo || 'Sin motivo registrado');
-      const cancelacionLineas = doc.splitTextToSize(cancelacionTexto, 143).slice(0, 2);
-      const cancelacionAltura = Math.max(10, (cancelacionLineas.length * 4.2) + 2.2);
-      doc.rect(x, y, w, cancelacionAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Por cancelacion de:', x + 2, y + 4.9);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(9.8);
-      doc.text(cancelacionLineas, x + 43, y + 4.9);
-
-      y += cancelacionAltura + 3;
-      doc.rect(x, y, 65, 8);
-      doc.rect(x + 65, y, 125, 8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Cuota:', x + 2, y + 5.2);
-      doc.setTextColor(166, 35, 35);
-      doc.setFontSize(12);
-      doc.text('ANULADA', x + 29, y + 5.2);
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(9);
-      doc.text('Abono extraordinario:', x + 67, y + 5.2);
-      doc.setFont('Helvetica', 'normal');
-      doc.text('Q.0.00', x + 112, y + 5.2);
-
-      y += 10;
-      const infoAltura = 14;
-      doc.rect(x, y, 60, infoAltura);
-      doc.rect(x + 65, y, 60, infoAltura);
-      doc.rect(x + 130, y, 60, infoAltura);
-      doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8.2);
-      doc.text('Referencia:', x + 67, y + 4.5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8.6);
-      doc.text(doc.splitTextToSize(correlativoTexto, 56).slice(0, 1), x + 67, y + 8.8);
-      doc.text(doc.splitTextToSize(`Contrato: ${contratoInfo?.codigo_contrato || `#${anulacion.id_contrato || '-'}`}`, 56).slice(0, 1), x + 67, y + 12.6);
-      doc.text(doc.splitTextToSize(`Pago: #${anulacion.id_pago || 'N/A'}`, 56).slice(0, 1), x + 132, y + 4.8);
-      doc.text(doc.splitTextToSize(`Autoriza: ${getNombreUsuario(autorizadorInfo)}`, 56).slice(0, 2), x + 132, y + 8.6);
+      doc.text(`Documento No: ${correlativoTexto}`, 171.5, y + 15, { align: 'center' });
+      doc.text(`Fecha emisión: ${fechaFmt(fechaDocumento)}`, 171.5, y + 20, { align: 'center' });
+      doc.text(`Fecha/Hora impresión: ${fechaHoraFmt(fechaDocumento)}`, 171.5, y + 25, { align: 'center' });
 
-      y += infoAltura + 3;
-      const maxTableStartY = 108;
-      if (y > maxTableStartY) {
-        y = maxTableStartY;
-      }
+      y += 36;
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineWidth(0.3);
+      doc.line(10, y, pW - 10, y);
+      y += 5;
+
+      // === DATOS DEL CLIENTE ===
+      doc.setFillColor(240, 240, 240);
+      doc.rect(10, y, pW - 20, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('DATOS DEL CLIENTE / RESIDENTE', 12, y + 5);
+      y += 10;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Nombre:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.nombre_residente || 'N/A'), 35, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Contrato:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.codigo_contrato || `#${anulacion.id_contrato || 'N/A'}`), 143, y);
+      y += 6;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('DPI:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.dpi || contratoInfo?.dpi_residente || 'N/A'), 24, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('NIT:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.nit || 'CF'), 131, y);
+      y += 8;
+
+      // === DATOS DE ANULACIÓN ===
+      doc.setFillColor(240, 240, 240);
+      doc.rect(10, y, pW - 20, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('DATOS DE LA ANULACIÓN', 12, y + 5);
+      y += 10;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Pago anulado #:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(anulacion.id_pago || 'N/A'), 46, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Autoriza:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(autorizadorInfo?.nombre || 'Admin'), 140, y);
+      y += 6;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Motivo:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(doc.splitTextToSize(String(anulacion.motivo || 'Sin motivo registrado'), 170)[0], 30, y);
+      y += 10;
+
+      // === TABLA ===
       autoTable(doc, {
         startY: y,
-        head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
+        head: [['Concepto / Cuota', 'Mes Afectado', 'Monto Base', 'IVA 12%', 'Total']],
         body: [[
-          'Anulacion de cobro',
-          anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion).toLocaleDateString('es-GT') : 'N/A',
-          `-${Math.abs(montoAnulado).toFixed(2)}`
+          `Anulación de cobro - Correlativo: ${correlativoTexto}`,
+          fechaFmt(fechaDocumento),
+          `Q ${montoAnulado.toFixed(2)}`,
+          'Q 0.00',
+          `Q ${montoAnulado.toFixed(2)}`
         ]],
         theme: 'grid',
-        styles: { fontSize: 8.6, cellPadding: 1.5, lineColor: [214, 120, 120], lineWidth: 0.2 },
-        headStyles: { fillColor: [245, 211, 69], textColor: [0, 0, 0], fontSize: 9, halign: 'left' },
-        margin: { left: x, right: 10 },
-        tableWidth: w,
-        pageBreak: 'avoid',
+        styles: { fontSize: 8.5, cellPadding: 2 },
+        headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
         columnStyles: {
-          0: { cellWidth: 100 },
-          1: { cellWidth: 45, halign: 'center' },
-          2: { cellWidth: 45, halign: 'right' }
-        }
+          0: { cellWidth: 75 },
+          1: { cellWidth: 35, halign: 'center' },
+          2: { cellWidth: 25, halign: 'right' },
+          3: { cellWidth: 20, halign: 'right' },
+          4: { cellWidth: 30, halign: 'right' }
+        },
+        margin: { left: 10, right: 10 }
       });
 
-      let footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
+      y = doc.lastAutoTable.finalY + 8;
 
-      const boxY = Math.min(footerY + 3, 160);
-      const boxH = 22;
-      doc.rect(x, boxY, 60, boxH);
-      doc.rect(x + 65, boxY, 60, boxH);
+      // === RESUMEN ===
+      const resX = pW - 90;
+      const resW = 80;
+      const lineH = 7;
+      const drawLine = (label, valor, bold = false, rojo = false) => {
+        doc.setFont('Helvetica', bold ? 'bold' : 'normal');
+        doc.setFontSize(8.8);
+        doc.setTextColor(rojo ? 180 : 40, rojo ? 0 : 40, rojo ? 0 : 40);
+        doc.text(`${label}:`, resX, y);
+        doc.text(`Q${parseFloat(valor || 0).toFixed(2)}`, resX + resW, y, { align: 'right' });
+        doc.setTextColor(40, 40, 40);
+        y += lineH;
+      };
 
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text('X  Boleta No.', x + 3, boxY + 5);
-      doc.text('X  Transferencia.', x + 3, boxY + 11);
-      doc.text(String(correlativoTexto || 'N/A'), x + 3, boxY + 17);
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.2);
+      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
+      drawLine('Monto anulado', montoAnulado);
+      drawLine('IVA 12%', 0);
+      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
 
-      if (logoProyecto) {
-        try {
-          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 80, boxY + 6.5, 29, 12, `anul-logo-proyecto-${Date.now()}`, 'FAST');
-        } catch {
-          // no-op
-        }
-      }
+      // Sello ANULADO
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9.6);
-      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 5, { align: 'center' });
+      doc.setFontSize(28);
+      doc.setTextColor(200, 30, 30);
+      doc.text('ANULADO', pW / 2, 150, { align: 'center', angle: -20 });
+      doc.setTextColor(40, 40, 40);
 
-      const pageHeight = doc.internal.pageSize.getHeight();
-      footerY = pageHeight - 14;
+      // Pie
+      const pH = doc.internal.pageSize.getHeight();
       doc.setFont('Helvetica', 'italic');
-      doc.setFontSize(7.2);
-      doc.text(
-        doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 3),
-        x,
-        footerY
-      );
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Este documento acredita la anulación del cobro registrado. Conservar para cualquier aclaración.', 10, pH - 10);
+      doc.setFillColor(...goldColor);
+      doc.rect(0, pH - 5, pW, 5, 'F');
 
-      doc.save(`Anulacion_${anulacion.id_anulacion || 'sin_id'}_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
+      doc.save(`Anulacion_Comprobante_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
     } catch (error) {
       console.error('Error al generar PDF de anulación:', error);
       Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo generar el PDF de la anulación.' });
     }
   };
+
 
   const addAnulacion = () => {
     if (!correlativo.trim() || !id_usuario_autoriza || !motivo.trim()) {

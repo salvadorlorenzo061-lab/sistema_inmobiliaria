@@ -145,11 +145,13 @@ function Contratos_Residentes() {
   }, [plazo_meses]);
 
   // Cálculo automático del valor de cuota si cambia el monto total o el plazo
+  // Se usa Math.floor para que la última cuota absorba los centavos restantes
   useEffect(() => {
     const plazo = parseInt(plazo_meses || cuotas_pactadas || 0);
-    if (monto_total && plazo > 0) {
-      const calculo = (parseFloat(monto_total) / plazo).toFixed(2);
-      setMonto_cuota(calculo);
+    const total = parseFloat(monto_total || 0);
+    if (total > 0 && plazo > 0) {
+      const cuotaBase = Math.floor((total / plazo) * 100) / 100; // floor en centavos
+      setMonto_cuota(cuotaBase.toFixed(2));
     } else {
       setMonto_cuota("");
     }
