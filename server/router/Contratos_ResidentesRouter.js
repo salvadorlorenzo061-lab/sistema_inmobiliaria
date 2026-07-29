@@ -367,10 +367,256 @@ const ensureInteresPorcentajeColumn = () => {
     });
 };
 
+const ensurePlazoMesesColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'plazo_meses'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna plazo_meses:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) return;
+
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de plazo_meses.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN plazo_meses INT NOT NULL DEFAULT 0 AFTER monto_cuota
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna plazo_meses:', alterErr);
+                    return;
+                }
+                console.log('Columna plazo_meses creada en contratos_residentes.');
+            });
+        });
+    });
+};
+
+const ensureEngancheColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'enganche'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna enganche:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) return;
+
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de enganche.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN enganche DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER interes_porcentaje
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna enganche:', alterErr);
+                    return;
+                }
+                console.log('Columna enganche creada en contratos_residentes.');
+            });
+        });
+    });
+};
+
+const ensureMoraColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'mora'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna mora:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) return;
+
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de mora.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN mora DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER enganche
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna mora:', alterErr);
+                    return;
+                }
+                console.log('Columna mora creada en contratos_residentes.');
+            });
+        });
+    });
+};
+
+const ensurePorcentajeDominioColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'porcentaje_dominio'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna porcentaje_dominio:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) return;
+
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de porcentaje_dominio.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN porcentaje_dominio DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER mora
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna porcentaje_dominio:', alterErr);
+                    return;
+                }
+                console.log('Columna porcentaje_dominio creada en contratos_residentes.');
+            });
+        });
+    });
+};
+
+const ensureMesInicioPagosColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'mes_inicio_pagos'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna mes_inicio_pagos:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) return;
+
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de mes_inicio_pagos.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN mes_inicio_pagos INT NOT NULL DEFAULT 1 AFTER porcentaje_dominio
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna mes_inicio_pagos:', alterErr);
+                    return;
+                }
+                console.log('Columna mes_inicio_pagos creada en contratos_residentes.');
+            });
+        });
+    });
+};
+
+const ensureAnioInicioPagosColumn = () => {
+    const checkColumnQuery = `
+        SELECT COUNT(*) AS total
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'contratos_residentes'
+          AND COLUMN_NAME = 'anio_inicio_pagos'
+    `;
+
+    db.query(checkColumnQuery, (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Error verificando columna anio_inicio_pagos:', checkErr);
+            return;
+        }
+
+        const exists = checkResult?.[0]?.total > 0;
+        if (exists) return;
+
+        ensureTableExists('contratos_residentes', (tableExists) => {
+            if (!tableExists) {
+                console.warn('La tabla contratos_residentes no existe en esta base de datos. Se omite migracion de anio_inicio_pagos.');
+                return;
+            }
+
+            const alterQuery = `
+                ALTER TABLE contratos_residentes
+                ADD COLUMN anio_inicio_pagos INT NOT NULL DEFAULT 2026 AFTER mes_inicio_pagos
+            `;
+
+            db.query(alterQuery, (alterErr) => {
+                if (alterErr) {
+                    console.error('Error agregando columna anio_inicio_pagos:', alterErr);
+                    return;
+                }
+                console.log('Columna anio_inicio_pagos creada en contratos_residentes.');
+            });
+        });
+    });
+};
+
 ensureEmpresaMarcaColumn();
 ensureProyectoColumn();
 ensureFormatoContratoColumn();
 ensureInteresPorcentajeColumn();
+ensurePlazoMesesColumn();
+ensureEngancheColumn();
+ensureMoraColumn();
+ensurePorcentajeDominioColumn();
+ensureMesInicioPagosColumn();
+ensureAnioInicioPagosColumn();
 ensureContratosServiciosTable();
 ensureContratosDocumentosTable();
 
@@ -379,7 +625,7 @@ router.get("/", (req, res) => {
     const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
-                   c.monto_total, c.cuotas_pactadas, c.monto_cuota, c.interes_porcentaje, c.dia_pago_limite,
+                   c.monto_total, c.cuotas_pactadas, c.plazo_meses, c.monto_cuota, c.interes_porcentaje, c.enganche, c.mora, c.porcentaje_dominio, c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
                    r.nombre AS nombre_residente,
@@ -426,7 +672,7 @@ router.get("/", (req, res) => {
 router.post("/crear", (req, res) => {
     const { 
         codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
-        cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        cuotas_pactadas, plazo_meses, monto_cuota, interes_porcentaje, enganche, mora, porcentaje_dominio, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
     } = req.body;
 
@@ -440,14 +686,15 @@ router.post("/crear", (req, res) => {
             return res.status(400).send({ message: "El código de contrato ya se encuentra registrado" });
         }
 
+        const plazoMesesFinal = Number(plazo_meses || cuotas_pactadas || 0);
         const queryInsert = `
             INSERT INTO contratos_residentes 
-            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, cuotas_pactadas, plazo_meses, monto_cuota, interes_porcentaje, enganche, mora, porcentaje_dominio, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         db.query(
             queryInsert,
-            [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, Number(interes_porcentaje || 0), dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null],
+            [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, plazoMesesFinal, plazoMesesFinal, monto_cuota, Number(interes_porcentaje || 0), Number(enganche || 0), Number(mora || 0), Number(porcentaje_dominio || 0), Number(mes_inicio_pagos || 0), Number(anio_inicio_pagos || 0), dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null],
             (insertErr, insertResult) => {
                 if (insertErr) {
                     console.error(insertErr);
@@ -480,19 +727,20 @@ router.post("/crear", (req, res) => {
 router.put("/actualizar", (req, res) => {
     const { 
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
-        cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        cuotas_pactadas, plazo_meses, monto_cuota, interes_porcentaje, enganche, mora, porcentaje_dominio, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
     } = req.body;
     
+    const plazoMesesFinal = Number(plazo_meses || cuotas_pactadas || 0);
     const queryUpdate = `
         UPDATE contratos_residentes SET 
         codigo_contrato=?, id_residente=?, id_empresa_marca=?, id_proyecto=?, id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
-        cuotas_pactadas=?, monto_cuota=?, interes_porcentaje=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
+        cuotas_pactadas=?, plazo_meses=?, monto_cuota=?, interes_porcentaje=?, enganche=?, mora=?, porcentaje_dominio=?, mes_inicio_pagos=?, anio_inicio_pagos=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
         WHERE id_contrato=?
     `;
     db.query(
         queryUpdate,
-        [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, Number(interes_porcentaje || 0), dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null, id_contrato],
+        [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, plazoMesesFinal, plazoMesesFinal, monto_cuota, Number(interes_porcentaje || 0), Number(enganche || 0), Number(mora || 0), Number(porcentaje_dominio || 0), Number(mes_inicio_pagos || 0), Number(anio_inicio_pagos || 0), dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null, id_contrato],
         (err, result) => {
             if (err) {
                 console.error(err);

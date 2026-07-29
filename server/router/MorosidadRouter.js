@@ -101,7 +101,7 @@ router.get('/meses-pendientes', async (req, res) => {
         }
 
         const contratoRows = await queryAsync(
-            'SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+            'SELECT fecha_compra, fecha_fin, fecha_firma, plazo_meses, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
             [idContrato]
         );
 
@@ -122,7 +122,7 @@ router.get('/meses-pendientes', async (req, res) => {
         const fechaInicioBase = fechaCompra || fechaFirma || new Date();
         const fechaInicio = new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1);
         const fechaLimite = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        const cuotasPactadas = Number(contrato.cuotas_pactadas || 0);
+        const cuotasPactadas = Number(contrato.plazo_meses || contrato.cuotas_pactadas || 0);
         const saldoPendiente = Number(contrato.monto_total || 0);
         const montoCuota = Number(contrato.monto_cuota || 0);
         const fechaFinMes = (fechaFin && fechaFin >= fechaInicio)

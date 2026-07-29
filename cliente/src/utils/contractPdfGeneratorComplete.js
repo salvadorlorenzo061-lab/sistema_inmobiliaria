@@ -268,13 +268,13 @@ export const generarPdfContrato = (datosContrato, datosResidente) => {
     const interes_porcentaje = datosContrato.interes_porcentaje || 14;
     const interes_cantidad = capital_restante * (interes_porcentaje / 100);
     const total_con_interes = capital_restante + interes_cantidad;
-    const cuotas = parseInt(datosContrato.cuotas_pactadas) || 60;
+    const cuotas = parseInt(datosContrato.plazo_meses || datosContrato.cuotas_pactadas) || 60;
     const monto_cuota = parseFloat(datosContrato.monto_cuota) || (capital_restante / cuotas);
     const ultima_cuota = total_con_interes - (monto_cuota * (cuotas - 1));
     const mora = datosContrato.mora || 600;
     const dia_pago = datosContrato.dia_pago_limite || '5';
     const porcentaje_dominio = datosContrato.porcentaje_dominio || 80;
-    const plazo_meses = datosContrato.plazo_meses || 60;
+    const plazo_meses = parseInt(datosContrato.plazo_meses || datosContrato.cuotas_pactadas) || 60;
 
     // Párrafo 1: Encabezado con fecha
     let parrafo1 = `En la Ciudad Capital, departamento de Guatemala, el día ${diaFirma} de ${mesFirma} del año ${anioFirma}. Comparezco accionando por una parte yo ${vendedor.nombre} de ${vendedor.edad} años de edad, ${vendedor.estado_civil}, guatemalteca, ${vendedor.profesion}, de este domicilio, me identifico con el Documento Personal de Identificación (D.P.I.) con Código Único de Identificación (C.U.I.) número ${vendedor.dpi} extendido por el Registro Nacional de las Personas de la República de Guatemala, comparezco en nombre propio y en mi calidad de ADMINISTRADOR ÚNICO Y REPRESENTANTE LEGAL de la Entidad denominada ${vendedor.empresa}, extremo que acredito con el Acta Notarial de mi Nombramiento, faccionada en la Ciudad de Guatemala, el día ${vendedor.fecha_nombramiento}, por la Notario ${vendedor.notario}, encontrándose debidamente inscrita en el Registro Mercantil General de República al número ${vendedor.registro_numero}; folio ${vendedor.registro_folio}; del libro ${vendedor.registro_libro} de Auxiliares de Comercio, con fecha diecisiete de octubre del año dos mil veinticinco y en el transcurso de este instrumento se me dominará "LA PARTE VENDEDORA".`;

@@ -241,7 +241,7 @@ const EstadoCuenta = () => {
       const formatoContrato = resolveContractTemplateId(
         contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
       );
-      const cuotasPactadas = Number(contrato.cuotas_pactadas || 0);
+      const cuotasPactadas = Number(contrato.plazo_meses || contrato.cuotas_pactadas || 0);
       const montoTotalContrato = Number(contrato.monto_total || 0);
       const montoCuota = Number(contrato.monto_cuota || 0);
       const ultimaCuota = cuotasPactadas > 1

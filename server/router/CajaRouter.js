@@ -717,7 +717,7 @@ router.get("/meses-pendientes", (req, res) => {
     }
 
     // Traer datos de contrato para calcular todos los meses cobrables del contrato
-    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
+    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, plazo_meses, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
         if (err || !contratoResult.length) {
             console.error('Error al obtener contrato:', err?.message);
             return res.status(500).send('Error al consultar el contrato');
@@ -742,7 +742,7 @@ router.get("/meses-pendientes", (req, res) => {
         const fechaInicioBase = fechaCompra || fechaFirma || new Date();
         const hoy = new Date();
         const candidatos = [];
-        const cuotasPactadas = Number(contratoResult[0].cuotas_pactadas || 0);
+        const cuotasPactadas = Number(contratoResult[0].plazo_meses || contratoResult[0].cuotas_pactadas || 0);
         const saldoPendiente = Number(contratoResult[0].monto_total || 0);
         const montoCuota = Number(contratoResult[0].monto_cuota || 0);
 

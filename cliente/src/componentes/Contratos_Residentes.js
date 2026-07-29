@@ -142,13 +142,19 @@ function Contratos_Residentes() {
   // monto_cuota guarda capital por cuota.
   // El interes se distribuye por cuota al momento de cobro en Caja.
   useEffect(() => {
-    if (monto_total && cuotas_pactadas > 0) {
-      const calculo = (parseFloat(monto_total) / parseInt(cuotas_pactadas)).toFixed(2);
+    if (monto_total && plazo_meses > 0) {
+      const calculo = (parseFloat(monto_total) / parseInt(plazo_meses)).toFixed(2);
       setMonto_cuota(calculo);
     } else {
       setMonto_cuota("");
     }
-  }, [monto_total, cuotas_pactadas]);
+  }, [monto_total, plazo_meses]);
+
+  useEffect(() => {
+    if (plazo_meses !== cuotas_pactadas) {
+      setCuotas_pactadas(plazo_meses || "");
+    }
+  }, [plazo_meses]);
 
   // Generar código de contrato automático al seleccionar residente
   const seleccionarResidenteContrato = (idResidente) => {
@@ -204,7 +210,7 @@ function Contratos_Residentes() {
 
   const formatMoney = (value) => `Q${Number(value || 0).toFixed(2)}`;
   const montoCapitalContrato = Math.max(parseFloat(monto_total || 0), 0);
-  const cuotasContrato = Math.max(parseInt(cuotas_pactadas || 0, 10), 0);
+  const cuotasContrato = Math.max(parseInt(plazo_meses || 0, 10), 0);
   const porcentajeInteresContrato = Math.max(parseFloat(interes_porcentaje || 0), 0);
   const interesTotalContrato = (montoCapitalContrato > 0 && cuotasContrato > 0)
     ? ((montoCapitalContrato * porcentajeInteresContrato) / 100)
@@ -318,7 +324,7 @@ function Contratos_Residentes() {
     if (!estado) faltantes.push('Estado inicial');
     if (!proyecto_propiedad.trim()) faltantes.push('Proyecto');
     if (!monto_total) faltantes.push('Precio total del inmueble');
-    if (!cuotas_pactadas) faltantes.push('Numero de cuotas');
+    if (!plazo_meses) faltantes.push('Plazo en meses');
     if (!dia_pago_limite) faltantes.push('Dia limite de pago mensual');
     if (!fecha_firma) faltantes.push('Fecha de firma legal');
     if (!fecha_compra) faltantes.push('Fecha de compra');
@@ -368,9 +374,15 @@ function Contratos_Residentes() {
       id_tipo_contrato,
       formato_contrato,
       monto_total,
-      cuotas_pactadas, 
+      cuotas_pactadas: plazo_meses,
+      plazo_meses,
       monto_cuota, 
       interes_porcentaje,
+      enganche,
+      mora,
+      porcentaje_dominio,
+      mes_inicio_pagos,
+      anio_inicio_pagos,
       dia_pago_limite, 
       fecha_firma,
       fecha_compra: fecha_compra || null,
@@ -446,7 +458,7 @@ function Contratos_Residentes() {
 
     Axios.put(`${API_URL}/actualizar`, {
       id_contrato, codigo_contrato, id_residente, id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null, id_proyecto: proyectoSeleccionado?.id_proyecto || null, id_tipo_contrato, formato_contrato, monto_total,
-      cuotas_pactadas, monto_cuota, interes_porcentaje, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
+      cuotas_pactadas: plazo_meses, plazo_meses, monto_cuota, interes_porcentaje, enganche, mora, porcentaje_dominio, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
       servicios_contrato: serviciosContratoSeleccionados
     })
     .then(() => {
@@ -704,9 +716,16 @@ function Contratos_Residentes() {
     setFormato_contrato(resolveContractTemplateId(val.formato_contrato || val.nombre_tipo_contrato || ''));
     setModo_marca_empresa('solo_logo');
     setMonto_total(val.monto_total ?? '');
-    setCuotas_pactadas(val.cuotas_pactadas ?? '');
+    const plazo = val.plazo_meses ?? val.cuotas_pactadas ?? '';
+    setPlazo_meses(plazo);
+    setCuotas_pactadas(plazo);
     setMonto_cuota(val.monto_cuota ?? '');
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
+    setEnganche(val.enganche ?? '0');
+    setMora(val.mora ?? '0');
+    setPorcentaje_dominio(val.porcentaje_dominio ?? '0');
+    setMes_inicio_pagos(val.mes_inicio_pagos ?? '');
+    setAnio_inicio_pagos(val.anio_inicio_pagos ?? '');
     setDia_pago_limite(val.dia_pago_limite ?? '');
     setFecha_firma(toDateInput(val.fecha_firma));
     setFecha_compra(toDateInput(val.fecha_compra));
@@ -853,7 +872,7 @@ function Contratos_Residentes() {
                 <td><span className="badge bg-info text-dark">{val.nombre_tipo_contrato}</span></td>
                 <td><span className="fw-semibold text-secondary">{val.nombre_empresa_marca || 'Sin definir'}</span></td>
                 <td className="fw-bold">Q {parseFloat(val.monto_total).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                <td className="text-center">{val.cuotas_pactadas}</td>
+                <td className="text-center">{val.plazo_meses || val.cuotas_pactadas}</td>
                 <td className="text-success fw-bold">Q {parseFloat(val.monto_cuota).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                 <td className="text-center fw-bold text-danger">Día {val.dia_pago_limite}</td>
                 <td className="text-center text-muted" style={{fontSize:'0.85rem'}}>{val.fecha_firma ? new Date(val.fecha_firma).toLocaleDateString('es-GT') : '-'}</td>
@@ -1131,10 +1150,6 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} placeholder="14" />
-                </div>
-                <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Número de Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Capital por Cuota (Auto):</label>
@@ -1525,10 +1540,6 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} />
-                </div>
-                <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>

@@ -192,7 +192,7 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true, refreshKey 
           )}
           • Formato: <strong>{formatoSeleccionado}</strong>
           • Monto: <strong>Q. {parseFloat(datosContrato.monto_total || 0).toLocaleString('es-GT', { minimumFractionDigits: 2 })}</strong>
-          • Cuotas: <strong>{datosContrato.cuotas_pactadas || 'N/A'}</strong>
+          • Plazo (meses): <strong>{datosContrato.plazo_meses || datosContrato.cuotas_pactadas || 'N/A'}</strong>
         </div>
       </div>
     </div>

@@ -442,12 +442,12 @@ const generarPdfFormatoBase = (datosContrato = {}, datosResidente = {}, options 
   const intPct    = parseFloat(datosContrato.interes_porcentaje) || 14;
   const intMonto  = capRest * (intPct/100);
   const totalCInt = capRest + intMonto;
-  const nCuotas   = parseInt(datosContrato.cuotas_pactadas)      || 60;
+  const nCuotas   = parseInt(datosContrato.plazo_meses || datosContrato.cuotas_pactadas) || 60;
   const vCuota    = parseFloat(datosContrato.monto_cuota)        || parseFloat((capRest/nCuotas).toFixed(2));
   const ultCuota  = parseFloat((totalCInt - vCuota*(nCuotas-1)).toFixed(2));
   const mora      = parseFloat(datosContrato.mora)               || 600;
   const diaPago   = datosContrato.dia_pago_limite                || '5';
-  const plazo     = parseInt(datosContrato.plazo_meses)          || 60;
+  const plazo     = parseInt(datosContrato.plazo_meses || datosContrato.cuotas_pactadas) || 60;
   const pctDominio= parseInt(datosContrato.porcentaje_dominio)   || 80;
   const mesInicio = datosContrato.mes_inicio_pagos               || '7';
   const anioIni   = datosContrato.anio_inicio_pagos              || '2026';
