@@ -1408,6 +1408,8 @@ router.post("/procesar-pago", (req, res) => {
                                             mes,
                                             cuotasTerrenoCalculadas[index] || null,
                                             redondear2(montoInteresPorMes),
+                                            null
+                                        ]);
                                     });
                                 }
 
