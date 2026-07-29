@@ -411,6 +411,8 @@ router.get("/residentes-pendientes", (req, res) => {
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
             c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
+            COALESCE(c.interes_porcentaje, 0) AS interes_porcentaje,
+            COALESCE(c.enganche, 0) AS enganche,
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             p.nombre AS nombre_proyecto,
@@ -460,6 +462,8 @@ router.get("/buscar-residente", (req, res) => {
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
             c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
+            COALESCE(c.interes_porcentaje, 0) AS interes_porcentaje,
+            COALESCE(c.enganche, 0) AS enganche,
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             p.nombre AS nombre_proyecto,
@@ -893,7 +897,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
 router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
-        monto_pagar, monto_terreno_pagar, monto_mora, metodo_pago, no_referencia, observaciones,
+        monto_pagar, monto_terreno_pagar, monto_mora, monto_interes, metodo_pago, no_referencia, observaciones,
         mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
@@ -1361,7 +1365,8 @@ router.post("/procesar-pago", (req, res) => {
                         const sqlPago = `INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia) 
                                          VALUES (?, ?, NOW(), ?, ?, ?)`;
                         const moraTotal = moraTotalSeleccionada;
-                        const totalTransaccion = parseFloat((montoPrincipalTotal + moraTotal).toFixed(2));
+                        const montoInteresTotalPago = parseFloat(parseFloat(monto_interes || 0).toFixed(2));
+                        const totalTransaccion = parseFloat((montoPrincipalTotal + moraTotal + montoInteresTotalPago).toFixed(2));
 
                         db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (err, resPago) => {
                             if (err) return db.rollback(() => res.status(500).send("Error en tabla pagos: " + err.message));
@@ -1371,6 +1376,7 @@ router.post("/procesar-pago", (req, res) => {
 
                             const finalizarConDetalles = () => {
                                 const detalleValues = [];
+                                const montoInteresPorMes = parseFloat((parseFloat(monto_interes || 0) / cantidadMeses).toFixed(2));
                                 const cuotasTerrenoCalculadas = montoTerrenoTotal > 0
                                     ? mesesAProcesar.map((mes, index) => obtenerNumeroCuotaParaMes(mes, index))
                                     : [];
@@ -1389,6 +1395,19 @@ router.post("/procesar-pago", (req, res) => {
                                             redondear2(montosTerrenoPorMes[index] || 0),
                                             null
                                         ]);
+                                    });
+                                }
+
+                                // Interest entries
+                                if (montoInteresPorMes > 0) {
+                                    mesesAProcesar.forEach((mes, index) => {
+                                        detalleValues.push([
+                                            lastIdPago,
+                                            'interes',
+                                            null,
+                                            mes,
+                                            cuotasTerrenoCalculadas[index] || null,
+                                            redondear2(montoInteresPorMes),
                                     });
                                 }
 
@@ -1497,10 +1516,12 @@ router.post("/procesar-pago", (req, res) => {
 
                                                     mesesAProcesar.forEach((mes, index) => {
                                                         if (Number(montosTerrenoPorMes[index] || 0) > 0) {
-                                                            const montoTerrenoConcepto = redondear2(montosTerrenoPorMes[index]);
-                                                            const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);
+                                                            const montoCapital = redondear2(montosTerrenoPorMes[index]);
+                                                            const montoInteresCuota = redondear2(montoInteresPorMes);
+                                                            const totalCuota = redondear2(montoCapital + montoInteresCuota);
+                                                            const desgloseTerreno = calcularComponentesFiscalmente(totalCuota);
                                                             detalleCobro.push({
-                                                                concepto: `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
+                                                                concepto: `Cuota ${cuotasTerrenoCalculadas[index] || (index + 1)} - ${mes}`,
                                                                 mes,
                                                                 monto_base: desgloseTerreno.subtotal,
                                                                 iva: desgloseTerreno.iva,
@@ -1592,6 +1613,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         servicios_cobrados: serviciosSolicitados,
                                                         servicios_cobrados_mes_inicial: serviciosMesInicial,
                                                         monto_mora: moraTotal,
+                                                        monto_interes_pagado: montoInteresTotalPago,
                                                         moras_aplicadas: morasAplicadas,
                                                         iva_total: ivaTotal,
                                                         iva_por_mes: ivaPorMes,

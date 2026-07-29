@@ -180,6 +180,7 @@ const Caja = () => {
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
+    const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
     const [serviciosContrato, setServiciosContrato] = useState([]);
@@ -288,8 +289,12 @@ const Caja = () => {
         const cantidadMeses = (meses || []).length;
         const saldoPendiente = parseFloat(residenteActual?.saldo_pendiente || 0);
         const montoCuota = parseFloat(residenteActual?.monto_cuota || 0);
+        const interesPct = parseFloat(residenteActual?.interes_porcentaje || 0);
 
-        // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
+        // Interest per month = saldo_pendiente * annual_rate / 12
+        const interesMensual = interesPct > 0 ? parseFloat((saldoPendiente * interesPct / 100 / 12).toFixed(2)) : 0;
+        const interesTotal = parseFloat((interesMensual * cantidadMeses).toFixed(2));
+
         const cuotasRestantes = (saldoPendiente > 0 && montoCuota > 0)
             ? Math.ceil(saldoPendiente / montoCuota)
             : 0;
@@ -305,9 +310,10 @@ const Caja = () => {
             .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
         const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos) : 0;
-        const total = terrenoTotal + serviciosTotal;
+        const total = terrenoTotal + interesTotal + serviciosTotal;
 
         setMontoTerrenoSeleccionado(terrenoTotal);
+        setMontoInteresSeleccionado(interesTotal);
         setMontoServiciosSeleccionado(serviciosTotal);
         setMontoTotalSeleccionado(total);
         setMontoAPagar(String(total.toFixed(2)));
@@ -371,6 +377,7 @@ const Caja = () => {
         setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
+        setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
         setMontoServiciosSeleccionado(0);
@@ -547,6 +554,7 @@ const Caja = () => {
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
             monto_mora: parseFloat(montoMora),
+            monto_interes: montoInteresSeleccionado,
             metodo_pago: metodoPago,
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
             observaciones: `Pago de cuota de terreno mes de ${mesesSeleccionados.join(', ') || mesPagado}`,
@@ -1313,7 +1321,13 @@ const Caja = () => {
                                     {/* Monto fijo y total a pagar */}
                                     <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Terreno por mes:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}
+                                            <strong>Capital por mes:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}
+                                            {montoInteresSeleccionado > 0 && (
+                                                <>
+                                                    <br />
+                                                    <strong>Interés ({parseFloat(datosDeuda?.interes_porcentaje || 0).toFixed(1)}% anual):</strong> Q{(montoInteresSeleccionado / Math.max(mesesSeleccionados.length, 1)).toFixed(2)} / mes
+                                                </>
+                                            )}
                                             <br />
                                             <strong>Servicios seleccionados:</strong> Q{(mesesSeleccionados.length ? (montoServiciosSeleccionado / Math.max(mesesSeleccionados.length, 1)) : 0).toFixed(2)} / mes
                                         </span>
