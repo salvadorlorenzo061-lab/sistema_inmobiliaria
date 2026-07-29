@@ -263,23 +263,19 @@ function AnulacionDeuda() {
       // === TABLA ===
       autoTable(doc, {
         startY: y,
-        head: [['Concepto / Cuota', 'Mes Afectado', 'Monto Base', 'IVA 12%', 'Total']],
+        head: [['Concepto / Cuota', 'Mes Afectado', 'Total']],
         body: [[
           `Anulación de cobro - Correlativo: ${correlativoTexto}`,
           fechaFmt(fechaDocumento),
-          `Q ${montoAnulado.toFixed(2)}`,
-          'Q 0.00',
           `Q ${montoAnulado.toFixed(2)}`
         ]],
         theme: 'grid',
         styles: { fontSize: 8.5, cellPadding: 2 },
         headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
         columnStyles: {
-          0: { cellWidth: 75 },
-          1: { cellWidth: 35, halign: 'center' },
-          2: { cellWidth: 25, halign: 'right' },
-          3: { cellWidth: 20, halign: 'right' },
-          4: { cellWidth: 30, halign: 'right' }
+          0: { cellWidth: 110 },
+          1: { cellWidth: 45, halign: 'center' },
+          2: { cellWidth: 30, halign: 'right' }
         },
         margin: { left: 10, right: 10 }
       });
@@ -304,7 +300,6 @@ function AnulacionDeuda() {
       doc.setLineWidth(0.2);
       doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
       drawLine('Monto anulado', montoAnulado);
-      drawLine('IVA 12%', 0);
       doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
 
       // Sello ANULADO

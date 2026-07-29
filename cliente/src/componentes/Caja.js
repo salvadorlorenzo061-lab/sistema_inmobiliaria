@@ -803,8 +803,6 @@ const Caja = () => {
                     filasCuota.push([
                         String(item?.concepto || 'Pago aplicado'),
                         String(item?.mes || ''),
-                        `Q ${parseFloat(item?.total || item?.monto_base || 0).toFixed(2)}`,
-                        'Q 0.00',
                         `Q ${parseFloat(item?.total || item?.monto_base || 0).toFixed(2)}`
                     ]);
                 });
@@ -816,8 +814,6 @@ const Caja = () => {
                     filasCuota.push([
                         `Cuota ${numCuotaBase + idx} - ${mes}`,
                         mes,
-                        `Q ${totalMes.toFixed(2)}`,
-                        'Q 0.00',
                         `Q ${totalMes.toFixed(2)}`
                     ]);
                 });
@@ -825,17 +821,15 @@ const Caja = () => {
 
             autoTable(doc, {
                 startY: y,
-                head: [['Concepto / Cuota', 'Mes Afectado', 'Monto Base', 'IVA 12%', 'Total por Mes']],
+                head: [['Concepto / Cuota', 'Mes Afectado', 'Total']],
                 body: filasCuota,
                 theme: 'grid',
                 styles: { fontSize: 8.5, cellPadding: 2 },
                 headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
                 columnStyles: {
-                    0: { cellWidth: 75 },
-                    1: { cellWidth: 40, halign: 'center' },
-                    2: { cellWidth: 25, halign: 'right' },
-                    3: { cellWidth: 20, halign: 'right' },
-                    4: { cellWidth: 25, halign: 'right' }
+                    0: { cellWidth: 95 },
+                    1: { cellWidth: 50, halign: 'center' },
+                    2: { cellWidth: 40, halign: 'right' }
                 },
                 margin: { left: 10, right: 10 }
             });
@@ -862,7 +856,6 @@ const Caja = () => {
 
             drawResumenLine('Saldo Anterior', saldoAnterior);
             drawResumenLine('Subtotal deuda pagada', montoTerreno + montoInteres);
-            drawResumenLine('IVA 12%', 0);
             if (montoMoraRec > 0) drawResumenLine('Mora Aplicada', montoMoraRec);
             drawResumenLine('Total Cobrado Hoy', totalCobrado, true);
 

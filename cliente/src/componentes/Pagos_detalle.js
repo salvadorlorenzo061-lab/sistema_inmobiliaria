@@ -403,25 +403,21 @@ function PagosDetalle() {
         ? detallesFactura.map((item) => [
             String(item?.nombre_concepto || item?.tipo_concepto || 'Pago aplicado').replace(/_/g, ' '),
             String(item?.mes_pagado || 'N/A'),
-            `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`,
-            'Q 0.00',
             `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`
           ])
-        : [['Pago de cuota', 'N/A', `Q ${montoTotal.toFixed(2)}`, 'Q 0.00', `Q ${montoTotal.toFixed(2)}`]];
+        : [['Pago de cuota', 'N/A', `Q ${montoTotal.toFixed(2)}`]];
 
       autoTable(doc, {
         startY: y,
-        head: [['Concepto / Cuota', 'Mes Afectado', 'Monto Base', 'IVA 12%', 'Total por Mes']],
+        head: [['Concepto / Cuota', 'Mes Afectado', 'Total']],
         body: filasDet,
         theme: 'grid',
         styles: { fontSize: 8.5, cellPadding: 2 },
         headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
         columnStyles: {
-          0: { cellWidth: 75 },
-          1: { cellWidth: 40, halign: 'center' },
-          2: { cellWidth: 25, halign: 'right' },
-          3: { cellWidth: 20, halign: 'right' },
-          4: { cellWidth: 25, halign: 'right' }
+          0: { cellWidth: 95 },
+          1: { cellWidth: 50, halign: 'center' },
+          2: { cellWidth: 40, halign: 'right' }
         },
         margin: { left: 10, right: 10 }
       });
@@ -446,7 +442,6 @@ function PagosDetalle() {
       doc.setLineWidth(0.2);
       doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
       drawResLine('Subtotal deuda pagada', montoTotal);
-      drawResLine('IVA 12%', 0);
       const moraDet = detallesFactura.filter((d) => d.tipo_concepto === 'mora').reduce((s, d) => s + Number(d.subtotal || 0), 0);
       if (moraDet > 0) drawResLine('Mora Aplicada', moraDet);
       drawResLine('Total Cobrado Hoy', montoTotal, true);
