@@ -176,6 +176,7 @@ const Caja = () => {
     const [metodoPago, setMetodoPago] = useState('Efectivo');
     const [referencia, setReferencia] = useState('');
     const [mesesPendientes, setMesesPendientes] = useState([]);
+    const [mesesDetalle, setMesesDetalle] = useState([]); // [{mes, numero_cuota}]
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
@@ -259,6 +260,7 @@ const Caja = () => {
         setDatosDeuda(null);
         setIdResidenteActivo('');
         setMesesPendientes([]);
+        setMesesDetalle([]);
         setMesesSeleccionados([]);
         setMontoAPagar('');
         setMontoMora('0');
@@ -378,7 +380,9 @@ const Caja = () => {
             await consultarSiguienteCorrelativo(residente.id_contrato);
             const res = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${residente.id_contrato}`);
             const meses = res?.data?.meses || [];
+            const detalle = Array.isArray(res?.data?.meses_detalle) ? res.data.meses_detalle : [];
             setMesesPendientes(meses);
+            setMesesDetalle(detalle);
             
             // ✅ Seleccionar mes actual y el siguiente (si existe)
             const mesesASeleccionar = [];
@@ -1030,6 +1034,12 @@ const Caja = () => {
       setCurrentPage(1);
     };
 
+    // Returns "Cuota N - Mes Año" label for a given month string
+    const getCuotaLabel = (mes) => {
+        const item = mesesDetalle.find((d) => d.mes === mes);
+        return item ? `Cuota ${item.numero_cuota} - ${mes}` : mes;
+    };
+
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
     const saldoTerrenoPendiente = parseFloat(datosDeuda?.saldo_pendiente || 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
@@ -1387,7 +1397,7 @@ const Caja = () => {
                                                                 style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                                                             />
                                                             <div className="flex-grow-1">
-                                                                <span className="fw-bold fs-5 text-dark">{mes}</span>
+                                                                <span className="fw-bold fs-5 text-dark">{getCuotaLabel(mes)}</span>
                                                             </div>
                                                             <span className="badge bg-primary">Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</span>
                                                             {mesesSeleccionados.includes(mes) && (
@@ -1430,7 +1440,7 @@ const Caja = () => {
                                                 }
                                             }} disabled={!mesesPendientes.length}>
                                                 {(mesesPendientes.length > 0 ? mesesPendientes : ['Sin meses pendientes']).map((mes) => (
-                                                    <option key={mes} value={mes}>{mes}</option>
+                                                    <option key={mes} value={mes}>{getCuotaLabel(mes)}</option>
                                                 ))}
                                             </select>
                                         </div>

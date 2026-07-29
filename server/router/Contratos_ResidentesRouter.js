@@ -310,9 +310,31 @@ const ensureProyectoColumn = () => {
     });
 };
 
+const ensureFinancialColumns = () => {
+    const columns = [
+        { name: 'enganche', definition: 'DECIMAL(12,2) NULL DEFAULT 0' },
+        { name: 'interes_porcentaje', definition: 'DECIMAL(5,2) NULL DEFAULT 0' },
+        { name: 'mora', definition: 'DECIMAL(12,2) NULL DEFAULT 0' },
+        { name: 'plazo_meses', definition: 'INT NULL DEFAULT 0' },
+        { name: 'mes_inicio_pagos', definition: 'INT NULL DEFAULT NULL' },
+        { name: 'anio_inicio_pagos', definition: 'INT NULL DEFAULT NULL' }
+    ];
+    columns.forEach(({ name, definition }) => {
+        const checkSql = `SELECT COUNT(*) AS total FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'contratos_residentes' AND COLUMN_NAME = '${name}'`;
+        db.query(checkSql, (checkErr, checkResult) => {
+            if (checkErr || (checkResult?.[0]?.total || 0) > 0) return;
+            db.query(`ALTER TABLE contratos_residentes ADD COLUMN ${name} ${definition}`, (alterErr) => {
+                if (alterErr) console.error(`Error agregando columna ${name}:`, alterErr.message);
+                else console.log(`Columna ${name} creada en contratos_residentes.`);
+            });
+        });
+    });
+};
+
 ensureEmpresaMarcaColumn();
 ensureProyectoColumn();
 ensureFormatoContratoColumn();
+ensureFinancialColumns();
 ensureContratosServiciosTable();
 ensureContratosDocumentosTable();
 
@@ -423,18 +445,22 @@ router.put("/actualizar", (req, res) => {
     const { 
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
         cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
-        servicios_contrato
+        servicios_contrato,
+        enganche, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos
     } = req.body;
     
     const queryUpdate = `
         UPDATE contratos_residentes SET 
         codigo_contrato=?, id_residente=?, id_empresa_marca=?, id_proyecto=?, id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
-        cuotas_pactadas=?, monto_cuota=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
+        cuotas_pactadas=?, monto_cuota=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=?,
+        enganche=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?
         WHERE id_contrato=?
     `;
     db.query(
         queryUpdate,
-        [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null, id_contrato],
+        [codigo_contrato, id_residente, id_empresa_marca || null, id_proyecto || null, id_tipo_contrato, formato_contrato || 'FORMATO_01', monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra || null, fecha_fin || null, estado, documento_contrato || null,
+         enganche || null, interes_porcentaje || null, mora || null, plazo_meses || null, mes_inicio_pagos || null, anio_inicio_pagos || null,
+         id_contrato],
         (err, result) => {
             if (err) {
                 console.error(err);

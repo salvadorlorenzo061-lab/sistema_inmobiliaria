@@ -517,7 +517,7 @@ router.get("/meses-pendientes", (req, res) => {
     }
 
     // Traer datos de contrato para calcular todos los meses cobrables del contrato
-    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
+    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota, mes_inicio_pagos, anio_inicio_pagos FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
         if (err || !contratoResult.length) {
             console.error('Error al obtener contrato:', err?.message);
             return res.status(500).send('Error al consultar el contrato');
@@ -539,7 +539,14 @@ router.get("/meses-pendientes", (req, res) => {
         const fechaFin = parseFechaValida(fechaFinRaw);
         const fechaFirma = parseFechaValida(fechaFirmaRaw);
 
-        const fechaInicioBase = fechaCompra || fechaFirma || new Date();
+        // If the contract has explicit mes_inicio_pagos + anio_inicio_pagos, use them as the start date
+        const mesInicio = Number(contratoResult[0].mes_inicio_pagos || 0);
+        const anioInicio = Number(contratoResult[0].anio_inicio_pagos || 0);
+        const fechaInicioExplicita = (mesInicio >= 1 && mesInicio <= 12 && anioInicio >= 2000)
+            ? new Date(anioInicio, mesInicio - 1, 1)
+            : null;
+
+        const fechaInicioBase = fechaInicioExplicita || fechaCompra || fechaFirma || new Date();
         const hoy = new Date();
         const candidatos = [];
         const cuotasPactadas = Number(contratoResult[0].cuotas_pactadas || 0);

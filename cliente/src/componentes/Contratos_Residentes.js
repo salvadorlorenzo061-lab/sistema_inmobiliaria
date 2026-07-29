@@ -139,15 +139,21 @@ function Contratos_Residentes() {
     cargarCatalogos();
   }, [cargarCatalogos]);
 
-  // Cálculo automático del valor de cuota si cambia el monto total o las cuotas
+  // Plazo (meses) drives cuotas_pactadas — keep them in sync
   useEffect(() => {
-    if (monto_total && cuotas_pactadas > 0) {
-      const calculo = (parseFloat(monto_total) / parseInt(cuotas_pactadas)).toFixed(2);
+    if (plazo_meses) setCuotas_pactadas(plazo_meses);
+  }, [plazo_meses]);
+
+  // Cálculo automático del valor de cuota si cambia el monto total o el plazo
+  useEffect(() => {
+    const plazo = parseInt(plazo_meses || cuotas_pactadas || 0);
+    if (monto_total && plazo > 0) {
+      const calculo = (parseFloat(monto_total) / plazo).toFixed(2);
       setMonto_cuota(calculo);
     } else {
       setMonto_cuota("");
     }
-  }, [monto_total, cuotas_pactadas]);
+  }, [monto_total, plazo_meses, cuotas_pactadas]);
 
   // Generar código de contrato automático al seleccionar residente
   const seleccionarResidenteContrato = (idResidente) => {
@@ -435,7 +441,8 @@ function Contratos_Residentes() {
     Axios.put(`${API_URL}/actualizar`, {
       id_contrato, codigo_contrato, id_residente, id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null, id_proyecto: proyectoSeleccionado?.id_proyecto || null, id_tipo_contrato, formato_contrato, monto_total,
       cuotas_pactadas, monto_cuota, dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
-      servicios_contrato: serviciosContratoSeleccionados
+      servicios_contrato: serviciosContratoSeleccionados,
+      enganche, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos
     })
     .then(() => {
       const brandingMap = getBrandingCompanyMap();
@@ -711,6 +718,12 @@ function Contratos_Residentes() {
     setModo_marca_empresa('solo_logo');
     setMonto_total(val.monto_total ?? '');
     setCuotas_pactadas(val.cuotas_pactadas ?? '');
+    setPlazo_meses(String(val.plazo_meses || val.cuotas_pactadas || '60'));
+    setEnganche(String(val.enganche || '20000'));
+    setInteres_porcentaje(String(val.interes_porcentaje || '14'));
+    setMora(String(val.mora || '600'));
+    setMes_inicio_pagos(String(val.mes_inicio_pagos || '7'));
+    setAnio_inicio_pagos(String(val.anio_inicio_pagos || new Date().getFullYear()));
     setMonto_cuota(val.monto_cuota ?? '');
     setDia_pago_limite(val.dia_pago_limite ?? '');
     setFecha_firma(toDateInput(val.fecha_firma));
@@ -1112,8 +1125,8 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} placeholder="14" />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Número de Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
+                  <label className="form-label fw-bold">Plazo (meses):</label>
+                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} placeholder="60" />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
@@ -1126,10 +1139,6 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Día Límite de Pago mensual:</label>
                   <input type="number" min="1" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} placeholder="Ej: 5" />
-                </div>
-                <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Plazo Total (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} placeholder="60" />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
@@ -1494,8 +1503,8 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
+                  <label className="form-label fw-bold">Plazo (meses):</label>
+                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
@@ -1508,10 +1517,6 @@ function Contratos_Residentes() {
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Día Pago:</label>
                   <input type="number" min="1" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} />
-                </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Plazo (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
