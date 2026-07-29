@@ -1608,6 +1608,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         success: true,
                                                         numero_recibo,
                                                         fecha: new Date().toLocaleDateString(),
+                                                        saldo_anterior: saldoActual,
                                                         monto_pagado: montoPrincipalTotal,
                                                         monto_terreno_pagado: montoTerrenoTotal,
                                                         monto_servicios_pagado: montoServiciosTotal,

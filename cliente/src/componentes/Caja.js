@@ -671,356 +671,230 @@ const Caja = () => {
         }
     };
 
-    // Generador de recibo estilo formato institucional
+    // Generador de recibo - Formato FACTURA / COMPROBANTE DE COBRO
     const generarPDF = (recibo, residente, empresa) => {
         try {
-            // Carta completa (landscape) para evitar salto a segunda hoja
             const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+            const pW = doc.internal.pageSize.getWidth();
             const logoEmpresa = normalizeImageDataUrl(empresa?.logo_empresa || residente?.logo_empresa_pdf || empresa?.logo || '');
-            const logoProyecto = normalizeImageDataUrl(empresa?.logo_proyecto || residente?.logo_proyecto || '');
+            const nombreEmpresa = String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
+            const nitEmpresa = String(empresa?.nit || 'N/A');
+            const paisEmpresa = String(empresa?.pais || 'Guatemala');
+            const monedaEmpresa = String(empresa?.moneda || 'GTQ');
+            const correlativo = String(recibo?.no_referencia || '').trim();
+            const fechaEmision = new Date();
+            const fechaFmt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+            const fechaHoraFmt = (d) => `${fechaFmt(d)}, ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
-            const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
-            const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
-            const referencia = String(recibo?.no_referencia || '').trim();
-            const matchRef = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
-            const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
-            const numero = matchRef ? matchRef[2].slice(-5) : String(Date.now()).slice(-5);
-            const fecha = recibo?.fecha ? new Date(recibo.fecha) : new Date();
-            const mesesPagadosRecibo = Array.isArray(recibo?.meses_pagados)
-                ? recibo.meses_pagados.map((mes) => String(mes || '').trim()).filter(Boolean)
-                : [];
-            const cuotaInicio = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 0);
-            const cuotaFin = Number(recibo?.numero_cuota_fin || cuotaInicio || 0);
-            const cantidadCuotasPagadas = Number(recibo?.cantidad_cuotas_pagadas || 0);
-            const cuotaDisplay = Number.isInteger(cuotaInicio) && cuotaInicio > 0
-                ? ((Number.isInteger(cuotaFin) && cuotaFin > cuotaInicio)
-                    ? `${cuotaInicio}-${cuotaFin}`
-                    : String(cuotaInicio))
-                : 'N/A';
-            const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
-            const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
-            const usuarioActivo = getUsuarioSesion();
-            const usarFormatoJuridico = esRolJuridico(usuarioActivo);
+            const totalCobrado = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
+            const montoTerreno = parseFloat(recibo?.monto_terreno_pagado || 0);
+            const montoInteres = parseFloat(recibo?.monto_interes_pagado || 0);
+            const montoMoraRec = parseFloat(recibo?.monto_mora || 0);
+            const saldoAnterior = parseFloat(recibo?.saldo_anterior || residente?.saldo_pendiente || 0);
+            const saldoPosterior = Math.max(saldoAnterior - montoTerreno, 0);
 
-            if (usarFormatoJuridico) {
-                const pageW = doc.internal.pageSize.getWidth();
-                const pageH = doc.internal.pageSize.getHeight();
-                const margenX = 8;
-                const ancho = pageW - (margenX * 2);
-                const contenidoY = 36;
-                const contenidoH = 145;
-                const nombreEmpresa = String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
-                const nombreProyecto = String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto');
-                const fechaDoc = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
-                const d = String(fechaDoc.getDate()).padStart(2, '0');
-                const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
-                const yFull = String(fechaDoc.getFullYear());
+            const goldColor = [173, 136, 38];
 
-                doc.setDrawColor(188, 177, 117);
-                doc.setLineWidth(0.35);
-                if (typeof doc.roundedRect === 'function') {
-                    doc.roundedRect(margenX, contenidoY, ancho, contenidoH, 3, 3, 'S');
-                } else {
-                    doc.rect(margenX, contenidoY, ancho, contenidoH);
-                }
+            // === ENCABEZADO ===
+            let y = 12;
+            // Línea dorada superior
+            doc.setFillColor(...goldColor);
+            doc.rect(0, 0, pW, 5, 'F');
 
-                if (logoEmpresa) {
-                    try {
-                        doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), margenX + 3, 8.5, 31, 18, `jur-logo-${Date.now()}`, 'FAST');
-                    } catch {
-                        // no-op
-                    }
-                }
-
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(10.8);
-                doc.text(nombreEmpresa, pageW / 2, 14.5, { align: 'center' });
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(7.8);
-                doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', pageW / 2, 20, { align: 'center' });
-                doc.text('PBX: 2220-6406  Telefono: 5825-5903', pageW / 2, 24.2, { align: 'center' });
-
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(8.8);
-                doc.text('Recibo Juridico', pageW - 42.5, 14.2);
-                doc.rect(pageW - 42.5, 15.9, 37.5, 11.8);
-                doc.setTextColor(166, 35, 35);
-                doc.setFontSize(11.8);
-                doc.text(`NO. ${String(numero).padStart(5, '0')}`, pageW - 23.8, 23.9, { align: 'center' });
-                doc.setTextColor(0, 0, 0);
-
-                doc.setTextColor(195, 195, 195);
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(28);
-                doc.text('CORPORACION DE', pageW / 2, 102, { align: 'center' });
-                doc.text('INVERSION INMOBILIARIA', pageW / 2, 116, { align: 'center' });
-                doc.setTextColor(0, 0, 0);
-
-                let rY = contenidoY + 8;
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(11.5);
-                doc.text('DATOS DEL CLIENTE', margenX + 4, rY);
-                doc.setDrawColor(210, 190, 92);
-                doc.setLineWidth(0.45);
-                doc.line(margenX + 4, rY + 1.8, margenX + 34, rY + 1.8);
-
-                rY += 11;
-                doc.setDrawColor(60, 60, 60);
-                doc.setLineWidth(0.2);
-                doc.setFontSize(8.3);
-                doc.text('Fecha:', margenX + 4, rY);
-                const fechaX = margenX + 18;
-                const boxW = 8;
-                const boxH = 8;
-                [d[0], d[1], m[0], m[1], yFull[0], yFull[1], yFull[2], yFull[3]].forEach((char, idx) => {
-                    const offsetX = idx < 2 ? idx * (boxW + 1) : idx < 4 ? (2 * (boxW + 1)) + 4 + ((idx - 2) * (boxW + 1)) : (4 * (boxW + 1)) + 8 + ((idx - 4) * (boxW + 1));
-                    doc.rect(fechaX + offsetX, rY - 5.8, boxW, boxH);
-                    doc.text(char, fechaX + offsetX + (boxW / 2), rY - 0.4, { align: 'center' });
-                });
-                doc.text('/', fechaX + (2 * (boxW + 1)) + 1.4, rY - 0.8);
-                doc.text('/', fechaX + (4 * (boxW + 1)) + 5.2, rY - 0.8);
-
-                const amountBoxX = pageW - 47;
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(11.3);
-                doc.text('Por: Q', amountBoxX - 22, rY + 0.1);
-                doc.rect(amountBoxX, rY - 5.8, 42, 8.2);
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(10.4);
-                doc.text(montoTotal.toFixed(2), amountBoxX + 2, rY - 0.2);
-
-                const filaAncho = ancho - 4;
-                const filaX = margenX + 2;
-                const filaH = 10.5;
-                rY += 6;
-                doc.rect(filaX, rY, filaAncho, filaH);
-                doc.rect(filaX, rY + filaH, filaAncho, filaH);
-                doc.rect(filaX, rY + (filaH * 2), filaAncho, filaH);
-                doc.rect(filaX, rY + (filaH * 3), filaAncho, filaH);
-
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(8.3);
-                doc.text('Recibimos de:', filaX + 2, rY + 6.8);
-                doc.text('Cantidad de:', filaX + 2, rY + 17.3);
-                doc.text('Por cancelacion de:', filaX + 2, rY + 27.8);
-                doc.text('Proyecto:', filaX + 2, rY + 38.3);
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(10.3);
-                doc.text(doc.splitTextToSize(String(residente?.nombre || 'N/A'), filaAncho - 34).slice(0, 1), filaX + 30, rY + 6.8);
-                doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), filaAncho - 34).slice(0, 1), filaX + 30, rY + 17.3);
-                doc.text(doc.splitTextToSize(String(conceptos), filaAncho - 40).slice(0, 1), filaX + 40, rY + 27.8);
-                doc.text(doc.splitTextToSize(nombreProyecto, filaAncho - 34).slice(0, 1), filaX + 23, rY + 38.3);
-
-                const pagosY = rY + (filaH * 4);
-                doc.rect(filaX, pagosY, filaAncho, 24);
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(8.2);
-                doc.text('Boleta:', filaX + 2, pagosY + 5.6);
-                doc.text('Transferencia:', filaX + 52, pagosY + 5.6);
-                doc.text('Cheque:', filaX + 114, pagosY + 5.6);
-                doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
-
-                const referenciaBase = String(recibo?.no_referencia || '').trim();
-                const boletaValor = metodo.includes('deposit') ? referenciaBase : '';
-                const transferenciaValor = metodo.includes('transfer') ? referenciaBase : '';
-                const chequeValor = metodo.includes('cheque') ? referenciaBase : '';
-                const efectivoValor = metodo.includes('efectivo') ? 'X' : '';
-                doc.setFont('Helvetica', 'normal');
-                doc.setFontSize(10.1);
-                doc.text(doc.splitTextToSize(boletaValor || '', 44).slice(0, 1), filaX + 2, pagosY + 16);
-                doc.text(doc.splitTextToSize(transferenciaValor || '', 56).slice(0, 1), filaX + 52, pagosY + 16);
-                doc.text(doc.splitTextToSize(chequeValor || '', 40).slice(0, 1), filaX + 114, pagosY + 16);
-                doc.text(efectivoValor, filaX + 160, pagosY + 16);
-
-                const firmaY = pagosY + 24;
-                doc.rect(filaX, firmaY, filaAncho, 22);
-                doc.setFont('Helvetica', 'bold');
-                doc.setFontSize(8.5);
-                doc.text('Firma:', filaX + 2, firmaY + 6.2);
-                if (logoProyecto) {
-                    try {
-                        doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), filaX + 62, firmaY + 1.8, 32, 13.2, `jur-proy-${Date.now()}`, 'FAST');
-                    } catch {
-                        // no-op
-                    }
-                }
-
-                doc.setFont('Helvetica', 'italic');
-                doc.setFontSize(6.7);
-                doc.text(
-                    doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo se extiende previo a la confirmacion de la transaccion bancaria.', ancho - 4).slice(0, 2),
-                    margenX + 2,
-                    pageH - 7.5
-                );
-
-                const juridicoFileName = `Recibo_Juridico_${String(recibo?.no_referencia || recibo?.numero_recibo || 'sin_numero').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
-                doc.save(juridicoFileName);
-                return;
-            }
-
-            const x = 10;
-            const w = 190;
-            let y = 10;
-            const headerHeight = 22;
-            const rightHeaderWidth = 68;
-            const leftHeaderWidth = w - rightHeaderWidth;
-            const rightHeaderX = x + leftHeaderWidth;
-
-            doc.setFillColor(240, 228, 167);
-            doc.rect(x, y, w, headerHeight, 'F');
-            doc.rect(x, y, w, headerHeight);
-            doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
-
-            const logoX = x + 3;
-            const logoY = y + 1.2;
-            const logoW = 24;
-            const logoH = 19;
+            // Logo empresa
             if (logoEmpresa) {
-                try {
-                    doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `rec-logo-${Date.now()}`, 'FAST');
-                } catch {
-                    // no-op
-                }
+                try { doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), 10, y, 28, 18, `fac-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
             }
 
-            const leftTextX = logoEmpresa ? (logoX + logoW + 3) : (x + 3);
-            const leftTextWidth = logoEmpresa ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
-            const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
-
+            // Nombre empresa + datos fiscales (centro)
             doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9.6);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
-            doc.setFontSize(10.5);
-            doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
+            doc.setFontSize(11);
+            doc.text(nombreEmpresa, 46, y + 5);
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.text(`NIT: ${nitEmpresa}`, 46, y + 10);
+            doc.text(`País: ${paisEmpresa}`, 46, y + 14.5);
+            doc.text(`Moneda: ${monedaEmpresa}`, 46, y + 19);
+
+            // Bloque título derecha
+            doc.setFillColor(245, 245, 245);
+            doc.rect(140, y - 2, 63, 30, 'F');
+            doc.setDrawColor(180, 180, 180);
+            doc.rect(140, y - 2, 63, 30);
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.text('FACTURA / COMPROBANTE', 171.5, y + 4, { align: 'center' });
+            doc.text('DE COBRO', 171.5, y + 9, { align: 'center' });
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(8.2);
+            doc.text(`Documento No: ${correlativo}`, 171.5, y + 15, { align: 'center' });
+            doc.text(`Fecha emisión: ${fechaFmt(fechaEmision)}`, 171.5, y + 20, { align: 'center' });
+            doc.text(`Fecha/Hora impresión: ${fechaHoraFmt(fechaEmision)}`, 171.5, y + 25, { align: 'center' });
+
+            y += 36;
+            doc.setDrawColor(180, 180, 180);
+            doc.setLineWidth(0.3);
+            doc.line(10, y, pW - 10, y);
+            y += 5;
+
+            // === DATOS DEL CLIENTE / RESIDENTE ===
+            doc.setFillColor(240, 240, 240);
+            doc.rect(10, y, pW - 20, 7, 'F');
+            doc.setFont('Helvetica', 'bold');
             doc.setFontSize(9.5);
-            doc.text(`Serie "${serie}"`, rightHeaderX + 6, y + 13.5);
-            doc.setTextColor(166, 35, 35);
-            doc.text(`N. ${String(numero).padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
-            doc.setTextColor(0, 0, 0);
+            doc.text('DATOS DEL CLIENTE / RESIDENTE', 12, y + 5);
+            y += 10;
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.text('Nombre:', 12, y);
             doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(7.2);
-            doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', x + (w / 2), y + headerHeight + 4.5, { align: 'center' });
-            doc.text('PBX: 2220-6406  Telefono: 5825-5903', x + (w / 2), y + headerHeight + 8.2, { align: 'center' });
-
-            y += headerHeight + 10;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, w, 6, 'F');
-            doc.rect(x, y, w, 6);
+            doc.text(String(residente?.nombre || 'N/A'), 35, y);
             doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.8);
-            doc.text('Datos del cliente:', x + 2, y + 4.3);
-
-            y += 7;
-            const nombreLineas = doc.splitTextToSize(String(residente?.nombre || 'N/A'), 158).slice(0, 1);
-            const nombreAltura = 9;
-            doc.rect(x, y, w, nombreAltura);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Nombre:', x + 2, y + 5);
+            doc.text('Dirección:', 120, y);
             doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(nombreLineas, x + 22, y + 5);
-
-            y += nombreAltura + 2.5;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, 145, 6, 'F');
-            doc.rect(x + 145, y, 45, 6, 'F');
-            doc.rect(x, y, 145, 6);
-            doc.rect(x + 145, y, 45, 6);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.8);
-            doc.text('Fecha:', x + 2, y + 4.3);
-            doc.text('Por:', x + 147, y + 4.3);
-
+            doc.text(String(residente?.direccion_notificacion || 'N/A').slice(0, 40), 143, y);
             y += 6;
-            const fechaLineas = doc.splitTextToSize(`Guatemala, ${fechaLargaGT(fecha)}`, 139).slice(0, 1);
-            const fechaAltura = 9;
-            doc.rect(x, y, 145, fechaAltura);
-            doc.rect(x + 145, y, 45, fechaAltura);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(9.3);
-            doc.text(fechaLineas, x + 2, y + 5);
-            doc.setFont('Helvetica', 'bold');
-            doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 5);
 
-            y += fechaAltura + 2.5;
-            const pagaLineas = doc.splitTextToSize(montoALetrasRecibo(montoTotal), 143).slice(0, 1);
-            const pagaAltura = 9;
-            doc.rect(x, y, w, pagaAltura);
             doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Paga la cantidad de:', x + 2, y + 5);
+            doc.text('Identificación:', 12, y);
             doc.setFont('Helvetica', 'normal');
+            doc.text(String(residente?.numero_identificacion || 'N/A'), 42, y);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Contrato:', 120, y);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(String(residente?.codigo_contrato || 'N/A'), 143, y);
+            y += 6;
+
+            doc.setFont('Helvetica', 'bold');
+            doc.text('DPI:', 12, y);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(String(residente?.dpi || 'N/A'), 24, y);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('NIT:', 120, y);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(String(residente?.nit || 'CF'), 131, y);
+            y += 8;
+
+            // === DATOS DE PAGO ===
+            doc.setFillColor(240, 240, 240);
+            doc.rect(10, y, pW - 20, 7, 'F');
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.text('DATOS DE PAGO', 12, y + 5);
+            y += 10;
+
+            doc.setFont('Helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.text('Método de pago:', 12, y);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(String(recibo?.metodo_pago || 'N/A'), 48, y);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Referencia:', 120, y);
+            doc.setFont('Helvetica', 'normal');
+            doc.text(correlativo || 'N/A', 143, y);
+            y += 10;
+
+            // === TABLA DE DETALLE ===
+            const filasCuota = [];
+            if (detalleCobro.length > 0) {
+                detalleCobro.forEach((item) => {
+                    filasCuota.push([
+                        String(item?.concepto || 'Pago aplicado'),
+                        String(item?.mes || ''),
+                        `Q ${parseFloat(item?.total || item?.monto_base || 0).toFixed(2)}`,
+                        'Q 0.00',
+                        `Q ${parseFloat(item?.total || item?.monto_base || 0).toFixed(2)}`
+                    ]);
+                });
+            } else {
+                const mesesRec = Array.isArray(recibo?.meses_pagados) ? recibo.meses_pagados : [recibo?.mes_pagado || ''];
+                const numCuotaBase = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 1);
+                mesesRec.forEach((mes, idx) => {
+                    const totalMes = parseFloat(((montoTerreno + montoInteres) / Math.max(mesesRec.length, 1)).toFixed(2));
+                    filasCuota.push([
+                        `Cuota ${numCuotaBase + idx} - ${mes}`,
+                        mes,
+                        `Q ${totalMes.toFixed(2)}`,
+                        'Q 0.00',
+                        `Q ${totalMes.toFixed(2)}`
+                    ]);
+                });
+            }
+
+            autoTable(doc, {
+                startY: y,
+                head: [['Concepto / Cuota', 'Mes Afectado', 'Monto Base', 'IVA 12%', 'Total por Mes']],
+                body: filasCuota,
+                theme: 'grid',
+                styles: { fontSize: 8.5, cellPadding: 2 },
+                headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+                columnStyles: {
+                    0: { cellWidth: 75 },
+                    1: { cellWidth: 40, halign: 'center' },
+                    2: { cellWidth: 25, halign: 'right' },
+                    3: { cellWidth: 20, halign: 'right' },
+                    4: { cellWidth: 25, halign: 'right' }
+                },
+                margin: { left: 10, right: 10 }
+            });
+
+            y = doc.lastAutoTable.finalY + 8;
+
+            // === RESUMEN DE TOTALES (alineado a la derecha) ===
+            const resX = pW - 90;
+            const resW = 80;
+            const lineH = 7;
+            const drawResumenLine = (label, valor, bold = false, rojo = false) => {
+                doc.setFont('Helvetica', bold ? 'bold' : 'normal');
+                doc.setFontSize(8.8);
+                doc.setTextColor(rojo ? 180 : 40, rojo ? 0 : 40, rojo ? 0 : 40);
+                doc.text(label + ':', resX, y);
+                doc.text(`Q${parseFloat(valor || 0).toFixed(2)}`, resX + resW, y, { align: 'right' });
+                doc.setTextColor(40, 40, 40);
+                y += lineH;
+            };
+
+            doc.setDrawColor(200, 200, 200);
+            doc.setLineWidth(0.2);
+            doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
+
+            drawResumenLine('Saldo Anterior', saldoAnterior);
+            drawResumenLine('Subtotal deuda pagada', montoTerreno + montoInteres);
+            drawResumenLine('IVA 12%', 0);
+            if (montoMoraRec > 0) drawResumenLine('Mora Aplicada', montoMoraRec);
+            drawResumenLine('Total Cobrado Hoy', totalCobrado, true);
+
+            doc.setDrawColor(200, 200, 200);
+            doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
+
+            doc.setFont('Helvetica', 'bold');
             doc.setFontSize(10);
-            doc.text(pagaLineas, x + 45, y + 5);
+            doc.setTextColor(180, 0, 0);
+            doc.text('SALDO A DEBER:', resX, y + 1);
+            doc.text(`Q${saldoPosterior.toFixed(2)}`, resX + resW, y + 1, { align: 'right' });
+            doc.setTextColor(40, 40, 40);
+            y += lineH + 6;
 
-            y += pagaAltura + 2.5;
-            const conceptosLineas = doc.splitTextToSize(conceptos, 143).slice(0, 2);
-            const conceptosAltura = Math.max(10, (conceptosLineas.length * 4.2) + 2.2);
-            doc.rect(x, y, w, conceptosAltura);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Por cancelacion de:', x + 2, y + 4.9);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(9.8);
-            doc.text(conceptosLineas, x + 43, y + 4.9);
+            // Línea separadora inferior
+            doc.setDrawColor(180, 180, 180);
+            doc.setLineWidth(0.3);
+            doc.line(10, y, pW - 10, y);
+            y += 5;
 
-            y += conceptosAltura + 2.5;
-            doc.rect(x, y, 65, 8);
-            doc.rect(x + 65, y, 125, 8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Cuota(s):', x + 2, y + 5.2);
-            doc.setTextColor(166, 35, 35);
-            doc.setFontSize(12);
-            doc.text(cuotaDisplay, x + 29, y + 5.2);
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(9);
-            const detalleCuotasTexto = cantidadCuotasPagadas > 0
-                ? `${cantidadCuotasPagadas} cuota(s) | ${mesesPagadosRecibo.join(', ')}`
-                : '';
-            doc.text('Abono extraordinario:', x + 67, y + 3.8);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 3.8);
-            if (detalleCuotasTexto) {
-                doc.setFontSize(7.1);
-                doc.text(doc.splitTextToSize(detalleCuotasTexto, 118).slice(0, 1), x + 67, y + 7.1);
-            }
-
-            const boxY = Math.min(Math.max(y + 38, 140), 160);
-            const boxH = 22;
-            doc.rect(x, boxY, 60, boxH);
-            doc.rect(x + 65, boxY, 60, boxH);
-
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8.6);
-            doc.text(`${metodo.includes('deposit') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 4.8);
-            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 10.2);
-            if (!metodo.includes('efectivo')) {
-                doc.text(`NO. ${String(recibo?.no_referencia || 'N/A')}`, x + 3, boxY + 15.8);
-            }
-
-            if (logoProyecto) {
-                try {
-                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 81, boxY + 9, 28, 11, `rec-logo-proyecto-${Date.now()}`, 'FAST');
-                } catch {
-                    // no-op
-                }
-            }
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.8);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
-
-            const footerY = 205;
+            // === PIE DE PÁGINA ===
             doc.setFont('Helvetica', 'italic');
-            doc.setFontSize(6.8);
-            doc.text(
-                doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 2),
-                x,
-                footerY
-            );
+            doc.setFontSize(7);
+            doc.setTextColor(100, 100, 100);
+            doc.text('Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.', 10, y);
 
-            const fileName = `Recibo_${String(recibo?.no_referencia || recibo?.numero_recibo || 'sin_numero').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
+            // Línea dorada inferior
+            const pH = doc.internal.pageSize.getHeight();
+            doc.setFillColor(...goldColor);
+            doc.rect(0, pH - 5, pW, 5, 'F');
+
+            const fileName = `Factura_${correlativo.replace(/[^A-Za-z0-9_-]/g, '_') || Date.now()}.pdf`;
             doc.save(fileName);
         } catch (error) {
             console.error('Error al generar PDF:', error);
@@ -1028,6 +902,7 @@ const Caja = () => {
         }
 
     };
+
 
         const criterioBusqueda = normalizeSearchValue(busqueda);
         const listaFiltrada = listaResidentesPendientes.filter((r) => {
@@ -1413,7 +1288,7 @@ const Caja = () => {
                                                             <div className="flex-grow-1">
                                                                 <span className="fw-bold fs-5 text-dark">{getCuotaLabel(mes)}</span>
                                                             </div>
-                                                            <span className="badge bg-primary">Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</span>
+                                                            <span className="badge bg-primary">Q{(parseFloat(datosDeuda?.monto_cuota || 0) + (parseFloat(datosDeuda?.saldo_pendiente || 0) * parseFloat(datosDeuda?.interes_porcentaje || 0) / 100 / 12)).toFixed(2)}</span>
                                                             {mesesSeleccionados.includes(mes) && (
                                                                 <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
                                                             )}
