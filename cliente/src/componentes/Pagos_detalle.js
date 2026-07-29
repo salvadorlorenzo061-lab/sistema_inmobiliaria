@@ -3,6 +3,7 @@ import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { API_BASE_URL } from '../config';
 
@@ -464,21 +465,6 @@ function PagosDetalle() {
       doc.text('Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.', 10, pH - 10);
       doc.setFillColor(...goldColor);
       doc.rect(0, pH - 5, pW, 5, 'F');
-    }
-      doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
-
-      const logoX = x + 3;
-      const logoY = y + 1.2;
-      const logoW = 24;
-      const logoH = 19;
-      if (empresaLogo) {
-        try {
-          doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), logoX, logoY, logoW, logoH, `rec-logo-${Date.now()}`, 'FAST');
-        } catch {
-          // no-op
-        }
-      }
-
     }
 
     doc.save(`Factura_${correlativo.replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
