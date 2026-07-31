@@ -857,9 +857,47 @@ router.get("/meses-pendientes", (req, res) => {
                 return res.status(500).send('Error al consultar meses pendientes');
             }
 
+            const queryMesesAnulados = `
+                SELECT DISTINCT fh.mes_pagado
+                FROM facturas_historial fh
+                WHERE fh.id_contrato = ?
+                  AND fh.estado_factura = 'ANULADA'
+                  AND fh.tipo_concepto = 'cuota_terreno'
+                  AND fh.mes_pagado IS NOT NULL
+                  AND fh.mes_pagado != ''
+            `;
+
+            db.query(queryMesesAnulados, [id_contrato], (anulErr, anulRows) => {
+                if (anulErr && String(anulErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                    console.error('Error al obtener meses anulados:', anulErr.message);
+                    return res.status(500).send('Error al consultar meses pendientes');
+                }
+
             // Crear un Set con meses pagados de cuota de terreno
             const mesesPagadosSet = new Set();
             const legacySoloMes = [];
+            const mesesAnuladosSet = new Set();
+
+            (anulRows || []).forEach((row) => {
+                const bruto = String(row?.mes_pagado || '').trim();
+                if (!bruto) return;
+
+                const parsed = parsearEtiquetaMes(bruto);
+                if (parsed instanceof Date) {
+                    mesesAnuladosSet.add(etiquetaMesDesdeFecha(new Date(parsed.getFullYear(), parsed.getMonth(), 1)));
+                    return;
+                }
+
+                const soloMes = String(bruto).match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+                if (soloMes) {
+                    const idxMes = obtenerIndiceMes(soloMes[1]);
+                    if (idxMes >= 0) {
+                        candidatosMeta
+                            .filter((item) => item.fecha.getMonth() === idxMes)
+                            .forEach((item) => mesesAnuladosSet.add(item.mes));
+                    }
+                }
+            });
 
             (result || []).forEach(row => {
                 const bruto = String(row?.mes_pagado || '').trim();
@@ -888,6 +926,13 @@ router.get("/meses-pendientes", (req, res) => {
                     }
                 });
             }
+
+            // Si un mes fue anulado, debe volver a considerarse pendiente aunque haya quedado rastro legacy.
+            mesesAnuladosSet.forEach((mes) => {
+                if (mesesPagadosSet.has(mes)) {
+                    mesesPagadosSet.delete(mes);
+                }
+            });
 
             // Filtrar: solo retornar meses que NO estén en pagados
             let pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
@@ -943,6 +988,7 @@ router.get("/meses-pendientes", (req, res) => {
                 cuotas_pagadas: cuotasPagadasContrato,
                 cuotas_pendientes: cuotasPendientesContrato,
                 siguiente_mes_pendiente: mesesPendientes[0] || null
+            });
             });
         });
     });

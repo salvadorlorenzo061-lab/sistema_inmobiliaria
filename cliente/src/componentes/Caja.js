@@ -1710,7 +1710,9 @@ const Caja = () => {
                                                                 style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                                                             />
                                                             <div className="flex-grow-1">
-                                                                <span className="fw-bold fs-5 text-dark">{mes}</span>
+                                                                <span className="fw-bold fs-5 text-dark">
+                                                                    Cuota {obtenerNumeroCuotaMesVista(mes) || '-'} - {mes}
+                                                                </span>
                                                             </div>
                                                             <span className="badge bg-primary">
                                                                 Q{(
