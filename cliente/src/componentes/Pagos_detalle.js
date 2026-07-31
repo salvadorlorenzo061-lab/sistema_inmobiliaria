@@ -309,7 +309,7 @@ function PagosDetalle() {
       doc.rect(0, 0, pW, 5, 'F');
 
       if (empresaLogo) {
-        try { doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), 10, y, 28, 18, `det-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
+        try { doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), 10, y, 28, 28, `det-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
       }
 
       doc.setFont('Helvetica', 'bold');
@@ -447,8 +447,6 @@ function PagosDetalle() {
       if (moraDet > 0) drawResLine('Mora Aplicada', moraDet);
       drawResLine('Total Cobrado Hoy', montoTotal, true);
       doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
-
-      // Sello ANULADA si aplica
       if (String(documento?.estado_factura || '').toUpperCase() === 'ANULADA') {
         doc.setFont('Helvetica', 'bold');
         doc.setFontSize(38);

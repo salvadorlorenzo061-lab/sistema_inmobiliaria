@@ -174,7 +174,7 @@ function AnulacionDeuda() {
       doc.rect(0, 0, pW, 5, 'F');
 
       if (logoEmpresa) {
-        try { doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), 10, y, 28, 18, `anu-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
+        try { doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), 10, y, 28, 28, `anu-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
       }
 
       doc.setFont('Helvetica', 'bold');

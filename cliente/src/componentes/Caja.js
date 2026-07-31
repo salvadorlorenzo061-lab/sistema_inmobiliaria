@@ -176,6 +176,8 @@ const Caja = () => {
     const [opcionesCuota, setOpcionesCuota] = useState([]);
     const [metodoPago, setMetodoPago] = useState('Efectivo');
     const [referencia, setReferencia] = useState('');
+    const [banco, setBanco] = useState('');
+    const [montoManualOverride, setMontoManualOverride] = useState(false);
     const [mesesPendientes, setMesesPendientes] = useState([]);
     const [mesesDetalle, setMesesDetalle] = useState([]); // [{mes, numero_cuota}]
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
@@ -266,6 +268,8 @@ const Caja = () => {
         setMesesSeleccionados([]);
         setMontoAPagar('');
         setMontoMora('0');
+        setMontoManualOverride(false);
+        setBanco('');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMorasPendientes([]);
@@ -317,7 +321,9 @@ const Caja = () => {
         setMontoInteresSeleccionado(interesTotal);
         setMontoServiciosSeleccionado(serviciosTotal);
         setMontoTotalSeleccionado(total);
-        setMontoAPagar(String(total.toFixed(2)));
+        if (!montoManualOverride) {
+            setMontoAPagar(String(total.toFixed(2)));
+        }
     };
 
     const consultarSiguienteCorrelativo = async (idContrato) => {
@@ -383,6 +389,8 @@ const Caja = () => {
         setMorasSeleccionadas([]);
         setMontoServiciosSeleccionado(0);
         setResumenServiciosIniciales(null);
+        setMontoManualOverride(false);
+        setBanco('');
 
         try {
             await consultarSiguienteCorrelativo(residente.id_contrato);
@@ -514,6 +522,10 @@ const Caja = () => {
         const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
         const montoSolicitado = parseFloat(montoAPagar || 0);
         const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
+        // Si el usuario ingresó monto manualmente, el capital = monto - interés (el interés siempre se cobra)
+        const montoTerrenoEfectivo = montoManualOverride
+            ? Math.max(0, parseFloat((montoSolicitado - montoInteresSeleccionado).toFixed(2)))
+            : montoTerreno;
 
         if (!Number.isFinite(montoSolicitado) || montoSolicitado <= 0) {
             mostrarToast('El monto a cobrar debe ser mayor a cero.', 'warning');
@@ -553,10 +565,11 @@ const Caja = () => {
             id_tipo_contrato: datosDeuda.id_tipo_contrato || 1, 
             id_usuario: obtenerUsuarioActivo(), 
             monto_pagar: montoSolicitado,
-            monto_terreno_pagar: montoTerreno,
+            monto_terreno_pagar: montoTerrenoEfectivo,
             monto_mora: parseFloat(montoMora),
             monto_interes: montoInteresSeleccionado,
             metodo_pago: metodoPago,
+            banco: banco || '',
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
             observaciones: `Pago de cuota de terreno mes de ${mesesSeleccionados.join(', ') || mesPagado}`,
             mes_pagado: mesesSeleccionados[0] || mesPagado,
@@ -672,151 +685,128 @@ const Caja = () => {
         }
     };
 
-    // Generador de recibo - Formato FACTURA / COMPROBANTE DE COBRO
-    const generarPDF = (recibo, residente, empresa) => {
+            const generarPDF = (recibo, residente, empresa) => {
         try {
             const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
             const pW = doc.internal.pageSize.getWidth();
             const logoEmpresa = normalizeImageDataUrl(empresa?.logo_empresa || residente?.logo_empresa_pdf || empresa?.logo || '');
             const nombreEmpresa = String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
             const nitEmpresa = String(empresa?.nit || 'N/A');
-            const paisEmpresa = String(empresa?.pais || 'Guatemala');
+            const paisEmpresa = String(empresa?.pais || 'GUATEMALA').toUpperCase();
             const monedaEmpresa = String(empresa?.moneda || 'GTQ');
             const correlativo = String(recibo?.no_referencia || '').trim();
+            const bancoUsado = String(recibo?.banco || banco || '').trim();
             const fechaEmision = new Date();
             const fechaFmt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
             const fechaHoraFmt = (d) => `${fechaFmt(d)}, ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
 
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
             const totalCobrado = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
-            const montoTerreno = parseFloat(recibo?.monto_terreno_pagado || 0);
-            const montoInteres = parseFloat(recibo?.monto_interes_pagado || 0);
+            const montoTerrenoR = parseFloat(recibo?.monto_terreno_pagado || 0);
+            const montoInteresR = parseFloat(recibo?.monto_interes_pagado || 0);
             const montoMoraRec = parseFloat(recibo?.monto_mora || 0);
-            const saldoAnterior = parseFloat(recibo?.saldo_anterior || residente?.saldo_pendiente || 0);
-            const saldoPosterior = Math.max(saldoAnterior - montoTerreno, 0);
+            const metodoRecibo = String(recibo?.metodo_pago || '').toLowerCase();
+            const referenciaTexto = bancoUsado
+                ? `${correlativo} | ${bancoUsado}`
+                : correlativo || 'N/A';
 
             const goldColor = [173, 136, 38];
 
             // === ENCABEZADO ===
-            let y = 12;
-            // Línea dorada superior
+            let y = 10;
             doc.setFillColor(...goldColor);
             doc.rect(0, 0, pW, 5, 'F');
 
-            // Logo empresa
+            // Logo — más grande y cuadrado
             if (logoEmpresa) {
-                try { doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), 10, y, 28, 18, `fac-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
+                try { doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), 10, y + 2, 28, 28, `fac-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
             }
 
-            // Nombre empresa + datos fiscales (centro)
             doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(11);
-            doc.text(nombreEmpresa, 46, y + 5);
+            doc.setFontSize(12);
+            doc.text(nombreEmpresa, 46, y + 8);
             doc.setFont('Helvetica', 'normal');
             doc.setFontSize(8.5);
-            doc.text(`NIT: ${nitEmpresa}`, 46, y + 10);
-            doc.text(`País: ${paisEmpresa}`, 46, y + 14.5);
-            doc.text(`Moneda: ${monedaEmpresa}`, 46, y + 19);
+            doc.text(`NIT: ${nitEmpresa}`, 46, y + 14);
+            doc.text(`País: ${paisEmpresa}`, 46, y + 19);
+            doc.text(`Moneda: ${monedaEmpresa}`, 46, y + 24);
 
-            // Bloque título derecha
             doc.setFillColor(245, 245, 245);
-            doc.rect(140, y - 2, 63, 30, 'F');
+            doc.rect(140, y, 63, 32, 'F');
             doc.setDrawColor(180, 180, 180);
-            doc.rect(140, y - 2, 63, 30);
+            doc.rect(140, y, 63, 32);
             doc.setFont('Helvetica', 'bold');
             doc.setFontSize(10);
-            doc.text('FACTURA / COMPROBANTE', 171.5, y + 4, { align: 'center' });
-            doc.text('DE COBRO', 171.5, y + 9, { align: 'center' });
+            doc.text('FACTURA / COMPROBANTE', 171.5, y + 6, { align: 'center' });
+            doc.text('DE COBRO', 171.5, y + 12, { align: 'center' });
             doc.setFont('Helvetica', 'normal');
             doc.setFontSize(8.2);
-            doc.text(`Documento No: ${correlativo}`, 171.5, y + 15, { align: 'center' });
-            doc.text(`Fecha emisión: ${fechaFmt(fechaEmision)}`, 171.5, y + 20, { align: 'center' });
-            doc.text(`Fecha/Hora impresión: ${fechaHoraFmt(fechaEmision)}`, 171.5, y + 25, { align: 'center' });
+            doc.text(`Documento No: ${correlativo}`, 171.5, y + 18, { align: 'center' });
+            doc.text(`Fecha emisión: ${fechaFmt(fechaEmision)}`, 171.5, y + 23, { align: 'center' });
+            doc.text(`Fecha/Hora impresión: ${fechaHoraFmt(fechaEmision)}`, 171.5, y + 28, { align: 'center' });
 
-            y += 36;
+            y += 40;
             doc.setDrawColor(180, 180, 180);
             doc.setLineWidth(0.3);
             doc.line(10, y, pW - 10, y);
             y += 5;
 
-            // === DATOS DEL CLIENTE / RESIDENTE ===
+            // === DATOS DEL CLIENTE ===
             doc.setFillColor(240, 240, 240);
             doc.rect(10, y, pW - 20, 7, 'F');
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9.5);
+            doc.setFont('Helvetica', 'bold'); doc.setFontSize(9.5);
             doc.text('DATOS DEL CLIENTE / RESIDENTE', 12, y + 5);
             y += 10;
 
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.5);
-            doc.text('Nombre:', 12, y);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFont('Helvetica', 'bold'); doc.setFontSize(8.5);
+            doc.text('Nombre:', 12, y); doc.setFont('Helvetica', 'normal');
             doc.text(String(residente?.nombre || 'N/A'), 35, y);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Dirección:', 120, y);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFont('Helvetica', 'bold'); doc.text('Dirección:', 120, y); doc.setFont('Helvetica', 'normal');
             doc.text(String(residente?.direccion_notificacion || 'N/A').slice(0, 40), 143, y);
             y += 6;
 
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Identificación:', 12, y);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFont('Helvetica', 'bold'); doc.text('Identificación:', 12, y); doc.setFont('Helvetica', 'normal');
             doc.text(String(residente?.numero_identificacion || 'N/A'), 42, y);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Contrato:', 120, y);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFont('Helvetica', 'bold'); doc.text('Contrato:', 120, y); doc.setFont('Helvetica', 'normal');
             doc.text(String(residente?.codigo_contrato || 'N/A'), 143, y);
             y += 6;
 
-            doc.setFont('Helvetica', 'bold');
-            doc.text('DPI:', 12, y);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFont('Helvetica', 'bold'); doc.text('DPI:', 12, y); doc.setFont('Helvetica', 'normal');
             doc.text(String(residente?.dpi || 'N/A'), 24, y);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('NIT:', 120, y);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFont('Helvetica', 'bold'); doc.text('NIT:', 120, y); doc.setFont('Helvetica', 'normal');
             doc.text(String(residente?.nit || 'CF'), 131, y);
             y += 8;
 
             // === DATOS DE PAGO ===
             doc.setFillColor(240, 240, 240);
             doc.rect(10, y, pW - 20, 7, 'F');
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9.5);
+            doc.setFont('Helvetica', 'bold'); doc.setFontSize(9.5);
             doc.text('DATOS DE PAGO', 12, y + 5);
             y += 10;
 
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.5);
-            doc.text('Método de pago:', 12, y);
-            doc.setFont('Helvetica', 'normal');
+            doc.setFont('Helvetica', 'bold'); doc.setFontSize(8.5);
+            doc.text('Método de pago:', 12, y); doc.setFont('Helvetica', 'normal');
             doc.text(String(recibo?.metodo_pago || 'N/A'), 48, y);
-            doc.setFont('Helvetica', 'bold');
-            doc.text('Referencia:', 120, y);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(correlativo || 'N/A', 143, y);
+            if (bancoUsado) {
+                doc.setFont('Helvetica', 'bold'); doc.text('Banco:', 90, y); doc.setFont('Helvetica', 'normal');
+                doc.text(bancoUsado, 105, y);
+            }
+            doc.setFont('Helvetica', 'bold'); doc.text('Referencia:', 120, y); doc.setFont('Helvetica', 'normal');
+            doc.text(!metodoRecibo.includes('efectivo') ? referenciaTexto : 'N/A', 143, y);
             y += 10;
 
-            // === TABLA DE DETALLE ===
+            // === TABLA ===
             const filasCuota = [];
             if (detalleCobro.length > 0) {
                 detalleCobro.forEach((item) => {
-                    filasCuota.push([
-                        String(item?.concepto || 'Pago aplicado'),
-                        String(item?.mes || ''),
-                        `Q ${parseFloat(item?.total || item?.monto_base || 0).toFixed(2)}`
-                    ]);
+                    filasCuota.push([String(item?.concepto || 'Pago aplicado'), String(item?.mes || ''), `Q ${parseFloat(item?.total || item?.monto_base || 0).toFixed(2)}`]);
                 });
             } else {
                 const mesesRec = Array.isArray(recibo?.meses_pagados) ? recibo.meses_pagados : [recibo?.mes_pagado || ''];
-                const numCuotaBase = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 1);
+                const numBase = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 1);
                 mesesRec.forEach((mes, idx) => {
-                    const totalMes = parseFloat(((montoTerreno + montoInteres) / Math.max(mesesRec.length, 1)).toFixed(2));
-                    filasCuota.push([
-                        `Cuota ${numCuotaBase + idx} - ${mes}`,
-                        mes,
-                        `Q ${totalMes.toFixed(2)}`
-                    ]);
+                    const totalMes = parseFloat(((montoTerrenoR + montoInteresR) / Math.max(mesesRec.length, 1)).toFixed(2));
+                    filasCuota.push([`Cuota ${numBase + idx} - ${mes}`, mes, `Q ${totalMes.toFixed(2)}`]);
                 });
             }
 
@@ -827,64 +817,33 @@ const Caja = () => {
                 theme: 'grid',
                 styles: { fontSize: 8.5, cellPadding: 2 },
                 headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
-                columnStyles: {
-                    0: { cellWidth: 95 },
-                    1: { cellWidth: 50, halign: 'center' },
-                    2: { cellWidth: 40, halign: 'right' }
-                },
+                columnStyles: { 0: { cellWidth: 95 }, 1: { cellWidth: 50, halign: 'center' }, 2: { cellWidth: 40, halign: 'right' } },
                 margin: { left: 10, right: 10 }
             });
 
             y = doc.lastAutoTable.finalY + 8;
 
-            // === RESUMEN DE TOTALES (alineado a la derecha) ===
-            const resX = pW - 90;
-            const resW = 80;
-            const lineH = 7;
-            const drawResumenLine = (label, valor, bold = false, rojo = false) => {
-                doc.setFont('Helvetica', bold ? 'bold' : 'normal');
-                doc.setFontSize(8.8);
-                doc.setTextColor(rojo ? 180 : 40, rojo ? 0 : 40, rojo ? 0 : 40);
-                doc.text(label + ':', resX, y);
-                doc.text(`Q${parseFloat(valor || 0).toFixed(2)}`, resX + resW, y, { align: 'right' });
+            // === RESUMEN (sin Saldo Anterior ni Saldo a Deber) ===
+            const resX = pW - 90; const resW = 80; const lineH = 7;
+            const drawResumenLine = (label, valor, bold = false) => {
+                doc.setFont('Helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(8.8);
                 doc.setTextColor(40, 40, 40);
+                doc.text(`${label}:`, resX, y);
+                doc.text(`Q${parseFloat(valor || 0).toFixed(2)}`, resX + resW, y, { align: 'right' });
                 y += lineH;
             };
 
-            doc.setDrawColor(200, 200, 200);
-            doc.setLineWidth(0.2);
+            doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2);
             doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
-
-            drawResumenLine('Saldo Anterior', saldoAnterior);
-            drawResumenLine('Subtotal deuda pagada', montoTerreno + montoInteres);
+            drawResumenLine('Subtotal deuda pagada', montoTerrenoR + montoInteresR);
             if (montoMoraRec > 0) drawResumenLine('Mora Aplicada', montoMoraRec);
             drawResumenLine('Total Cobrado Hoy', totalCobrado, true);
-
-            doc.setDrawColor(200, 200, 200);
             doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
 
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(10);
-            doc.setTextColor(180, 0, 0);
-            doc.text('SALDO A DEBER:', resX, y + 1);
-            doc.text(`Q${saldoPosterior.toFixed(2)}`, resX + resW, y + 1, { align: 'right' });
-            doc.setTextColor(40, 40, 40);
-            y += lineH + 6;
-
-            // Línea separadora inferior
-            doc.setDrawColor(180, 180, 180);
-            doc.setLineWidth(0.3);
-            doc.line(10, y, pW - 10, y);
-            y += 5;
-
-            // === PIE DE PÁGINA ===
-            doc.setFont('Helvetica', 'italic');
-            doc.setFontSize(7);
-            doc.setTextColor(100, 100, 100);
-            doc.text('Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.', 10, y);
-
-            // Línea dorada inferior
+            // Pie
             const pH = doc.internal.pageSize.getHeight();
+            doc.setFont('Helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(100, 100, 100);
+            doc.text('Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.', 10, pH - 10);
             doc.setFillColor(...goldColor);
             doc.rect(0, pH - 5, pW, 5, 'F');
 
@@ -896,6 +855,7 @@ const Caja = () => {
         }
 
     };
+
 
 
         const criterioBusqueda = normalizeSearchValue(busqueda);
@@ -1329,11 +1289,18 @@ const Caja = () => {
                                         </div>
                                         {/* Monto */}
                                         <div className="col-md-6">
-                                            <label className="form-label fw-bold">{mesesSeleccionados.length > 1 ? 'Monto total a abonar (Q):' : 'Monto a abonar (Q):'}</label>
-                                            <input className="form-control" type="number" step="0.01" required value={montoAPagar} onChange={(e) => setMontoAPagar(e.target.value)} />
-                                            {mesesSeleccionados.length > 1 && (
-                                                <small className="text-muted">El monto fijo se aplica por cada mes seleccionado.</small>
-                                            )}
+                                            <label className="form-label fw-bold">Monto a abonar (Q):</label>
+                                            <input
+                                                className={`form-control ${montoManualOverride ? 'border-warning' : ''}`}
+                                                type="number" step="0.01" required
+                                                value={montoAPagar}
+                                                onChange={(e) => { setMontoAPagar(e.target.value); setMontoManualOverride(true); }}
+                                            />
+                                            <small className="text-muted">
+                                                {montoManualOverride
+                                                    ? '⚠️ Monto personalizado — el capital a descontar será: Q' + Math.max(0, parseFloat(montoAPagar || 0) - montoInteresSeleccionado).toFixed(2)
+                                                    : 'Puede ingresar cualquier monto a abonar.'}
+                                            </small>
                                         </div>
                                     </div>
 
@@ -1369,25 +1336,42 @@ const Caja = () => {
                                         {/* Método de pago */}
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">Método de pago:</label>
-                                            <select className="form-select" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
+                                            <select className="form-select" value={metodoPago} onChange={(e) => { setMetodoPago(e.target.value); setBanco(''); }}>
                                                 <option value="Efectivo">Efectivo</option>
-                                                <option value="Depósito">Depósito Bancario</option>
-                                                <option value="Transferencia">Transferencia</option>
+                                                <option value="Depósito Bancario">Depósito Bancario</option>
+                                                <option value="Transferencia Bancaria">Transferencia Bancaria</option>
+                                                <option value="Cheque">Cheque</option>
                                             </select>
                                         </div>
                                     </div>
 
-                                    {metodoPago !== 'Efectivo' && (
-                                        <div className="mb-3">
-                                            <label className="form-label fw-bold">No. de Referencia / Boleta:</label>
-                                            <input
-                                                className="form-control"
-                                                type="text"
-                                                required
-                                                placeholder="Ej. # Boleta o Transferencia"
-                                                value={referencia}
-                                                onChange={(e) => setReferencia(e.target.value)}
-                                            />
+                                    {(metodoPago === 'Depósito Bancario' || metodoPago === 'Transferencia Bancaria' || metodoPago === 'Cheque') && (
+                                        <div className="row mb-3">
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-bold">Banco:</label>
+                                                <select className="form-select" value={banco} onChange={(e) => setBanco(e.target.value)}>
+                                                    <option value="">-- Seleccionar banco --</option>
+                                                    <option>Banco Industrial (BI)</option>
+                                                    <option>G&amp;T Continental</option>
+                                                    <option>Banrural</option>
+                                                    <option>BAC Guatemala</option>
+                                                    <option>Banco Agromercantil (BAM)</option>
+                                                    <option>Banpacífico</option>
+                                                    <option>Bantrab</option>
+                                                    <option>Banco Ficohsa</option>
+                                                    <option>Banco Promerica</option>
+                                                    <option>Banco Azteca</option>
+                                                    <option>Banco Internacional</option>
+                                                    <option>Crédito Hipotecario Nacional (CHN)</option>
+                                                    <option>Vivibanco</option>
+                                                    <option>Citi Guatemala</option>
+                                                    <option>Otro banco</option>
+                                                </select>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-bold">No. de Referencia / Boleta:</label>
+                                                <input className="form-control" type="text" placeholder="Ej. # Boleta o Transferencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} />
+                                            </div>
                                         </div>
                                     )}
 
