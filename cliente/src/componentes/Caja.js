@@ -196,10 +196,20 @@ const Caja = () => {
 
     const filtrarServiciosMostrables = (servicios = []) => {
         return (Array.isArray(servicios) ? servicios : []).filter((servicio) => {
-            const esUnico = esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
+            const esUnico = typeof servicio?.es_cobro_unico === 'boolean'
+                ? servicio.es_cobro_unico
+                : esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
             const yaPagadoAlgunaVez = Boolean(servicio?.ya_pagado_alguna_vez);
             return !(esUnico && yaPagadoAlgunaVez);
         });
+    };
+
+    const esCobroUnicoServicio = (servicio = {}) => {
+        if (typeof servicio?.es_cobro_unico === 'boolean') {
+            return servicio.es_cobro_unico;
+        }
+
+        return esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
     };
 
     // ✅ Función helper para mostrar notificaciones flotantes (toast)
@@ -403,10 +413,10 @@ const Caja = () => {
         const serviciosSeleccionadosDetalle = (serviciosDisponibles || [])
             .filter((s) => serviciosIds.includes(s.id_servicio));
         const costoServiciosMensual = serviciosSeleccionadosDetalle
-            .filter((s) => !esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
+            .filter((s) => !esCobroUnicoServicio(s))
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
         const costoServiciosUnicos = serviciosSeleccionadosDetalle
-            .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio) && !s.es_extraordinario)
+            .filter((s) => esCobroUnicoServicio(s) && !s.es_extraordinario)
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
         const costoCargosExtra = serviciosSeleccionadosDetalle
             .filter((s) => Boolean(s.es_extraordinario))
@@ -1278,10 +1288,10 @@ const Caja = () => {
     const serviciosSeleccionadosDetalleVista = (serviciosContrato || [])
         .filter((servicio) => serviciosSeleccionados.includes(servicio.id_servicio));
     const serviciosMensualesVista = serviciosSeleccionadosDetalleVista
-        .filter((servicio) => !servicio.es_extraordinario && !esServicioCobroUnico(servicio.periodicidad, servicio.nombre_servicio))
+        .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
     const serviciosUnicosVista = serviciosSeleccionadosDetalleVista
-        .filter((servicio) => !servicio.es_extraordinario && esServicioCobroUnico(servicio.periodicidad, servicio.nombre_servicio))
+        .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
@@ -1639,7 +1649,7 @@ const Caja = () => {
                                                 <div className="d-flex flex-column gap-2">
                                                     {serviciosContrato.map((servicio) => (
                                                         (() => {
-                                                            const esUnico = esServicioCobroUnico(servicio.periodicidad, servicio.nombre_servicio);
+                                                            const esUnico = esCobroUnicoServicio(servicio);
                                                             return (
                                                         <div
                                                             key={servicio.id_servicio}
