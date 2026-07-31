@@ -611,7 +611,7 @@ router.get("/residentes-pendientes", (req, res) => {
                 ), 0),
                 0
             ) AS enganche_pendiente,
-            c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
@@ -741,7 +741,7 @@ router.get("/buscar-residente", (req, res) => {
                 ), 0),
                 0
             ) AS enganche_pendiente,
-            c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
@@ -808,7 +808,7 @@ router.get("/meses-pendientes", (req, res) => {
     }
 
     // Traer datos de contrato para calcular todos los meses cobrables del contrato
-    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
+    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, plazo_meses, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
         if (err || !contratoResult.length) {
             console.error('Error al obtener contrato:', err?.message);
             return res.status(500).send('Error al consultar el contrato');
@@ -833,7 +833,11 @@ router.get("/meses-pendientes", (req, res) => {
         const fechaInicioBase = fechaCompra || fechaFirma || new Date();
         const hoy = new Date();
         const candidatos = [];
+        const plazoMesesContrato = Number(contratoResult[0].plazo_meses || 0);
         const cuotasPactadas = Number(contratoResult[0].cuotas_pactadas || 0);
+        const cuotasBaseContrato = Number.isInteger(plazoMesesContrato) && plazoMesesContrato > 0
+            ? plazoMesesContrato
+            : cuotasPactadas;
         const saldoPendiente = Number(contratoResult[0].monto_total || 0);
         const montoCuota = Number(contratoResult[0].monto_cuota || 0);
 
@@ -870,7 +874,7 @@ router.get("/meses-pendientes", (req, res) => {
             }
         } else {
             const totalMesesObjetivo = Math.max(
-                Number.isInteger(cuotasPactadas) && cuotasPactadas > 0 ? cuotasPactadas : 0,
+                Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0 ? cuotasBaseContrato : 0,
                 mesesTranscurridos
             );
 
@@ -1370,6 +1374,7 @@ router.post("/procesar-pago", (req, res) => {
                     c.fecha_compra,
                     c.fecha_firma,
                     c.cuotas_pactadas,
+                    c.plazo_meses,
                     c.monto_cuota,
                     c.interes_porcentaje,
                     c.id_proyecto,
@@ -1462,11 +1467,16 @@ router.post("/procesar-pago", (req, res) => {
                         const enganchePendienteContrato = Math.max(engancheContrato - enganchePagadoContrato, 0);
             const fechaCompraContrato = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
             const fechaFirmaContrato = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+            const plazoMesesContrato = Number(saldoRows[0]?.plazo_meses || 0);
             const cuotasPactadasContrato = Number(saldoRows[0]?.cuotas_pactadas || 0);
+            const cuotasContratoBase = Number.isInteger(plazoMesesContrato) && plazoMesesContrato > 0
+                ? plazoMesesContrato
+                : cuotasPactadasContrato;
+            const redondear2 = (valor) => Number(Number(valor || 0).toFixed(2));
             const montoCuotaContratoRaw = Number(saldoRows[0]?.monto_cuota || 0);
             const interesPorcentajeContrato = Math.max(Number(saldoRows[0]?.interes_porcentaje || 0), 0);
-            const montoCuotaBaseEntera = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
-                ? Math.floor(montoCuotaContratoRaw)
+            const montoCuotaBaseContrato = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
+                ? redondear2(montoCuotaContratoRaw)
                 : 0;
             const fechaInicioContrato = (fechaCompraContrato && !Number.isNaN(fechaCompraContrato.getTime()))
                 ? new Date(fechaCompraContrato.getFullYear(), fechaCompraContrato.getMonth(), 1)
@@ -1474,13 +1484,11 @@ router.post("/procesar-pago", (req, res) => {
                     ? new Date(fechaFirmaContrato.getFullYear(), fechaFirmaContrato.getMonth(), 1)
                     : null);
 
-            const redondear2 = (valor) => Number(Number(valor || 0).toFixed(2));
-
             const cuotasRestantesContrato = (montoCuotaContratoRaw > 0 && saldoActual > 0)
                 ? Math.max(Math.ceil(saldoActual / montoCuotaContratoRaw), 1)
                 : Math.max(mesesAProcesar.length, 1);
-            const cuotasBaseInteres = Number.isInteger(cuotasPactadasContrato) && cuotasPactadasContrato > 0
-                ? cuotasPactadasContrato
+            const cuotasBaseInteres = Number.isInteger(cuotasContratoBase) && cuotasContratoBase > 0
+                ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
             const capitalBaseContrato = (montoCuotaContratoRaw > 0 && cuotasBaseInteres > 0)
                 ? redondear2(montoCuotaContratoRaw * cuotasBaseInteres)
@@ -1542,9 +1550,9 @@ router.post("/procesar-pago", (req, res) => {
                     }
 
                     const cuotaNumero = Number(cuotasLista[idx] || 0);
-                    const esUltimaCuotaContrato = Number.isInteger(cuotasPactadasContrato)
-                        && cuotasPactadasContrato > 0
-                        && cuotaNumero >= cuotasPactadasContrato;
+                    const esUltimaCuotaContrato = Number.isInteger(cuotasContratoBase)
+                        && cuotasContratoBase > 0
+                        && cuotaNumero >= cuotasContratoBase;
                     const esUltimoMesSeleccionado = idx === (mesesLista.length - 1);
 
                     let montoAsignado = 0;
@@ -1552,8 +1560,8 @@ router.post("/procesar-pago", (req, res) => {
                         montoAsignado = redondear2(restante);
                         restante = 0;
                     } else {
-                        const sugerido = montoCuotaBaseEntera > 0
-                            ? montoCuotaBaseEntera
+                        const sugerido = montoCuotaBaseContrato > 0
+                            ? montoCuotaBaseContrato
                             : redondear2(Number(montoTerreno || 0) / Math.max(mesesLista.length, 1));
                         montoAsignado = redondear2(Math.min(sugerido, restante));
                         restante = redondear2(restante - montoAsignado);
@@ -2147,7 +2155,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         iva_total: ivaTotal,
                                                         iva_por_mes: ivaPorMes,
                                                         monto_por_mes: montoPorMesTerreno,
-                                                        monto_cuota_base_entera: montoCuotaBaseEntera,
+                                                        monto_cuota_base_entera: montoCuotaBaseContrato,
                                                         total_cobrado: totalTransaccion,
                                                         mes_pagado: mesesAProcesar[0],
                                                         meses_pagados: mesesAProcesar,

@@ -139,16 +139,37 @@ function Contratos_Residentes() {
     cargarCatalogos();
   }, [cargarCatalogos]);
 
+  const normalizarNumeroEnteroPositivo = (valor) => {
+    const limpio = String(valor ?? '').replace(/[^0-9]/g, '');
+    return limpio;
+  };
+
+  const handleCuotasPactadasChange = (valor) => {
+    const limpio = normalizarNumeroEnteroPositivo(valor);
+    setCuotas_pactadas(limpio);
+    setPlazo_meses(limpio);
+  };
+
+  const handlePlazoMesesChange = (valor) => {
+    const limpio = normalizarNumeroEnteroPositivo(valor);
+    setPlazo_meses(limpio);
+    setCuotas_pactadas(limpio);
+  };
+
   // monto_cuota guarda capital por cuota.
   // El interes se distribuye por cuota al momento de cobro en Caja.
   useEffect(() => {
-    if (monto_total && cuotas_pactadas > 0) {
-      const calculo = (parseFloat(monto_total) / parseInt(cuotas_pactadas)).toFixed(2);
+    const plazoBase = parseInt(plazo_meses || 0, 10);
+    const cuotasBase = parseInt(cuotas_pactadas || 0, 10);
+    const divisor = plazoBase > 0 ? plazoBase : cuotasBase;
+
+    if (monto_total && divisor > 0) {
+      const calculo = (parseFloat(monto_total) / divisor).toFixed(2);
       setMonto_cuota(calculo);
     } else {
       setMonto_cuota("");
     }
-  }, [monto_total, cuotas_pactadas]);
+  }, [monto_total, cuotas_pactadas, plazo_meses]);
 
   // Generar código de contrato automático al seleccionar residente
   const seleccionarResidenteContrato = (idResidente) => {
@@ -204,7 +225,7 @@ function Contratos_Residentes() {
 
   const formatMoney = (value) => `Q${Number(value || 0).toFixed(2)}`;
   const montoCapitalContrato = Math.max(parseFloat(monto_total || 0), 0);
-  const cuotasContrato = Math.max(parseInt(cuotas_pactadas || 0, 10), 0);
+  const cuotasContrato = Math.max(parseInt(plazo_meses || cuotas_pactadas || 0, 10), 0);
   const porcentajeInteresContrato = Math.max(parseFloat(interes_porcentaje || 0), 0);
   const interesTotalContrato = (montoCapitalContrato > 0 && cuotasContrato > 0)
     ? ((montoCapitalContrato * porcentajeInteresContrato) / 100)
@@ -318,7 +339,7 @@ function Contratos_Residentes() {
     if (!estado) faltantes.push('Estado inicial');
     if (!proyecto_propiedad.trim()) faltantes.push('Proyecto');
     if (!monto_total) faltantes.push('Precio total del inmueble');
-    if (!cuotas_pactadas) faltantes.push('Numero de cuotas');
+    if (!plazo_meses) faltantes.push('Plazo total (meses)');
     if (!dia_pago_limite) faltantes.push('Dia limite de pago mensual');
     if (!fecha_firma) faltantes.push('Fecha de firma legal');
     if (!fecha_compra) faltantes.push('Fecha de compra');
@@ -360,6 +381,8 @@ function Contratos_Residentes() {
       return;
     }
 
+    const cuotasNormalizadas = Number(plazo_meses || cuotas_pactadas || 0);
+
     Axios.post(`${API_URL}/crear`, {
       codigo_contrato, 
       id_residente, 
@@ -369,11 +392,11 @@ function Contratos_Residentes() {
       formato_contrato,
       monto_total,
       enganche,
-      cuotas_pactadas, 
+      cuotas_pactadas: cuotasNormalizadas,
       monto_cuota, 
       interes_porcentaje,
       mora,
-      plazo_meses,
+      plazo_meses: cuotasNormalizadas,
       mes_inicio_pagos,
       anio_inicio_pagos,
       dia_pago_limite, 
@@ -449,9 +472,11 @@ function Contratos_Residentes() {
       return;
     }
 
+    const cuotasNormalizadas = Number(plazo_meses || cuotas_pactadas || 0);
+
     Axios.put(`${API_URL}/actualizar`, {
       id_contrato, codigo_contrato, id_residente, id_empresa_marca: id_empresa_marca || empresaSeleccionada?.id_empresa || null, id_proyecto: proyectoSeleccionado?.id_proyecto || null, id_tipo_contrato, formato_contrato, monto_total,
-      enganche, cuotas_pactadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
+      enganche, cuotas_pactadas: cuotasNormalizadas, monto_cuota, interes_porcentaje, mora, plazo_meses: cuotasNormalizadas, mes_inicio_pagos, anio_inicio_pagos,
       dia_pago_limite, fecha_firma, fecha_compra: fecha_compra || null, fecha_fin: fecha_fin || null, estado, documento_contrato: documento_contrato || null,
       servicios_contrato: serviciosContratoSeleccionados
     })
@@ -716,11 +741,11 @@ function Contratos_Residentes() {
     setModo_marca_empresa('solo_logo');
     setMonto_total(val.monto_total ?? '');
     setEnganche(String(val.enganche ?? '0'));
-    setCuotas_pactadas(val.cuotas_pactadas ?? '');
+    setCuotas_pactadas(String(val.plazo_meses ?? val.cuotas_pactadas ?? ''));
     setMonto_cuota(val.monto_cuota ?? '');
     setInteres_porcentaje(String(val.interes_porcentaje ?? '14'));
     setMora(String(val.mora ?? '0'));
-    setPlazo_meses(String(val.plazo_meses ?? '60'));
+    setPlazo_meses(String(val.plazo_meses ?? val.cuotas_pactadas ?? '60'));
     setMes_inicio_pagos(String(val.mes_inicio_pagos ?? '1'));
     setAnio_inicio_pagos(String(val.anio_inicio_pagos ?? new Date().getFullYear()));
     setDia_pago_limite(val.dia_pago_limite ?? '');
@@ -1150,7 +1175,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
+                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => handleCuotasPactadasChange(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Capital por Cuota (Auto):</label>
@@ -1178,7 +1203,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Plazo Total (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} placeholder="60" />
+                  <input type="number" className="form-control" value={plazo_meses} onChange={e => handlePlazoMesesChange(e.target.value)} placeholder="60" />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
@@ -1544,7 +1569,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
+                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => handleCuotasPactadasChange(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
@@ -1560,7 +1585,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Plazo (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} />
+                  <input type="number" className="form-control" value={plazo_meses} onChange={e => handlePlazoMesesChange(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>

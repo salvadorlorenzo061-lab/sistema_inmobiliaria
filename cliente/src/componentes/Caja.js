@@ -140,7 +140,7 @@ const Caja = () => {
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
         const enganche = Math.max(parseFloat(contrato?.enganche || 0), 0);
         const capitalPorCuota = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
-        const cuotasPactadas = Math.max(parseInt(contrato?.cuotas_pactadas || 0, 10), 0);
+        const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
         const interesPorcentaje = Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
 
         const capitalTotalContrato = (capitalPorCuota > 0 && cuotasPactadas > 0)

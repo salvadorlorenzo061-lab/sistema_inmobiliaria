@@ -492,6 +492,15 @@ router.post("/crear", (req, res) => {
             return res.status(400).send({ message: "El código de contrato ya se encuentra registrado" });
         }
 
+        const plazoNormalizado = Number(plazo_meses || cuotas_pactadas || 0);
+        const cuotasNormalizadas = Number.isFinite(plazoNormalizado) && plazoNormalizado > 0
+            ? plazoNormalizado
+            : Number(cuotas_pactadas || 0);
+        const montoTotalNumerico = Number(monto_total || 0);
+        const montoCuotaNormalizado = (cuotasNormalizadas > 0 && montoTotalNumerico > 0)
+            ? Number((montoTotalNumerico / cuotasNormalizadas).toFixed(2))
+            : Number(monto_cuota || 0);
+
         const queryInsert = `
             INSERT INTO contratos_residentes 
             (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, enganche, cuotas_pactadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
@@ -506,13 +515,13 @@ router.post("/crear", (req, res) => {
                 id_proyecto || null,
                 id_tipo_contrato,
                 formato_contrato || 'FORMATO_01',
-                Number(monto_total || 0),
+                montoTotalNumerico,
                 Number(enganche || 0),
-                cuotas_pactadas,
-                monto_cuota,
+                cuotasNormalizadas,
+                montoCuotaNormalizado,
                 Number(interes_porcentaje || 0),
                 Number(mora || 0),
-                Number(plazo_meses || 0),
+                cuotasNormalizadas,
                 Number(mes_inicio_pagos || 1),
                 Number(anio_inicio_pagos || new Date().getFullYear()),
                 dia_pago_limite,
@@ -559,6 +568,15 @@ router.put("/actualizar", (req, res) => {
         servicios_contrato
     } = req.body;
     
+    const plazoNormalizado = Number(plazo_meses || cuotas_pactadas || 0);
+    const cuotasNormalizadas = Number.isFinite(plazoNormalizado) && plazoNormalizado > 0
+        ? plazoNormalizado
+        : Number(cuotas_pactadas || 0);
+    const montoTotalNumerico = Number(monto_total || 0);
+    const montoCuotaNormalizado = (cuotasNormalizadas > 0 && montoTotalNumerico > 0)
+        ? Number((montoTotalNumerico / cuotasNormalizadas).toFixed(2))
+        : Number(monto_cuota || 0);
+
     const queryUpdate = `
         UPDATE contratos_residentes SET 
         codigo_contrato=?, id_residente=?, id_empresa_marca=?, id_proyecto=?, id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
@@ -575,13 +593,13 @@ router.put("/actualizar", (req, res) => {
             id_proyecto || null,
             id_tipo_contrato,
             formato_contrato || 'FORMATO_01',
-            Number(monto_total || 0),
+            montoTotalNumerico,
             Number(enganche || 0),
-            cuotas_pactadas,
-            monto_cuota,
+            cuotasNormalizadas,
+            montoCuotaNormalizado,
             Number(interes_porcentaje || 0),
             Number(mora || 0),
-            Number(plazo_meses || 0),
+            cuotasNormalizadas,
             Number(mes_inicio_pagos || 1),
             Number(anio_inicio_pagos || new Date().getFullYear()),
             dia_pago_limite,
