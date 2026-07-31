@@ -507,10 +507,33 @@ const Caja = () => {
         }
     };
 
+    const obtenerDatosContratoActualizados = async (residenteBase) => {
+        if (!residenteBase?.codigo_contrato) return residenteBase;
+
+        try {
+            const idUsuario = obtenerUsuarioActivo();
+            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
+                params: {
+                    criterio: String(residenteBase.codigo_contrato || '').trim(),
+                    ...(idUsuario ? { id_usuario: idUsuario } : {})
+                }
+            });
+
+            const lista = Array.isArray(res?.data) ? res.data : [];
+            const actualizado = lista.find((item) => Number(item?.id_contrato) === Number(residenteBase?.id_contrato));
+            return actualizado || residenteBase;
+        } catch (error) {
+            console.error('No se pudo refrescar el contrato en Caja, se usara la version actual en memoria:', error);
+            return residenteBase;
+        }
+    };
+
     // Al dar clic sobre un residente de la lista de resultados
     const seleccionarResidente = async (residente) => {
-        setDatosDeuda(residente);
-        setIdResidenteActivo(residente.id_residente);
+        const residenteActualizado = await obtenerDatosContratoActualizados(residente);
+
+        setDatosDeuda(residenteActualizado);
+        setIdResidenteActivo(residenteActualizado.id_residente);
         setEstadoCorrelativo(null);
         setListaResidentes([]); // Limpia la lista de búsqueda en pantalla
         setMesesSeleccionados([]);
@@ -529,8 +552,8 @@ const Caja = () => {
         setResumenServiciosIniciales(null);
 
         try {
-            await consultarSiguienteCorrelativo(residente.id_contrato);
-            const res = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${residente.id_contrato}`);
+            await consultarSiguienteCorrelativo(residenteActualizado.id_contrato);
+            const res = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${residenteActualizado.id_contrato}`);
             const meses = res?.data?.meses || [];
             const mesesDetalle = Array.isArray(res?.data?.meses_detalle) ? res.data.meses_detalle : [];
             const mapaMeses = {};
@@ -568,7 +591,7 @@ const Caja = () => {
             const primerMes = mesesASeleccionar[0] || meses[0] || '';
             if (primerMes) {
                 try {
-                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residente.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
+                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residenteActualizado.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
                     const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
 
@@ -577,16 +600,16 @@ const Caja = () => {
                         .map((s) => s.id_servicio);
 
                     setServiciosSeleccionados(seleccionInicialServicios);
-                    recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residente, servicios);
+                    recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residenteActualizado, servicios);
                 } catch (serviciosError) {
                     console.error('Error al obtener servicios del contrato:', serviciosError);
                     setServiciosContrato([]);
                     setServiciosSeleccionados([]);
                     // Mantener meses pendientes aunque servicios falle, para no bloquear el cobro de terreno.
-                    recalcularTotalesCobro(mesesASeleccionar, [], residente, []);
+                    recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado, []);
                 }
             } else {
-                recalcularTotalesCobro(mesesASeleccionar, [], residente);
+                recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado);
             }
 
             try {
@@ -601,7 +624,7 @@ const Caja = () => {
                 setMontoMora('0');
             }
 
-            const saldoPendienteResidente = parseFloat(residente?.saldo_pendiente || 0);
+            const saldoPendienteResidente = parseFloat(residenteActualizado?.saldo_pendiente || 0);
             if (saldoPendienteResidente <= 0) {
                 mostrarToast('Contrato de terreno solvente. Solo se mostrarán servicios pendientes de cobro.', 'info');
             }
@@ -616,6 +639,35 @@ const Caja = () => {
             setOpcionesCuota([{ value: '0', label: 'Sin cuotas pendientes' }]);
             recalcularTotalesCobro([], [], residente);
         }
+    };
+
+    const agregarAbonoCapital = () => {
+        const valor = Math.max(parseFloat(montoEngancheSeleccionado || 0), 0);
+        if (valor <= 0) {
+            mostrarToast('Ingresa un monto de abono a capital mayor a cero.', 'warning');
+            return;
+        }
+
+        let mesesAUsar = Array.isArray(mesesSeleccionados) ? [...mesesSeleccionados] : [];
+        if (Array.isArray(mesesPendientes) && mesesPendientes.length > 0) {
+            const primerMes = mesesPendientes[0];
+            if (!mesesAUsar.includes(primerMes)) {
+                mesesAUsar = [primerMes, ...mesesAUsar];
+            }
+            setMesesSeleccionados(mesesAUsar);
+            setMesPagado(primerMes);
+            setNumCuota('1');
+        }
+
+        recalcularTotalesCobro(mesesAUsar, serviciosSeleccionados, datosDeuda, serviciosContrato, valor);
+    };
+
+    const abrirModalCobroConDatosActualizados = async () => {
+        if (!datosDeuda) return;
+
+        const actualizado = await obtenerDatosContratoActualizados(datosDeuda);
+        setDatosDeuda(actualizado);
+        setShowModalCobro(true);
     };
 
     const actualizarMontoParaSeleccion = (seleccionados) => {
@@ -1526,7 +1578,7 @@ const Caja = () => {
                         <div className="d-flex justify-content-end">
                             <button
                                 className="btn btn-success fw-bold"
-                                onClick={() => setShowModalCobro(true)}
+                                onClick={abrirModalCobroConDatosActualizados}
                                 disabled={!puedeGenerarCobro || !contratoTieneAsignacionValida(datosDeuda) || !tienePermisoCobroSeleccion}
                             >
                                 💳 Generar Cobro
@@ -1646,7 +1698,7 @@ const Caja = () => {
                                             <br />
                                             <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{interesMensualSeleccionado.toFixed(2)} / cuota
                                             <br />
-                                            <strong>Enganche pendiente:</strong> Q{enganchePendiente.toFixed(2)}
+                                            <strong>Abono a capital pendiente:</strong> Q{enganchePendiente.toFixed(2)}
                                             <br />
                                             <strong>Servicios mensuales seleccionados:</strong> Q{serviciosMensualesVista.toFixed(2)} / mes
                                             <br />
@@ -1672,7 +1724,7 @@ const Caja = () => {
                                     </div>
 
                                     <div className="mb-3 border rounded p-3 bg-light">
-                                        <label className="form-label fw-bold">Enganche (sin interés):</label>
+                                        <label className="form-label fw-bold">Abono a capital (sin interés):</label>
                                         <div className="input-group">
                                             <span className="input-group-text">Q</span>
                                             <input
@@ -1685,19 +1737,15 @@ const Caja = () => {
                                                 onChange={(e) => {
                                                     const valor = Math.max(parseFloat(e.target.value || 0), 0);
                                                     setMontoEngancheSeleccionado(valor);
-                                                    recalcularTotalesCobro(mesesSeleccionados, serviciosSeleccionados, datosDeuda, serviciosContrato, valor);
                                                 }}
                                             />
                                             <button
                                                 type="button"
                                                 className="btn btn-outline-primary"
-                                                onClick={() => {
-                                                    setMontoEngancheSeleccionado(enganchePendiente);
-                                                    recalcularTotalesCobro(mesesSeleccionados, serviciosSeleccionados, datosDeuda, serviciosContrato, enganchePendiente);
-                                                }}
+                                                onClick={agregarAbonoCapital}
                                                 disabled={enganchePendiente <= 0}
                                             >
-                                                Cobrar completo
+                                                Agregar
                                             </button>
                                             <button
                                                 type="button"
@@ -1710,7 +1758,7 @@ const Caja = () => {
                                                 Limpiar
                                             </button>
                                         </div>
-                                        <small className="text-muted">El enganche reduce capital y no genera interés.</small>
+                                        <small className="text-muted">El abono a capital reduce saldo y no genera interés. Al agregarlo se suma con el primer mes pendiente en Caja.</small>
                                     </div>
 
                                     {/* Servicios asignados al contrato */}
@@ -1806,7 +1854,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} = Q{montoTotalSeleccionado.toFixed(2)}
+                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} = Q{montoTotalSeleccionado.toFixed(2)}
                                             </div>
                                         )}
                                     </div>
