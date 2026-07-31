@@ -244,6 +244,9 @@ const registrarHistorialFactura = ({
             const numeroCuota = detalle?.[4] == null ? null : Number(detalle[4]);
             const subtotal = Number(detalle?.[5] || 0);
             const idPagoExtra = detalle?.[6] == null ? null : Number(detalle[6]);
+            const idConceptoHistorial = tipoConcepto === 'extraordinario'
+                ? (Number.isInteger(idPagoExtra) && idPagoExtra > 0 ? idPagoExtra : idConceptoServicio)
+                : idConceptoServicio;
 
             let nombreConcepto = tipoConcepto;
             if (tipoConcepto === 'cuota_terreno') {
@@ -273,7 +276,7 @@ const registrarHistorialFactura = ({
                 detalle: {
                     tipo_concepto: tipoConcepto,
                     nombre_concepto: nombreConcepto,
-                    id_concepto_servicio: idConceptoServicio,
+                    id_concepto_servicio: idConceptoHistorial,
                     id_pago_extra: idPagoExtra,
                     mes_pagado: mesPagado,
                     numero_cuota_afectada: numeroCuota,
@@ -291,7 +294,7 @@ const registrarHistorialFactura = ({
                 correlativo,
                 'EMITIDA',
                 tipoConcepto,
-                idConceptoServicio,
+                idConceptoHistorial,
                 nombreConcepto,
                 mesPagado,
                 numeroCuota,
@@ -1388,15 +1391,18 @@ router.post("/procesar-pago", (req, res) => {
             const interesPorMesContrato = cuotasBaseInteres > 0
                 ? redondear2(interesTotalContrato / cuotasBaseInteres)
                 : 0;
-            const mesesInteresSolicitados = montoTerrenoTotal > 0
-                ? Math.min(mesesAProcesar.length, cuotasRestantesContrato)
-                : 0;
-            const interesCalculadoContrato = redondear2(interesPorMesContrato * mesesInteresSolicitados);
+            const obtenerInteresPorNumeroCuota = (numeroCuota) => {
+                const cuotaNumero = Number(numeroCuota || 0);
+                if (!Number.isInteger(cuotaNumero) || cuotaNumero <= 0 || cuotasBaseInteres <= 0 || interesTotalContrato <= 0) {
+                    return 0;
+                }
 
-            // Priorizar cálculo de backend para consistencia; usar payload solo como respaldo.
-            montoInteresTotal = interesCalculadoContrato > 0
-                ? interesCalculadoContrato
-                : redondear2(Math.max(montoInteresSolicitado, 0));
+                const totalCentavos = Math.round(interesTotalContrato * 100);
+                const baseCentavos = Math.floor(totalCentavos / cuotasBaseInteres);
+                const residuoCentavos = totalCentavos - (baseCentavos * cuotasBaseInteres);
+                const esUltimaCuotaContrato = cuotaNumero >= cuotasBaseInteres;
+                return (baseCentavos + (esUltimaCuotaContrato ? residuoCentavos : 0)) / 100;
+            };
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
                 const parsed = parsearEtiquetaMes(mesTexto);
@@ -1411,6 +1417,20 @@ router.post("/procesar-pago", (req, res) => {
                 const base = Number.isInteger(cuotaBasePayload) && cuotaBasePayload > 0 ? cuotaBasePayload : 1;
                 return base + fallbackIndex;
             };
+
+            const cuotasInteresSolicitadas = montoTerrenoTotal > 0
+                ? mesesAProcesar
+                    .slice(0, Math.min(mesesAProcesar.length, cuotasRestantesContrato))
+                    .map((mes, idx) => obtenerNumeroCuotaParaMes(mes, idx))
+                : [];
+            const interesCalculadoContrato = redondear2(
+                cuotasInteresSolicitadas.reduce((sum, cuotaNumero) => sum + obtenerInteresPorNumeroCuota(cuotaNumero), 0)
+            );
+
+            // Priorizar cálculo de backend para consistencia; usar payload solo como respaldo.
+            montoInteresTotal = interesCalculadoContrato > 0
+                ? interesCalculadoContrato
+                : redondear2(Math.max(montoInteresSolicitado, 0));
 
             const distribuirTerrenoPorMes = (mesesLista = [], cuotasLista = [], montoTerreno = 0) => {
                 const montos = [];
@@ -1450,20 +1470,9 @@ router.post("/procesar-pago", (req, res) => {
                 return montos;
             };
 
-            const distribuirInteresPorMes = (mesesLista = [], montoInteres = 0) => {
-                if (!Array.isArray(mesesLista) || !mesesLista.length) return [];
-
-                const total = redondear2(Math.max(Number(montoInteres || 0), 0));
-                if (total <= 0) {
-                    return mesesLista.map(() => 0);
-                }
-
-                const base = redondear2(total / mesesLista.length);
-                const montos = mesesLista.map(() => base);
-                const acumuladoBase = redondear2(base * mesesLista.length);
-                const ajusteFinal = redondear2(total - acumuladoBase);
-                montos[montos.length - 1] = redondear2(montos[montos.length - 1] + ajusteFinal);
-                return montos;
+            const distribuirInteresPorMes = (cuotasLista = []) => {
+                if (!Array.isArray(cuotasLista) || !cuotasLista.length) return [];
+                return cuotasLista.map((cuotaNumero) => redondear2(obtenerInteresPorNumeroCuota(cuotaNumero)));
             };
 
             if (montoTerrenoTotal > 0) {
@@ -1750,8 +1759,11 @@ router.post("/procesar-pago", (req, res) => {
                                 const mesesConTerreno = montoTerrenoTotal > 0
                                     ? mesesAProcesar.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
                                     : [];
+                                const cuotasMesesConTerreno = montoTerrenoTotal > 0
+                                    ? cuotasTerrenoCalculadas.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
+                                    : [];
                                 const montosInteresPorMes = montoInteresTotal > 0
-                                    ? distribuirInteresPorMes(mesesConTerreno, montoInteresTotal)
+                                    ? distribuirInteresPorMes(cuotasMesesConTerreno)
                                     : [];
 
                                 if (montoTerrenoTotal > 0) {

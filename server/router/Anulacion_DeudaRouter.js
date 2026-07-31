@@ -328,35 +328,75 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             (detailErr, detailRows) => {
                 if (detailErr) return callback(detailErr);
 
-                const detalle_cobro = (detailRows || []).map((row) => ({
-                    id_pago_detalle: Number(row.id_pago_detalle),
-                    tipo_concepto: row.tipo_concepto,
-                    id_concepto_servicio: row.id_concepto_servicio ? Number(row.id_concepto_servicio) : null,
-                    mes_pagado: row.mes_pagado || '',
-                    numero_cuota_afectada: row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null,
-                    subtotal: Number(row.subtotal || 0),
-                    concepto: row.tipo_concepto === 'cuota_terreno'
-                        ? `Cuota de Terreno No. ${row.numero_cuota_afectada || ''}`.trim()
-                        : row.tipo_concepto === 'mora'
-                            ? `Mora ${row.mes_pagado || ''}`.trim()
-                        : row.tipo_concepto === 'extraordinario'
-                            ? 'Cargo extraordinario'
-                        : `Servicio: ${row.nombre_servicio || `ID ${row.id_concepto_servicio || 'N/A'}`}`
-                }));
+                const sqlExtrasHistorial = `
+                    SELECT evidencia_json
+                    FROM facturas_historial
+                    WHERE id_pago = ?
+                      AND estado_factura = 'EMITIDA'
+                      AND tipo_concepto = 'extraordinario'
+                    ORDER BY id_historial ASC
+                `;
 
-                const mesesUnicos = [];
-                detalle_cobro.forEach((item) => {
-                    const mes = String(item.mes_pagado || '').trim();
-                    if (mes && !mesesUnicos.includes(mes)) {
-                        mesesUnicos.push(mes);
+                db.query(sqlExtrasHistorial, [pago.id_pago], (histErr, histRows) => {
+                    if (histErr && String(histErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                        return callback(histErr);
                     }
-                });
 
-                return callback(null, {
-                    ...pago,
-                    rol_usuario_emisor: pago.rol_usuario_emisor_historico || pago.rol_usuario_cobro_actual || null,
-                    meses_pagados: mesesUnicos.join(', '),
-                    detalle_cobro
+                    const extrasHistorialIds = (histRows || []).map((row) => {
+                        try {
+                            const evidencia = JSON.parse(row.evidencia_json || '{}');
+                            const idExtra = Number(
+                                evidencia?.detalle?.id_pago_extra
+                                || evidencia?.detalle?.id_concepto_servicio
+                                || 0
+                            );
+                            return Number.isInteger(idExtra) && idExtra > 0 ? idExtra : null;
+                        } catch {
+                            return null;
+                        }
+                    }).filter((value) => value != null);
+
+                    let idxExtraHistorial = 0;
+                    const detalle_cobro = (detailRows || []).map((row) => {
+                        const tipoConcepto = String(row.tipo_concepto || '').toLowerCase();
+                        let idConceptoServicio = row.id_concepto_servicio ? Number(row.id_concepto_servicio) : null;
+
+                        if (tipoConcepto === 'extraordinario' && !idConceptoServicio) {
+                            idConceptoServicio = extrasHistorialIds[idxExtraHistorial] || null;
+                            idxExtraHistorial += 1;
+                        }
+
+                        return {
+                            id_pago_detalle: Number(row.id_pago_detalle),
+                            tipo_concepto: row.tipo_concepto,
+                            id_concepto_servicio: idConceptoServicio,
+                            mes_pagado: row.mes_pagado || '',
+                            numero_cuota_afectada: row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null,
+                            subtotal: Number(row.subtotal || 0),
+                            concepto: tipoConcepto === 'cuota_terreno'
+                                ? `Cuota de Terreno No. ${row.numero_cuota_afectada || ''}`.trim()
+                                : tipoConcepto === 'mora'
+                                    ? `Mora ${row.mes_pagado || ''}`.trim()
+                                : tipoConcepto === 'extraordinario'
+                                    ? 'Cargo extraordinario'
+                                : `Servicio: ${row.nombre_servicio || `ID ${idConceptoServicio || 'N/A'}`}`
+                        };
+                    });
+
+                    const mesesUnicos = [];
+                    detalle_cobro.forEach((item) => {
+                        const mes = String(item.mes_pagado || '').trim();
+                        if (mes && !mesesUnicos.includes(mes)) {
+                            mesesUnicos.push(mes);
+                        }
+                    });
+
+                    return callback(null, {
+                        ...pago,
+                        rol_usuario_emisor: pago.rol_usuario_emisor_historico || pago.rol_usuario_cobro_actual || null,
+                        meses_pagados: mesesUnicos.join(', '),
+                        detalle_cobro
+                    });
                 });
             }
         );
