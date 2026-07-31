@@ -113,6 +113,26 @@ const esRolJuridico = (usuario = {}) => {
     return rol.includes('jurid') || rol.includes('legal');
 };
 
+const BANCOS_GUATEMALA = [
+    'Banco Industrial',
+    'Banco G&T Continental',
+    'Banco Agromercantil de Guatemala',
+    'Banco Internacional',
+    'Banco Promerica',
+    'Banrural',
+    'Banco Ficohsa Guatemala',
+    'Banco Cuscatlan Guatemala',
+    'Banco de los Trabajadores',
+    'Banco Azteca Guatemala',
+    'Banco Inmobiliario',
+    'Banco CHN',
+    'Banco Americano',
+    'Banco Industrial Internacional',
+    'Banco Lafise',
+    'Credibanco',
+    'Otro'
+];
+
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
@@ -214,6 +234,8 @@ const Caja = () => {
     const [opcionesCuota, setOpcionesCuota] = useState([]);
     const [metodoPago, setMetodoPago] = useState('Efectivo');
     const [referencia, setReferencia] = useState('');
+    const [bancoPago, setBancoPago] = useState('');
+    const [fechaOperacion, setFechaOperacion] = useState('');
     const [mesesPendientes, setMesesPendientes] = useState([]);
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
@@ -624,7 +646,10 @@ const Caja = () => {
             monto_interes: parseFloat(montoInteresSeleccionado || 0),
             monto_mora: parseFloat(montoMora),
             metodo_pago: metodoPago,
+            banco_pago: metodoPago === 'Efectivo' ? '' : bancoPago,
+            fecha_operacion: metodoPago === 'Efectivo' ? '' : fechaOperacion,
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
+            boleta_referencia: metodoPago === 'Efectivo' ? '' : referencia,
             observaciones: `Pago de cuota de terreno mes de ${mesesSeleccionados.join(', ') || mesPagado}`,
             mes_pagado: mesesSeleccionados[0] || mesPagado,
             meses_pagados: mesesSeleccionados.length ? mesesSeleccionados : [mesPagado],
@@ -723,6 +748,8 @@ const Caja = () => {
                 }
                 
                 setReferencia(''); 
+                setBancoPago('');
+                setFechaOperacion('');
                 setShowModalCobro(false);
                 await consultarSiguienteCorrelativo(datosDeuda.id_contrato);
             } else {
@@ -751,6 +778,9 @@ const Caja = () => {
             const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
             const interesAplicado = parseFloat(recibo?.monto_interes_pagado || 0);
             const referencia = String(recibo?.no_referencia || '').trim();
+            const bancoPago = String(recibo?.banco_pago || '').trim();
+            const fechaOperacion = String(recibo?.fecha_operacion || '').trim();
+            const boletaReferencia = String(recibo?.boleta_referencia || referencia || '').trim();
             const matchRef = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
             const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
             const numero = matchRef ? matchRef[2].slice(-5) : String(Date.now()).slice(-5);
@@ -906,6 +936,14 @@ const Caja = () => {
                 doc.text(doc.splitTextToSize(transferenciaValor || '', 56).slice(0, 1), filaX + 52, pagosY + 16);
                 doc.text(doc.splitTextToSize(chequeValor || '', 40).slice(0, 1), filaX + 114, pagosY + 16);
                 doc.text(efectivoValor, filaX + 160, pagosY + 16);
+
+                if (metodo.includes('deposit') || metodo.includes('transfer')) {
+                    doc.setFont('Helvetica', 'bold');
+                    doc.setFontSize(7.6);
+                    doc.text(`Banco: ${bancoPago || 'N/A'}`, filaX + 2, pagosY + 22.4);
+                    doc.text(`Fecha op.: ${fechaOperacion || 'N/A'}`, filaX + 82, pagosY + 22.4);
+                    doc.text(`Ref.: ${boletaReferencia || 'N/A'}`, filaX + 132, pagosY + 22.4);
+                }
 
                 const firmaY = pagosY + 24;
                 doc.rect(filaX, firmaY, filaAncho, 22);
@@ -1063,6 +1101,11 @@ const Caja = () => {
             doc.text(`Mes(es): ${mesesReciboTexto}`, x + 67, y + 7.1);
             doc.text(`Interes aplicado: Q${Math.max(interesAplicado, 0).toFixed(2)}`, x + 125, y + 7.1);
             doc.setFont('Helvetica', 'normal');
+            if (metodo.includes('deposit') || metodo.includes('transfer')) {
+                doc.setFontSize(7.2);
+                doc.text(`Banco: ${bancoPago || 'N/A'}`, x + 67, y + 10.1);
+                doc.text(`Fecha op.: ${fechaOperacion || 'N/A'}`, x + 110, y + 10.1);
+            }
             if (detalleCuotasTexto) {
                 doc.setFontSize(6.8);
                 doc.text(doc.splitTextToSize(detalleCuotasTexto, 118).slice(0, 1), x + 67, y + 10.2);
@@ -1650,7 +1693,19 @@ const Caja = () => {
                                         {/* Método de pago */}
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">Método de pago:</label>
-                                            <select className="form-select" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
+                                            <select
+                                                className="form-select"
+                                                value={metodoPago}
+                                                onChange={(e) => {
+                                                    const siguienteMetodo = e.target.value;
+                                                    setMetodoPago(siguienteMetodo);
+                                                    if (siguienteMetodo === 'Efectivo') {
+                                                        setBancoPago('');
+                                                        setFechaOperacion('');
+                                                        setReferencia('');
+                                                    }
+                                                }}
+                                            >
                                                 <option value="Efectivo">Efectivo</option>
                                                 <option value="Depósito">Depósito Bancario</option>
                                                 <option value="Transferencia">Transferencia</option>
@@ -1659,16 +1714,42 @@ const Caja = () => {
                                     </div>
 
                                     {metodoPago !== 'Efectivo' && (
-                                        <div className="mb-3">
-                                            <label className="form-label fw-bold">No. de Referencia / Boleta:</label>
-                                            <input
-                                                className="form-control"
-                                                type="text"
-                                                required
-                                                placeholder="Ej. # Boleta o Transferencia"
-                                                value={referencia}
-                                                onChange={(e) => setReferencia(e.target.value)}
-                                            />
+                                        <div className="row mb-3 g-3">
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-bold">Banco:</label>
+                                                <select
+                                                    className="form-select"
+                                                    required
+                                                    value={bancoPago}
+                                                    onChange={(e) => setBancoPago(e.target.value)}
+                                                >
+                                                    <option value="">Seleccione un banco</option>
+                                                    {BANCOS_GUATEMALA.map((banco) => (
+                                                        <option key={banco} value={banco}>{banco}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-bold">Fecha de depósito / transferencia:</label>
+                                                <input
+                                                    className="form-control"
+                                                    type="date"
+                                                    required
+                                                    value={fechaOperacion}
+                                                    onChange={(e) => setFechaOperacion(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="col-12">
+                                                <label className="form-label fw-bold">No. de Referencia / Boleta:</label>
+                                                <input
+                                                    className="form-control"
+                                                    type="text"
+                                                    required
+                                                    placeholder="Ej. # Boleta o Transferencia"
+                                                    value={referencia}
+                                                    onChange={(e) => setReferencia(e.target.value)}
+                                                />
+                                            </div>
                                         </div>
                                     )}
 

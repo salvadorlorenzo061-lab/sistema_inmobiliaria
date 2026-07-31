@@ -129,6 +129,9 @@ function PagosDetalle() {
     const nombreEmpresa = String(documento?.empresa?.nombre_empresa || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
     const rolEmisor = String(documento?.rol_usuario_cobro || '');
     const metodo = String(documento?.metodo_pago || '').toLowerCase();
+    const bancoPago = String(documento?.banco_pago || '').trim();
+    const fechaOperacion = String(documento?.fecha_operacion || '').trim();
+    const boletaReferencia = String(documento?.boleta_referencia || documento?.correlativo || '').trim();
     const esJuridico = isRoleJuridico(rolEmisor);
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
@@ -399,6 +402,23 @@ function PagosDetalle() {
       doc.text(correlativo || 'N/A', 143, y);
       y += 10;
 
+      if ((metodo.includes('deposit') || metodo.includes('transfer')) && (bancoPago || fechaOperacion || boletaReferencia)) {
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Banco:', 12, y);
+        doc.setFont('Helvetica', 'normal');
+        doc.text(bancoPago || 'N/A', 28, y);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Fecha op.:', 120, y);
+        doc.setFont('Helvetica', 'normal');
+        doc.text(fechaOperacion || 'N/A', 145, y);
+        y += 6;
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Boleta/Ref.:', 12, y);
+        doc.setFont('Helvetica', 'normal');
+        doc.text(boletaReferencia || 'N/A', 35, y);
+        y += 8;
+      }
+
       // Tabla de detalle
       const filasDet = detallesFactura.length > 0
         ? detallesFactura.map((item) => [
@@ -474,6 +494,24 @@ function PagosDetalle() {
 
   useEffect(() => {
     getDetalles();
+
+    const handleFocus = () => getDetalles();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        getDetalles();
+      }
+    };
+
+    const intervalId = window.setInterval(getDetalles, 15000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [getDetalles]);
 
   // Filtrado y paginación
@@ -516,7 +554,8 @@ function PagosDetalle() {
             <option value="ANULADA">ANULADAS</option>
           </select>
         </div>
-        <div className="col-md-3 text-end">
+        <div className="col-md-3 text-end d-flex gap-2">
+          <button className="btn btn-outline-secondary fw-bold" onClick={getDetalles}>↻ ACTUALIZAR</button>
           <button className="btn btn-secondary fw-bold w-100" disabled>HISTORIAL INMUTABLE</button>
         </div>
       </div>

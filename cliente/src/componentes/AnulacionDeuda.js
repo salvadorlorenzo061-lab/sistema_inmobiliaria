@@ -119,14 +119,36 @@ function AnulacionDeuda() {
     }).catch(console.error);
   }, [id_usuario_autoriza]);
 
-  const getAnulaciones = () => {
+  const getAnulaciones = useCallback(() => {
     Axios.get(API_URL).then((res) => setAnulaciones(res.data)).catch(console.error);
-  };
+  }, [API_URL]);
+
+  const refrescarVista = useCallback(() => {
+    getAnulaciones();
+    cargarDatosRelacionales();
+  }, [getAnulaciones, cargarDatosRelacionales]);
 
   useEffect(() => { 
-    getAnulaciones(); 
-    cargarDatosRelacionales();
-  }, [cargarDatosRelacionales]);
+    refrescarVista();
+
+    const handleFocus = () => refrescarVista();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refrescarVista();
+      }
+    };
+
+    const intervalId = window.setInterval(refrescarVista, 15000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refrescarVista]);
 
   const getMesesCorrelativo = () => {
     const raw = String(detalleCorrelativo?.meses_pagados || '').trim();
@@ -746,7 +768,8 @@ function AnulacionDeuda() {
         <div className="col-md-5">
           <input type="text" className="form-control" placeholder="Buscar por motivo, correlativo o pago..." value={busqueda} onChange={handleBusquedaChange} />
         </div>
-        <div className="col-md-3 text-end">
+        <div className="col-md-3 text-end d-flex gap-2">
+          <button className="btn btn-outline-secondary fw-bold" onClick={refrescarVista}>↻ ACTUALIZAR</button>
           <button className="btn btn-info fw-bold w-100" onClick={() => { limpiarCampos(); setShowRegModal(true); }}>➕ ANULAR COBRO</button>
         </div>
       </div>

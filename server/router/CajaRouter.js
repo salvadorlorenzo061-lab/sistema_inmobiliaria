@@ -199,6 +199,9 @@ const registrarHistorialFactura = ({
     serviciosMesInicial,
     numeroRecibo,
     metodoPago,
+    bancoPago,
+    fechaOperacion,
+    boletaReferencia,
     observaciones,
     mesesPagados,
     totalTransaccion,
@@ -259,6 +262,9 @@ const registrarHistorialFactura = ({
                 numero_recibo: numeroRecibo,
                 no_referencia: correlativo,
                 metodo_pago: metodoPago,
+                banco_pago: bancoPago || '',
+                fecha_operacion: fechaOperacion || '',
+                boleta_referencia: boletaReferencia || '',
                 observaciones: observaciones || '',
                 rol_usuario_emisor: rolUsuarioEmisor,
                 monto_total_pagado: Number(totalTransaccion || 0),
@@ -1128,7 +1134,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
 router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
-        monto_pagar, monto_terreno_pagar, monto_interes, monto_mora, metodo_pago, no_referencia, observaciones,
+        monto_pagar, monto_terreno_pagar, monto_interes, monto_mora, metodo_pago, no_referencia, banco_pago, fecha_operacion, boleta_referencia, observaciones,
         mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
@@ -2013,6 +2019,9 @@ router.post("/procesar-pago", (req, res) => {
                                                         numero_cuota_fin: numeroCuotaFin,
                                                         cantidad_cuotas_pagadas: cantidadCuotasPagadas,
                                                         metodo_pago: metodo_pago,
+                                                        banco_pago: banco_pago || '',
+                                                        fecha_operacion: fecha_operacion || '',
+                                                        boleta_referencia: boleta_referencia || '',
                                                         no_referencia: correlativoFinal,
                                                         id_pago: lastIdPago,
                                                         id_resolucion_usada: idResolucionUsada,
@@ -2126,6 +2135,9 @@ router.post("/procesar-pago", (req, res) => {
                                                 serviciosMesInicial,
                                                 numeroRecibo: numero_recibo,
                                                 metodoPago: metodo_pago,
+                                                bancoPago: banco_pago,
+                                                fechaOperacion: fecha_operacion,
+                                                boletaReferencia: boleta_referencia,
                                                 observaciones,
                                                 mesesPagados: mesesAProcesar,
                                                 totalTransaccion,
