@@ -163,7 +163,7 @@ function PagosDetalle() {
 
       if (empresaLogo) {
         try {
-          doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), margenX + 3, 8.5, 31, 18, `jur-logo-${Date.now()}`, 'FAST');
+          doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), margenX + 2.5, 7.8, 36, 21, `jur-logo-${Date.now()}`, 'FAST');
         } catch {
           // no-op
         }
@@ -309,7 +309,7 @@ function PagosDetalle() {
       doc.rect(0, 0, pW, 5, 'F');
 
       if (empresaLogo) {
-        try { doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), 10, y, 28, 28, `det-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
+        try { doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), 9, y - 1, 33, 33, `det-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
       }
 
       doc.setFont('Helvetica', 'bold');

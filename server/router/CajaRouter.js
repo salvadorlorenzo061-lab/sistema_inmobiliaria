@@ -13,6 +13,42 @@ const normalizeText = (value = '') => String(value || '')
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
+const sincronizarCorrelativoResolucionesEquivalentes = ({ idResolucionBase, idUsuario, numeroResolucion, serie, correlativoActual }, callback) => {
+    const idRes = Number(idResolucionBase || 0);
+    const idUsr = Number(idUsuario || 0);
+    const corr = Number(correlativoActual || 0);
+    const numeroNorm = String(numeroResolucion || '').trim().toUpperCase();
+    const serieNorm = String(serie || '').trim().toUpperCase();
+
+    if (!Number.isInteger(idRes) || idRes <= 0 || !Number.isInteger(idUsr) || idUsr <= 0 || !Number.isFinite(corr) || corr <= 0 || !numeroNorm || !serieNorm) {
+        return callback();
+    }
+
+    const sql = `
+        UPDATE resoluciones_facturas rf_target
+        INNER JOIN resoluciones_facturas rf_base ON rf_base.id_resolucion = ?
+        LEFT JOIN empresas e_target ON e_target.id_empresa = rf_target.id_empresa
+        LEFT JOIN empresas e_base ON e_base.id_empresa = rf_base.id_empresa
+        SET rf_target.correlativo_actual = ?
+        WHERE rf_target.id_usuario = ?
+          AND UPPER(TRIM(COALESCE(rf_target.numero_resolucion, ''))) = ?
+          AND UPPER(TRIM(COALESCE(rf_target.serie, ''))) = ?
+          AND (
+                rf_target.id_empresa = rf_base.id_empresa
+                OR UPPER(TRIM(COALESCE(e_target.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_base.nombre_empresa, '')))
+              )
+          AND rf_target.id_resolucion <> rf_base.id_resolucion
+          AND rf_target.correlativo_actual < ?
+    `;
+
+    db.query(sql, [idRes, corr, idUsr, numeroNorm, serieNorm, corr], (err) => {
+        if (err) {
+            return callback(err);
+        }
+        return callback();
+    });
+};
+
 const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 const obtenerIndiceMes = (mesTexto = '') => {
@@ -74,8 +110,8 @@ const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
 
 const calcularComponentesFiscalmente = (total = 0) => {
     const montoTotal = parseFloat(Number(total || 0).toFixed(2));
-    const iva = parseFloat((montoTotal * 0.12).toFixed(2));
-    const subtotal = parseFloat((montoTotal - iva).toFixed(2));
+    const iva = 0;
+    const subtotal = montoTotal;
 
     return {
         subtotal,
@@ -129,6 +165,23 @@ const ensureFacturasHistorialRolColumn = () => {
             db.query('ALTER TABLE facturas_historial ADD COLUMN rol_usuario_emisor VARCHAR(80) NULL AFTER id_usuario', (alterErr) => {
                 if (alterErr) {
                     console.error('Error creando columna rol_usuario_emisor en facturas_historial:', alterErr.message);
+                }
+            });
+        }
+    });
+};
+
+const ensureInteresPorcentajeContratoColumn = () => {
+    db.query("SHOW COLUMNS FROM contratos_residentes LIKE 'interes_porcentaje'", (err, rows) => {
+        if (err) {
+            console.error('Error verificando columna interes_porcentaje en contratos_residentes:', err.message);
+            return;
+        }
+
+        if (!rows || rows.length === 0) {
+            db.query('ALTER TABLE contratos_residentes ADD COLUMN interes_porcentaje DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER monto_cuota', (alterErr) => {
+                if (alterErr) {
+                    console.error('Error creando columna interes_porcentaje en contratos_residentes:', alterErr.message);
                 }
             });
         }
@@ -263,23 +316,39 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
     }
 
     const query = `
-        SELECT id_asignacion, id_resolucion, id_empresa, serie, correlativo_actual, correlativo_fin
-        FROM asignar_correlativos
-        WHERE id_usuario = ?
-          AND estado = 'activo'
-          AND correlativo_actual <= correlativo_fin
-        ORDER BY CASE
-                    WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
-                    ELSE 1
-                 END ASC,
-                 fecha_asignacion ASC,
-                 id_asignacion ASC
+        SELECT ac.id_asignacion, ac.id_resolucion, ac.id_empresa, ac.serie,
+               COALESCE(ac.correlativo_actual, ac.correlativo_inicio) AS correlativo_actual,
+               ac.correlativo_fin
+                FROM asignar_correlativos ac
+                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
+                LEFT JOIN empresas e_req ON e_req.id_empresa = ?
+        WHERE ac.id_usuario = ?
+                    AND (
+                                ? IS NULL
+                                OR EXISTS (
+                                        SELECT 1
+                                        FROM resoluciones_facturas rf_match
+                                        LEFT JOIN empresas e_match ON e_match.id_empresa = rf_match.id_empresa
+                                        WHERE rf_match.id_usuario = ac.id_usuario
+                                            AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                            AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                            AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                            AND (
+                                                rf_match.id_empresa = ?
+                                                OR UPPER(TRIM(COALESCE(e_match.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_req.nombre_empresa, '')))
+                                            )
+                                )
+                            )
+                    AND ac.estado = 'activo'
+                    AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                ORDER BY ac.fecha_asignacion ASC,
+                                 ac.id_asignacion ASC
         LIMIT 1
     `;
 
     const idEmpresaNormalizado = idEmpresa ? Number(idEmpresa) : null;
 
-    db.query(query, [idUsuario, idEmpresaNormalizado, idEmpresaNormalizado], (err, rows) => {
+    db.query(query, [idEmpresaNormalizado, idUsuario, idEmpresaNormalizado, idEmpresaNormalizado], (err, rows) => {
         if (err) {
             return callback(err);
         }
@@ -370,6 +439,7 @@ const resolverColumnaCostoServicios = (callback) => {
 ensureContratosServiciosTable();
 ensureFacturasHistorialTable();
 ensureFacturasHistorialRolColumn();
+ensureInteresPorcentajeContratoColumn();
 
 const resolverIdUsuarioValido = (idUsuario, callback) => {
     const id = Number(idUsuario);
@@ -404,17 +474,118 @@ const resolverIdUsuarioValido = (idUsuario, callback) => {
     });
 };
 
+const obtenerContextoPermisosCaja = (idUsuario, callback) => {
+    const id = Number(idUsuario || 0);
+    if (!Number.isInteger(id) || id <= 0) {
+        return callback(null, {
+            idUsuario: null,
+            esAdminOGerente: false,
+            filtrarPorPermiso: false
+        });
+    }
+
+    const sql = `
+        SELECT
+            u.id_usuario,
+            COALESCE(r.nombre_rol, '') AS nombre_rol
+        FROM usuarios u
+        LEFT JOIN roles r ON r.id_rol = u.id_rol
+        WHERE u.id_usuario = ?
+        LIMIT 1
+    `;
+
+    db.query(sql, [id], (err, rows) => {
+        if (err) {
+            return callback(err);
+        }
+
+        if (!rows || !rows.length) {
+            return callback(null, {
+                idUsuario: id,
+                esAdminOGerente: false,
+                filtrarPorPermiso: true
+            });
+        }
+
+        const rol = normalizeText(rows[0].nombre_rol || '');
+        const esAdminOGerente = rol.includes('admin') || rol.includes('gerente');
+
+        return callback(null, {
+            idUsuario: id,
+            esAdminOGerente,
+            // Regla operativa: cualquier usuario autenticado (incluyendo admin/gerencia)
+            // solo debe cobrar dentro de sus empresas asignadas por correlativo/resolucion.
+            filtrarPorPermiso: true
+        });
+    });
+};
+
 // === OBTENER LISTA INICIAL DE RESIDENTES (PENDIENTES Y SOLVENTES) ===
 router.get("/residentes-pendientes", (req, res) => {
-    const query = `
+    const idUsuario = Number(req.query?.id_usuario || 0);
+
+    obtenerContextoPermisosCaja(idUsuario, (ctxErr, contextoPermisos) => {
+        if (ctxErr) {
+            console.error('Error validando permisos de Caja:', ctxErr.message);
+            return res.status(500).send('Error validando permisos de Caja.');
+        }
+
+        const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
+        const permisoSelect = '1';
+        const filtroPermisos = filtrarPorPermiso
+            ? `
+                AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM asignar_correlativos ac
+                                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
+                        WHERE ac.id_usuario = ?
+                          AND ac.estado = 'activo'
+                          AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                                                    AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
+                                                    AND EXISTS (
+                                                                SELECT 1
+                                                                FROM resoluciones_facturas rf_match
+                                                                LEFT JOIN empresas e_match ON e_match.id_empresa = rf_match.id_empresa
+                                                                LEFT JOIN empresas e_contrato ON e_contrato.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                WHERE rf_match.id_usuario = ac.id_usuario
+                                                                    AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                                                    AND (
+                                                                        rf_match.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                        OR UPPER(TRIM(COALESCE(e_match.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contrato.nombre_empresa, '')))
+                                                                    )
+                                                    )
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM resoluciones_facturas rf_directa
+                        LEFT JOIN empresas e_directa ON e_directa.id_empresa = rf_directa.id_empresa
+                        LEFT JOIN empresas e_contrato ON e_contrato.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                        WHERE rf_directa.id_usuario = ?
+                          AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
+                          AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
+                          AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
+                          AND (
+                              rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                              OR UPPER(TRIM(COALESCE(e_directa.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contrato.nombre_empresa, '')))
+                          )
+                    )
+                )
+                AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
+            `
+            : '';
+
+        const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
-            c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
-            COALESCE(c.interes_porcentaje, 0) AS interes_porcentaje,
-            COALESCE(c.enganche, 0) AS enganche,
+            c.enganche, c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
+            COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
+            ${permisoSelect} AS permiso_cobro_usuario,
             p.nombre AS nombre_proyecto,
             COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
@@ -436,36 +607,96 @@ router.get("/residentes-pendientes", (req, res) => {
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
         WHERE c.estado = 'activo'
+        AND COALESCE(c.id_proyecto, 0) > 0
+        AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
+        ${filtroPermisos}
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
     `;
 
-    db.query(query, (err, result) => {
-        if (err) {
-            console.error("Error al obtener residentes pendientes:", err.message);
-            return res.status(500).send("Error al obtener residentes: " + err.message);
-        }
+        const queryParams = filtrarPorPermiso ? [idUsuario, idUsuario] : [];
 
-        return res.status(200).json(result || []);
+        db.query(query, queryParams, (err, result) => {
+            if (err) {
+                console.error("Error al obtener residentes pendientes:", err.message);
+                return res.status(500).send("Error al obtener residentes: " + err.message);
+            }
+
+            return res.status(200).json(result || []);
+        });
     });
 });
 
 // === BUSCAR RESIDENTE POR NOMBRE, APELLIDO, DPI O NUMERO DE CONTRATO ===
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;
+    const idUsuario = Number(req.query?.id_usuario || 0);
 
     if (!criterio) {
         return res.status(400).send("Debe proporcionar un criterio de búsqueda.");
     }
 
-    const query = `
+    obtenerContextoPermisosCaja(idUsuario, (ctxErr, contextoPermisos) => {
+        if (ctxErr) {
+            console.error('Error validando permisos de Caja:', ctxErr.message);
+            return res.status(500).send('Error validando permisos de Caja.');
+        }
+
+        const filtrarPorPermiso = Boolean(contextoPermisos?.filtrarPorPermiso);
+        const permisoSelect = '1';
+        const filtroPermisos = filtrarPorPermiso
+            ? `
+                AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM asignar_correlativos ac
+                                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
+                        WHERE ac.id_usuario = ?
+                          AND ac.estado = 'activo'
+                          AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                                                    AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
+                                                    AND EXISTS (
+                                                                SELECT 1
+                                                                FROM resoluciones_facturas rf_match
+                                                                LEFT JOIN empresas e_match ON e_match.id_empresa = rf_match.id_empresa
+                                                                LEFT JOIN empresas e_contrato ON e_contrato.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                WHERE rf_match.id_usuario = ac.id_usuario
+                                                                    AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                                                    AND (
+                                                                        rf_match.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                        OR UPPER(TRIM(COALESCE(e_match.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contrato.nombre_empresa, '')))
+                                                                    )
+                                                    )
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM resoluciones_facturas rf_directa
+                        LEFT JOIN empresas e_directa ON e_directa.id_empresa = rf_directa.id_empresa
+                        LEFT JOIN empresas e_contrato ON e_contrato.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                        WHERE rf_directa.id_usuario = ?
+                          AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
+                          AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
+                          AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
+                          AND (
+                              rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                              OR UPPER(TRIM(COALESCE(e_directa.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contrato.nombre_empresa, '')))
+                          )
+                    )
+                )
+                AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
+            `
+            : '';
+
+        const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
-            c.monto_cuota, c.cuotas_pactadas, tc.id_tipo_contrato, 
-            COALESCE(c.interes_porcentaje, 0) AS interes_porcentaje,
-            COALESCE(c.enganche, 0) AS enganche,
+            c.enganche, c.monto_cuota, c.cuotas_pactadas, c.interes_porcentaje, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
+            COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
+            ${permisoSelect} AS permiso_cobro_usuario,
             p.nombre AS nombre_proyecto,
             COALESCE(em.logo, er.logo) AS logo_empresa_pdf,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
@@ -478,7 +709,11 @@ router.get("/buscar-residente", (req, res) => {
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
-        WHERE c.estado = 'activo' AND (
+        WHERE c.estado = 'activo'
+        AND COALESCE(c.id_proyecto, 0) > 0
+        AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
+        ${filtroPermisos}
+        AND (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
             OR r.numero_identificacion LIKE ?
@@ -488,17 +723,20 @@ router.get("/buscar-residente", (req, res) => {
         LIMIT 50
     `;
 
-    const searchTerm = `%${criterio}%`;
-    const queryParams = [searchTerm, searchTerm, searchTerm, searchTerm];
+        const searchTerm = `%${criterio}%`;
+        const queryParams = filtrarPorPermiso
+            ? [idUsuario, idUsuario, searchTerm, searchTerm, searchTerm, searchTerm]
+            : [searchTerm, searchTerm, searchTerm, searchTerm];
 
-    db.query(query, queryParams, (err, result) => {
-        if (err) {
-            console.error("Error en la consulta:", err.message);
-            return res.status(500).send("Error al consultar el residente: " + err.message);
-        }
-        if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
-        
-        res.status(200).json(result);
+        db.query(query, queryParams, (err, result) => {
+            if (err) {
+                console.error("Error en la consulta:", err.message);
+                return res.status(500).send("Error al consultar el residente: " + err.message);
+            }
+            if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
+            
+            return res.status(200).json(result);
+        });
     });
 });
 
@@ -521,7 +759,7 @@ router.get("/meses-pendientes", (req, res) => {
     }
 
     // Traer datos de contrato para calcular todos los meses cobrables del contrato
-    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota, mes_inicio_pagos, anio_inicio_pagos FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
+    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
         if (err || !contratoResult.length) {
             console.error('Error al obtener contrato:', err?.message);
             return res.status(500).send('Error al consultar el contrato');
@@ -543,14 +781,7 @@ router.get("/meses-pendientes", (req, res) => {
         const fechaFin = parseFechaValida(fechaFinRaw);
         const fechaFirma = parseFechaValida(fechaFirmaRaw);
 
-        // If the contract has explicit mes_inicio_pagos + anio_inicio_pagos, use them as the start date
-        const mesInicio = Number(contratoResult[0].mes_inicio_pagos || 0);
-        const anioInicio = Number(contratoResult[0].anio_inicio_pagos || 0);
-        const fechaInicioExplicita = (mesInicio >= 1 && mesInicio <= 12 && anioInicio >= 2000)
-            ? new Date(anioInicio, mesInicio - 1, 1)
-            : null;
-
-        const fechaInicioBase = fechaInicioExplicita || fechaCompra || fechaFirma || new Date();
+        const fechaInicioBase = fechaCompra || fechaFirma || new Date();
         const hoy = new Date();
         const candidatos = [];
         const cuotasPactadas = Number(contratoResult[0].cuotas_pactadas || 0);
@@ -897,7 +1128,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
 router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
-        monto_pagar, monto_terreno_pagar, monto_mora, monto_interes, metodo_pago, no_referencia, observaciones,
+        monto_pagar, monto_terreno_pagar, monto_interes, monto_mora, metodo_pago, no_referencia, observaciones,
         mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
@@ -969,6 +1200,7 @@ router.post("/procesar-pago", (req, res) => {
 
     const montoSolicitado = parseFloat(monto_pagar || 0);
     const montoTerrenoSolicitado = parseFloat(monto_terreno_pagar);
+    const montoInteresSolicitado = parseFloat(monto_interes || 0);
     const montoTerrenoTotalBase = Number.isFinite(montoTerrenoSolicitado)
         ? parseFloat(Math.max(montoTerrenoSolicitado, 0).toFixed(2))
         : parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0), 0).toFixed(2));
@@ -978,6 +1210,7 @@ router.post("/procesar-pago", (req, res) => {
     let montoServiciosMesInicial = 0;
     let montoServiciosTotal = 0;
     let montoPrincipalTotal = 0;
+    let montoInteresTotal = 0;
     let montoPorMesTerreno = 0;
     let ivaTotal = 0;
     let ivaPorMes = 0;
@@ -997,8 +1230,8 @@ router.post("/procesar-pago", (req, res) => {
 
         montoPrincipalTotal = parseFloat((montoTerrenoTotal + montoServiciosTotal).toFixed(2));
         montoPorMesTerreno = parseFloat((montoTerrenoTotal / cantidadMeses).toFixed(2));
-        ivaTotal = parseFloat((montoPrincipalTotal * 0.12).toFixed(2));
-        ivaPorMes = parseFloat((ivaTotal / cantidadMeses).toFixed(2));
+        ivaTotal = 0;
+        ivaPorMes = 0;
     };
 
     recalcularTotales();
@@ -1024,7 +1257,24 @@ router.post("/procesar-pago", (req, res) => {
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
-            db.query('SELECT monto_total, fecha_compra, fecha_firma, cuotas_pactadas, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (saldoErr, saldoRows) => {
+            const sqlContratoCobro = `
+                SELECT
+                    c.monto_total,
+                    c.enganche,
+                    c.fecha_compra,
+                    c.fecha_firma,
+                    c.cuotas_pactadas,
+                    c.monto_cuota,
+                    c.interes_porcentaje,
+                    c.id_proyecto,
+                    COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
+                FROM contratos_residentes c
+                LEFT JOIN residentes r ON r.id_residente = c.id_residente
+                WHERE c.id_contrato = ?
+                LIMIT 1
+            `;
+
+            db.query(sqlContratoCobro, [id_contrato], (saldoErr, saldoRows) => {
             if (saldoErr) {
                 return db.rollback(() => res.status(500).send('Error al validar saldo pendiente: ' + saldoErr.message));
             }
@@ -1033,11 +1283,80 @@ router.post("/procesar-pago", (req, res) => {
                 return db.rollback(() => res.status(404).send('No se encontró el contrato para aplicar el cobro.'));
             }
 
-            const saldoActual = parseFloat(saldoRows[0].monto_total || 0);
+            const idProyectoContrato = Number(saldoRows[0]?.id_proyecto || 0);
+            const idEmpresaFacturacionContrato = Number(saldoRows[0]?.id_empresa_facturacion || 0);
+
+            if (!Number.isInteger(idProyectoContrato) || idProyectoContrato <= 0 || !Number.isInteger(idEmpresaFacturacionContrato) || idEmpresaFacturacionContrato <= 0) {
+                return db.rollback(() => res.status(400).send('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.'));
+            }
+
+                        const sqlPermisoCobroContrato = `
+                                SELECT 1
+                                FROM contratos_residentes c
+                                LEFT JOIN residentes r ON r.id_residente = c.id_residente
+                                LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
+                                WHERE c.id_contrato = ?
+                                    AND COALESCE(c.id_proyecto, 0) > 0
+                                    AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
+                                    AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                    AND (
+                                        EXISTS (
+                                                SELECT 1
+                                                FROM asignar_correlativos ac
+                                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
+                                                WHERE ac.id_usuario = ?
+                                                    AND ac.estado = 'activo'
+                                                    AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                                                    AND LOWER(TRIM(COALESCE(rf_ac.estado, 'activo'))) = 'activo'
+                                                    AND EXISTS (
+                                                                SELECT 1
+                                                                FROM resoluciones_facturas rf_match
+                                                                LEFT JOIN empresas e_match ON e_match.id_empresa = rf_match.id_empresa
+                                                                LEFT JOIN empresas e_contrato ON e_contrato.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                WHERE rf_match.id_usuario = ac.id_usuario
+                                                                    AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                                                    AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                                                    AND (
+                                                                                rf_match.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                                OR UPPER(TRIM(COALESCE(e_match.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contrato.nombre_empresa, '')))
+                                                                            )
+                                                    )
+                                        )
+                                        OR EXISTS (
+                                                SELECT 1
+                                                FROM resoluciones_facturas rf_directa
+                                                LEFT JOIN empresas e_directa ON e_directa.id_empresa = rf_directa.id_empresa
+                                                LEFT JOIN empresas e_contrato ON e_contrato.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                WHERE rf_directa.id_usuario = ?
+                                                    AND LOWER(TRIM(COALESCE(rf_directa.estado, 'activo'))) = 'activo'
+                                                    AND rf_directa.correlativo_actual BETWEEN rf_directa.rango_inicial AND rf_directa.rango_final
+                                                    AND (rf_directa.fecha_vencimiento IS NULL OR rf_directa.fecha_vencimiento >= CURDATE())
+                                                    AND (
+                                                                rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                                                OR UPPER(TRIM(COALESCE(e_directa.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contrato.nombre_empresa, '')))
+                                                            )
+                                        )
+                                    )
+                                LIMIT 1
+                        `;
+
+                        return db.query(sqlPermisoCobroContrato, [id_contrato, idUsuarioSeguro, idUsuarioSeguro], (permisoErr, permisoRows) => {
+                                if (permisoErr) {
+                                        return db.rollback(() => res.status(500).send('Error validando permisos de cobro del usuario: ' + permisoErr.message));
+                                }
+
+                                if (!permisoRows || !permisoRows.length) {
+                                        return db.rollback(() => res.status(403).send('No se puede generar cobro: este contrato no pertenece a tus empresas/proyectos con correlativos activos asignados.'));
+                                }
+
+                        const saldoActual = parseFloat(saldoRows[0].monto_total || 0);
+                        const engancheContrato = Math.max(Number(saldoRows[0]?.enganche || 0), 0);
             const fechaCompraContrato = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
             const fechaFirmaContrato = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
             const cuotasPactadasContrato = Number(saldoRows[0]?.cuotas_pactadas || 0);
             const montoCuotaContratoRaw = Number(saldoRows[0]?.monto_cuota || 0);
+            const interesPorcentajeContrato = Math.max(Number(saldoRows[0]?.interes_porcentaje || 0), 0);
             const montoCuotaBaseEntera = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
                 ? Math.floor(montoCuotaContratoRaw)
                 : 0;
@@ -1048,6 +1367,30 @@ router.post("/procesar-pago", (req, res) => {
                     : null);
 
             const redondear2 = (valor) => Number(Number(valor || 0).toFixed(2));
+
+            const cuotasRestantesContrato = (montoCuotaContratoRaw > 0 && saldoActual > 0)
+                ? Math.max(Math.ceil(saldoActual / montoCuotaContratoRaw), 1)
+                : Math.max(mesesAProcesar.length, 1);
+            const cuotasBaseInteres = Number.isInteger(cuotasPactadasContrato) && cuotasPactadasContrato > 0
+                ? cuotasPactadasContrato
+                : Math.max(mesesAProcesar.length, 1);
+            const capitalBaseContrato = (montoCuotaContratoRaw > 0 && cuotasBaseInteres > 0)
+                ? redondear2(montoCuotaContratoRaw * cuotasBaseInteres)
+                : redondear2(Math.max(saldoActual, 0));
+            const capitalBaseInteresContrato = redondear2(Math.max(capitalBaseContrato - engancheContrato, 0));
+            const interesTotalContrato = redondear2((capitalBaseInteresContrato * interesPorcentajeContrato) / 100);
+            const interesPorMesContrato = cuotasBaseInteres > 0
+                ? redondear2(interesTotalContrato / cuotasBaseInteres)
+                : 0;
+            const mesesInteresSolicitados = montoTerrenoTotal > 0
+                ? Math.min(mesesAProcesar.length, cuotasRestantesContrato)
+                : 0;
+            const interesCalculadoContrato = redondear2(interesPorMesContrato * mesesInteresSolicitados);
+
+            // Priorizar cálculo de backend para consistencia; usar payload solo como respaldo.
+            montoInteresTotal = interesCalculadoContrato > 0
+                ? interesCalculadoContrato
+                : redondear2(Math.max(montoInteresSolicitado, 0));
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
                 const parsed = parsearEtiquetaMes(mesTexto);
@@ -1098,6 +1441,22 @@ router.post("/procesar-pago", (req, res) => {
                     montos[montos.length - 1] = redondear2(montos[montos.length - 1] + restante);
                 }
 
+                return montos;
+            };
+
+            const distribuirInteresPorMes = (mesesLista = [], montoInteres = 0) => {
+                if (!Array.isArray(mesesLista) || !mesesLista.length) return [];
+
+                const total = redondear2(Math.max(Number(montoInteres || 0), 0));
+                if (total <= 0) {
+                    return mesesLista.map(() => 0);
+                }
+
+                const base = redondear2(total / mesesLista.length);
+                const montos = mesesLista.map(() => base);
+                const acumuladoBase = redondear2(base * mesesLista.length);
+                const ajusteFinal = redondear2(total - acumuladoBase);
+                montos[montos.length - 1] = redondear2(montos[montos.length - 1] + ajusteFinal);
                 return montos;
             };
 
@@ -1343,7 +1702,8 @@ router.post("/procesar-pago", (req, res) => {
                 (numero_recibo, fecha_pago, monto_pagado, monto_mora, metodo_pago, observaciones, id_residente, id_tipo_contrato) 
                 VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?)`;
 
-            db.query(sqlCaja, [numero_recibo, montoPrincipalTotal, moraTotalSeleccionada, metodo_pago, observaciones, id_residente, id_tipo_contrato], (err, resCaja) => {
+            const montoCajaSinMora = redondear2(montoPrincipalTotal + montoInteresTotal);
+            db.query(sqlCaja, [numero_recibo, montoCajaSinMora, moraTotalSeleccionada, metodo_pago, observaciones, id_residente, id_tipo_contrato], (err, resCaja) => {
                 if (err) return db.rollback(() => res.status(500).send("Error en caja_ingresos: " + err.message));
 
                 const sqlEmpresaContrato = `
@@ -1365,8 +1725,7 @@ router.post("/procesar-pago", (req, res) => {
                         const sqlPago = `INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia) 
                                          VALUES (?, ?, NOW(), ?, ?, ?)`;
                         const moraTotal = moraTotalSeleccionada;
-                        const montoInteresTotalPago = parseFloat(parseFloat(monto_interes || 0).toFixed(2));
-                        const totalTransaccion = parseFloat((montoPrincipalTotal + moraTotal + montoInteresTotalPago).toFixed(2));
+                        const totalTransaccion = parseFloat((montoPrincipalTotal + montoInteresTotal + moraTotal).toFixed(2));
 
                         db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (err, resPago) => {
                             if (err) return db.rollback(() => res.status(500).send("Error en tabla pagos: " + err.message));
@@ -1376,12 +1735,17 @@ router.post("/procesar-pago", (req, res) => {
 
                             const finalizarConDetalles = () => {
                                 const detalleValues = [];
-                                const montoInteresPorMes = parseFloat((parseFloat(monto_interes || 0) / cantidadMeses).toFixed(2));
                                 const cuotasTerrenoCalculadas = montoTerrenoTotal > 0
                                     ? mesesAProcesar.map((mes, index) => obtenerNumeroCuotaParaMes(mes, index))
                                     : [];
                                 const montosTerrenoPorMes = montoTerrenoTotal > 0
                                     ? distribuirTerrenoPorMes(mesesAProcesar, cuotasTerrenoCalculadas, montoTerrenoTotal)
+                                    : [];
+                                const mesesConTerreno = montoTerrenoTotal > 0
+                                    ? mesesAProcesar.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
+                                    : [];
+                                const montosInteresPorMes = montoInteresTotal > 0
+                                    ? distribuirInteresPorMes(mesesConTerreno, montoInteresTotal)
                                     : [];
 
                                 if (montoTerrenoTotal > 0) {
@@ -1398,16 +1762,15 @@ router.post("/procesar-pago", (req, res) => {
                                     });
                                 }
 
-                                // Interest entries
-                                if (montoInteresPorMes > 0) {
-                                    mesesAProcesar.forEach((mes, index) => {
+                                if (montoInteresTotal > 0 && mesesConTerreno.length) {
+                                    mesesConTerreno.forEach((mes, index) => {
                                         detalleValues.push([
                                             lastIdPago,
                                             'interes',
                                             null,
                                             mes,
-                                            cuotasTerrenoCalculadas[index] || null,
-                                            redondear2(montoInteresPorMes),
+                                            null,
+                                            redondear2(montosInteresPorMes[index] || 0),
                                             null
                                         ]);
                                     });
@@ -1515,15 +1878,14 @@ router.post("/procesar-pago", (req, res) => {
                                                     const numeroCuotaFin = cuotasTerrenoCalculadas.length ? cuotasTerrenoCalculadas[cuotasTerrenoCalculadas.length - 1] : null;
                                                     const cantidadCuotasPagadas = cuotasTerrenoCalculadas.length;
                                                     const totalCuotaNormal = redondear2(montosTerrenoPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
+                                                    const totalInteres = redondear2(montosInteresPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
 
                                                     mesesAProcesar.forEach((mes, index) => {
                                                         if (Number(montosTerrenoPorMes[index] || 0) > 0) {
-                                                            const montoCapital = redondear2(montosTerrenoPorMes[index]);
-                                                            const montoInteresCuota = redondear2(montoInteresPorMes);
-                                                            const totalCuota = redondear2(montoCapital + montoInteresCuota);
-                                                            const desgloseTerreno = calcularComponentesFiscalmente(totalCuota);
+                                                            const montoTerrenoConcepto = redondear2(montosTerrenoPorMes[index]);
+                                                            const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);
                                                             detalleCobro.push({
-                                                                concepto: `Cuota ${cuotasTerrenoCalculadas[index] || (index + 1)} - ${mes}`,
+                                                                concepto: `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
                                                                 mes,
                                                                 monto_base: desgloseTerreno.subtotal,
                                                                 iva: desgloseTerreno.iva,
@@ -1544,6 +1906,20 @@ router.post("/procesar-pago", (req, res) => {
                                                             });
                                                         });
                                                     });
+
+                                                    if (montoInteresTotal > 0 && mesesConTerreno.length) {
+                                                        mesesConTerreno.forEach((mes, index) => {
+                                                            const montoInteresConcepto = redondear2(montosInteresPorMes[index] || 0);
+                                                            if (montoInteresConcepto <= 0) return;
+                                                            detalleCobro.push({
+                                                                concepto: `Interés ${interesPorcentajeContrato.toFixed(2)}%`,
+                                                                mes,
+                                                                monto_base: montoInteresConcepto,
+                                                                iva: 0,
+                                                                total: montoInteresConcepto
+                                                            });
+                                                        });
+                                                    }
 
                                                     serviciosSolicitados
                                                         .filter((servicio) => servicio.es_cobro_unico)
@@ -1608,15 +1984,14 @@ router.post("/procesar-pago", (req, res) => {
                                                         success: true,
                                                         numero_recibo,
                                                         fecha: new Date().toLocaleDateString(),
-                                                        saldo_anterior: saldoActual,
-                                                        monto_pagado: montoPrincipalTotal,
+                                                        monto_pagado: redondear2(montoPrincipalTotal + montoInteresTotal),
                                                         monto_terreno_pagado: montoTerrenoTotal,
+                                                        monto_interes_pagado: montoInteresTotal,
                                                         monto_servicios_pagado: montoServiciosTotal,
                                                         monto_servicios_mes_inicial: montoServiciosMesInicial,
                                                         servicios_cobrados: serviciosSolicitados,
                                                         servicios_cobrados_mes_inicial: serviciosMesInicial,
                                                         monto_mora: moraTotal,
-                                                        monto_interes_pagado: montoInteresTotalPago,
                                                         moras_aplicadas: morasAplicadas,
                                                         iva_total: ivaTotal,
                                                         iva_por_mes: ivaPorMes,
@@ -1627,6 +2002,8 @@ router.post("/procesar-pago", (req, res) => {
                                                         meses_pagados: mesesAProcesar,
                                                         detalle_cobro: detalleCobro,
                                                         desglose_totales: {
+                                                            capital_total: totalCuotaNormal,
+                                                            interes_total: totalInteres,
                                                             cuota_normal_total: totalCuotaNormal,
                                                             mora_total: moraTotal,
                                                             total_final: totalTransaccion
@@ -1808,23 +2185,25 @@ router.post("/procesar-pago", (req, res) => {
                             });
                         }
 
-                                                const sqlResolucionUsuario = `
-                                                        SELECT id_resolucion, id_empresa, serie, correlativo_actual, rango_final
-                                                        FROM resoluciones_facturas
-                                                        WHERE id_usuario = ?
-                                                            AND estado = 'activo'
-                                                            AND correlativo_actual BETWEEN rango_inicial AND rango_final
-                                                            AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                                                        ORDER BY CASE
-                                                                                WHEN ? IS NOT NULL AND id_empresa = ? THEN 0
-                                                                                ELSE 1
-                                                                         END ASC,
-                                                                         fecha_vencimiento ASC,
-                                                                         id_resolucion ASC
-                                                        LIMIT 1
-                                                `;
+                        const sqlResolucionUsuario = `
+                            SELECT rf.id_resolucion, rf.id_empresa, rf.numero_resolucion, rf.serie, rf.correlativo_actual, rf.rango_final
+                            FROM resoluciones_facturas rf
+                            LEFT JOIN empresas e_rf ON e_rf.id_empresa = rf.id_empresa
+                            LEFT JOIN empresas e_req ON e_req.id_empresa = ?
+                            WHERE rf.id_usuario = ?
+                              AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                              AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final
+                              AND (rf.fecha_vencimiento IS NULL OR rf.fecha_vencimiento >= CURDATE())
+                              AND (
+                                  ? IS NULL
+                                  OR rf.id_empresa = ?
+                                  OR UPPER(TRIM(COALESCE(e_rf.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_req.nombre_empresa, '')))
+                              )
+                            ORDER BY rf.fecha_vencimiento ASC, rf.id_resolucion ASC
+                            LIMIT 1
+                        `;
 
-                                                db.query(sqlResolucionUsuario, [idUsuarioSeguro, idEmpresaFacturacion, idEmpresaFacturacion], (resErr, resRows) => {
+                        db.query(sqlResolucionUsuario, [idEmpresaFacturacion, idUsuarioSeguro, idEmpresaFacturacion, idEmpresaFacturacion], (resErr, resRows) => {
                             if (resErr) {
                                 return db.rollback(() => res.status(500).send("Error al obtener resolución asignada al usuario: " + resErr.message));
                             }
@@ -1858,9 +2237,21 @@ router.post("/procesar-pago", (req, res) => {
                                         return db.rollback(() => res.status(500).send("No se pudo reservar correlativo de la resolución asignada al usuario."));
                                     }
 
-                                    return continuarConInsertPago(correlativoGenerado, resolucion.id_resolucion, {
-                                        id_asignacion: null,
-                                        origen: 'resolucion_usuario'
+                                    return sincronizarCorrelativoResolucionesEquivalentes({
+                                        idResolucionBase: resolucion.id_resolucion,
+                                        idUsuario: idUsuarioSeguro,
+                                        numeroResolucion: resolucion.numero_resolucion,
+                                        serie: resolucion.serie,
+                                        correlativoActual: siguienteCorrelativo
+                                    }, (syncErr) => {
+                                        if (syncErr) {
+                                            return db.rollback(() => res.status(500).send("No se pudo sincronizar correlativos entre empresas asignadas."));
+                                        }
+
+                                        return continuarConInsertPago(correlativoGenerado, resolucion.id_resolucion, {
+                                            id_asignacion: null,
+                                            origen: 'resolucion_usuario'
+                                        });
                                     });
                                 }
                             );
@@ -1875,6 +2266,7 @@ router.post("/procesar-pago", (req, res) => {
             });
         });
     });
+});
 });
 
 module.exports = router;

@@ -198,11 +198,11 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
     const correlativoNumero = Number(correlativoLimpio || 0);
 
     const whereSql = esNumerico
-        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?))"
+        ? "(p.id_pago = ? OR UPPER(COALESCE(p.no_referencia, '')) = UPPER(?) OR CAST(SUBSTRING_INDEX(COALESCE(p.no_referencia, ''), '-', -1) AS UNSIGNED) = ?)"
         : "UPPER(COALESCE(p.no_referencia, '')) = UPPER(?)";
 
     const params = esNumerico
-        ? [Number(correlativoLimpio), correlativoLimpio]
+        ? [Number(correlativoLimpio), correlativoLimpio, correlativoNumero]
         : [correlativoLimpio];
 
     const sql = `
@@ -248,8 +248,13 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
     db.query(sql, params, (err, rows) => {
         if (err) return callback(err);
         if (!rows || !rows.length) {
-            const whereAnulacionSql = "UPPER(COALESCE(ad.correlativo, '')) = UPPER(?)";
-            const paramsAnulacion = [correlativoLimpio];
+            const whereAnulacionSql = esNumerico
+                ? "(UPPER(COALESCE(ad.correlativo, '')) = UPPER(?) OR CAST(SUBSTRING_INDEX(COALESCE(ad.correlativo, ''), '-', -1) AS UNSIGNED) = ?)"
+                : "UPPER(COALESCE(ad.correlativo, '')) = UPPER(?)";
+
+            const paramsAnulacion = esNumerico
+                ? [correlativoLimpio, correlativoNumero]
+                : [correlativoLimpio];
 
             const sqlAnulacion = `
                 SELECT
@@ -451,6 +456,13 @@ router.post('/anular-por-correlativo', (req, res) => {
                                     .map((item) => String(item?.mes_pagado || '').trim())
                                     .filter((mes) => mes))];
 
+                                const mesesBaseMorosidad = [...new Set(
+                                    mesesRevertirMorosidad
+                                        .map((mes) => String(mes || '').trim().split(/\s+/)[0] || '')
+                                        .map((mes) => mes.toLowerCase())
+                                        .filter(Boolean)
+                                )];
+
                                 const continuarTrasMorosidad = () => {
 
                                 const correlativoFinal = pago.no_referencia || `PAGO-${pago.id_pago}`;
@@ -514,16 +526,30 @@ router.post('/anular-por-correlativo', (req, res) => {
                                     return continuarTrasMorosidad();
                                 }
 
-                                const placeholdersMeses = mesesRevertirMorosidad.map(() => '?').join(', ');
+                                const condicionesMes = [];
+                                const paramsMes = [pago.id_contrato];
+
+                                if (mesesRevertirMorosidad.length) {
+                                    const placeholdersMeses = mesesRevertirMorosidad.map(() => '?').join(', ');
+                                    condicionesMes.push(`mes_atrasado IN (${placeholdersMeses})`);
+                                    paramsMes.push(...mesesRevertirMorosidad);
+                                }
+
+                                if (mesesBaseMorosidad.length) {
+                                    const placeholdersMesBase = mesesBaseMorosidad.map(() => '?').join(', ');
+                                    condicionesMes.push(`LOWER(TRIM(SUBSTRING_INDEX(mes_atrasado, ' ', 1))) IN (${placeholdersMesBase})`);
+                                    paramsMes.push(...mesesBaseMorosidad);
+                                }
+
                                 const sqlMorosidad = `
                                     UPDATE morosidad
                                     SET estado = 'pendiente'
                                     WHERE id_contrato = ?
                                       AND estado = 'pagado'
-                                      AND mes_atrasado IN (${placeholdersMeses})
+                                      ${condicionesMes.length ? `AND (${condicionesMes.join(' OR ')})` : ''}
                                 `;
 
-                                db.query(sqlMorosidad, [pago.id_contrato, ...mesesRevertirMorosidad], (moraErr) => {
+                                db.query(sqlMorosidad, paramsMes, (moraErr) => {
                                     if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
                                         return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el estado de morosidad al anular.' }));
                                     }
