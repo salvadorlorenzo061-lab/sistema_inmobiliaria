@@ -252,6 +252,7 @@ const Caja = () => {
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
     const [montoEngancheSeleccionado, setMontoEngancheSeleccionado] = useState(0);
+    const [autoIncluirAbonoCapital, setAutoIncluirAbonoCapital] = useState(true);
     const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
@@ -352,6 +353,7 @@ const Caja = () => {
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMontoEngancheSeleccionado(0);
+        setAutoIncluirAbonoCapital(true);
         setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
@@ -434,7 +436,13 @@ const Caja = () => {
         const engancheBase = engancheOverride == null
             ? parseFloat(montoEngancheSeleccionado || 0)
             : parseFloat(engancheOverride || 0);
-        const engancheAplicado = Math.max(Math.min(engancheBase, enganchePendienteContrato), 0);
+        const aplicarAbonoAutomatico = autoIncluirAbonoCapital
+            && engancheOverride == null
+            && cantidadMeses > 0
+            && engancheBase <= 0
+            && enganchePendienteContrato > 0;
+        const engancheSolicitado = aplicarAbonoAutomatico ? enganchePendienteContrato : engancheBase;
+        const engancheAplicado = Math.max(Math.min(engancheSolicitado, enganchePendienteContrato), 0);
         const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos + costoCargosExtra) : 0;
         const mesesOrdenados = [...(meses || [])]
             .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
@@ -544,6 +552,7 @@ const Caja = () => {
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMontoEngancheSeleccionado(0);
+        setAutoIncluirAbonoCapital(true);
         setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
@@ -642,6 +651,7 @@ const Caja = () => {
     };
 
     const agregarAbonoCapital = () => {
+        setAutoIncluirAbonoCapital(false);
         const valor = Math.max(parseFloat(montoEngancheSeleccionado || 0), 0);
         if (valor <= 0) {
             mostrarToast('Ingresa un monto de abono a capital mayor a cero.', 'warning');
@@ -721,6 +731,11 @@ const Caja = () => {
         const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
         const montoSolicitado = parseFloat(montoAPagar || 0);
         const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
+        const mesesParaPago = (Array.isArray(mesesSeleccionados) && mesesSeleccionados.length)
+            ? mesesSeleccionados
+            : ((Array.isArray(mesesPendientes) && mesesPendientes.length)
+                ? [mesesPendientes[0]]
+                : (mesPagado ? [mesPagado] : []));
 
         if (!contratoTieneAsignacionValida(datosDeuda)) {
             mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
@@ -742,7 +757,7 @@ const Caja = () => {
             && parseFloat(montoServiciosSeleccionado || 0) <= 0
             && parseFloat(montoMora || 0) <= 0;
 
-        if (!mesesSeleccionados.length && !esSoloEnganche) {
+        if (!mesesParaPago.length && !esSoloEnganche) {
             mostrarToast('Debe seleccionar al menos un mes pendiente para generar el cobro.', 'warning');
             return;
         }
@@ -784,9 +799,9 @@ const Caja = () => {
             fecha_operacion: metodoPago === 'Efectivo' ? '' : fechaOperacion,
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
             boleta_referencia: metodoPago === 'Efectivo' ? '' : referencia,
-            observaciones: `Pago de cuota de terreno mes de ${mesesSeleccionados.join(', ') || mesPagado}`,
-            mes_pagado: mesesSeleccionados[0] || mesPagado,
-            meses_pagados: mesesSeleccionados.length ? mesesSeleccionados : [mesPagado],
+            observaciones: `Pago de cuota de terreno mes de ${mesesParaPago.join(', ') || mesPagado}`,
+            mes_pagado: mesesParaPago[0] || mesPagado,
+            meses_pagados: mesesParaPago,
             numero_cuota: parseInt(numCuota),
             servicios_pagados: serviciosPayload,
             moras_aplicadas: (morasPendientes || [])
@@ -1359,6 +1374,15 @@ const Caja = () => {
     const primerMesSeleccionado = mesesSeleccionados.length ? mesesSeleccionados[0] : '';
     const numeroCuotaPrimerMes = obtenerNumeroCuotaMesVista(primerMesSeleccionado);
     const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
+    const mesAplicacionAbonoCapital = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
+    const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
+        const capital = parseFloat(datosDeuda?.monto_cuota || 0);
+        const interes = obtenerInteresPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
+        const abono = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
+            ? parseFloat(montoEngancheSeleccionado || 0)
+            : 0;
+        return parseFloat((capital + interes + abono).toFixed(2));
+    };
 
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
     const engancheSeleccionado = parseFloat(montoEngancheSeleccionado || 0);
@@ -1736,6 +1760,7 @@ const Caja = () => {
                                                 value={montoEngancheSeleccionado}
                                                 onChange={(e) => {
                                                     const valor = Math.max(parseFloat(e.target.value || 0), 0);
+                                                    setAutoIncluirAbonoCapital(false);
                                                     setMontoEngancheSeleccionado(valor);
                                                 }}
                                             />
@@ -1751,6 +1776,7 @@ const Caja = () => {
                                                 type="button"
                                                 className="btn btn-outline-secondary"
                                                 onClick={() => {
+                                                    setAutoIncluirAbonoCapital(false);
                                                     setMontoEngancheSeleccionado(0);
                                                     recalcularTotalesCobro(mesesSeleccionados, serviciosSeleccionados, datosDeuda, serviciosContrato, 0);
                                                 }}
@@ -1835,10 +1861,7 @@ const Caja = () => {
                                                                 </span>
                                                             </div>
                                                             <span className="badge bg-primary">
-                                                                Q{(
-                                                                    parseFloat(datosDeuda?.monto_cuota || 0)
-                                                                    + obtenerInteresPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mes))
-                                                                ).toFixed(2)}
+                                                                Q{obtenerTotalCuotaMesVista(mes).toFixed(2)}
                                                             </span>
                                                             {mesesSeleccionados.includes(mes) && (
                                                                 <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>

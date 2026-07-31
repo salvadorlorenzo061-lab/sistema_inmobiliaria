@@ -230,6 +230,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             r.nombre AS nombre_residente,
             COALESCE(SUM(pd.subtotal), 0) AS principal_pagado,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END), 0) AS principal_terreno,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS principal_enganche,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'servicio' THEN pd.subtotal ELSE 0 END), 0) AS principal_servicios,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS principal_mora,
             GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados
@@ -375,6 +376,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                             subtotal: Number(row.subtotal || 0),
                             concepto: tipoConcepto === 'cuota_terreno'
                                 ? `Cuota de Terreno No. ${row.numero_cuota_afectada || ''}`.trim()
+                                : tipoConcepto === 'enganche'
+                                    ? 'Abono a capital'
                                 : tipoConcepto === 'mora'
                                     ? `Mora ${row.mes_pagado || ''}`.trim()
                                 : tipoConcepto === 'extraordinario'

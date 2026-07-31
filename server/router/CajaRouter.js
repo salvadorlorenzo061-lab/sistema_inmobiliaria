@@ -252,7 +252,7 @@ const registrarHistorialFactura = ({
             if (tipoConcepto === 'cuota_terreno') {
                 nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
             } else if (tipoConcepto === 'enganche') {
-                nombreConcepto = 'Enganche de contrato';
+                nombreConcepto = 'Abono a capital';
             } else if (tipoConcepto === 'mora') {
                 nombreConcepto = `Mora ${mesPagado || ''}`.trim();
             } else if (tipoConcepto === 'servicio') {
@@ -2057,7 +2057,7 @@ router.post("/procesar-pago", (req, res) => {
                                                     if (montoEngancheTotal > 0) {
                                                         const desgloseEnganche = calcularComponentesFiscalmente(montoEngancheTotal);
                                                         detalleCobro.push({
-                                                            concepto: 'Enganche de contrato',
+                                                            concepto: 'Abono a capital',
                                                             mes: mesesAProcesar[0] || '',
                                                             monto_base: desgloseEnganche.subtotal,
                                                             iva: desgloseEnganche.iva,
