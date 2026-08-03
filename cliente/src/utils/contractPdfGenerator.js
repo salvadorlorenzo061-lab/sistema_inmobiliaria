@@ -441,7 +441,8 @@ const generarPdfFormatoBase = (datosContrato = {}, datosResidente = {}, options 
   const capRest   = mTotal - enganche;
   const intPct    = parseFloat(datosContrato.interes_porcentaje) || 14;
   const nCuotas   = parseInt(datosContrato.plazo_meses || datosContrato.cuotas_pactadas) || 60;
-  const tasaMensual = (intPct > 0 ? intPct / 100 / 12 : 0);
+  const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
+  const tasaMensual = (intPct > 0 ? (intPct / 100 / 12) * FACTOR_AJUSTE_TASA_MENSUAL : 0);
   const cuotaAmortizada = (() => {
     if (!(capRest > 0 && nCuotas > 0)) return 0;
     if (tasaMensual <= 0) return capRest / nCuotas;
@@ -452,10 +453,11 @@ const generarPdfFormatoBase = (datosContrato = {}, datosResidente = {}, options 
     }
     return capRest * ((tasaMensual * factor) / denominador);
   })();
-  const intMonto  = Math.max((cuotaAmortizada * nCuotas) - capRest, 0);
+  const cuotaAmortizadaRedondeada = cuotaAmortizada > 0 ? parseFloat(cuotaAmortizada.toFixed(2)) : 0;
+  const intMonto  = Math.max((cuotaAmortizadaRedondeada * nCuotas) - capRest, 0);
   const totalCInt = capRest + intMonto;
-  const vCuota    = cuotaAmortizada > 0
-    ? parseFloat(cuotaAmortizada.toFixed(2))
+  const vCuota    = cuotaAmortizadaRedondeada > 0
+    ? cuotaAmortizadaRedondeada
     : (parseFloat(datosContrato.monto_cuota) || parseFloat((capRest / nCuotas).toFixed(2)));
   const ultCuota  = parseFloat((totalCInt - vCuota*(nCuotas-1)).toFixed(2));
   const mora      = parseFloat(datosContrato.mora)               || 600;

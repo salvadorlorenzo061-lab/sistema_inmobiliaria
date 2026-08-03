@@ -159,7 +159,8 @@ function Contratos_Residentes() {
   const calcularPagoMensualAmortizado = (capitalFinanciado, tasaAnualPct, cuotas) => {
     const principal = Math.max(Number(capitalFinanciado || 0), 0);
     const n = Math.max(parseInt(cuotas || 0, 10), 0);
-    const tasaMensual = Math.max(Number(tasaAnualPct || 0), 0) / 100 / 12;
+    const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
+    const tasaMensual = (Math.max(Number(tasaAnualPct || 0), 0) / 100 / 12) * FACTOR_AJUSTE_TASA_MENSUAL;
 
     if (principal <= 0 || n <= 0) return 0;
     if (tasaMensual <= 0) return principal / n;
@@ -250,12 +251,13 @@ function Contratos_Residentes() {
   const cuotasContrato = Math.max(parseInt(plazo_meses || cuotas_pactadas || 0, 10), 0);
   const porcentajeInteresContrato = Math.max(parseFloat(interes_porcentaje || 0), 0);
   const pagoMensualAmortizadoContrato = calcularPagoMensualAmortizado(capitalFinanciadoContrato, porcentajeInteresContrato, cuotasContrato);
+  const cuotaMensualConInteresContrato = Number(pagoMensualAmortizadoContrato.toFixed(2));
   const interesTotalContrato = (capitalFinanciadoContrato > 0 && cuotasContrato > 0)
-    ? Math.max((pagoMensualAmortizadoContrato * cuotasContrato) - capitalFinanciadoContrato, 0)
+    ? Math.max((cuotaMensualConInteresContrato * cuotasContrato) - capitalFinanciadoContrato, 0)
     : 0;
   const interesPorCuotaContrato = cuotasContrato > 0 ? (interesTotalContrato / cuotasContrato) : 0;
   const cuotaTotalConInteresContrato = cuotasContrato > 0
-    ? pagoMensualAmortizadoContrato
+    ? cuotaMensualConInteresContrato
     : 0;
   const cuotaInicioFinanciadaContrato = engancheContrato > 0 ? 2 : 1;
 
