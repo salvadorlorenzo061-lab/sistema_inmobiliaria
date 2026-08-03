@@ -142,13 +142,26 @@ const Caja = () => {
         const capitalPorCuota = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
         const interesPorcentaje = Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
+        const tasaMensual = interesPorcentaje > 0 ? (interesPorcentaje / 100 / 12) : 0;
+
+        const calcularCuotaAmortizada = (principal, tasa, cuotas) => {
+            if (principal <= 0 || cuotas <= 0) return 0;
+            if (tasa <= 0) return principal / cuotas;
+            const factor = Math.pow(1 + tasa, cuotas);
+            const denominador = factor - 1;
+            if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+                return principal / cuotas;
+            }
+            return principal * ((tasa * factor) / denominador);
+        };
 
         const capitalTotalContrato = (capitalPorCuota > 0 && cuotasPactadas > 0)
             ? parseFloat((capitalPorCuota * cuotasPactadas).toFixed(2))
             : parseFloat(saldoPendiente.toFixed(2));
-        const capitalBaseInteres = Math.max(parseFloat((capitalTotalContrato - enganche).toFixed(2)), 0);
-        const interesTotalContrato = (capitalBaseInteres > 0 && interesPorcentaje > 0)
-            ? parseFloat(((capitalBaseInteres * interesPorcentaje) / 100).toFixed(2))
+        const capitalBaseInteres = Math.max(parseFloat(capitalTotalContrato.toFixed(2)), 0);
+        const cuotaMensualAmortizada = calcularCuotaAmortizada(capitalBaseInteres, tasaMensual, cuotasPactadas);
+        const interesTotalContrato = (capitalBaseInteres > 0 && cuotasPactadas > 0)
+            ? parseFloat(Math.max((cuotaMensualAmortizada * cuotasPactadas) - capitalBaseInteres, 0).toFixed(2))
             : 0;
         const interesPorCuota = cuotasPactadas > 0
             ? parseFloat((interesTotalContrato / cuotasPactadas).toFixed(2))

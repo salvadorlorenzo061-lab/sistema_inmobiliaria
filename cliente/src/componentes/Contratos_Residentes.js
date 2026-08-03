@@ -156,20 +156,40 @@ function Contratos_Residentes() {
     setCuotas_pactadas(limpio);
   };
 
+  const calcularPagoMensualAmortizado = (capitalFinanciado, tasaAnualPct, cuotas) => {
+    const principal = Math.max(Number(capitalFinanciado || 0), 0);
+    const n = Math.max(parseInt(cuotas || 0, 10), 0);
+    const tasaMensual = Math.max(Number(tasaAnualPct || 0), 0) / 100 / 12;
+
+    if (principal <= 0 || n <= 0) return 0;
+    if (tasaMensual <= 0) return principal / n;
+
+    const factor = Math.pow(1 + tasaMensual, n);
+    const denominador = factor - 1;
+    if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+      return principal / n;
+    }
+
+    return principal * ((tasaMensual * factor) / denominador);
+  };
+
   // monto_cuota guarda capital por cuota.
   // El interes se distribuye por cuota al momento de cobro en Caja.
   useEffect(() => {
     const plazoBase = parseInt(plazo_meses || 0, 10);
     const cuotasBase = parseInt(cuotas_pactadas || 0, 10);
     const divisor = plazoBase > 0 ? plazoBase : cuotasBase;
+    const montoTotalNumero = Math.max(parseFloat(monto_total || 0), 0);
+    const engancheNumero = Math.max(parseFloat(enganche || 0), 0);
+    const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
 
-    if (monto_total && divisor > 0) {
-      const calculo = (parseFloat(monto_total) / divisor).toFixed(2);
+    if (capitalFinanciado > 0 && divisor > 0) {
+      const calculo = (capitalFinanciado / divisor).toFixed(2);
       setMonto_cuota(calculo);
     } else {
       setMonto_cuota("");
     }
-  }, [monto_total, cuotas_pactadas, plazo_meses]);
+  }, [monto_total, enganche, cuotas_pactadas, plazo_meses]);
 
   // Generar código de contrato automático al seleccionar residente
   const seleccionarResidenteContrato = (idResidente) => {
@@ -225,14 +245,17 @@ function Contratos_Residentes() {
 
   const formatMoney = (value) => `Q${Number(value || 0).toFixed(2)}`;
   const montoCapitalContrato = Math.max(parseFloat(monto_total || 0), 0);
+  const engancheContrato = Math.max(parseFloat(enganche || 0), 0);
+  const capitalFinanciadoContrato = Math.max(montoCapitalContrato - engancheContrato, 0);
   const cuotasContrato = Math.max(parseInt(plazo_meses || cuotas_pactadas || 0, 10), 0);
   const porcentajeInteresContrato = Math.max(parseFloat(interes_porcentaje || 0), 0);
-  const interesTotalContrato = (montoCapitalContrato > 0 && cuotasContrato > 0)
-    ? ((montoCapitalContrato * porcentajeInteresContrato) / 100)
+  const pagoMensualAmortizadoContrato = calcularPagoMensualAmortizado(capitalFinanciadoContrato, porcentajeInteresContrato, cuotasContrato);
+  const interesTotalContrato = (capitalFinanciadoContrato > 0 && cuotasContrato > 0)
+    ? Math.max((pagoMensualAmortizadoContrato * cuotasContrato) - capitalFinanciadoContrato, 0)
     : 0;
   const interesPorCuotaContrato = cuotasContrato > 0 ? (interesTotalContrato / cuotasContrato) : 0;
   const cuotaTotalConInteresContrato = cuotasContrato > 0
-    ? ((montoCapitalContrato + interesTotalContrato) / cuotasContrato)
+    ? pagoMensualAmortizadoContrato
     : 0;
 
   useEffect(() => {

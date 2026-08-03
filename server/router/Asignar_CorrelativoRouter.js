@@ -8,6 +8,7 @@ router.use(cors());
 router.use(express.json());
 
 const padCorrelativo = (value) => String(Number(value) || 0).padStart(8, '0');
+const normalizarToken = (value) => String(value || '').trim().toUpperCase();
 
 const ensureAsignacionesTable = () => {
     const sql = `
@@ -384,10 +385,28 @@ router.post('/crear', (req, res) => {
                     }
 
                     const resolucion = resRows[0];
-                    const correlativoInicio = Number(resolucion.correlativo_actual || 0);
-                    const correlativoFin = correlativoInicio + cantidadNumerica - 1;
+                    const correlativoInicioBase = Number(resolucion.correlativo_actual || 0);
                     const rangoFinal = Number(resolucion.rango_final || 0);
                     const rangoInicial = Number(resolucion.rango_inicial || 0);
+                    const numeroResolucionNorm = normalizarToken(resolucion.numero_resolucion);
+                    const serieNorm = normalizarToken(resolucion.serie);
+                    const rolUsuario = String(userRows?.[0]?.nombre_rol || '')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .trim();
+                    const rolResolucion = String(resolucion.rol || 'caja')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .trim();
+                    const esAdminOGerente = rolUsuario.includes('admin') || rolUsuario.includes('gerente');
+                    const usuarioEsCaja = rolUsuario.includes('caja') || rolUsuario.includes('cobro');
+                    const usuarioEsJuridico = rolUsuario.includes('jurid') || rolUsuario.includes('legal');
+                    const rolCompatible = rolResolucion === 'ambos'
+                        || (rolResolucion === 'caja' && usuarioEsCaja)
+                        || (rolResolucion === 'juridico' && usuarioEsJuridico)
+                        || esAdminOGerente;
 
                     if (String(resolucion.estado || '').toLowerCase() !== 'activo') {
                         return rollback(400, 'La resolución no está activa.');
@@ -397,36 +416,82 @@ router.post('/crear', (req, res) => {
                         return rollback(400, 'La empresa seleccionada no coincide con la empresa de la resolución.');
                     }
 
+                    if (!rolCompatible) {
+                        return rollback(400, `La resolución está configurada para rol ${resolucion.rol || 'caja'} y el usuario no coincide con ese rol.`);
+                    }
+
                     if (resolucion.fecha_vencimiento && new Date(resolucion.fecha_vencimiento) < new Date()) {
                         return rollback(400, 'La resolución seleccionada ya está vencida.');
                     }
 
-                    if (!Number.isFinite(correlativoInicio) || correlativoInicio < rangoInicial || correlativoInicio > rangoFinal) {
+                    if (!Number.isFinite(correlativoInicioBase) || correlativoInicioBase < rangoInicial || correlativoInicioBase > rangoFinal) {
                         return rollback(400, 'La resolución no tiene un correlativo actual válido para asignar.');
                     }
 
-                    if (correlativoFin > rangoFinal) {
-                        return rollback(400, `La resolución no tiene suficiente rango disponible. Solo llega hasta ${resolucion.serie}-${padCorrelativo(rangoFinal)}.`);
-                    }
-
-                    const overlapQuery = `
-                        SELECT id_asignacion
-                        FROM asignar_correlativos
-                        WHERE id_resolucion = ?
-                          AND (
-                                (? BETWEEN correlativo_inicio AND correlativo_fin)
-                                OR (? BETWEEN correlativo_inicio AND correlativo_fin)
-                                OR (correlativo_inicio BETWEEN ? AND ?)
-                                OR (correlativo_fin BETWEEN ? AND ?)
-                              )
+                    const activeEquivalentQuery = `
+                        SELECT ac.id_asignacion
+                        FROM asignar_correlativos ac
+                        INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                        WHERE ac.id_usuario = ?
+                          AND ac.estado = 'activo'
+                          AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                          AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
+                          AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
                         LIMIT 1
                         FOR UPDATE
                     `;
 
-                    db.query(
-                        overlapQuery,
-                        [id_resolucion, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin],
-                        (overlapErr, overlapRows) => {
+                    db.query(activeEquivalentQuery, [id_usuario, numeroResolucionNorm, serieNorm], (activeEqErr, activeEqRows) => {
+                        if (activeEqErr) {
+                            return rollback(500, 'No se pudo validar asignaciones activas equivalentes.', activeEqErr);
+                        }
+
+                        if (activeEqRows && activeEqRows.length) {
+                            return rollback(409, 'El usuario ya tiene un lote activo pendiente de consumir para esta resolución/serie.');
+                        }
+
+                        const maxCorrEqQuery = `
+                            SELECT MAX(COALESCE(rf.correlativo_actual, 0)) AS correlativo_compartido
+                            FROM resoluciones_facturas rf
+                            WHERE rf.id_usuario = ?
+                              AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
+                              AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                        `;
+
+                        db.query(maxCorrEqQuery, [id_usuario, numeroResolucionNorm, serieNorm], (maxErr, maxRows) => {
+                            if (maxErr) {
+                                return rollback(500, 'No se pudo validar el correlativo compartido de la resolución.', maxErr);
+                            }
+
+                            const correlativoCompartido = Number(maxRows?.[0]?.correlativo_compartido || correlativoInicioBase);
+                            const correlativoInicio = Math.max(correlativoInicioBase, correlativoCompartido, rangoInicial);
+                            const correlativoFin = correlativoInicio + cantidadNumerica - 1;
+
+                            if (correlativoFin > rangoFinal) {
+                                return rollback(400, `La resolución no tiene suficiente rango disponible. Solo llega hasta ${resolucion.serie}-${padCorrelativo(rangoFinal)}.`);
+                            }
+
+                            const overlapQuery = `
+                                SELECT ac.id_asignacion
+                                FROM asignar_correlativos ac
+                                INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                                WHERE rf.id_usuario = ?
+                                  AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
+                                  AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                                  AND (
+                                        (? BETWEEN ac.correlativo_inicio AND ac.correlativo_fin)
+                                        OR (? BETWEEN ac.correlativo_inicio AND ac.correlativo_fin)
+                                        OR (ac.correlativo_inicio BETWEEN ? AND ?)
+                                        OR (ac.correlativo_fin BETWEEN ? AND ?)
+                                      )
+                                LIMIT 1
+                                FOR UPDATE
+                            `;
+
+                            db.query(
+                                overlapQuery,
+                                [id_usuario, numeroResolucionNorm, serieNorm, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin],
+                                (overlapErr, overlapRows) => {
                             if (overlapErr) {
                                 return rollback(500, 'No se pudo validar la unicidad de correlativos.', overlapErr);
                             }
@@ -457,24 +522,41 @@ router.post('/crear', (req, res) => {
                                                 return rollback(500, 'No se pudo reservar el rango en la resolución.', updateErr);
                                             }
 
-                                            db.commit((commitErr) => {
-                                                if (commitErr) {
-                                                    return rollback(500, 'No se pudo confirmar la asignación.', commitErr);
+                                            const syncEquivalentesQuery = `
+                                                UPDATE resoluciones_facturas
+                                                SET correlativo_actual = ?
+                                                WHERE id_usuario = ?
+                                                  AND UPPER(TRIM(COALESCE(numero_resolucion, ''))) = ?
+                                                  AND UPPER(TRIM(COALESCE(serie, ''))) = ?
+                                                  AND correlativo_actual < ?
+                                            `;
+
+                                            db.query(syncEquivalentesQuery, [correlativoFin + 1, id_usuario, numeroResolucionNorm, serieNorm, correlativoFin + 1], (syncErr) => {
+                                                if (syncErr) {
+                                                    return rollback(500, 'No se pudo sincronizar correlativo entre resoluciones equivalentes.', syncErr);
                                                 }
 
-                                                return res.status(200).send({
-                                                    message: 'Lote de correlativos asignado correctamente.',
-                                                    id_asignacion: insertResult.insertId,
-                                                    correlativo_inicio: `${resolucion.serie}-${padCorrelativo(correlativoInicio)}`,
-                                                    correlativo_fin: `${resolucion.serie}-${padCorrelativo(correlativoFin)}`
+                                                db.commit((commitErr) => {
+                                                    if (commitErr) {
+                                                        return rollback(500, 'No se pudo confirmar la asignación.', commitErr);
+                                                    }
+
+                                                    return res.status(200).send({
+                                                        message: 'Lote de correlativos asignado correctamente.',
+                                                        id_asignacion: insertResult.insertId,
+                                                        correlativo_inicio: `${resolucion.serie}-${padCorrelativo(correlativoInicio)}`,
+                                                        correlativo_fin: `${resolucion.serie}-${padCorrelativo(correlativoFin)}`
+                                                    });
                                                 });
                                             });
                                         }
                                     );
                                 }
                             );
-                        }
-                    );
+                                }
+                            );
+                        });
+                    });
                 });
             });
         });

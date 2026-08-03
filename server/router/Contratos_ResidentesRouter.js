@@ -497,8 +497,10 @@ router.post("/crear", (req, res) => {
             ? plazoNormalizado
             : Number(cuotas_pactadas || 0);
         const montoTotalNumerico = Number(monto_total || 0);
-        const montoCuotaNormalizado = (cuotasNormalizadas > 0 && montoTotalNumerico > 0)
-            ? Number((montoTotalNumerico / cuotasNormalizadas).toFixed(2))
+        const engancheNumerico = Number(enganche || 0);
+        const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
+        const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
+            ? Number((capitalFinanciado / cuotasNormalizadas).toFixed(2))
             : Number(monto_cuota || 0);
 
         const queryInsert = `
@@ -516,7 +518,7 @@ router.post("/crear", (req, res) => {
                 id_tipo_contrato,
                 formato_contrato || 'FORMATO_01',
                 montoTotalNumerico,
-                Number(enganche || 0),
+                engancheNumerico,
                 cuotasNormalizadas,
                 montoCuotaNormalizado,
                 Number(interes_porcentaje || 0),
@@ -573,8 +575,10 @@ router.put("/actualizar", (req, res) => {
         ? plazoNormalizado
         : Number(cuotas_pactadas || 0);
     const montoTotalNumerico = Number(monto_total || 0);
-    const montoCuotaNormalizado = (cuotasNormalizadas > 0 && montoTotalNumerico > 0)
-        ? Number((montoTotalNumerico / cuotasNormalizadas).toFixed(2))
+    const engancheNumerico = Number(enganche || 0);
+    const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
+    const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
+        ? Number((capitalFinanciado / cuotasNormalizadas).toFixed(2))
         : Number(monto_cuota || 0);
 
     const queryUpdate = `
@@ -594,7 +598,7 @@ router.put("/actualizar", (req, res) => {
             id_tipo_contrato,
             formato_contrato || 'FORMATO_01',
             montoTotalNumerico,
-            Number(enganche || 0),
+            engancheNumerico,
             cuotasNormalizadas,
             montoCuotaNormalizado,
             Number(interes_porcentaje || 0),

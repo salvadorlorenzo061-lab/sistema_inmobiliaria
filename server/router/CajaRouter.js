@@ -1493,8 +1493,24 @@ router.post("/procesar-pago", (req, res) => {
             const capitalBaseContrato = (montoCuotaContratoRaw > 0 && cuotasBaseInteres > 0)
                 ? redondear2(montoCuotaContratoRaw * cuotasBaseInteres)
                 : redondear2(Math.max(saldoActual, 0));
-            const capitalBaseInteresContrato = redondear2(Math.max(capitalBaseContrato - engancheContrato, 0));
-            const interesTotalContrato = redondear2((capitalBaseInteresContrato * interesPorcentajeContrato) / 100);
+            const capitalBaseInteresContrato = redondear2(Math.max(capitalBaseContrato, 0));
+            const tasaMensualContrato = interesPorcentajeContrato > 0
+                ? (interesPorcentajeContrato / 100 / 12)
+                : 0;
+            const calcularCuotaAmortizada = (principal = 0, tasaMensual = 0, cuotas = 0) => {
+                const p = Math.max(Number(principal || 0), 0);
+                const n = Math.max(Number(cuotas || 0), 0);
+                if (p <= 0 || n <= 0) return 0;
+                if (tasaMensual <= 0) return p / n;
+                const factor = Math.pow(1 + tasaMensual, n);
+                const denominador = factor - 1;
+                if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+                    return p / n;
+                }
+                return p * ((tasaMensual * factor) / denominador);
+            };
+            const cuotaMensualAmortizadaContrato = calcularCuotaAmortizada(capitalBaseInteresContrato, tasaMensualContrato, cuotasBaseInteres);
+            const interesTotalContrato = redondear2(Math.max((cuotaMensualAmortizadaContrato * cuotasBaseInteres) - capitalBaseInteresContrato, 0));
             const interesPorMesContrato = cuotasBaseInteres > 0
                 ? redondear2(interesTotalContrato / cuotasBaseInteres)
                 : 0;

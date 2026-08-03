@@ -46,7 +46,6 @@ function Resoluciones_facturas() {
   const itemsPerPage = 10; 
 
   const API_URL = `${API_BASE_URL}/api/resoluciones_facturas`;
-  const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
 
   const getEmpresas = () => {
     Axios.get(`${API_BASE_URL}/api/empresas`)
@@ -82,9 +81,79 @@ function Resoluciones_facturas() {
   };
 
   const getNombreEmpresa = (empresaId) => {
-    if (!empresaId) return '';
     const empresa = empresasList.find((item) => String(item.id_empresa) === String(empresaId));
-    return empresa?.nombre_empresa || '';
+    return empresa?.nombre_empresa || `Empresa #${empresaId}`;
+  };
+
+  const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
+
+  const agruparResoluciones = (resoluciones = []) => {
+    const mapa = new Map();
+
+    (Array.isArray(resoluciones) ? resoluciones : []).forEach((item) => {
+      const key = [
+        String(item?.id_usuario || ''),
+        normalizarTexto(item?.numero_resolucion),
+        normalizarTexto(item?.serie),
+        String(item?.rango_inicial ?? ''),
+        String(item?.rango_final ?? '')
+      ].join('|');
+
+      const empresaId = String(item?.id_empresa || '');
+      const nombreEmpresa = getNombreEmpresa(item?.id_empresa);
+
+      if (!mapa.has(key)) {
+        mapa.set(key, {
+          ...item,
+          group_key: key,
+          empresas_ids: empresaId ? [empresaId] : [],
+          empresas_nombres: nombreEmpresa ? [nombreEmpresa] : [],
+          roles_set: [String(item?.rol || 'caja').toLowerCase()],
+          estados_set: [String(item?.estado || '').toLowerCase()],
+          resoluciones_ids: Number.isFinite(Number(item?.id_resolucion)) ? [Number(item.id_resolucion)] : []
+        });
+        return;
+      }
+
+      const actual = mapa.get(key);
+      if (empresaId && !actual.empresas_ids.includes(empresaId)) {
+        actual.empresas_ids.push(empresaId);
+      }
+      if (nombreEmpresa && !actual.empresas_nombres.includes(nombreEmpresa)) {
+        actual.empresas_nombres.push(nombreEmpresa);
+      }
+      if (Number.isFinite(Number(item?.id_resolucion))) {
+        actual.resoluciones_ids.push(Number(item.id_resolucion));
+      }
+
+      const rolActual = String(item?.rol || 'caja').toLowerCase();
+      if (rolActual && !actual.roles_set.includes(rolActual)) {
+        actual.roles_set.push(rolActual);
+      }
+
+      const estadoActual = String(item?.estado || '').toLowerCase();
+      if (estadoActual && !actual.estados_set.includes(estadoActual)) {
+        actual.estados_set.push(estadoActual);
+      }
+
+      if (Number(item?.id_resolucion || 0) > Number(actual?.id_resolucion || 0)) {
+        actual.id_resolucion = item.id_resolucion;
+      }
+
+      if (Number(item?.correlativo_actual || 0) > Number(actual?.correlativo_actual || 0)) {
+        actual.correlativo_actual = item.correlativo_actual;
+      }
+
+      if (actual.roles_set.includes('ambos')) {
+        actual.rol = 'ambos';
+      } else if (actual.roles_set.length > 1) {
+        actual.rol = 'ambos';
+      } else {
+        actual.rol = actual.roles_set[0] || String(actual?.rol || 'caja').toLowerCase();
+      }
+    });
+
+    return Array.from(mapa.values());
   };
 
   const getNombreUsuario = (usuarioId, usuarioRegistro = null) => {
@@ -272,6 +341,7 @@ function Resoluciones_facturas() {
     Axios.get(API_URL)
       .then((respListado) => {
         const resolucionesExistentes = Array.isArray(respListado?.data) ? respListado.data : [];
+        const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
 
         const operaciones = empresasObjetivo.map((empresaId) => {
           const idEmp = Number(empresaId);
@@ -555,9 +625,14 @@ function Resoluciones_facturas() {
   }, []);
 
   const abrirEditarModal = (val) => {
+    const resolucionesGrupo = (Array.isArray(Resoluciones_facturasList) ? Resoluciones_facturasList : [])
+      .filter((item) => val?.resoluciones_ids?.includes(Number(item?.id_resolucion)));
+
     setId_resolucion(val.id_resolucion);
     setId_empresa(val.id_empresa);
-    setEmpresasSeleccionadas(val.id_empresa ? [String(val.id_empresa)] : []);
+    setEmpresasSeleccionadas(Array.isArray(val?.empresas_ids) && val.empresas_ids.length
+      ? val.empresas_ids.map((item) => String(item))
+      : (val.id_empresa ? [String(val.id_empresa)] : []));
     setId_usuario(val.id_usuario ? String(val.id_usuario) : '');
     setNumero_resolucion(val.numero_resolucion);
     setSerie(val.serie);
@@ -568,11 +643,13 @@ function Resoluciones_facturas() {
     setFecha_vencimiento(toDateInputValue(val.fecha_vencimiento));
     setEstado(val.estado);
     setRol(String(val.rol || 'caja'));
-    setResolucionesEdicionGrupo([]);
+    setResolucionesEdicionGrupo(resolucionesGrupo);
     setShowEditModal(true);
   };
 
-  const resoluciones_facturasFiltrados = (Array.isArray(Resoluciones_facturasList) ? Resoluciones_facturasList : []).filter((prov) => 
+  const resolucionesAgrupadas = agruparResoluciones(Resoluciones_facturasList);
+
+  const resoluciones_facturasFiltrados = resolucionesAgrupadas.filter((prov) => 
     prov.numero_resolucion?.toLowerCase().includes(busqueda.toLowerCase())
   );
 
@@ -636,10 +713,10 @@ function Resoluciones_facturas() {
         <tbody>
           {resolucionesPaginadas.length > 0 ? (
             resolucionesPaginadas.map((val) => (
-              <tr key={val.id_resolucion}>
+              <tr key={val.group_key || val.id_resolucion}>
                 <td>
-                          <div className="fw-bold">{val.nombre_empresa || getNombreEmpresa(val.id_empresa) || ''}</div>
-                          <div className="small text-muted">{val.id_empresa ? `ID: ${val.id_empresa}` : ''}</div>
+                  <div className="fw-bold">{Array.isArray(val.empresas_nombres) && val.empresas_nombres.length ? val.empresas_nombres.join(' | ') : getNombreEmpresa(val.id_empresa)}</div>
+                  <div className="small text-muted">ID: {Array.isArray(val.empresas_ids) && val.empresas_ids.length ? val.empresas_ids.join(', ') : val.id_empresa}</div>
                 </td>
                 <td>
                   <div className="fw-bold">{getNombreUsuario(val.id_usuario, val)}</div>
@@ -752,7 +829,7 @@ function Resoluciones_facturas() {
                       </option>
                     ))}
                   </select>
-                  <small className="text-muted">Se muestran todos los usuarios; el control de cobro se define por las empresas seleccionadas (checkboxes) y sus lotes asignados.</small>
+                  <small className="text-muted">Se muestran todos los usuarios; el rol de resolución sigue validándose al asignar correlativos.</small>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Número resolución:</label>
