@@ -136,6 +136,9 @@ const BANCOS_GUATEMALA = [
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
+    const obtenerOffsetCuotaEnganche = (contrato = {}) => (
+        Math.max(parseFloat(contrato?.enganche || 0), 0) > 0 ? 1 : 0
+    );
     const calcularPlanFinancieroContrato = (contrato = {}) => {
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
         const enganche = Math.max(parseFloat(contrato?.enganche || 0), 0);
@@ -601,10 +604,11 @@ const Caja = () => {
             setOpcionesCuota(
                 meses.length
                     ? meses.map((mes, index) => {
+                        const offsetCuota = obtenerOffsetCuotaEnganche(residenteActualizado);
                         const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
                         return {
                             value: String(index + 1),
-                            label: `Cuota ${numeroCuotaReal} - ${mes}`
+                            label: `Cuota ${numeroCuotaReal + offsetCuota} - ${mes}`
                         };
                     })
                     : [{ value: '0', label: 'Sin cuotas pendientes' }]
@@ -896,10 +900,11 @@ const Caja = () => {
                     setOpcionesCuota(
                         mesesActualizados.length
                             ? mesesActualizados.map((mes, index) => {
+                                const offsetCuota = obtenerOffsetCuotaEnganche(datosDeuda || {});
                                 const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
                                 return {
                                     value: String(index + 1),
-                                    label: `Cuota ${numeroCuotaReal} - ${mes}`
+                                    label: `Cuota ${numeroCuotaReal + offsetCuota} - ${mes}`
                                 };
                             })
                             : [{ value: '0', label: 'Sin cuotas pendientes' }]
@@ -1359,6 +1364,7 @@ const Caja = () => {
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
     const interesPorCuotaContrato = planFinancieroContrato.interesPorCuota;
     const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
+    const cuotaInicioFinanciadaVista = obtenerOffsetCuotaEnganche(datosDeuda || {}) + 1;
     const obtenerInteresPorNumeroCuotaVista = (numeroCuota) => {
         const totalInteres = Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0), 0);
         const cuotasPactadas = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
@@ -1585,10 +1591,12 @@ const Caja = () => {
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
                                 <div><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
                                 <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
+                                <div><strong>Capital financiado:</strong> Q{planFinancieroContrato.capitalBaseInteres.toFixed(2)}</div>
+                                <div><strong>Cuota 1:</strong> Enganche Q{planFinancieroContrato.enganche.toFixed(2)}</div>
                                 <div><strong>Capital por cuota:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</div>
                                 <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
                                 <div><strong>Interés por cuota:</strong> Q{interesPorCuotaContrato.toFixed(2)}</div>
-                                <div><strong>Total financiado:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
+                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{planFinancieroContrato.cuotaTotalConInteres.toFixed(2)}</div>
                             </div>
                         </div>
                         <hr />
@@ -1731,9 +1739,11 @@ const Caja = () => {
                                     {/* Monto fijo y total a pagar */}
                                     <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Capital por mes:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}
+                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}
                                             <br />
                                             <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{interesMensualSeleccionado.toFixed(2)} / cuota
+                                            <br />
+                                            <strong>Cuota 1 (enganche):</strong> Q{planFinancieroContrato.enganche.toFixed(2)}
                                             <br />
                                             <strong>Abono a capital pendiente:</strong> Q{enganchePendiente.toFixed(2)}
                                             <br />

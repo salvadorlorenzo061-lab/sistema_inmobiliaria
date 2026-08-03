@@ -257,6 +257,7 @@ function Contratos_Residentes() {
   const cuotaTotalConInteresContrato = cuotasContrato > 0
     ? pagoMensualAmortizadoContrato
     : 0;
+  const cuotaInicioFinanciadaContrato = engancheContrato > 0 ? 2 : 1;
 
   useEffect(() => {
     const idProyecto = Number(proyectoSeleccionado?.id_proyecto || 0);
@@ -1191,6 +1192,7 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
                   <input type="number" className="form-control" value={enganche} onChange={e => setEnganche(e.target.value)} />
+                  <small className="text-muted">La cuota 1 corresponde al enganche (pago unico).</small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
@@ -1201,8 +1203,16 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => handleCuotasPactadasChange(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Capital Financiado (Auto):</label>
+                  <input type="text" className="form-control bg-light text-dark fw-bold" value={capitalFinanciadoContrato.toFixed(2)} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Capital por Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light text-success fw-bold" value={monto_cuota} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Cuota {cuotaInicioFinanciadaContrato}+ (Capital + Interés) (Auto):</label>
+                  <input type="text" className="form-control bg-light text-primary fw-bold" value={cuotaTotalConInteresContrato.toFixed(2)} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Total Contrato (Auto):</label>
@@ -1211,10 +1221,6 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés por Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light" value={interesPorCuotaContrato.toFixed(2)} readOnly />
-                </div>
-                <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Cuota Total con Interés (Auto):</label>
-                  <input type="text" className="form-control bg-light text-primary fw-bold" value={cuotaTotalConInteresContrato.toFixed(2)} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
@@ -1585,6 +1591,7 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche (Q):</label>
                   <input type="number" className="form-control" value={enganche} onChange={e => setEnganche(e.target.value)} />
+                  <small className="text-muted">La cuota 1 corresponde al enganche (pago unico).</small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
@@ -1595,8 +1602,24 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => handleCuotasPactadasChange(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
+                  <label className="form-label fw-bold">Capital Financiado (Auto):</label>
+                  <input type="text" className="form-control bg-light text-dark fw-bold" value={capitalFinanciadoContrato.toFixed(2)} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Capital por Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light text-success fw-bold" value={monto_cuota} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Cuota {cuotaInicioFinanciadaContrato}+ (Capital + Interés) (Auto):</label>
+                  <input type="text" className="form-control bg-light text-primary fw-bold" value={cuotaTotalConInteresContrato.toFixed(2)} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Interés Total Contrato (Auto):</label>
+                  <input type="text" className="form-control bg-light" value={interesTotalContrato.toFixed(2)} readOnly />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Interés por Cuota (Auto):</label>
+                  <input type="text" className="form-control bg-light" value={interesPorCuotaContrato.toFixed(2)} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Mora (Q):</label>
