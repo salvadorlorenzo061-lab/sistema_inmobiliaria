@@ -808,7 +808,26 @@ router.get("/meses-pendientes", (req, res) => {
     }
 
     // Traer datos de contrato para calcular todos los meses cobrables del contrato
-    db.query('SELECT fecha_compra, fecha_fin, fecha_firma, cuotas_pactadas, plazo_meses, monto_total, monto_cuota FROM contratos_residentes WHERE id_contrato = ?', [id_contrato], (err, contratoResult) => {
+    db.query(`
+        SELECT
+            c.fecha_compra,
+            c.fecha_fin,
+            c.fecha_firma,
+            c.cuotas_pactadas,
+            c.plazo_meses,
+            c.monto_total,
+            c.monto_cuota,
+            c.enganche,
+            COALESCE((
+                SELECT SUM(pd_enganche.subtotal)
+                FROM pagos_detalle pd_enganche
+                INNER JOIN pagos p_enganche ON p_enganche.id_pago = pd_enganche.id_pago
+                WHERE p_enganche.id_contrato = c.id_contrato
+                  AND pd_enganche.tipo_concepto = 'enganche'
+            ), 0) AS enganche_pagado
+        FROM contratos_residentes c
+        WHERE c.id_contrato = ?
+    `, [id_contrato], (err, contratoResult) => {
         if (err || !contratoResult.length) {
             console.error('Error al obtener contrato:', err?.message);
             return res.status(500).send('Error al consultar el contrato');
@@ -835,6 +854,8 @@ router.get("/meses-pendientes", (req, res) => {
         const candidatos = [];
         const plazoMesesContrato = Number(contratoResult[0].plazo_meses || 0);
         const cuotasPactadas = Number(contratoResult[0].cuotas_pactadas || 0);
+        const engancheContrato = Number(contratoResult[0].enganche || 0);
+        const enganchePagado = Number(contratoResult[0].enganche_pagado || 0);
         const cuotasBaseContrato = Number.isInteger(plazoMesesContrato) && plazoMesesContrato > 0
             ? plazoMesesContrato
             : cuotasPactadas;
@@ -977,6 +998,12 @@ router.get("/meses-pendientes", (req, res) => {
                     mesesPagadosSet.delete(mes);
                 }
             });
+
+            // Regla de negocio: la cuota 1 corresponde al enganche.
+            // Al liquidarse totalmente el enganche, el primer mes contractual se considera atendido.
+            if (engancheContrato > 0 && enganchePagado >= (engancheContrato - 0.01) && candidatosMeta.length > 0) {
+                mesesPagadosSet.add(candidatosMeta[0].mes);
+            }
 
             // Filtrar: solo retornar meses que NO estén en pagados
             let pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
@@ -1253,8 +1280,23 @@ router.post("/procesar-pago", (req, res) => {
             });
     };
 
+    const ordenarMesesCronologicos = (mesesLista = []) => {
+        return [...mesesLista].sort((a, b) => {
+            const aParse = parsearEtiquetaMes(a);
+            const bParse = parsearEtiquetaMes(b);
+
+            if (aParse instanceof Date && bParse instanceof Date) {
+                return aParse.getTime() - bParse.getTime();
+            }
+
+            if (aParse instanceof Date) return -1;
+            if (bParse instanceof Date) return 1;
+            return String(a || '').localeCompare(String(b || ''), 'es');
+        });
+    };
+
     const meses = Array.isArray(meses_pagados) && meses_pagados.length ? meses_pagados : (mes_pagado ? [mes_pagado] : []);
-    const mesesAProcesar = normalizarMeses(meses.length ? meses : []);
+    const mesesAProcesar = ordenarMesesCronologicos(normalizarMeses(meses.length ? meses : []));
     const cantidadMeses = Math.max(mesesAProcesar.length, 1);
 
     let serviciosSolicitados = Array.isArray(servicios_pagados)
@@ -1543,14 +1585,27 @@ router.post("/procesar-pago", (req, res) => {
                 return base + fallbackIndex;
             };
 
+            const primerMesSeleccionado = mesesAProcesar[0] || '';
+            const mesesTerrenoProcesar = montoTerrenoTotal > 0
+                ? mesesAProcesar.filter((mes) => !(enganchePendienteContrato > 0 && mes === primerMesSeleccionado))
+                : [];
+
+            if (montoTerrenoTotal > 0 && !mesesTerrenoProcesar.length) {
+                return db.rollback(() => res.status(400).send('Debe liquidar primero la cuota de enganche antes de cobrar cuota de terreno.'));
+            }
+
             const cuotasInteresSolicitadas = montoTerrenoTotal > 0
-                ? mesesAProcesar
-                    .slice(0, Math.min(mesesAProcesar.length, cuotasRestantesContrato))
+                ? mesesTerrenoProcesar
+                    .slice(0, Math.min(mesesTerrenoProcesar.length, cuotasRestantesContrato))
                     .map((mes, idx) => obtenerNumeroCuotaParaMes(mes, idx))
                 : [];
             const interesCalculadoContrato = redondear2(
                 cuotasInteresSolicitadas.reduce((sum, cuotaNumero) => sum + obtenerInteresPorNumeroCuota(cuotaNumero), 0)
             );
+
+            if (montoTerrenoTotal > 0 && cuotasInteresSolicitadas.length > 0) {
+                montoPorMesTerreno = redondear2(montoTerrenoTotal / cuotasInteresSolicitadas.length);
+            }
 
             // Priorizar cálculo de backend para consistencia; usar payload solo como respaldo.
             montoInteresTotal = interesCalculadoContrato > 0
@@ -1886,13 +1941,13 @@ router.post("/procesar-pago", (req, res) => {
                             const finalizarConDetalles = () => {
                                 const detalleValues = [];
                                 const cuotasTerrenoCalculadas = montoTerrenoTotal > 0
-                                    ? mesesAProcesar.map((mes, index) => obtenerNumeroCuotaParaMes(mes, index))
+                                    ? mesesTerrenoProcesar.map((mes, index) => obtenerNumeroCuotaParaMes(mes, index))
                                     : [];
                                 const montosTerrenoPorMes = montoTerrenoTotal > 0
-                                    ? distribuirTerrenoPorMes(mesesAProcesar, cuotasTerrenoCalculadas, montoTerrenoTotal)
+                                    ? distribuirTerrenoPorMes(mesesTerrenoProcesar, cuotasTerrenoCalculadas, montoTerrenoTotal)
                                     : [];
                                 const mesesConTerreno = montoTerrenoTotal > 0
-                                    ? mesesAProcesar.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
+                                    ? mesesTerrenoProcesar.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
                                     : [];
                                 const cuotasMesesConTerreno = montoTerrenoTotal > 0
                                     ? cuotasTerrenoCalculadas.filter((_, index) => Number(montosTerrenoPorMes[index] || 0) > 0)
@@ -1902,7 +1957,7 @@ router.post("/procesar-pago", (req, res) => {
                                     : [];
 
                                 if (montoTerrenoTotal > 0) {
-                                    mesesAProcesar.forEach((mes, index) => {
+                                    mesesTerrenoProcesar.forEach((mes, index) => {
                                         detalleValues.push([
                                             lastIdPago,
                                             'cuota_terreno',
@@ -2045,7 +2100,7 @@ router.post("/procesar-pago", (req, res) => {
                                                     const totalCuotaNormal = redondear2(montosTerrenoPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
                                                     const totalInteres = redondear2(montosInteresPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
 
-                                                    mesesAProcesar.forEach((mes, index) => {
+                                                    mesesTerrenoProcesar.forEach((mes, index) => {
                                                         if (Number(montosTerrenoPorMes[index] || 0) > 0) {
                                                             const montoTerrenoConcepto = redondear2(montosTerrenoPorMes[index]);
                                                             const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);

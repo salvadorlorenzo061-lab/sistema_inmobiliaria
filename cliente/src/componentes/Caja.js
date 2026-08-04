@@ -435,9 +435,6 @@ const Caja = () => {
 
         // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
         const cuotasRestantes = planContrato.cuotasRestantes;
-        const mesesTerrenoACobrar = Math.min(cantidadMeses, cuotasRestantes);
-        const terrenoCalculado = saldoPendiente > 0 && mesesTerrenoACobrar > 0 ? (capitalPorCuota * mesesTerrenoACobrar) : 0;
-        const terrenoTotal = Math.min(terrenoCalculado, Math.max(saldoPendiente, 0));
         const serviciosSeleccionadosDetalle = (serviciosDisponibles || [])
             .filter((s) => serviciosIds.includes(s.id_servicio));
         const costoServiciosMensual = serviciosSeleccionadosDetalle
@@ -464,7 +461,17 @@ const Caja = () => {
         const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos + costoCargosExtra) : 0;
         const mesesOrdenados = [...(meses || [])]
             .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
-        const mesesConTerreno = mesesOrdenados.slice(0, mesesTerrenoACobrar);
+        const primerMesConEnganche = (mesesPendientes || [])[0] || '';
+        const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
+            if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
+            return mes !== primerMesConEnganche;
+        });
+        const mesesTerrenoReales = Math.min(mesesElegiblesTerreno.length, cuotasRestantes);
+        const terrenoCalculadoAjustado = saldoPendiente > 0 && mesesTerrenoReales > 0
+            ? (capitalPorCuota * mesesTerrenoReales)
+            : 0;
+        const terrenoTotalAjustado = Math.min(terrenoCalculadoAjustado, Math.max(saldoPendiente, 0));
+        const mesesConTerreno = mesesElegiblesTerreno.slice(0, mesesTerrenoReales);
         const interesSeleccionado = parseFloat(
             mesesConTerreno
                 .reduce((acc, mes) => {
@@ -473,9 +480,9 @@ const Caja = () => {
                 }, 0)
                 .toFixed(2)
         );
-        const total = terrenoTotal + engancheAplicado + serviciosTotal + interesSeleccionado;
+        const total = terrenoTotalAjustado + engancheAplicado + serviciosTotal + interesSeleccionado;
 
-        setMontoTerrenoSeleccionado(terrenoTotal);
+        setMontoTerrenoSeleccionado(terrenoTotalAjustado);
         setMontoEngancheSeleccionado(engancheAplicado);
         setMontoServiciosSeleccionado(serviciosTotal);
         setMontoCargosExtraSeleccionado(costoCargosExtra);
@@ -606,11 +613,10 @@ const Caja = () => {
             setOpcionesCuota(
                 meses.length
                     ? meses.map((mes, index) => {
-                        const offsetCuota = obtenerOffsetCuotaEnganche(residenteActualizado);
                         const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
                         return {
                             value: String(index + 1),
-                            label: `Cuota ${numeroCuotaReal + offsetCuota} - ${mes}`
+                            label: `Cuota ${numeroCuotaReal} - ${mes}`
                         };
                     })
                     : [{ value: '0', label: 'Sin cuotas pendientes' }]
@@ -902,11 +908,10 @@ const Caja = () => {
                     setOpcionesCuota(
                         mesesActualizados.length
                             ? mesesActualizados.map((mes, index) => {
-                                const offsetCuota = obtenerOffsetCuotaEnganche(datosDeuda || {});
                                 const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
                                 return {
                                     value: String(index + 1),
-                                    label: `Cuota ${numeroCuotaReal + offsetCuota} - ${mes}`
+                                    label: `Cuota ${numeroCuotaReal} - ${mes}`
                                 };
                             })
                             : [{ value: '0', label: 'Sin cuotas pendientes' }]
@@ -1397,6 +1402,15 @@ const Caja = () => {
     const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
     const mesAplicacionAbonoCapital = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
+        const primerMesPendiente = (mesesPendientes || [])[0] || '';
+        const esCuotaEnganche = enganchePendiente > 0 && primerMesPendiente && mesEtiqueta === primerMesPendiente;
+        if (esCuotaEnganche) {
+            const abonoEnganche = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
+                ? parseFloat(montoEngancheSeleccionado || 0)
+                : 0;
+            return parseFloat(abonoEnganche.toFixed(2));
+        }
+
         const capital = parseFloat(datosDeuda?.monto_cuota || 0);
         const interes = obtenerInteresPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
         const abono = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
