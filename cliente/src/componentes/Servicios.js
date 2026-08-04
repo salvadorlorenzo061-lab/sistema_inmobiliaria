@@ -15,6 +15,7 @@ function Servicios() {
   const [serviciosList, setServicios] = useState([]);
   const [contratosCatalogo, setContratosCatalogo] = useState([]);
   const [contratoAsignadoId, setContratoAsignadoId] = useState("");
+  const [filtroResidente, setFiltroResidente] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [showRegModal, setShowRegModal] = useState(false);  
   const [showEditModal, setShowEditModal] = useState(false); 
@@ -120,10 +121,22 @@ function Servicios() {
           .map((id) => Number(id))
           .find((id) => Number.isInteger(id) && id > 0);
         setContratoAsignadoId(primerContrato ? String(primerContrato) : "");
+
+        if (primerContrato) {
+          const contratoSeleccionado = (contratosCatalogo || []).find((item) => Number(item.id_contrato) === Number(primerContrato));
+          if (contratoSeleccionado) {
+            setFiltroResidente(`${contratoSeleccionado.codigo_contrato || ''} ${contratoSeleccionado.nombre_residente || ''}`.trim());
+          } else {
+            setFiltroResidente(String(primerContrato));
+          }
+        } else {
+          setFiltroResidente("");
+        }
       })
       .catch((error) => {
         console.error('Error cargando residentes asignados al servicio:', error);
         setContratoAsignadoId("");
+        setFiltroResidente("");
       })
       .finally(() => {
         setShowEditModal(true);
@@ -134,7 +147,36 @@ function Servicios() {
     setId_servicio(""); setNombre_servicio(""); setCosto_servicio(""); setEstado("activo");
     setPeriodicidad("mensual");
     setContratoAsignadoId("");
+    setFiltroResidente("");
   };
+
+  const normalizarTexto = (valor = "") => String(valor || "")
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  const filtroContratoNormalizado = normalizarTexto(filtroResidente);
+
+  const contratosCatalogoFiltrados = (contratosCatalogo || []).filter((contrato) => {
+    if (!filtroContratoNormalizado) return true;
+
+    const camposBusqueda = [
+      contrato?.codigo_contrato,
+      contrato?.nombre_residente,
+      contrato?.dpi,
+      contrato?.numero_identificacion,
+      contrato?.id_residente,
+      contrato?.id_contrato,
+      contrato?.nombre_proyecto
+    ];
+
+    return camposBusqueda.some((valor) => normalizarTexto(valor).includes(filtroContratoNormalizado));
+  });
+
+  const contratoSeleccionadoDetalle = (contratosCatalogo || []).find(
+    (contrato) => Number(contrato.id_contrato) === Number(contratoAsignadoId)
+  );
 
   // Filtrado y paginación
   const serviciosFiltrados = serviciosList.filter(s => (s.nombre_servicio || '').toLowerCase().includes(busqueda.toLowerCase()));
@@ -223,6 +265,16 @@ function Servicios() {
                   <small className="text-muted">Use mensual para servicios que deben volver a aparecer cada mes. Use cobro unico para extras que solo se cobran una vez.</small>
                 </div>
                 <div className="mb-3">
+                  <label className="fw-bold">Buscar residente (clave, ID, nombre, apellido o DPI):</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Ej: C-001, 2165896, Juan Perez o DPI"
+                    value={filtroResidente}
+                    onChange={(e) => setFiltroResidente(e.target.value)}
+                  />
+                </div>
+                <div className="mb-3">
                   <label className="fw-bold">Asignar a residente:</label>
                   <select
                     className="form-select"
@@ -230,13 +282,18 @@ function Servicios() {
                     onChange={(e) => setContratoAsignadoId(e.target.value)}
                   >
                     <option value="">Sin residente</option>
-                    {contratosCatalogo.map((contrato) => (
+                    {contratosCatalogoFiltrados.map((contrato) => (
                       <option key={contrato.id_contrato} value={contrato.id_contrato}>
-                        {contrato.codigo_contrato} - {contrato.nombre_residente}
+                        {contrato.codigo_contrato} - {contrato.nombre_residente} {contrato.dpi ? `| DPI: ${contrato.dpi}` : ''}
                       </option>
                     ))}
                   </select>
                   <small className="text-muted">Opcional. Seleccione el residente/contrato al que se cargara este servicio.</small>
+                  {contratoSeleccionadoDetalle && (
+                    <div className="mt-2 small text-primary fw-bold">
+                      Proyecto del residente: {contratoSeleccionadoDetalle.nombre_proyecto || 'Sin proyecto asignado'}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="modal-footer">
@@ -265,6 +322,16 @@ function Servicios() {
                   <small className="text-muted">Cambie aqui si el servicio debe cobrarse cada mes o una sola vez.</small>
                 </div>
                 <div className="mb-3">
+                  <label className="fw-bold">Buscar residente (clave, ID, nombre, apellido o DPI):</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Ej: C-001, 2165896, Juan Perez o DPI"
+                    value={filtroResidente}
+                    onChange={(e) => setFiltroResidente(e.target.value)}
+                  />
+                </div>
+                <div className="mb-3">
                   <label className="fw-bold">Asignar a residente:</label>
                   <select
                     className="form-select"
@@ -272,13 +339,18 @@ function Servicios() {
                     onChange={(e) => setContratoAsignadoId(e.target.value)}
                   >
                     <option value="">Sin residente</option>
-                    {contratosCatalogo.map((contrato) => (
+                    {contratosCatalogoFiltrados.map((contrato) => (
                       <option key={contrato.id_contrato} value={contrato.id_contrato}>
-                        {contrato.codigo_contrato} - {contrato.nombre_residente}
+                        {contrato.codigo_contrato} - {contrato.nombre_residente} {contrato.dpi ? `| DPI: ${contrato.dpi}` : ''}
                       </option>
                     ))}
                   </select>
                   <small className="text-muted">Opcional. Puede ajustar aqui el residente/contrato al que aplica este servicio.</small>
+                  {contratoSeleccionadoDetalle && (
+                    <div className="mt-2 small text-primary fw-bold">
+                      Proyecto del residente: {contratoSeleccionadoDetalle.nombre_proyecto || 'Sin proyecto asignado'}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="modal-footer">

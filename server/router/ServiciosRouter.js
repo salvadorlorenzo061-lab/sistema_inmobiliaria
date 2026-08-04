@@ -340,11 +340,19 @@ router.get('/catalogo-proyectos', (_req, res) => {
 router.get('/catalogo-contratos', (_req, res) => {
     db.query(
         `
-            SELECT c.id_contrato, c.codigo_contrato, r.nombre AS nombre_residente
+            SELECT c.id_contrato,
+                   c.codigo_contrato,
+                   c.id_proyecto,
+                   p.nombre AS nombre_proyecto,
+                   r.id_residente,
+                   r.numero_identificacion,
+                   r.dpi,
+                   r.nombre AS nombre_residente
             FROM contratos_residentes c
             INNER JOIN residentes r ON r.id_residente = c.id_residente
+            LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
             WHERE c.estado = 'activo'
-            ORDER BY c.codigo_contrato ASC
+            ORDER BY r.nombre ASC, c.codigo_contrato ASC
         `,
         (err, rows) => {
             if (err) {

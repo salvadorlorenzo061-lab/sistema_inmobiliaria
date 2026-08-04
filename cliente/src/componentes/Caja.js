@@ -866,7 +866,7 @@ const Caja = () => {
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
             monto_interes: parseFloat(montoInteresSeleccionado || 0),
-            monto_mora: parseFloat(montoMora),
+            monto_mora: parseFloat(montoMora || 0),
             monto_enganche_pagar: parseFloat(montoEngancheContratoAplicado || 0),
             monto_abono_capital: parseFloat(montoEngancheSeleccionado || 0),
             metodo_pago: metodoPago,
@@ -1422,7 +1422,12 @@ const Caja = () => {
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
     const planFinancieroContrato = calcularPlanFinancieroContrato(datosDeuda || {});
     const saldoTerrenoPendiente = planFinancieroContrato.saldoPendiente;
-    const enganchePendiente = Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
+    const enganchePendienteContrato = Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
+    const enganchePendiente = Math.max(
+        enganchePendienteContrato,
+        Math.max(parseFloat(montoEngancheContratoSeleccionado || 0), 0),
+        Math.max(parseFloat(montoEngancheContratoAplicado || 0), 0)
+    );
     const porcentajeInteresContrato = planFinancieroContrato.interesPorcentaje;
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
     const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
@@ -2058,8 +2063,11 @@ const Caja = () => {
                                                 min="0"
                                                 value={montoMora}
                                                 onChange={(e) => {
-                                                    const valor = Math.max(parseFloat(e.target.value || 0), 0);
                                                     setMoraEditadaManual(true);
+                                                    setMontoMora(e.target.value);
+                                                }}
+                                                onBlur={() => {
+                                                    const valor = Math.max(parseFloat(montoMora || 0), 0);
                                                     setMontoMora(String(valor.toFixed(2)));
                                                 }}
                                             />
