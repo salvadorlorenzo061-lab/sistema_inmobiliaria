@@ -914,7 +914,7 @@ const Caja = () => {
                 
                 setDatosDeuda(prev => ({
                     ...prev,
-                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheContratoAplicado || 0) - parseFloat(montoEngancheSeleccionado || 0), 0),
+                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheSeleccionado || 0), 0),
                     enganche_pendiente: Math.max(parseFloat(prev?.enganche_pendiente || 0) - parseFloat(montoEngancheContratoAplicado || 0), 0)
                 }));
 
@@ -979,7 +979,7 @@ const Caja = () => {
                     setServiciosSeleccionados(serviciosActivos);
                     recalcularTotalesCobro(mesesActualizados.length ? [mesesActualizados[0]] : [], serviciosActivos, {
                         ...datosDeuda,
-                        saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheContratoAplicado || 0) - parseFloat(montoEngancheSeleccionado || 0), 0),
+                        saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheSeleccionado || 0), 0),
                         enganche_pendiente: engancheRefrescado
                     }, servicios, null, engancheRefrescado);
                 } catch (errMeses) {
@@ -1051,7 +1051,7 @@ const Caja = () => {
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
             const usuarioActivo = getUsuarioSesion();
-            const usarFormatoJuridico = true;
+            const usarFormatoJuridico = esRolJuridico(usuarioActivo);
 
             if (usarFormatoJuridico) {
                 const pageW = doc.internal.pageSize.getWidth();

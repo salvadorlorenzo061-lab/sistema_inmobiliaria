@@ -1712,7 +1712,7 @@ router.post("/procesar-pago", (req, res) => {
                 }
             }
 
-            const capitalCobroTotal = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
+            const capitalCobroTotal = redondear2(montoTerrenoTotal + montoAbonoCapitalTotal);
             if (capitalCobroTotal > redondear2(Math.max(saldoActual, 0))) {
                 return db.rollback(() => res.status(400).send(`El capital a cobrar excede el saldo pendiente del contrato (Q${saldoActual.toFixed(2)}).`));
             }
@@ -2316,7 +2316,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         banco_pago: banco_pago || '',
                                                         fecha_operacion: fecha_operacion || '',
                                                         boleta_referencia: boleta_referencia || '',
-                                                        saldo_pendiente_restante: redondear2(Math.max(saldoActual - montoTerrenoTotal - montoEngancheTotal - montoAbonoCapitalTotal, 0)),
+                                                        saldo_pendiente_restante: redondear2(Math.max(saldoActual - montoTerrenoTotal - montoAbonoCapitalTotal, 0)),
                                                         enganche_pendiente_restante: redondear2(Math.max(enganchePendienteContrato - montoEngancheTotal, 0)),
                                                         no_referencia: correlativoFinal,
                                                         id_pago: lastIdPago,
@@ -2379,7 +2379,7 @@ router.post("/procesar-pago", (req, res) => {
                                             };
 
                                             sincronizarMorosidadPagada(() => {
-                                            const descuentoCapital = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
+                                            const descuentoCapital = redondear2(montoTerrenoTotal + montoAbonoCapitalTotal);
                                             if (descuentoCapital > 0) {
                                                 const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
                                                 db.query(sqlRestar, [descuentoCapital, id_contrato], (updErr) => {
