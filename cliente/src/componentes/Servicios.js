@@ -13,8 +13,8 @@ function Servicios() {
   const [periodicidad, setPeriodicidad] = useState("mensual");
 
   const [serviciosList, setServicios] = useState([]);
-  const [proyectosCatalogo, setProyectosCatalogo] = useState([]);
-  const [proyectoAsignadoId, setProyectoAsignadoId] = useState("");
+  const [contratosCatalogo, setContratosCatalogo] = useState([]);
+  const [contratoAsignadoId, setContratoAsignadoId] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [showRegModal, setShowRegModal] = useState(false);  
   const [showEditModal, setShowEditModal] = useState(false); 
@@ -32,21 +32,21 @@ function Servicios() {
       .catch(console.error);
   }, [API_URL]);
 
-  const getCatalogoProyectos = useCallback(() => {
-    Axios.get(`${API_URL}/catalogo-proyectos`)
+  const getCatalogoContratos = useCallback(() => {
+    Axios.get(`${API_URL}/catalogo-contratos`)
       .then((res) => {
-        setProyectosCatalogo(Array.isArray(res.data) ? res.data : []);
+        setContratosCatalogo(Array.isArray(res.data) ? res.data : []);
       })
       .catch((error) => {
-        console.error('Error cargando catalogo de proyectos:', error);
-        setProyectosCatalogo([]);
+        console.error('Error cargando catalogo de contratos:', error);
+        setContratosCatalogo([]);
       });
   }, [API_URL]);
 
   useEffect(() => {
     getServicios();
-    getCatalogoProyectos();
-  }, [getServicios, getCatalogoProyectos]);
+    getCatalogoContratos();
+  }, [getServicios, getCatalogoContratos]);
 
   const addServicio = () => {
     if (!nombre_servicio.trim() || !costo_servicio.trim()) {
@@ -58,7 +58,8 @@ function Servicios() {
       costo_servicio,
       estado,
       periodicidad,
-      proyectos_asignados: proyectoAsignadoId ? [Number(proyectoAsignadoId)] : []
+      proyectos_asignados: [],
+      contratos_asignados: contratoAsignadoId ? [Number(contratoAsignadoId)] : []
     })
     .then(() => {
       getServicios(); limpiarCampos(); setShowRegModal(false);
@@ -76,7 +77,8 @@ function Servicios() {
       costo_servicio,
       estado,
       periodicidad,
-      proyectos_asignados: proyectoAsignadoId ? [Number(proyectoAsignadoId)] : []
+      proyectos_asignados: [],
+      contratos_asignados: contratoAsignadoId ? [Number(contratoAsignadoId)] : []
     })
     .then(() => {
       getServicios(); limpiarCampos(); setShowEditModal(false);
@@ -109,19 +111,19 @@ function Servicios() {
     setCosto_servicio(String(val.costo_servicio)); setEstado(val.estado || "activo");
     setPeriodicidad(val.periodicidad || "mensual");
 
-    Axios.get(`${API_URL}/proyectos/${val.id_servicio}`)
+    Axios.get(`${API_URL}/contratos/${val.id_servicio}`)
       .then((res) => {
-        const ids = Array.isArray(res.data?.proyectos)
-          ? res.data.proyectos
+        const ids = Array.isArray(res.data?.contratos)
+          ? res.data.contratos
           : [];
-        const primerProyecto = ids
+        const primerContrato = ids
           .map((id) => Number(id))
           .find((id) => Number.isInteger(id) && id > 0);
-        setProyectoAsignadoId(primerProyecto ? String(primerProyecto) : "");
+        setContratoAsignadoId(primerContrato ? String(primerContrato) : "");
       })
       .catch((error) => {
-        console.error('Error cargando proyectos asignados al servicio:', error);
-        setProyectoAsignadoId("");
+        console.error('Error cargando residentes asignados al servicio:', error);
+        setContratoAsignadoId("");
       })
       .finally(() => {
         setShowEditModal(true);
@@ -131,7 +133,7 @@ function Servicios() {
   const limpiarCampos = () => {
     setId_servicio(""); setNombre_servicio(""); setCosto_servicio(""); setEstado("activo");
     setPeriodicidad("mensual");
-    setProyectoAsignadoId("");
+    setContratoAsignadoId("");
   };
 
   // Filtrado y paginación
@@ -221,20 +223,20 @@ function Servicios() {
                   <small className="text-muted">Use mensual para servicios que deben volver a aparecer cada mes. Use cobro unico para extras que solo se cobran una vez.</small>
                 </div>
                 <div className="mb-3">
-                  <label className="fw-bold">Asignar a proyecto:</label>
+                  <label className="fw-bold">Asignar a residente:</label>
                   <select
                     className="form-select"
-                    value={proyectoAsignadoId}
-                    onChange={(e) => setProyectoAsignadoId(e.target.value)}
+                    value={contratoAsignadoId}
+                    onChange={(e) => setContratoAsignadoId(e.target.value)}
                   >
-                    <option value="">Sin proyecto</option>
-                    {proyectosCatalogo.map((proyecto) => (
-                      <option key={proyecto.id_proyecto} value={proyecto.id_proyecto}>
-                        {proyecto.nombre} - {proyecto.nombre_empresa || 'Sin empresa'}
+                    <option value="">Sin residente</option>
+                    {contratosCatalogo.map((contrato) => (
+                      <option key={contrato.id_contrato} value={contrato.id_contrato}>
+                        {contrato.codigo_contrato} - {contrato.nombre_residente}
                       </option>
                     ))}
                   </select>
-                  <small className="text-muted">Opcional. Si no selecciona proyectos, el servicio no aparecerá en la cláusula tercera.</small>
+                  <small className="text-muted">Opcional. Seleccione el residente/contrato al que se cargara este servicio.</small>
                 </div>
               </div>
               <div className="modal-footer">
@@ -263,20 +265,20 @@ function Servicios() {
                   <small className="text-muted">Cambie aqui si el servicio debe cobrarse cada mes o una sola vez.</small>
                 </div>
                 <div className="mb-3">
-                  <label className="fw-bold">Asignar a proyecto:</label>
+                  <label className="fw-bold">Asignar a residente:</label>
                   <select
                     className="form-select"
-                    value={proyectoAsignadoId}
-                    onChange={(e) => setProyectoAsignadoId(e.target.value)}
+                    value={contratoAsignadoId}
+                    onChange={(e) => setContratoAsignadoId(e.target.value)}
                   >
-                    <option value="">Sin proyecto</option>
-                    {proyectosCatalogo.map((proyecto) => (
-                      <option key={proyecto.id_proyecto} value={proyecto.id_proyecto}>
-                        {proyecto.nombre} - {proyecto.nombre_empresa || 'Sin empresa'}
+                    <option value="">Sin residente</option>
+                    {contratosCatalogo.map((contrato) => (
+                      <option key={contrato.id_contrato} value={contrato.id_contrato}>
+                        {contrato.codigo_contrato} - {contrato.nombre_residente}
                       </option>
                     ))}
                   </select>
-                  <small className="text-muted">Opcional. Puede ajustar aquí los proyectos donde aplica este servicio.</small>
+                  <small className="text-muted">Opcional. Puede ajustar aqui el residente/contrato al que aplica este servicio.</small>
                 </div>
               </div>
               <div className="modal-footer">

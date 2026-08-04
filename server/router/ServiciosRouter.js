@@ -383,6 +383,32 @@ router.get('/proyectos/:id_servicio', (req, res) => {
     );
 });
 
+router.get('/contratos/:id_servicio', (req, res) => {
+    const idServicio = Number(req.params.id_servicio);
+    if (!Number.isInteger(idServicio) || idServicio <= 0) {
+        return res.status(400).send({ message: 'ID de servicio invalido.' });
+    }
+
+    db.query(
+        `
+            SELECT id_contrato
+            FROM contratos_servicios
+            WHERE id_servicio = ?
+              AND estado = 'activo'
+        `,
+        [idServicio],
+        (err, rows) => {
+            if (err) {
+                console.error('Error obteniendo contratos del servicio:', err);
+                return res.status(500).send({ message: 'No se pudo obtener relacion del servicio con residentes.' });
+            }
+
+            const contratos = (rows || []).map((row) => Number(row.id_contrato)).filter((id) => Number.isInteger(id) && id > 0);
+            return res.send({ id_servicio: idServicio, contratos });
+        }
+    );
+});
+
 const resolverColumnaCosto = (callback) => {
     db.query("SHOW COLUMNS FROM servicios LIKE 'costo_servicio'", (errCostoServicio, rowsCostoServicio) => {
         if (errCostoServicio) {
@@ -436,6 +462,38 @@ const normalizarPrimerProyecto = (proyectosAsignados = []) => {
     return primerProyecto || null;
 };
 
+const normalizarPrimerContrato = (contratosAsignados = []) => {
+    const primerContrato = (Array.isArray(contratosAsignados) ? contratosAsignados : [])
+        .map((id) => Number(id))
+        .find((id) => Number.isInteger(id) && id > 0);
+
+    return primerContrato || null;
+};
+
+const resolverProyectoDesdeContratos = (contratosAsignados = [], callback) => {
+    const idContratoPrincipal = normalizarPrimerContrato(contratosAsignados);
+    if (!idContratoPrincipal) {
+        return callback(null, null);
+    }
+
+    db.query(
+        'SELECT id_proyecto FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+        [idContratoPrincipal],
+        (err, rows) => {
+            if (err) {
+                return callback(err);
+            }
+
+            const idProyectoContrato = Number(rows?.[0]?.id_proyecto || 0);
+            if (!Number.isInteger(idProyectoContrato) || idProyectoContrato <= 0) {
+                return callback(null, null);
+            }
+
+            return callback(null, idProyectoContrato);
+        }
+    );
+};
+
 router.get("/", (req, res) => {
     resolverColumnaCosto((colErr, columnaCosto) => {
         if (colErr) {
@@ -477,7 +535,7 @@ router.post("/crear", (req, res) => {
         return res.status(400).send({ message: 'La periodicidad del servicio es invalida.' });
     }
 
-    const idProyectoPrincipal = normalizarPrimerProyecto(proyectosAsignados);
+    const idProyectoPrincipalDirecto = normalizarPrimerProyecto(proyectosAsignados);
 
     resolverColumnaCosto((colErr, columnaCosto) => {
         if (colErr) {
@@ -491,22 +549,30 @@ router.post("/crear", (req, res) => {
                 return res.status(500).send({ message: `Error al insertar: ${colProyectoErr.sqlMessage || colProyectoErr.message}` });
             }
 
-            if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
-                return res.status(400).send({ message: 'Debe seleccionar al menos un proyecto para crear esta amenidad.' });
-            }
+            resolverProyectoDesdeContratos(contratosAsignados, (proyectoContratoErr, idProyectoDesdeContrato) => {
+                if (proyectoContratoErr) {
+                    console.error('Error resolviendo proyecto desde contrato:', proyectoContratoErr.message);
+                    return res.status(500).send({ message: `Error al insertar: ${proyectoContratoErr.sqlMessage || proyectoContratoErr.message}` });
+                }
 
-            const insertSql = colProyectoInfo.exists
-                ? `INSERT INTO servicios (nombre_servicio, ${columnaCosto}, estado, periodicidad, id_proyecto) VALUES (?, ?, ?, ?, ?)`
-                : `INSERT INTO servicios (nombre_servicio, ${columnaCosto}, estado, periodicidad) VALUES (?, ?, ?, ?)`;
+                const idProyectoPrincipal = idProyectoPrincipalDirecto || idProyectoDesdeContrato;
 
-            const insertParams = colProyectoInfo.exists
-                ? [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, idProyectoPrincipal]
-                : [nombreServicio, costoServicio, estadoServicio, periodicidadServicio];
+                if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
+                    return res.status(400).send({ message: 'Debe seleccionar un residente con contrato activo para crear esta amenidad.' });
+                }
 
-            db.query(
-                insertSql,
-                insertParams,
-                (err, insertResult) => {
+                const insertSql = colProyectoInfo.exists
+                    ? `INSERT INTO servicios (nombre_servicio, ${columnaCosto}, estado, periodicidad, id_proyecto) VALUES (?, ?, ?, ?, ?)`
+                    : `INSERT INTO servicios (nombre_servicio, ${columnaCosto}, estado, periodicidad) VALUES (?, ?, ?, ?)`;
+
+                const insertParams = colProyectoInfo.exists
+                    ? [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, idProyectoPrincipal]
+                    : [nombreServicio, costoServicio, estadoServicio, periodicidadServicio];
+
+                db.query(
+                    insertSql,
+                    insertParams,
+                    (err, insertResult) => {
                 if (err) {
                     console.error('Error al insertar servicio:', err);
                     return res.status(500).send({ message: `Error al insertar: ${err.sqlMessage || err.message}` });
@@ -549,8 +615,9 @@ router.post("/crear", (req, res) => {
                         });
                     });
                 });
-                }
-            );
+                    }
+                );
+            });
         });
     });
 });
@@ -584,7 +651,7 @@ router.put("/actualizar", (req, res) => {
         return res.status(400).send({ message: 'La periodicidad del servicio es invalida.' });
     }
 
-    const idProyectoPrincipal = normalizarPrimerProyecto(proyectosAsignados);
+    const idProyectoPrincipalDirecto = normalizarPrimerProyecto(proyectosAsignados);
 
     resolverColumnaCosto((colErr, columnaCosto) => {
         if (colErr) {
@@ -598,19 +665,27 @@ router.put("/actualizar", (req, res) => {
                 return res.status(500).send({ message: `Error al actualizar: ${colProyectoErr.sqlMessage || colProyectoErr.message}` });
             }
 
-            if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
-                return res.status(400).send({ message: 'Debe seleccionar al menos un proyecto para actualizar esta amenidad.' });
-            }
+            resolverProyectoDesdeContratos(contratosAsignados, (proyectoContratoErr, idProyectoDesdeContrato) => {
+                if (proyectoContratoErr) {
+                    console.error('Error resolviendo proyecto desde contrato:', proyectoContratoErr.message);
+                    return res.status(500).send({ message: `Error al actualizar: ${proyectoContratoErr.sqlMessage || proyectoContratoErr.message}` });
+                }
 
-            const updateSql = colProyectoInfo.exists
-                ? `UPDATE servicios SET nombre_servicio=?, ${columnaCosto}=?, estado=?, periodicidad=?, id_proyecto=? WHERE id_servicio=?`
-                : `UPDATE servicios SET nombre_servicio=?, ${columnaCosto}=?, estado=?, periodicidad=? WHERE id_servicio=?`;
+                const idProyectoPrincipal = idProyectoPrincipalDirecto || idProyectoDesdeContrato;
 
-            const updateParams = colProyectoInfo.exists
-                ? [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, idProyectoPrincipal, id_servicio]
-                : [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, id_servicio];
+                if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
+                    return res.status(400).send({ message: 'Debe seleccionar un residente con contrato activo para actualizar esta amenidad.' });
+                }
 
-            db.query(updateSql, updateParams, (err) => {
+                const updateSql = colProyectoInfo.exists
+                    ? `UPDATE servicios SET nombre_servicio=?, ${columnaCosto}=?, estado=?, periodicidad=?, id_proyecto=? WHERE id_servicio=?`
+                    : `UPDATE servicios SET nombre_servicio=?, ${columnaCosto}=?, estado=?, periodicidad=? WHERE id_servicio=?`;
+
+                const updateParams = colProyectoInfo.exists
+                    ? [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, idProyectoPrincipal, id_servicio]
+                    : [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, id_servicio];
+
+                db.query(updateSql, updateParams, (err) => {
                 if (err) {
                     console.error('Error al actualizar servicio:', err);
                     return res.status(500).send({ message: `Error al actualizar: ${err.sqlMessage || err.message}` });
@@ -634,6 +709,7 @@ router.put("/actualizar", (req, res) => {
 
                         return res.status(200).send("Servicio actualizado");
                     });
+                });
                 });
             });
         });

@@ -724,7 +724,28 @@ const Caja = () => {
         if (!datosDeuda) return;
 
         const actualizado = await obtenerDatosContratoActualizados(datosDeuda);
+        const seleccionBase = Array.isArray(mesesSeleccionados) && mesesSeleccionados.length
+            ? mesesSeleccionados
+            : ((Array.isArray(mesesPendientes) && mesesPendientes.length)
+                ? [mesesPendientes[0]]
+                : []);
+        const engancheActualizado = Math.max(Number(actualizado?.enganche_pendiente || 0), 0);
+
         setDatosDeuda(actualizado);
+        setMontoEngancheContratoSeleccionado(engancheActualizado);
+        if (seleccionBase.length) {
+            setMesesSeleccionados(seleccionBase);
+            setMesPagado(seleccionBase[0]);
+            setNumCuota(String((mesesPendientes || []).indexOf(seleccionBase[0]) + 1 || 1));
+        }
+        recalcularTotalesCobro(
+            seleccionBase,
+            serviciosSeleccionados,
+            actualizado,
+            serviciosContrato,
+            parseFloat(montoEngancheSeleccionado || 0),
+            engancheActualizado
+        );
         setShowModalCobro(true);
     };
 
@@ -1453,10 +1474,14 @@ const Caja = () => {
         const primerMesPendiente = (mesesPendientes || [])[0] || '';
         const esCuotaEnganche = enganchePendiente > 0 && primerMesPendiente && mesEtiqueta === primerMesPendiente;
         if (esCuotaEnganche) {
+            const engancheBaseVista = Math.max(
+                Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),
+                0
+            );
             const abonoManual = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
                 ? parseFloat(montoEngancheSeleccionado || 0)
                 : 0;
-            return parseFloat((montoEngancheContratoAplicado + abonoManual).toFixed(2));
+            return parseFloat((engancheBaseVista + abonoManual).toFixed(2));
         }
 
         const capital = obtenerCapitalPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
