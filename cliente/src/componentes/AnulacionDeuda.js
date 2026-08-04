@@ -35,218 +35,174 @@ const normalizeImageDataUrl = (value = '') => {
 
   let mime = 'image/png';
   if (cleaned.startsWith('/9j/')) {
-    mime = 'image/jpeg';
-  } else if (cleaned.startsWith('UklGR')) {
-    mime = 'image/webp';
-  } else if (cleaned.startsWith('iVBOR')) {
-    mime = 'image/png';
-  }
+      const pW = doc.internal.pageSize.getWidth();
+      const goldColor = [173, 136, 38];
+      const fechaFmt = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      const fechaHoraFmt = (d) => {
+        const n = new Date();
+        return `${fechaFmt(d)}, ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}:${String(n.getSeconds()).padStart(2, '0')}`;
+      };
+      const fechaDoc = fechaDocumento instanceof Date && !Number.isNaN(fechaDocumento.getTime()) ? fechaDocumento : new Date();
 
-  return `data:${mime};base64,${cleaned}`;
-};
+      let y = 12;
+      doc.setFillColor(...goldColor);
+      doc.rect(0, 0, pW, 5, 'F');
 
-const fechaLargaGT = (valor) => {
-  const fecha = valor instanceof Date && !Number.isNaN(valor.getTime()) ? valor : new Date();
-  return fecha.toLocaleDateString('es-GT', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-};
-
-function AnulacionDeuda() {
-  const [id_anulacion, setId_anulacion] = useState("");
-  const [id_morosidad, setId_morosidad] = useState("");
-  const [id_contrato, setId_contrato] = useState("");
-  const [correlativo, setCorrelativo] = useState("");
-  const [id_pago_anulado, setId_pago_anulado] = useState("");
-  const [id_usuario_autoriza, setId_usuario_autoriza] = useState("");
-  const [monto_anulado, setMonto_anulado] = useState("");
-  const [motivo, setMotivo] = useState("");
-  const [detalleCorrelativo, setDetalleCorrelativo] = useState(null);
-  
-  const [anulacionesList, setAnulaciones] = useState([]);
-  const [morosidadesList, setMorosidades] = useState([]);
-  const [contratosList, setContratos] = useState([]);
-  const [usuariosList, setUsuarios] = useState([]);
-  const [busqueda, setBusqueda] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  const [showRegModal, setShowRegModal] = useState(false);  
-  const [showEditModal, setShowEditModal] = useState(false); 
-
-  const API_URL = `${API_BASE_URL}/api/anulacion_deuda`;
-
-  const getUsuarioActivo = () => {
-    try {
-      return JSON.parse(localStorage.getItem('usuario') || '{}');
-    } catch {
-      return {};
-    }
-  };
-
-  const getNombreUsuario = (usuario = {}) => {
-    return usuario?.nombre_usuario || usuario?.nombre || usuario?.correo || `Usuario #${usuario?.id_usuario || ''}`;
-  };
-
-  const esRolJuridico = (usuario = {}) => {
-    const rol = String(usuario?.nombre_rol || '').toLowerCase();
-    return rol.includes('jurid') || rol.includes('legal');
-  };
-
-  const esUsuarioAutorizador = (usuario = {}) => {
-    const rol = String(usuario?.nombre_rol || '').toLowerCase();
-    return String(usuario?.estado || '').toLowerCase() === 'activo'
-      && (rol.includes('admin') || rol.includes('administrador') || rol.includes('gerente') || rol.includes('jurid') || rol.includes('legal'));
-  };
-
-  const cargarDatosRelacionales = useCallback(() => {
-    Axios.get(`${API_BASE_URL}/api/morosidad`).then((res) => setMorosidades(res.data)).catch(console.error);
-    Axios.get(`${API_BASE_URL}/api/contratos_residentes`).then((res) => setContratos(res.data)).catch(console.error);
-    Axios.get(`${API_BASE_URL}/api/usuarios`).then((res) => {
-      const usuarios = Array.isArray(res.data) ? res.data : [];
-      setUsuarios(usuarios);
-
-      const usuarioActivo = getUsuarioActivo();
-      const usuarioActivoId = String(usuarioActivo?.id_usuario || '');
-      const usuarioAutorizadorActual = usuarios.find((u) => String(u.id_usuario) === usuarioActivoId && esUsuarioAutorizador(u));
-
-      if (usuarioAutorizadorActual && !id_usuario_autoriza) {
-        setId_usuario_autoriza(String(usuarioAutorizadorActual.id_usuario));
-      }
-    }).catch(console.error);
-  }, [id_usuario_autoriza]);
-
-  const getAnulaciones = useCallback(() => {
-    Axios.get(API_URL).then((res) => setAnulaciones(res.data)).catch(console.error);
-  }, [API_URL]);
-
-  const refrescarVista = useCallback(() => {
-    getAnulaciones();
-    cargarDatosRelacionales();
-  }, [getAnulaciones, cargarDatosRelacionales]);
-
-  useEffect(() => { 
-    refrescarVista();
-
-    const handleFocus = () => refrescarVista();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refrescarVista();
-      }
-    };
-
-    const intervalId = window.setInterval(refrescarVista, 15000);
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [refrescarVista]);
-
-  const getMesesCorrelativo = () => {
-    const raw = String(detalleCorrelativo?.meses_pagados || '').trim();
-    if (!raw) return [];
-    return raw.split(',').map((mes) => mes.trim()).filter(Boolean);
-  };
-
-  const getDetalleCobroCorrelativo = () => {
-    return Array.isArray(detalleCorrelativo?.detalle_cobro) ? detalleCorrelativo.detalle_cobro : [];
-  };
-
-  const getContratoInfo = (idContratoActual) => {
-    return contratosList.find((contrato) => String(contrato.id_contrato) === String(idContratoActual)) || null;
-  };
-
-  const getAutorizadorInfo = (idUsuario) => {
-    return usuariosList.find((usuario) => String(usuario.id_usuario) === String(idUsuario)) || null;
-  };
-
-  const descargarPdfAnulacion = (anulacion) => {
-    try {
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
-      const usuarioActivo = getUsuarioActivo();
-      const contratoInfo = getContratoInfo(anulacion.id_contrato);
-      const autorizadorInfo = getAutorizadorInfo(anulacion.id_usuario_autoriza);
-      const correlativoTexto = anulacion.correlativo || `PAGO-${anulacion.id_pago || '-'}`;
-      const correlativoMatch = String(correlativoTexto).match(/^([A-Za-z]+)-([0-9]+)$/);
-      const serieCorrelativo = correlativoMatch ? correlativoMatch[1].toUpperCase() : 'B';
-      const numeroCorrelativo = correlativoMatch
-        ? correlativoMatch[2].slice(-5)
-        : String(anulacion.id_pago || anulacion.id_anulacion || 0).padStart(5, '0');
-      const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
-      const usarFormatoJuridico = esRolJuridico(usuarioActivo);
-      const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
-      const logoProyecto = normalizeImageDataUrl(contratoInfo?.logo_proyecto || '');
-      const nombreMarca = contratoInfo?.nombre_marca_pdf || contratoInfo?.nombre_proyecto || 'PROYECTO INMOBILIARIO';
-      const montoAnulado = parseFloat(anulacion.monto_anulado || 0);
-
-      if (usarFormatoJuridico) {
-        const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
-        const margenX = 8;
-        const ancho = pageW - (margenX * 2);
-        const contenidoY = 36;
-        const contenidoH = 145;
-        const nombreEmpresa = String(nombreMarca || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
-        const nombreProyecto = String(contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto || 'Proyecto');
-        const fechaDoc = fechaDocumento instanceof Date && !Number.isNaN(fechaDocumento.getTime()) ? fechaDocumento : new Date();
-        const d = String(fechaDoc.getDate()).padStart(2, '0');
-        const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
-        const yFull = String(fechaDoc.getFullYear());
-
-        doc.setDrawColor(188, 177, 117);
-        doc.setLineWidth(0.35);
-        if (typeof doc.roundedRect === 'function') {
-          doc.roundedRect(margenX, contenidoY, ancho, contenidoH, 3, 3, 'S');
-        } else {
-          doc.rect(margenX, contenidoY, ancho, contenidoH);
+      if (logoEmpresa) {
+        try {
+          doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), 9, y - 1, 33, 33, `anul-logo-${Date.now()}`, 'FAST');
+        } catch {
+          // no-op
         }
+      }
 
-        if (logoEmpresa) {
-          try {
-            doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), margenX + 2.5, 7.8, 36, 21, `anu-jur-logo-${Date.now()}`, 'FAST');
-          } catch {
-            // no-op
-          }
-        }
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(String(nombreMarca || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 46, y + 5);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.text(`NIT: ${contratoInfo?.nit_empresa || 'N/A'}`, 46, y + 10);
+      doc.text(`País: ${contratoInfo?.pais_empresa || 'Guatemala'}`, 46, y + 14.5);
+      doc.text(`Moneda: ${contratoInfo?.moneda_empresa || 'GTQ'}`, 46, y + 19);
 
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(10.8);
-        doc.text(nombreEmpresa, pageW / 2, 14.5, { align: 'center' });
-        doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(7.8);
-        doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', pageW / 2, 20, { align: 'center' });
-        doc.text('PBX: 2220-6406  Telefono: 5825-5903', pageW / 2, 24.2, { align: 'center' });
+      doc.setFillColor(245, 245, 245);
+      doc.rect(140, y - 2, 63, 30, 'F');
+      doc.setDrawColor(180, 180, 180);
+      doc.rect(140, y - 2, 63, 30);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('FACTURA / COMPROBANTE', 171.5, y + 4, { align: 'center' });
+      doc.text('DE COBRO', 171.5, y + 9, { align: 'center' });
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8.2);
+      doc.text(`Documento No: ${correlativoTexto}`, 171.5, y + 15, { align: 'center' });
+      doc.text(`Fecha emisión: ${fechaFmt(fechaDoc)}`, 171.5, y + 20, { align: 'center' });
+      doc.text(`Fecha/Hora impresión: ${fechaHoraFmt(fechaDoc)}`, 171.5, y + 25, { align: 'center' });
 
-        doc.setFont('Helvetica', 'bold');
+      y += 36;
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineWidth(0.3);
+      doc.line(10, y, pW - 10, y);
+      y += 5;
+
+      doc.setFillColor(240, 240, 240);
+      doc.rect(10, y, pW - 20, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('DATOS DEL CLIENTE / RESIDENTE', 12, y + 5);
+      y += 10;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Nombre:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.nombre_residente || 'N/A'), 35, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Dirección:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.direccion_notificacion || 'N/A').slice(0, 38), 143, y);
+      y += 6;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Identificación:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.numero_identificacion || 'N/A'), 42, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Contrato:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.codigo_contrato || 'N/A'), 143, y);
+      y += 6;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('DPI:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.dpi || 'N/A'), 24, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('NIT:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(String(contratoInfo?.nit || 'CF'), 131, y);
+      y += 8;
+
+      doc.setFillColor(240, 240, 240);
+      doc.rect(10, y, pW - 20, 7, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('DATOS DE PAGO', 12, y + 5);
+      y += 10;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Método de pago:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text('ANULACION', 48, y);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Referencia:', 120, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(correlativoTexto || 'N/A', 143, y);
+      y += 10;
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Pago anulado de:', 12, y);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`Pago #${anulacion.id_pago || 'N/A'}`, 48, y);
+      y += 6;
+
+      const montoAnuladoAbs = Math.abs(montoAnulado);
+      const filasDet = [[
+        'Anulacion / Reversion de cobro registrado',
+        anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion).toLocaleDateString('es-GT') : 'N/A',
+        `Q ${montoAnuladoAbs.toFixed(2)}`
+      ]];
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Concepto / Cuota', 'Mes Afectado', 'Total']],
+        body: filasDet,
+        theme: 'grid',
+        styles: { fontSize: 8.5, cellPadding: 2 },
+        headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { cellWidth: 95 },
+          1: { cellWidth: 50, halign: 'center' },
+          2: { cellWidth: 40, halign: 'right' }
+        },
+        margin: { left: 10, right: 10 }
+      });
+
+      y = doc.lastAutoTable.finalY + 8;
+      const resX = pW - 90;
+      const resW = 80;
+      const lineH = 7;
+      const drawResLine = (label, valor, bold = false, rojo = false) => {
+        doc.setFont('Helvetica', bold ? 'bold' : 'normal');
         doc.setFontSize(8.8);
-        doc.text('Recibo Juridico', pageW - 42.5, 14.2);
-        doc.rect(pageW - 42.5, 15.9, 37.5, 11.8);
-        doc.setTextColor(166, 35, 35);
-        doc.setFontSize(11.8);
-        doc.text(`NO. ${String(numeroCorrelativo || '0').padStart(5, '0')}`, pageW - 23.8, 23.9, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
+        doc.setTextColor(rojo ? 180 : 40, rojo ? 0 : 40, rojo ? 0 : 40);
+        doc.text(`${label}:`, resX, y);
+        doc.text(`Q${parseFloat(valor || 0).toFixed(2)}`, resX + resW, y, { align: 'right' });
+        doc.setTextColor(40, 40, 40);
+        y += lineH;
+      };
 
-        doc.setTextColor(195, 195, 195);
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(28);
-        doc.text('CORPORACION DE', pageW / 2, 102, { align: 'center' });
-        doc.text('INVERSION INMOBILIARIA', pageW / 2, 116, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.2);
+      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
+      drawResLine('Subtotal anulado', montoAnuladoAbs);
+      drawResLine('Total Anulado Hoy', montoAnuladoAbs, true, true);
+      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
 
-        let rY = contenidoY + 8;
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(11.5);
-        doc.text('DATOS DEL CLIENTE', margenX + 4, rY);
-        doc.setDrawColor(210, 190, 92);
-        doc.setLineWidth(0.45);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(38);
+      doc.setTextColor(200, 30, 30);
+      doc.text('ANULADA', pW / 2, 150, { align: 'center', angle: -20 });
+      doc.setTextColor(40, 40, 40);
+
+      const pH = doc.internal.pageSize.getHeight();
+      doc.setFont('Helvetica', 'italic');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Gracias por su control documental. Conservar este comprobante para cualquier aclaración administrativa o contable.', 10, pH - 10);
+      doc.setFillColor(...goldColor);
+      doc.rect(0, pH - 5, pW, 5, 'F');
         doc.line(margenX + 4, rY + 1.8, margenX + 34, rY + 1.8);
 
         rY += 11;

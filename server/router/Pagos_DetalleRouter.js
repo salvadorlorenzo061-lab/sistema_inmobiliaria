@@ -180,9 +180,10 @@ router.get('/documento/:id_pago', (req, res) => {
             evidenciaCabecera = {};
         }
 
-        const estadoDocumento = rows.some((row) => String(row.estado_factura || '').toUpperCase() === 'ANULADA')
-            ? 'ANULADA'
-            : 'EMITIDA';
+        const estadoDocumento = estadoSolicitado
+            || (rows.some((row) => String(row.estado_factura || '').toUpperCase() === 'ANULADA')
+                ? 'ANULADA'
+                : 'EMITIDA');
 
         const detalles = detallesBase.map((item) => {
             let evidenciaDetalle = {};
