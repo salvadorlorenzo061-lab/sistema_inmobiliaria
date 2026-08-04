@@ -230,7 +230,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             r.nombre AS nombre_residente,
             COALESCE(SUM(pd.subtotal), 0) AS principal_pagado,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END), 0) AS principal_terreno,
-            COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS principal_enganche,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS principal_enganche,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'abono_capital' THEN pd.subtotal ELSE 0 END), 0) AS principal_abono_capital,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'servicio' THEN pd.subtotal ELSE 0 END), 0) AS principal_servicios,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS principal_mora,
             GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados
@@ -462,6 +463,7 @@ router.post('/anular-por-correlativo', (req, res) => {
 
         const principalAnular = parseFloat(pago.principal_pagado || 0);
         const principalTerreno = parseFloat(pago.principal_terreno || 0);
+        const principalAbonoCapital = parseFloat(pago.principal_abono_capital || 0);
         if (!Number.isFinite(principalAnular) || principalAnular <= 0) {
             return res.status(400).send({ message: 'El correlativo no tiene detalle válido para reversar el cargo.' });
         }
@@ -480,7 +482,7 @@ router.post('/anular-por-correlativo', (req, res) => {
 
                 db.query(
                     'UPDATE contratos_residentes SET monto_total = monto_total + ? WHERE id_contrato = ?',
-                    [principalTerreno, pago.id_contrato],
+                    [principalTerreno + principalAbonoCapital, pago.id_contrato],
                     (saldoErr) => {
                         if (saldoErr) {
                             return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
@@ -559,6 +561,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                                             correlativo: correlativoFinal,
                                                             monto_restaurado: principalAnular,
                                                             monto_restaurado_terreno: principalTerreno,
+                                                            monto_restaurado_abono_capital: principalAbonoCapital,
                                                             monto_revertido_servicios: parseFloat(pago.principal_servicios || 0),
                                                             residente: pago.nombre_residente || 'N/A',
                                                             meses: pago.meses_pagados || '',
