@@ -252,7 +252,9 @@ const registrarHistorialFactura = ({
             if (tipoConcepto === 'cuota_terreno') {
                 nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
             } else if (tipoConcepto === 'enganche') {
-                nombreConcepto = 'Abono a capital';
+                nombreConcepto = 'Enganche';
+            } else if (tipoConcepto === 'abono_capital') {
+                nombreConcepto = 'Abono a capital (sin interes)';
             } else if (tipoConcepto === 'mora') {
                 nombreConcepto = `Mora ${mesPagado || ''}`.trim();
             } else if (tipoConcepto === 'servicio') {
@@ -592,6 +594,13 @@ router.get("/residentes-pendientes", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
+                        c.monto_total + COALESCE((
+                                SELECT SUM(pd_capital.subtotal)
+                                FROM pagos_detalle pd_capital
+                                INNER JOIN pagos p_capital ON p_capital.id_pago = pd_capital.id_pago
+                                WHERE p_capital.id_contrato = c.id_contrato
+                                    AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
+                        ), 0) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE((
@@ -722,6 +731,13 @@ router.get("/buscar-residente", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
+                        c.monto_total + COALESCE((
+                                SELECT SUM(pd_capital.subtotal)
+                                FROM pagos_detalle pd_capital
+                                INNER JOIN pagos p_capital ON p_capital.id_pago = pd_capital.id_pago
+                                WHERE p_capital.id_contrato = c.id_contrato
+                                    AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
+                        ), 0) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE((
@@ -1254,7 +1270,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
 router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
-        monto_pagar, monto_terreno_pagar, monto_enganche_pagar, monto_interes, monto_mora, metodo_pago, no_referencia, banco_pago, fecha_operacion, boleta_referencia, observaciones,
+        monto_pagar, monto_terreno_pagar, monto_enganche_pagar, monto_abono_capital, monto_interes, monto_mora, metodo_pago, no_referencia, banco_pago, fecha_operacion, boleta_referencia, observaciones,
         mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
     } = req.body;
 
@@ -1342,6 +1358,7 @@ router.post("/procesar-pago", (req, res) => {
     const montoSolicitado = parseFloat(monto_pagar || 0);
     const montoTerrenoSolicitado = parseFloat(monto_terreno_pagar);
     const montoEngancheSolicitado = parseFloat(monto_enganche_pagar || 0);
+    const montoAbonoCapitalSolicitado = parseFloat(monto_abono_capital || 0);
     const montoInteresSolicitado = parseFloat(monto_interes || 0);
     const montoTerrenoTotalBase = Number.isFinite(montoTerrenoSolicitado)
         ? parseFloat(Math.max(montoTerrenoSolicitado, 0).toFixed(2))
@@ -1353,6 +1370,9 @@ router.post("/procesar-pago", (req, res) => {
     let montoServiciosTotal = 0;
     let montoEngancheTotal = Number.isFinite(montoEngancheSolicitado)
         ? parseFloat(Math.max(montoEngancheSolicitado, 0).toFixed(2))
+        : 0;
+    let montoAbonoCapitalTotal = Number.isFinite(montoAbonoCapitalSolicitado)
+        ? parseFloat(Math.max(montoAbonoCapitalSolicitado, 0).toFixed(2))
         : 0;
     let montoPrincipalTotal = 0;
     let montoInteresTotal = 0;
@@ -1373,7 +1393,7 @@ router.post("/procesar-pago", (req, res) => {
             montoTerrenoTotal = parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0) - montoServiciosTotal, 0).toFixed(2));
         }
 
-        montoPrincipalTotal = parseFloat((montoTerrenoTotal + montoServiciosTotal + montoEngancheTotal).toFixed(2));
+        montoPrincipalTotal = parseFloat((montoTerrenoTotal + montoServiciosTotal + montoEngancheTotal + montoAbonoCapitalTotal).toFixed(2));
         montoPorMesTerreno = parseFloat((montoTerrenoTotal / cantidadMeses).toFixed(2));
         ivaTotal = 0;
         ivaPorMes = 0;
@@ -1406,6 +1426,13 @@ router.post("/procesar-pago", (req, res) => {
                 SELECT
                     c.monto_total,
                     c.enganche,
+                    COALESCE((
+                        SELECT SUM(pd_capital.subtotal)
+                        FROM pagos_detalle pd_capital
+                        INNER JOIN pagos p_capital ON p_capital.id_pago = pd_capital.id_pago
+                        WHERE p_capital.id_contrato = c.id_contrato
+                          AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
+                    ), 0) AS capital_pagado_total,
                     COALESCE((
                         SELECT SUM(pd_enganche.subtotal)
                         FROM pagos_detalle pd_enganche
@@ -1520,6 +1547,7 @@ router.post("/procesar-pago", (req, res) => {
             const montoCuotaBaseContrato = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
                 ? redondear2(montoCuotaContratoRaw)
                 : 0;
+            const montoCuotaBaseEnteraContrato = Math.floor(Math.max(montoCuotaBaseContrato, 0));
             const fechaInicioContrato = (fechaCompraContrato && !Number.isNaN(fechaCompraContrato.getTime()))
                 ? new Date(fechaCompraContrato.getFullYear(), fechaCompraContrato.getMonth(), 1)
                 : ((fechaFirmaContrato && !Number.isNaN(fechaFirmaContrato.getTime()))
@@ -1532,9 +1560,9 @@ router.post("/procesar-pago", (req, res) => {
             const cuotasBaseInteres = Number.isInteger(cuotasContratoBase) && cuotasContratoBase > 0
                 ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
-            const capitalBaseContrato = (montoCuotaContratoRaw > 0 && cuotasBaseInteres > 0)
-                ? redondear2(montoCuotaContratoRaw * cuotasBaseInteres)
-                : redondear2(Math.max(saldoActual, 0));
+            const capitalPagadoContrato = redondear2(Math.max(Number(saldoRows[0]?.capital_pagado_total || 0), 0));
+            const capitalTotalContrato = redondear2(Math.max(saldoActual + capitalPagadoContrato, 0));
+            const capitalBaseContrato = redondear2(Math.max(capitalTotalContrato - engancheContrato, 0));
             const capitalBaseInteresContrato = redondear2(Math.max(capitalBaseContrato, 0));
             const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
             const tasaMensualContrato = interesPorcentajeContrato > 0
@@ -1563,12 +1591,12 @@ router.post("/procesar-pago", (req, res) => {
                 if (!Number.isInteger(cuotaNumero) || cuotaNumero <= 0 || cuotasBaseInteres <= 0 || interesTotalContrato <= 0) {
                     return 0;
                 }
-
-                const totalCentavos = Math.round(interesTotalContrato * 100);
-                const baseCentavos = Math.floor(totalCentavos / cuotasBaseInteres);
-                const residuoCentavos = totalCentavos - (baseCentavos * cuotasBaseInteres);
+                const interesBaseEntero = Math.floor(interesTotalContrato / cuotasBaseInteres);
+                const residuoInteresFinal = redondear2(interesTotalContrato - (interesBaseEntero * cuotasBaseInteres));
                 const esUltimaCuotaContrato = cuotaNumero >= cuotasBaseInteres;
-                return (baseCentavos + (esUltimaCuotaContrato ? residuoCentavos : 0)) / 100;
+                return esUltimaCuotaContrato
+                    ? redondear2(interesBaseEntero + residuoInteresFinal)
+                    : interesBaseEntero;
             };
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
@@ -1633,8 +1661,8 @@ router.post("/procesar-pago", (req, res) => {
                         montoAsignado = redondear2(restante);
                         restante = 0;
                     } else {
-                        const sugerido = montoCuotaBaseContrato > 0
-                            ? montoCuotaBaseContrato
+                        const sugerido = montoCuotaBaseEnteraContrato > 0
+                            ? montoCuotaBaseEnteraContrato
                             : redondear2(Number(montoTerreno || 0) / Math.max(mesesLista.length, 1));
                         montoAsignado = redondear2(Math.min(sugerido, restante));
                         restante = redondear2(restante - montoAsignado);
@@ -1673,6 +1701,11 @@ router.post("/procesar-pago", (req, res) => {
                 if (montoEngancheTotal > enganchePendienteContrato) {
                     return db.rollback(() => res.status(400).send(`El monto de enganche excede el pendiente (Q${enganchePendienteContrato.toFixed(2)}).`));
                 }
+            }
+
+            const capitalCobroTotal = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
+            if (capitalCobroTotal > redondear2(Math.max(saldoActual, 0))) {
+                return db.rollback(() => res.status(400).send(`El capital a cobrar excede el saldo pendiente del contrato (Q${saldoActual.toFixed(2)}).`));
             }
 
             const prepararServiciosMesInicial = (callbackPreparar) => {
@@ -1982,6 +2015,18 @@ router.post("/procesar-pago", (req, res) => {
                                     ]);
                                 }
 
+                                if (montoAbonoCapitalTotal > 0) {
+                                    detalleValues.push([
+                                        lastIdPago,
+                                        'abono_capital',
+                                        null,
+                                        mesesAProcesar[0] || '',
+                                        null,
+                                        redondear2(montoAbonoCapitalTotal),
+                                        null
+                                    ]);
+                                }
+
                                 if (montoInteresTotal > 0 && mesesConTerreno.length) {
                                     mesesConTerreno.forEach((mes, index) => {
                                         detalleValues.push([
@@ -2130,11 +2175,22 @@ router.post("/procesar-pago", (req, res) => {
                                                     if (montoEngancheTotal > 0) {
                                                         const desgloseEnganche = calcularComponentesFiscalmente(montoEngancheTotal);
                                                         detalleCobro.push({
-                                                            concepto: 'Abono a capital',
+                                                            concepto: 'Enganche',
                                                             mes: mesesAProcesar[0] || '',
                                                             monto_base: desgloseEnganche.subtotal,
                                                             iva: desgloseEnganche.iva,
                                                             total: desgloseEnganche.total
+                                                        });
+                                                    }
+
+                                                    if (montoAbonoCapitalTotal > 0) {
+                                                        const desgloseAbonoCapital = calcularComponentesFiscalmente(montoAbonoCapitalTotal);
+                                                        detalleCobro.push({
+                                                            concepto: 'Abono a capital (sin interes)',
+                                                            mes: mesesAProcesar[0] || '',
+                                                            monto_base: desgloseAbonoCapital.subtotal,
+                                                            iva: desgloseAbonoCapital.iva,
+                                                            total: desgloseAbonoCapital.total
                                                         });
                                                     }
 
@@ -2218,6 +2274,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         monto_pagado: redondear2(montoPrincipalTotal + montoInteresTotal),
                                                         monto_terreno_pagado: montoTerrenoTotal,
                                                         monto_enganche_pagado: montoEngancheTotal,
+                                                        monto_abono_capital_pagado: montoAbonoCapitalTotal,
                                                         monto_interes_pagado: montoInteresTotal,
                                                         monto_servicios_pagado: montoServiciosTotal,
                                                         monto_servicios_mes_inicial: montoServiciosMesInicial,
@@ -2236,6 +2293,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         desglose_totales: {
                                                             capital_total: totalCuotaNormal,
                                                             enganche_total: montoEngancheTotal,
+                                                            abono_capital_total: montoAbonoCapitalTotal,
                                                             interes_total: totalInteres,
                                                             cuota_normal_total: totalCuotaNormal,
                                                             mora_total: moraTotal,
@@ -2311,7 +2369,7 @@ router.post("/procesar-pago", (req, res) => {
                                             };
 
                                             sincronizarMorosidadPagada(() => {
-                                            const descuentoCapital = redondear2(montoTerrenoTotal + montoEngancheTotal);
+                                            const descuentoCapital = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
                                             if (descuentoCapital > 0) {
                                                 const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
                                                 db.query(sqlRestar, [descuentoCapital, id_contrato], (updErr) => {
