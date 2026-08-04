@@ -955,7 +955,7 @@ const Caja = () => {
                     setMesesDetalleMap(mapaMesesActualizados);
                     setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
                     setNumCuota(mesesActualizados.length ? '1' : '0');
-                    const engancheRefrescado = Math.max(Number(response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente || 0), 0);
+                    const engancheRefrescado = Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
                     setMontoEngancheContratoSeleccionado(engancheRefrescado);
                     setOpcionesCuota(
                         mesesActualizados.length
