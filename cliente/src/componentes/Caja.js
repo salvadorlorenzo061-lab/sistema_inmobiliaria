@@ -4,7 +4,12 @@ import { jsPDF } from 'jspdf';
 import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
+
+// El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
+// Los layouts de Recibo Juridico y Recibo de Caja se conservan mas abajo, desactivados.
+const USAR_FORMATO_RECIBO_JURIDICO = false;
 
 const getImageFormatFromDataUrl = (dataUrl = '') => {
     const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/i);
@@ -1051,7 +1056,7 @@ const Caja = () => {
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
             const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
             const usuarioActivo = getUsuarioSesion();
-            const usarFormatoJuridico = esRolJuridico(usuarioActivo);
+            const usarFormatoJuridico = USAR_FORMATO_RECIBO_JURIDICO && esRolJuridico(usuarioActivo);
 
             if (usarFormatoJuridico) {
                 const pageW = doc.internal.pageSize.getWidth();
@@ -1223,181 +1228,49 @@ const Caja = () => {
                 return;
             }
 
-            const x = 10;
-            const w = 190;
-            let y = 10;
-            const headerHeight = 22;
-            const rightHeaderWidth = 68;
-            const leftHeaderWidth = w - rightHeaderWidth;
-            const rightHeaderX = x + leftHeaderWidth;
+            renderFacturaComprobante(doc, {
+                logo: logoEmpresa,
+                empresa: {
+                    nombre: empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || "CORPORACION DE INVERSION INMOBILIARIA",
+                    nit: empresa?.nit,
+                    pais: empresa?.pais,
+                    moneda: empresa?.moneda
+                },
+                documentoNo: referencia || recibo?.numero_recibo,
+                fechaEmision: fecha,
+                cliente: {
+                    nombre: residente?.nombre,
+                    direccion: residente?.direccion_notificacion || residente?.direccion,
+                    identificacion: residente?.numero_identificacion,
+                    dpi: residente?.dpi,
+                    nit: residente?.nit
+                },
+                contrato: residente?.codigo_contrato,
+                pago: {
+                    metodo: recibo?.metodo_pago || metodoPago,
+                    referencia,
+                    banco: bancoPago,
+                    fechaOperacion,
+                    boletaReferencia
+                },
+                filas: detalleCobro.length
+                    ? detalleCobro.map((item) => [
+                        String(item?.concepto || "Pago aplicado").replace(/_/g, " "),
+                        String(item?.mes || item?.mes_pagado || "N/A"),
+                        `Q ${parseFloat(item?.total ?? item?.subtotal ?? 0).toFixed(2)}`
+                    ])
+                    : [[conceptos, mesesPagadosRecibo.join(", ") || "N/A", `Q ${montoTotal.toFixed(2)}`]],
+                resumen: [
+                    { label: "Subtotal deuda pagada", valor: montoTotal },
+                    ...(Number(recibo?.monto_mora || 0) > 0
+                        ? [{ label: "Mora Aplicada", valor: Number(recibo.monto_mora) }]
+                        : []),
+                    { label: "Total Cobrado Hoy", valor: montoTotal, bold: true }
+                ],
+                anulada: false
+            });
 
-            doc.setFillColor(240, 228, 167);
-            doc.rect(x, y, w, headerHeight, 'F');
-            doc.rect(x, y, w, headerHeight);
-            doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
-
-            const logoX = x + 3;
-            const logoY = y + 1.2;
-            const logoW = 24;
-            const logoH = 19;
-            if (logoEmpresa) {
-                try {
-                    doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `rec-logo-${Date.now()}`, 'FAST');
-                } catch {
-                    // no-op
-                }
-            }
-
-            const leftTextX = logoEmpresa ? (logoX + logoW + 3) : (x + 3);
-            const leftTextWidth = logoEmpresa ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
-            const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
-
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9.6);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
-            doc.setFontSize(10.5);
-            doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
-            doc.setFontSize(9.5);
-            doc.text(`Serie "${serie}"`, rightHeaderX + 6, y + 13.5);
-            doc.setTextColor(166, 35, 35);
-            doc.text(`N. ${String(numero).padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
-            doc.setTextColor(0, 0, 0);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(7.2);
-            doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', x + (w / 2), y + headerHeight + 4.5, { align: 'center' });
-            doc.text('PBX: 2220-6406  Telefono: 5825-5903', x + (w / 2), y + headerHeight + 8.2, { align: 'center' });
-
-            y += headerHeight + 10;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, w, 6, 'F');
-            doc.rect(x, y, w, 6);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.8);
-            doc.text('Datos del cliente:', x + 2, y + 4.3);
-
-            y += 7;
-            const nombreLineas = doc.splitTextToSize(String(residente?.nombre || 'N/A'), 158).slice(0, 1);
-            const nombreAltura = 9;
-            doc.rect(x, y, w, nombreAltura);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Nombre:', x + 2, y + 5);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(nombreLineas, x + 22, y + 5);
-
-            y += nombreAltura + 2.5;
-            doc.setFillColor(245, 211, 69);
-            doc.rect(x, y, 145, 6, 'F');
-            doc.rect(x + 145, y, 45, 6, 'F');
-            doc.rect(x, y, 145, 6);
-            doc.rect(x + 145, y, 45, 6);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.8);
-            doc.text('Fecha:', x + 2, y + 4.3);
-            doc.text('Por:', x + 147, y + 4.3);
-
-            y += 6;
-            const fechaLineas = doc.splitTextToSize(`Guatemala, ${fechaLargaGT(fecha)}`, 139).slice(0, 1);
-            const fechaAltura = 9;
-            doc.rect(x, y, 145, fechaAltura);
-            doc.rect(x + 145, y, 45, fechaAltura);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(9.3);
-            doc.text(fechaLineas, x + 2, y + 5);
-            doc.setFont('Helvetica', 'bold');
-            doc.text(`Q ${montoTotal.toFixed(2)}`, x + 147, y + 5);
-
-            y += fechaAltura + 2.5;
-            const pagaLineas = doc.splitTextToSize(montoALetrasRecibo(montoTotal), 143).slice(0, 1);
-            const pagaAltura = 9;
-            doc.rect(x, y, w, pagaAltura);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Paga la cantidad de:', x + 2, y + 5);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(pagaLineas, x + 45, y + 5);
-
-            y += pagaAltura + 2.5;
-            const conceptosLineas = doc.splitTextToSize(conceptos, 143).slice(0, 2);
-            const conceptosAltura = Math.max(10, (conceptosLineas.length * 4.2) + 2.2);
-            doc.rect(x, y, w, conceptosAltura);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Por cancelacion de:', x + 2, y + 4.9);
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(9.8);
-            doc.text(conceptosLineas, x + 43, y + 4.9);
-
-            y += conceptosAltura + 2.5;
-            doc.rect(x, y, 65, 8);
-            doc.rect(x + 65, y, 125, 8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(9);
-            doc.text('Cuota(s):', x + 2, y + 5.2);
-            doc.setTextColor(166, 35, 35);
-            doc.setFontSize(12);
-            doc.text(cuotaDisplay, x + 29, y + 5.2);
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(9);
-            const detalleCuotasTexto = cantidadCuotasPagadas > 0
-                ? `${cantidadCuotasPagadas} cuota(s) | ${mesesPagadosRecibo.join(', ')}`
-                : '';
-            const mesesReciboTexto = mesesPagadosRecibo.length ? mesesPagadosRecibo.join(', ') : (String(recibo?.mes_pagado || '').trim() || 'N/A');
-            doc.text('Abono extraordinario:', x + 67, y + 3.8);
-            doc.setFont('Helvetica', 'normal');
-            doc.text(`Q.${Math.max(abonoExtra, 0).toFixed(2)}`, x + 112, y + 3.8);
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(7.1);
-            doc.text(`Mes(es): ${mesesReciboTexto}`, x + 67, y + 7.1);
-            doc.text(`Interes aplicado: Q${Math.max(interesAplicado, 0).toFixed(2)}`, x + 125, y + 7.1);
-            doc.text(`Saldo restante: Q${Math.max(saldoRestante, 0).toFixed(2)}`, x + 67, y + 10.2);
-            doc.setFont('Helvetica', 'normal');
-            if (metodo.includes('deposit') || metodo.includes('transfer')) {
-                doc.setFontSize(7.2);
-                doc.text(`Banco: ${bancoPago || 'N/A'}`, x + 67, y + 13.1);
-                doc.text(`Fecha op.: ${fechaOperacion || 'N/A'}`, x + 110, y + 13.1);
-            }
-            if (detalleCuotasTexto) {
-                doc.setFontSize(6.8);
-                doc.text(doc.splitTextToSize(detalleCuotasTexto, 118).slice(0, 1), x + 128, y + 10.2);
-            }
-
-            const boxY = Math.min(Math.max(y + 38, 140), 160);
-            const boxH = 22;
-            doc.rect(x, boxY, 60, boxH);
-            doc.rect(x + 65, boxY, 60, boxH);
-
-            doc.setFont('Helvetica', 'normal');
-            doc.setFontSize(8.6);
-            doc.text(`${metodo.includes('deposit') ? 'X' : ' '}  Boleta No.`, x + 3, boxY + 4.8);
-            doc.text(`${metodo.includes('transfer') ? 'X' : ' '}  Transferencia.`, x + 3, boxY + 10.2);
-            if (!metodo.includes('efectivo')) {
-                doc.text(`NO. ${String(recibo?.no_referencia || 'N/A')}`, x + 3, boxY + 15.8);
-            }
-
-            if (logoProyecto) {
-                try {
-                    doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 81, boxY + 9, 28, 11, `rec-logo-proyecto-${Date.now()}`, 'FAST');
-                } catch {
-                    // no-op
-                }
-            }
-            doc.setFont('Helvetica', 'bold');
-            doc.setFontSize(8.8);
-            doc.text(doc.splitTextToSize(String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 4.6, { align: 'center' });
-
-            const footerY = 205;
-            doc.setFont('Helvetica', 'italic');
-            doc.setFontSize(6.8);
-            doc.text(
-                doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 2),
-                x,
-                footerY
-            );
-
-            const fileName = `Recibo_${String(recibo?.no_referencia || recibo?.numero_recibo || 'sin_numero').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
+            const fileName = `Factura_${String(recibo?.no_referencia || recibo?.numero_recibo || "sin_numero").replace(/[^A-Za-z0-9_-]/g, "_")}.pdf`;
             doc.save(fileName);
         } catch (error) {
             console.error('Error al generar PDF:', error);

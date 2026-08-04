@@ -463,7 +463,11 @@ router.post('/anular-por-correlativo', (req, res) => {
 
         const principalAnular = parseFloat(pago.principal_pagado || 0);
         const principalTerreno = parseFloat(pago.principal_terreno || 0);
+        const principalEnganche = parseFloat(pago.principal_enganche || 0);
         const principalAbonoCapital = parseFloat(pago.principal_abono_capital || 0);
+        // monto_total del contrato es el capital completo (incluye el enganche), por lo que al
+        // anular hay que devolver los tres conceptos de capital, no solo terreno y abono.
+        const capitalRestaurar = parseFloat((principalTerreno + principalEnganche + principalAbonoCapital).toFixed(2));
         const correlativoFinal = String(pago.no_referencia || correlativo || '').trim();
         if (!Number.isFinite(principalAnular) || principalAnular <= 0) {
             return res.status(400).send({ message: 'El correlativo no tiene detalle válido para reversar el cargo.' });
@@ -500,7 +504,7 @@ router.post('/anular-por-correlativo', (req, res) => {
 
                         db.query(
                             'UPDATE contratos_residentes SET monto_total = monto_total + ? WHERE id_contrato = ?',
-                            [principalTerreno + principalAbonoCapital, pago.id_contrato],
+                            [capitalRestaurar, pago.id_contrato],
                             (saldoErr) => {
                                 if (saldoErr) {
                                     return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
@@ -565,7 +569,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                                                     req.body?.nombre_usuario || req.headers['x-user-name'] || 'DESCONOCIDO',
                                                                     'ANULADO',
                                                                     'anulacion_deuda',
-                                                                    `Cobro anulado por correlativo ${correlativoFinal} (Pago #${pago.id_pago}) | Contrato #${pago.id_contrato} | Monto restaurado Q${principalAnular.toFixed(2)}`,
+                                                                    `Cobro anulado por correlativo ${correlativoFinal} (Pago #${pago.id_pago}) | Contrato #${pago.id_contrato} | Monto anulado Q${principalAnular.toFixed(2)} | Capital restaurado Q${capitalRestaurar.toFixed(2)} (terreno Q${principalTerreno.toFixed(2)}, enganche Q${principalEnganche.toFixed(2)}, abono Q${principalAbonoCapital.toFixed(2)})`,
                                                                     obtenerIP(req),
                                                                     'exitoso'
                                                                 );
@@ -577,7 +581,9 @@ router.post('/anular-por-correlativo', (req, res) => {
                                                                     id_contrato: pago.id_contrato,
                                                                     correlativo: correlativoFinal,
                                                                     monto_restaurado: principalAnular,
+                                                                    monto_restaurado_capital: capitalRestaurar,
                                                                     monto_restaurado_terreno: principalTerreno,
+                                                                    monto_restaurado_enganche: principalEnganche,
                                                                     monto_restaurado_abono_capital: principalAbonoCapital,
                                                                     monto_revertido_servicios: parseFloat(pago.principal_servicios || 0),
                                                                     residente: pago.nombre_residente || 'N/A',

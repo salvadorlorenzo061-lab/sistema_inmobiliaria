@@ -3,9 +3,13 @@ import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
+
+// La anulacion usa el mismo formato que la factura emitida (FACTURA / COMPROBANTE DE COBRO),
+// solo que con el sello ANULADA. El layout de Recibo Juridico queda abajo, desactivado.
+const USAR_FORMATO_RECIBO_JURIDICO = false;
 
 const getImageFormatFromDataUrl = (dataUrl = '') => {
   const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/i);
@@ -168,7 +172,7 @@ function AnulacionDeuda() {
     return usuariosList.find((usuario) => String(usuario.id_usuario) === String(idUsuario)) || null;
   };
 
-  const descargarPdfAnulacion = (anulacion) => {
+  const descargarPdfAnulacion = async (anulacion) => {
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       const usuarioActivo = getUsuarioActivo();
@@ -181,7 +185,7 @@ function AnulacionDeuda() {
         ? correlativoMatch[2].slice(-5)
         : String(anulacion.id_pago || anulacion.id_anulacion || 0).padStart(5, '0');
       const fechaDocumento = anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion) : new Date();
-      const usarFormatoJuridico = esRolJuridico(usuarioActivo);
+      const usarFormatoJuridico = USAR_FORMATO_RECIBO_JURIDICO && esRolJuridico(usuarioActivo);
       const logoEmpresa = normalizeImageDataUrl(contratoInfo?.logo_empresa_pdf || contratoInfo?.logo_proyecto || '');
       const logoProyecto = normalizeImageDataUrl(contratoInfo?.logo_proyecto || '');
       const nombreMarca = contratoInfo?.nombre_marca_pdf || contratoInfo?.nombre_proyecto || 'PROYECTO INMOBILIARIO';
@@ -337,228 +341,76 @@ function AnulacionDeuda() {
         return;
       }
 
-      const x = 10;
-      const w = 190;
-      let y = 10;
-      const headerHeight = 22;
-      const rightHeaderWidth = 68;
-      const leftHeaderWidth = w - rightHeaderWidth;
-      const rightHeaderX = x + leftHeaderWidth;
-
-      doc.setFillColor(240, 228, 167);
-      doc.rect(x, y, w, headerHeight, 'F');
-      doc.rect(x, y, w, headerHeight);
-      doc.line(rightHeaderX, y, rightHeaderX, y + headerHeight);
-
-      const logoX = x + 3;
-      const logoY = y + 1.2;
-      const logoW = 24;
-      const logoH = 19;
-      if (logoEmpresa) {
+      // Mismo formato que la factura emitida, con el sello ANULADA.
+      // Se reusa la evidencia historica del pago para que ambos documentos coincidan campo a campo.
+      let documento = null;
+      if (anulacion.id_pago) {
         try {
-          doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), logoX, logoY, logoW, logoH, `anul-logo-${Date.now()}`, 'FAST');
+          const { data } = await Axios.get(
+            `${API_BASE_URL}/api/pagos_detalle/documento/${anulacion.id_pago}`,
+            { params: { estado_factura: "ANULADA" } }
+          );
+          documento = data;
         } catch {
-          // no-op
+          documento = null;
         }
       }
 
-      const leftTextX = logoEmpresa ? (logoX + logoW + 3) : (x + 3);
-      const leftTextWidth = logoEmpresa ? (leftHeaderWidth - (logoW + 9)) : (leftHeaderWidth - 6);
-      const rightCenterX = rightHeaderX + (rightHeaderWidth / 2);
+      const detallesDoc = Array.isArray(documento?.detalles) ? documento.detalles : [];
+      const totalDetalle = detallesDoc.reduce((acc, item) => acc + Number(item?.subtotal || 0), 0);
+      const totalAnulado = totalDetalle > 0 ? totalDetalle : Math.abs(montoAnulado);
+      const moraDetalle = detallesDoc
+        .filter((item) => String(item?.tipo_concepto || "").toLowerCase() === "mora")
+        .reduce((acc, item) => acc + Number(item?.subtotal || 0), 0);
+      const logoFactura = normalizeImageDataUrl(documento?.empresa?.logo_empresa || "") || logoEmpresa;
 
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9.6);
-      doc.text(doc.splitTextToSize(String(nombreMarca).toUpperCase(), leftTextWidth), leftTextX + (leftTextWidth / 2), y + 7, { align: 'center' });
-      doc.setFontSize(10.5);
-      doc.text('RECIBO DE CAJA', rightCenterX, y + 7, { align: 'center' });
-      doc.setFontSize(9.5);
-      doc.text(`Serie "${serieCorrelativo}"`, rightHeaderX + 6, y + 13.5);
-      doc.setTextColor(166, 35, 35);
-      doc.text(`N. ${String(numeroCorrelativo || '0').padStart(5, '0')}`, x + w - 2, y + 13.5, { align: 'right' });
-      doc.setTextColor(0, 0, 0);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto || 'Comprobante de anulacion de cobro'), w - 8), x + (w / 2), y + 18.5, { align: 'center' });
-
-      // Sello visual de anulado (suave para no tapar detalle)
-      doc.setTextColor(214, 86, 86);
-      doc.setDrawColor(214, 86, 86);
-      doc.setLineWidth(0.22);
-      doc.line(94, 70, 160, 86);
-      doc.line(94, 86, 160, 70);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(17);
-      doc.text('ANULADO', 127, 81, { align: 'center', angle: -13 });
-      doc.setTextColor(0, 0, 0);
-
-      y += headerHeight + 4;
-      doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, w, 6, 'F');
-      doc.rect(x, y, w, 6);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.8);
-      doc.text('Datos del cliente:', x + 2, y + 4.3);
-
-      y += 7;
-      const nombreTexto = String(contratoInfo?.nombre_residente || 'N/A');
-      const nombreLineas = doc.splitTextToSize(nombreTexto, 158).slice(0, 1);
-      const nombreAltura = 8;
-      doc.rect(x, y, w, nombreAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Nombre:', x + 2, y + 5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(nombreLineas, x + 22, y + 5);
-
-      y += nombreAltura + 3;
-      doc.setFillColor(245, 211, 69);
-      doc.rect(x, y, 145, 6, 'F');
-      doc.rect(x + 145, y, 45, 6, 'F');
-      doc.rect(x, y, 145, 6);
-      doc.rect(x + 145, y, 45, 6);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.8);
-      doc.text('Fecha:', x + 2, y + 4.3);
-      doc.text('Por:', x + 147, y + 4.3);
-
-      y += 6;
-      const fechaTexto = `Guatemala, ${fechaLargaGT(fechaDocumento)}`;
-      const fechaLineas = doc.splitTextToSize(fechaTexto, 139).slice(0, 1);
-      const fechaAltura = 8;
-      doc.rect(x, y, 145, fechaAltura);
-      doc.rect(x + 145, y, 45, fechaAltura);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(9.3);
-      doc.text(fechaLineas, x + 2, y + 5);
-      doc.setFont('Helvetica', 'bold');
-      doc.text(`Q ${Math.abs(montoAnulado).toFixed(2)}`, x + 147, y + 5);
-
-      y += fechaAltura + 3;
-      const pagaTexto = 'ANULACION / REVERSION DE COBRO REGISTRADO';
-      const pagaLineas = doc.splitTextToSize(pagaTexto, 143).slice(0, 1);
-      const pagaAltura = 8;
-      doc.rect(x, y, w, pagaAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Paga la cantidad de:', x + 2, y + 5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(pagaLineas, x + 45, y + 5);
-
-      y += pagaAltura + 3;
-      const cancelacionTexto = String(anulacion.motivo || 'Sin motivo registrado');
-      const cancelacionLineas = doc.splitTextToSize(cancelacionTexto, 143).slice(0, 2);
-      const cancelacionAltura = Math.max(10, (cancelacionLineas.length * 4.2) + 2.2);
-      doc.rect(x, y, w, cancelacionAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Por cancelacion de:', x + 2, y + 4.9);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(9.8);
-      doc.text(cancelacionLineas, x + 43, y + 4.9);
-
-      y += cancelacionAltura + 3;
-      doc.rect(x, y, 65, 8);
-      doc.rect(x + 65, y, 125, 8);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Cuota:', x + 2, y + 5.2);
-      doc.setTextColor(166, 35, 35);
-      doc.setFontSize(12);
-      doc.text('ANULADA', x + 29, y + 5.2);
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(9);
-      doc.text('Abono extraordinario:', x + 67, y + 5.2);
-      doc.setFont('Helvetica', 'normal');
-      doc.text('Q.0.00', x + 112, y + 5.2);
-
-      y += 10;
-      const infoAltura = 14;
-      doc.rect(x, y, 60, infoAltura);
-      doc.rect(x + 65, y, 60, infoAltura);
-      doc.rect(x + 130, y, 60, infoAltura);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.2);
-      doc.text('Referencia:', x + 67, y + 4.5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8.6);
-      doc.text(doc.splitTextToSize(correlativoTexto, 56).slice(0, 1), x + 67, y + 8.8);
-      doc.text(doc.splitTextToSize(`Contrato: ${contratoInfo?.codigo_contrato || `#${anulacion.id_contrato || '-'}`}`, 56).slice(0, 1), x + 67, y + 12.6);
-      doc.text(doc.splitTextToSize(`Pago: #${anulacion.id_pago || 'N/A'}`, 56).slice(0, 1), x + 132, y + 4.8);
-      doc.text(doc.splitTextToSize(`Autoriza: ${getNombreUsuario(autorizadorInfo)}`, 56).slice(0, 2), x + 132, y + 8.6);
-
-      y += infoAltura + 3;
-      const maxTableStartY = 108;
-      if (y > maxTableStartY) {
-        y = maxTableStartY;
-      }
-      autoTable(doc, {
-        startY: y,
-        head: [['Detalle aplicado', 'Mes', 'Total (Q)']],
-        body: [[
-          'Anulacion de cobro',
-          anulacion.fecha_anulacion ? new Date(anulacion.fecha_anulacion).toLocaleDateString('es-GT') : 'N/A',
-          `-${Math.abs(montoAnulado).toFixed(2)}`
-        ]],
-        theme: 'grid',
-        styles: {
-          fontSize: 8.6,
-          cellPadding: 1.5,
-          lineColor: [214, 120, 120],
-          lineWidth: 0.2
+      renderFacturaComprobante(doc, {
+        logo: logoFactura,
+        empresa: {
+          nombre: documento?.empresa?.nombre_empresa || nombreMarca,
+          nit: documento?.empresa?.nit || contratoInfo?.nit_empresa,
+          pais: documento?.empresa?.pais || contratoInfo?.pais_empresa,
+          moneda: documento?.empresa?.moneda || contratoInfo?.moneda_empresa
         },
-        headStyles: {
-          fillColor: [245, 211, 69],
-          textColor: [0, 0, 0],
-          fontSize: 9,
-          halign: 'left'
+        documentoNo: documento?.correlativo || correlativoTexto,
+        fechaEmision: fechaDocumento,
+        cliente: {
+          nombre: documento?.cliente?.nombre_residente || contratoInfo?.nombre_residente,
+          direccion: documento?.cliente?.direccion,
+          identificacion: documento?.cliente?.numero_identificacion,
+          dpi: documento?.cliente?.dpi,
+          nit: documento?.cliente?.nit
         },
-        margin: { left: x, right: 10 },
-        tableWidth: w,
-        pageBreak: 'avoid',
-        columnStyles: {
-          0: { cellWidth: 100 },
-          1: { cellWidth: 45, halign: 'center' },
-          2: { cellWidth: 45, halign: 'right' }
-        }
+        contrato: documento?.contrato?.codigo_contrato
+          || contratoInfo?.codigo_contrato
+          || `#${anulacion.id_contrato || "-"}`,
+        pago: {
+          metodo: documento?.metodo_pago,
+          referencia: documento?.correlativo || correlativoTexto
+        },
+        filas: detallesDoc.length
+          ? detallesDoc.map((item) => [
+              String(item?.nombre_concepto || item?.tipo_concepto || "Cargo anulado").replace(/_/g, " "),
+              String(item?.mes_pagado || "N/A"),
+              `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`
+            ])
+          : [[
+              "Anulacion de cobro registrado",
+              anulacion.fecha_anulacion
+                ? new Date(anulacion.fecha_anulacion).toLocaleDateString("es-GT")
+                : "N/A",
+              `Q ${totalAnulado.toFixed(2)}`
+            ]],
+        resumen: [
+          { label: "Subtotal documento anulado", valor: totalAnulado },
+          ...(moraDetalle > 0 ? [{ label: "Mora Aplicada", valor: moraDetalle }] : []),
+          { label: "Total revertido", valor: totalAnulado, bold: true, rojo: true }
+        ],
+        anulada: true,
+        notaPie: `Documento anulado. Autoriza: ${getNombreUsuario(autorizadorInfo)}. Motivo: ${String(anulacion.motivo || "Sin motivo registrado")}`.slice(0, 190)
       });
 
-      let footerY = Math.min(doc.lastAutoTable.finalY + 3, 136);
-
-      const boxY = Math.min(footerY + 3, 160);
-      const boxH = 22;
-      doc.rect(x, boxY, 60, boxH);
-      doc.rect(x + 65, boxY, 60, boxH);
-
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text('X  Boleta No.', x + 3, boxY + 5);
-      doc.text('X  Transferencia.', x + 3, boxY + 11);
-      doc.text(String(correlativoTexto || 'N/A'), x + 3, boxY + 17);
-
-      if (logoProyecto) {
-        try {
-          doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), x + 80, boxY + 6.5, 29, 12, `anul-logo-proyecto-${Date.now()}`, 'FAST');
-        } catch {
-          // no-op
-        }
-      }
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9.6);
-      doc.text(doc.splitTextToSize(String(contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto || 'Proyecto').toUpperCase(), 54), x + 95, boxY + 5, { align: 'center' });
-
-      const pageHeight = doc.internal.pageSize.getHeight();
-      footerY = pageHeight - 14;
-      doc.setFont('Helvetica', 'italic');
-      doc.setFontSize(7.2);
-      doc.text(
-        doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo electronico se extiende previo a la confirmacion de la transaccion bancaria, quedando pendiente de dicha confirmacion para su validez.', 188).slice(0, 3),
-        x,
-        footerY
-      );
-
-      doc.save(`Anulacion_${anulacion.id_anulacion || 'sin_id'}_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
+      doc.save(`Anulacion_${anulacion.id_anulacion || "sin_id"}_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, "_")}.pdf`);
     } catch (error) {
       console.error('Error al generar PDF de anulaciÃ³n:', error);
       Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo generar el PDF de la anulaciÃ³n.' });

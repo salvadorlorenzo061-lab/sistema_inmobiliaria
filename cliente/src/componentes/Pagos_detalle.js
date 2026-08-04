@@ -3,9 +3,13 @@ import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
+
+// El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
+// El layout de Recibo Juridico se conserva mas abajo, desactivado, por si se requiere volver a el.
+const USAR_FORMATO_RECIBO_JURIDICO = false;
 
 const normalizeRole = (value = '') => String(value || '')
   .toLowerCase()
@@ -132,7 +136,7 @@ function PagosDetalle() {
     const bancoPago = String(documento?.banco_pago || '').trim();
     const fechaOperacion = String(documento?.fecha_operacion || '').trim();
     const boletaReferencia = String(documento?.boleta_referencia || documento?.correlativo || '').trim();
-    const esJuridico = isRoleJuridico(rolEmisor);
+    const esJuridico = USAR_FORMATO_RECIBO_JURIDICO && isRoleJuridico(rolEmisor);
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
     const fechaDocumento = fechaDoc instanceof Date && !Number.isNaN(fechaDoc.getTime()) ? fechaDoc : new Date();
@@ -301,188 +305,49 @@ function PagosDetalle() {
         doc.setTextColor(0, 0, 0);
       }
     } else {
-      // === NUEVO FORMATO: FACTURA / COMPROBANTE DE COBRO ===
-      const pW = doc.internal.pageSize.getWidth();
-      const goldColor = [173, 136, 38];
-      const fechaFmt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-      const fechaHoraFmt = (d) => { const n = new Date(); return `${fechaFmt(d)}, ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`; };
+      const moraDetalle = detallesFactura
+        .filter((d) => d.tipo_concepto === "mora")
+        .reduce((s, d) => s + Number(d.subtotal || 0), 0);
 
-      let y = 12;
-      doc.setFillColor(...goldColor);
-      doc.rect(0, 0, pW, 5, 'F');
-
-      if (empresaLogo) {
-        try { doc.addImage(empresaLogo, getImageFormatFromDataUrl(empresaLogo), 9, y - 1, 33, 33, `det-logo-${Date.now()}`, 'FAST'); } catch { /* no-op */ }
-      }
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(nombreEmpresa, 46, y + 5);
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8.5);
-      doc.text(`NIT: ${documento?.empresa?.nit || 'N/A'}`, 46, y + 10);
-      doc.text(`País: ${documento?.empresa?.pais || 'Guatemala'}`, 46, y + 14.5);
-      doc.text(`Moneda: ${documento?.empresa?.moneda || 'GTQ'}`, 46, y + 19);
-
-      doc.setFillColor(245, 245, 245);
-      doc.rect(140, y - 2, 63, 30, 'F');
-      doc.setDrawColor(180, 180, 180);
-      doc.rect(140, y - 2, 63, 30);
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text('FACTURA / COMPROBANTE', 171.5, y + 4, { align: 'center' });
-      doc.text('DE COBRO', 171.5, y + 9, { align: 'center' });
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8.2);
-      doc.text(`Documento No: ${correlativo}`, 171.5, y + 15, { align: 'center' });
-      doc.text(`Fecha emisión: ${fechaFmt(fechaDocumento)}`, 171.5, y + 20, { align: 'center' });
-      doc.text(`Fecha/Hora impresión: ${fechaHoraFmt(fechaDocumento)}`, 171.5, y + 25, { align: 'center' });
-
-      y += 36;
-      doc.setDrawColor(180, 180, 180);
-      doc.setLineWidth(0.3);
-      doc.line(10, y, pW - 10, y);
-      y += 5;
-
-      // Datos del cliente
-      doc.setFillColor(240, 240, 240);
-      doc.rect(10, y, pW - 20, 7, 'F');
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.text('DATOS DEL CLIENTE / RESIDENTE', 12, y + 5);
-      y += 10;
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.text('Nombre:', 12, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(String(documento?.cliente?.nombre_residente || 'N/A'), 35, y);
-      doc.setFont('Helvetica', 'bold');
-      doc.text('Dirección:', 120, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(String(documento?.cliente?.direccion || 'N/A').slice(0, 38), 143, y);
-      y += 6;
-
-      doc.setFont('Helvetica', 'bold');
-      doc.text('Identificación:', 12, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(String(documento?.cliente?.numero_identificacion || 'N/A'), 42, y);
-      doc.setFont('Helvetica', 'bold');
-      doc.text('Contrato:', 120, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(String(documento?.contrato?.codigo_contrato || 'N/A'), 143, y);
-      y += 6;
-
-      doc.setFont('Helvetica', 'bold');
-      doc.text('DPI:', 12, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(String(documento?.cliente?.dpi || 'N/A'), 24, y);
-      doc.setFont('Helvetica', 'bold');
-      doc.text('NIT:', 120, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(String(documento?.cliente?.nit || 'CF'), 131, y);
-      y += 8;
-
-      // Datos de pago
-      doc.setFillColor(240, 240, 240);
-      doc.rect(10, y, pW - 20, 7, 'F');
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.text('DATOS DE PAGO', 12, y + 5);
-      y += 10;
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.text('Método de pago:', 12, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(String(documento?.metodo_pago || 'N/A'), 48, y);
-      doc.setFont('Helvetica', 'bold');
-      doc.text('Referencia:', 120, y);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(correlativo || 'N/A', 143, y);
-      y += 10;
-
-      if ((metodo.includes('deposit') || metodo.includes('transfer')) && (bancoPago || fechaOperacion || boletaReferencia)) {
-        doc.setFont('Helvetica', 'bold');
-        doc.text('Banco:', 12, y);
-        doc.setFont('Helvetica', 'normal');
-        doc.text(bancoPago || 'N/A', 28, y);
-        doc.setFont('Helvetica', 'bold');
-        doc.text('Fecha op.:', 120, y);
-        doc.setFont('Helvetica', 'normal');
-        doc.text(fechaOperacion || 'N/A', 145, y);
-        y += 6;
-        doc.setFont('Helvetica', 'bold');
-        doc.text('Boleta/Ref.:', 12, y);
-        doc.setFont('Helvetica', 'normal');
-        doc.text(boletaReferencia || 'N/A', 35, y);
-        y += 8;
-      }
-
-      // Tabla de detalle
-      const filasDet = detallesFactura.length > 0
-        ? detallesFactura.map((item) => [
-            String(item?.nombre_concepto || item?.tipo_concepto || 'Pago aplicado').replace(/_/g, ' '),
-            String(item?.mes_pagado || 'N/A'),
-            `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`
-          ])
-        : [['Pago de cuota', 'N/A', `Q ${montoTotal.toFixed(2)}`]];
-
-      autoTable(doc, {
-        startY: y,
-        head: [['Concepto / Cuota', 'Mes Afectado', 'Total']],
-        body: filasDet,
-        theme: 'grid',
-        styles: { fontSize: 8.5, cellPadding: 2 },
-        headStyles: { fillColor: goldColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
-        columnStyles: {
-          0: { cellWidth: 95 },
-          1: { cellWidth: 50, halign: 'center' },
-          2: { cellWidth: 40, halign: 'right' }
+      renderFacturaComprobante(doc, {
+        logo: empresaLogo,
+        empresa: {
+          nombre: nombreEmpresa,
+          nit: documento?.empresa?.nit,
+          pais: documento?.empresa?.pais,
+          moneda: documento?.empresa?.moneda
         },
-        margin: { left: 10, right: 10 }
+        documentoNo: correlativo,
+        fechaEmision: fechaDocumento,
+        cliente: {
+          nombre: documento?.cliente?.nombre_residente,
+          direccion: documento?.cliente?.direccion,
+          identificacion: documento?.cliente?.numero_identificacion,
+          dpi: documento?.cliente?.dpi,
+          nit: documento?.cliente?.nit
+        },
+        contrato: documento?.contrato?.codigo_contrato,
+        pago: {
+          metodo: documento?.metodo_pago,
+          referencia: correlativo,
+          banco: bancoPago,
+          fechaOperacion,
+          boletaReferencia
+        },
+        filas: detallesFactura.length
+          ? detallesFactura.map((item) => [
+              String(item?.nombre_concepto || item?.tipo_concepto || "Pago aplicado").replace(/_/g, " "),
+              String(item?.mes_pagado || "N/A"),
+              `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`
+            ])
+          : [["Pago de cuota", "N/A", `Q ${montoTotal.toFixed(2)}`]],
+        resumen: [
+          { label: "Subtotal deuda pagada", valor: montoTotal },
+          ...(moraDetalle > 0 ? [{ label: "Mora Aplicada", valor: moraDetalle }] : []),
+          { label: "Total Cobrado Hoy", valor: montoTotal, bold: true }
+        ],
+        anulada: String(documento?.estado_factura || "").toUpperCase() === "ANULADA"
       });
-
-      y = doc.lastAutoTable.finalY + 8;
-
-      // Resumen
-      const resX = pW - 90;
-      const resW = 80;
-      const lineH = 7;
-      const drawResLine = (label, valor, bold = false, rojo = false) => {
-        doc.setFont('Helvetica', bold ? 'bold' : 'normal');
-        doc.setFontSize(8.8);
-        doc.setTextColor(rojo ? 180 : 40, rojo ? 0 : 40, rojo ? 0 : 40);
-        doc.text(`${label}:`, resX, y);
-        doc.text(`Q${parseFloat(valor || 0).toFixed(2)}`, resX + resW, y, { align: 'right' });
-        doc.setTextColor(40, 40, 40);
-        y += lineH;
-      };
-
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(0.2);
-      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
-      drawResLine('Subtotal deuda pagada', montoTotal);
-      const moraDet = detallesFactura.filter((d) => d.tipo_concepto === 'mora').reduce((s, d) => s + Number(d.subtotal || 0), 0);
-      if (moraDet > 0) drawResLine('Mora Aplicada', moraDet);
-      drawResLine('Total Cobrado Hoy', montoTotal, true);
-      doc.line(resX - 2, y - 3, resX + resW + 2, y - 3);
-      if (String(documento?.estado_factura || '').toUpperCase() === 'ANULADA') {
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(38);
-        doc.setTextColor(200, 30, 30);
-        doc.text('ANULADA', pW / 2, 150, { align: 'center', angle: -20 });
-        doc.setTextColor(40, 40, 40);
-      }
-
-      // Pie
-      const pH = doc.internal.pageSize.getHeight();
-      doc.setFont('Helvetica', 'italic');
-      doc.setFontSize(7);
-      doc.setTextColor(100, 100, 100);
-      doc.text('Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.', 10, pH - 10);
-      doc.setFillColor(...goldColor);
-      doc.rect(0, pH - 5, pW, 5, 'F');
     }
 
     doc.save(`Factura_${correlativo.replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
