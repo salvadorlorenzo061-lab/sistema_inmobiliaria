@@ -270,10 +270,12 @@ const Caja = () => {
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
     const [montoEngancheContratoSeleccionado, setMontoEngancheContratoSeleccionado] = useState(0);
+    const [montoEngancheContratoAplicado, setMontoEngancheContratoAplicado] = useState(0);
     const [montoEngancheSeleccionado, setMontoEngancheSeleccionado] = useState(0);
     const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
+    const [moraEditadaManual, setMoraEditadaManual] = useState(false);
     const [serviciosContrato, setServiciosContrato] = useState([]);
     const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
     const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
@@ -368,9 +370,11 @@ const Caja = () => {
         setMesesSeleccionados([]);
         setMontoAPagar('');
         setMontoMora('0');
+        setMoraEditadaManual(false);
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMontoEngancheContratoSeleccionado(0);
+        setMontoEngancheContratoAplicado(0);
         setMontoEngancheSeleccionado(0);
         setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
@@ -458,7 +462,7 @@ const Caja = () => {
             .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
         const primerMesConEnganche = (mesesPendientes || [])[0] || '';
         const engancheContratoBase = engancheContratoOverride == null
-            ? parseFloat(montoEngancheContratoSeleccionado || 0)
+            ? parseFloat(montoEngancheContratoSeleccionado || residenteActual?.enganche_pendiente || 0)
             : parseFloat(engancheContratoOverride || 0);
         const engancheContratoAplicado = (enganchePendienteContrato > 0 && primerMesConEnganche && mesesOrdenados.includes(primerMesConEnganche))
             ? Math.max(Math.min(engancheContratoBase, enganchePendienteContrato), 0)
@@ -498,7 +502,7 @@ const Caja = () => {
         const total = terrenoTotalAjustado + engancheContratoAplicado + abonoCapitalManualAplicado + serviciosTotal + interesSeleccionado;
 
         setMontoTerrenoSeleccionado(terrenoTotalAjustado);
-        setMontoEngancheContratoSeleccionado(engancheContratoAplicado);
+        setMontoEngancheContratoAplicado(engancheContratoAplicado);
         setMontoEngancheSeleccionado(abonoCapitalManualAplicado);
         setMontoServiciosSeleccionado(serviciosTotal);
         setMontoCargosExtraSeleccionado(costoCargosExtra);
@@ -590,9 +594,11 @@ const Caja = () => {
         setServiciosSeleccionados([]);
         setNumCuota('0');
         setMontoMora('0');
+        setMoraEditadaManual(false);
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMontoEngancheContratoSeleccionado(0);
+        setMontoEngancheContratoAplicado(0);
         setMontoEngancheSeleccionado(0);
         setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
@@ -745,6 +751,7 @@ const Caja = () => {
     };
 
     const toggleMoraSeleccionada = (idMorosidad) => {
+        setMoraEditadaManual(false);
         setMorasSeleccionadas((actuales) => {
             if (actuales.includes(idMorosidad)) {
                 return actuales.filter((id) => id !== idMorosidad);
@@ -754,6 +761,10 @@ const Caja = () => {
     };
 
     useEffect(() => {
+        if (moraEditadaManual) {
+            return;
+        }
+
         if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
             setMontoMora('0');
             return;
@@ -764,7 +775,7 @@ const Caja = () => {
             .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
 
         setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
-    }, [morasPendientes, morasSeleccionadas]);
+    }, [morasPendientes, morasSeleccionadas, moraEditadaManual]);
 
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
@@ -794,7 +805,7 @@ const Caja = () => {
             return;
         }
 
-        const esSoloAbonoCapital = (parseFloat(montoEngancheContratoSeleccionado || 0) > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0)
+        const esSoloAbonoCapital = (parseFloat(montoEngancheContratoAplicado || 0) > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0)
             && montoTerreno <= 0
             && parseFloat(montoServiciosSeleccionado || 0) <= 0
             && parseFloat(montoMora || 0) <= 0;
@@ -835,7 +846,7 @@ const Caja = () => {
             monto_terreno_pagar: montoTerreno,
             monto_interes: parseFloat(montoInteresSeleccionado || 0),
             monto_mora: parseFloat(montoMora),
-            monto_enganche_pagar: parseFloat(montoEngancheContratoSeleccionado || 0),
+            monto_enganche_pagar: parseFloat(montoEngancheContratoAplicado || 0),
             monto_abono_capital: parseFloat(montoEngancheSeleccionado || 0),
             metodo_pago: metodoPago,
             banco_pago: metodoPago === 'Efectivo' ? '' : bancoPago,
@@ -882,8 +893,8 @@ const Caja = () => {
                 
                 setDatosDeuda(prev => ({
                     ...prev,
-                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheContratoSeleccionado || 0) - parseFloat(montoEngancheSeleccionado || 0), 0),
-                    enganche_pendiente: Math.max(parseFloat(prev?.enganche_pendiente || 0) - parseFloat(montoEngancheContratoSeleccionado || 0), 0)
+                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheContratoAplicado || 0) - parseFloat(montoEngancheSeleccionado || 0), 0),
+                    enganche_pendiente: Math.max(parseFloat(prev?.enganche_pendiente || 0) - parseFloat(montoEngancheContratoAplicado || 0), 0)
                 }));
 
                 if (Number(response?.data?.monto_servicios_mes_inicial || 0) > 0) {
@@ -947,7 +958,7 @@ const Caja = () => {
                     setServiciosSeleccionados(serviciosActivos);
                     recalcularTotalesCobro(mesesActualizados.length ? [mesesActualizados[0]] : [], serviciosActivos, {
                         ...datosDeuda,
-                        saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheContratoSeleccionado || 0) - parseFloat(montoEngancheSeleccionado || 0), 0),
+                        saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheContratoAplicado || 0) - parseFloat(montoEngancheSeleccionado || 0), 0),
                         enganche_pendiente: engancheRefrescado
                     }, servicios, null, engancheRefrescado);
                 } catch (errMeses) {
@@ -967,6 +978,7 @@ const Caja = () => {
                 setBancoPago('');
                 setFechaOperacion('');
                 setMontoEngancheContratoSeleccionado(0);
+                setMontoEngancheContratoAplicado(0);
                 setMontoEngancheSeleccionado(0);
                 setShowModalCobro(false);
                 await consultarSiguienteCorrelativo(datosDeuda.id_contrato);
@@ -1444,7 +1456,7 @@ const Caja = () => {
             const abonoManual = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
                 ? parseFloat(montoEngancheSeleccionado || 0)
                 : 0;
-            return parseFloat((montoEngancheContratoSeleccionado + abonoManual).toFixed(2));
+            return parseFloat((montoEngancheContratoAplicado + abonoManual).toFixed(2));
         }
 
         const capital = obtenerCapitalPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
@@ -1456,7 +1468,7 @@ const Caja = () => {
     };
 
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
-    const engancheSeleccionado = parseFloat(montoEngancheContratoSeleccionado || 0);
+    const engancheSeleccionado = parseFloat(montoEngancheContratoAplicado || 0);
     const abonoCapitalSeleccionado = parseFloat(montoEngancheSeleccionado || 0);
     const interesCalculadoSeleccion = parseFloat(montoInteresSeleccionado || 0);
     const totalSeleccionCapitalInteres = parseFloat((capitalSeleccionado + engancheSeleccionado + abonoCapitalSeleccionado + interesCalculadoSeleccion).toFixed(2));
@@ -1970,7 +1982,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoSeleccionado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} = Q{montoTotalSeleccionado.toFixed(2)}
+                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoAplicado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} = Q{montoTotalSeleccionado.toFixed(2)}
                                             </div>
                                         )}
                                     </div>
@@ -2014,7 +2026,18 @@ const Caja = () => {
                                         {/* Mora */}
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">Recargo por mora (Q):</label>
-                                            <input className="form-control" type="number" step="0.01" value={montoMora} readOnly />
+                                            <input
+                                                className="form-control"
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={montoMora}
+                                                onChange={(e) => {
+                                                    const valor = Math.max(parseFloat(e.target.value || 0), 0);
+                                                    setMoraEditadaManual(true);
+                                                    setMontoMora(String(valor.toFixed(2)));
+                                                }}
+                                            />
                                             {morasPendientes.length > 0 && (
                                                 <div className="border rounded p-2 mt-1 bg-light" style={{ maxHeight: '150px', overflowY: 'auto' }}>
                                                     {morasPendientes.map((mora) => (

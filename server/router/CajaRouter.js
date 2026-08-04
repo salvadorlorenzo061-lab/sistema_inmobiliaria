@@ -1231,11 +1231,20 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
     }
 
     const sql = `
-        SELECT id_morosidad, id_contrato, mes_atrasado, dias_retraso, monto_mora, estado
-        FROM morosidad
-        WHERE id_contrato = ?
-          AND LOWER(TRIM(COALESCE(estado, 'pendiente'))) = 'pendiente'
-        ORDER BY id_morosidad ASC
+                SELECT m.id_morosidad,
+                             m.id_contrato,
+                             m.mes_atrasado,
+                             m.dias_retraso,
+                             CASE
+                                     WHEN COALESCE(c.mora, 0) > 0 THEN COALESCE(c.mora, 0)
+                                     ELSE m.monto_mora
+                             END AS monto_mora,
+                             m.estado
+                FROM morosidad m
+                INNER JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
+                WHERE m.id_contrato = ?
+                    AND LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
+        ORDER BY m.id_morosidad ASC
     `;
 
     db.query(sql, [idContrato], (err, rows) => {
