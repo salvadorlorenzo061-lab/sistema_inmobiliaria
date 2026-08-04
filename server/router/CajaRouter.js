@@ -620,7 +620,7 @@ router.get("/residentes-pendientes", (req, res) => {
                 ), 0),
                 0
             ) AS enganche_pendiente,
-            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.interes_porcentaje, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.interes_porcentaje, c.mora, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
@@ -757,7 +757,7 @@ router.get("/buscar-residente", (req, res) => {
                 ), 0),
                 0
             ) AS enganche_pendiente,
-            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.interes_porcentaje, tc.id_tipo_contrato, 
+            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.interes_porcentaje, c.mora, tc.id_tipo_contrato, 
             tc.nombre_tipo_contrato AS nombre_contrato,
             c.id_proyecto,
             COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
@@ -2307,6 +2307,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         banco_pago: banco_pago || '',
                                                         fecha_operacion: fecha_operacion || '',
                                                         boleta_referencia: boleta_referencia || '',
+                                                        saldo_pendiente_restante: redondear2(Math.max(saldoActual - montoTerrenoTotal - montoEngancheTotal - montoAbonoCapitalTotal, 0)),
                                                         enganche_pendiente_restante: redondear2(Math.max(enganchePendienteContrato - montoEngancheTotal, 0)),
                                                         no_referencia: correlativoFinal,
                                                         id_pago: lastIdPago,

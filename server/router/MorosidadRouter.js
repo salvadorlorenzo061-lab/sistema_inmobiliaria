@@ -222,11 +222,6 @@ router.get('/meses-pendientes', async (req, res) => {
 const calcularMorasAutomaticas = async () => {
     await asegurarTablaMorosidad();
 
-    const tieneInteresMoratorio = await existeColumna('tipos_contrato', 'interes_moratorio');
-    const sqlInteresMoratorio = tieneInteresMoratorio
-        ? 'COALESCE(tc.interes_moratorio, 0)'
-        : '0';
-
     const contratos = await queryAsync(`
         SELECT
             c.id_contrato,
@@ -237,9 +232,8 @@ const calcularMorasAutomaticas = async () => {
             c.monto_cuota,
             c.monto_total,
             c.estado,
-            ${sqlInteresMoratorio} AS interes_moratorio
+            COALESCE(c.mora, 0) AS mora_contrato
         FROM contratos_residentes c
-        LEFT JOIN tipos_contrato tc ON tc.id_tipo_contrato = c.id_tipo_contrato
         WHERE c.estado = 'activo'
     `);
 
@@ -289,7 +283,7 @@ const calcularMorasAutomaticas = async () => {
     contratos.forEach((contrato) => {
         const saldoPendiente = Number(contrato.monto_total || 0);
         const montoCuota = Number(contrato.monto_cuota || 0);
-        const interesMoratorio = Number(contrato.interes_moratorio || 0);
+        const moraContrato = Number(contrato.mora_contrato || 0);
 
         if (saldoPendiente <= 0 || montoCuota <= 0) {
             return;
@@ -316,8 +310,8 @@ const calcularMorasAutomaticas = async () => {
             if (vencido && !pagadosSet.has(etiquetaMes) && !morasSet.has(etiquetaMes)) {
                 const msPorDia = 1000 * 60 * 60 * 24;
                 const diasRetraso = Math.max(Math.floor((hoy - fechaVencimiento) / msPorDia), 1);
-                const moraCalculada = interesMoratorio > 0
-                    ? Number((montoCuota * (interesMoratorio / 100)).toFixed(2))
+                const moraCalculada = moraContrato > 0
+                    ? Number(moraContrato.toFixed(2))
                     : 0;
 
                 inserts.push([
