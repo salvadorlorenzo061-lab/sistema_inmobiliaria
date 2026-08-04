@@ -743,7 +743,20 @@ function AnulacionDeuda() {
 
   // Filtrado y paginación
   const textoBusqueda = busqueda.toLowerCase();
-  const anulacionesFiltradas = anulacionesList.filter((a) => {
+  const anulacionesUnicas = [];
+  const correlativosVistos = new Set();
+
+  anulacionesList.forEach((a) => {
+    const clave = String(a.correlativo || a.id_pago || a.id_anulacion || '').trim().toLowerCase();
+    if (!clave || correlativosVistos.has(clave)) {
+      return;
+    }
+
+    correlativosVistos.add(clave);
+    anulacionesUnicas.push(a);
+  });
+
+  const anulacionesFiltradas = anulacionesUnicas.filter((a) => {
     const motivoText = String(a.motivo || '').toLowerCase();
     const correlativoText = String(a.correlativo || '').toLowerCase();
     const contratoText = String(a.id_contrato || '').toLowerCase();
