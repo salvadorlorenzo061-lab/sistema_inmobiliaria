@@ -1424,6 +1424,9 @@ const Caja = () => {
         .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
+    const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
+    const tieneEnganchePendiente = enganchePendiente > 0;
+    const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
     const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes || tieneEnganchePendiente) && tienePermisoCobroSeleccion;
     const posibleCobroServiciosIniciales =
