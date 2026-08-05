@@ -478,7 +478,7 @@ const Caja = () => {
             }
             const interesBaseEntero = Math.floor(totalInteres / cuotasPactadas);
             const residuoFinal = parseFloat((totalInteres - (interesBaseEntero * cuotasPactadas)).toFixed(2));
-            const esUltimaCuota = numeroCuota >= cuotasPactadas;
+            const esUltimaCuota = numeroCuota === cuotasPactadas;
 
             return esUltimaCuota
                 ? parseFloat((interesBaseEntero + residuoFinal).toFixed(2))
@@ -521,7 +521,7 @@ const Caja = () => {
             if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadas <= 0 || capitalBaseInteres <= 0) {
                 return 0;
             }
-            const esUltimaCuota = numeroCuota >= cuotasPactadas;
+            const esUltimaCuota = numeroCuota === cuotasPactadas;
             if (!esUltimaCuota) {
                 return capitalPorCuotaEntera;
             }
@@ -1354,7 +1354,7 @@ const Caja = () => {
         }
         const interesBaseEntero = Math.floor(totalInteres / cuotasPactadas);
         const residuoFinal = parseFloat((totalInteres - (interesBaseEntero * cuotasPactadas)).toFixed(2));
-        const esUltimaCuota = numeroCuota >= cuotasPactadas;
+        const esUltimaCuota = numeroCuota === cuotasPactadas;
 
         return esUltimaCuota
             ? parseFloat((interesBaseEntero + residuoFinal).toFixed(2))
@@ -1381,7 +1381,7 @@ const Caja = () => {
         if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadasVista <= 0 || capitalBaseInteresVista <= 0) {
             return 0;
         }
-        const esUltimaCuota = numeroCuota >= cuotasPactadasVista;
+        const esUltimaCuota = numeroCuota === cuotasPactadasVista;
         if (!esUltimaCuota) return capitalPorCuotaEnteraVista;
         return parseFloat((capitalBaseInteresVista - (capitalPorCuotaEnteraVista * (cuotasPactadasVista - 1))).toFixed(2));
     };

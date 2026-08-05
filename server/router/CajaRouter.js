@@ -905,7 +905,10 @@ router.get("/meses-pendientes", (req, res) => {
         };
 
         if (fechaFinMes) {
-            while (cursor <= fechaFinMes) {
+            while (
+                cursor <= fechaFinMes
+                && (!(Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0) || candidatosMeta.length < cuotasBaseContrato)
+            ) {
                 registrarCandidato(cursor);
                 cursor.setMonth(cursor.getMonth() + 1);
             }
@@ -1039,12 +1042,18 @@ router.get("/meses-pendientes", (req, res) => {
                 while (pendientesMeta.length < cuotasRestantesPorSaldo) {
                     const extra = new Date(base.getFullYear(), base.getMonth(), 1);
                     extra.setMonth(extra.getMonth() + offset);
+                    const numeroCuotaExtra = obtenerNumeroCuotaDesdeFechas(fechaInicio, extra) || (candidatosMeta.length + pendientesMeta.length + 1);
+
+                    if (Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0 && numeroCuotaExtra > cuotasBaseContrato) {
+                        break;
+                    }
+
                     const etiqueta = etiquetaMesDesdeFecha(extra);
                     if (!mesesPagadosSet.has(etiqueta) && !pendientesSet.has(etiqueta)) {
                         pendientesSet.add(etiqueta);
                         pendientesMeta.push({
                             mes: etiqueta,
-                            numero_cuota: obtenerNumeroCuotaDesdeFechas(fechaInicio, extra) || (candidatosMeta.length + pendientesMeta.length + 1),
+                            numero_cuota: numeroCuotaExtra,
                             fecha: new Date(extra.getFullYear(), extra.getMonth(), 1)
                         });
                     }
