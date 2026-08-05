@@ -8,17 +8,22 @@
  * @returns {Object} { paginatedItems, totalPages, startIndex, endIndex }
  */
 export const getPaginatedData = (items, currentPage, itemsPerPage = 10) => {
-  const totalPages = Math.ceil(items.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedItems = items.slice(startIndex, endIndex);
+  const safeItems = Array.isArray(items) ? items : [];
+  const safeItemsPerPage = Math.max(Number(itemsPerPage) || 10, 1);
+  const totalPages = Math.ceil(safeItems.length / safeItemsPerPage);
+  const effectiveTotalPages = Math.max(totalPages, 1);
+  const safeCurrentPage = Math.min(Math.max(Number(currentPage) || 1, 1), effectiveTotalPages);
+  const startIndex = safeItems.length ? (safeCurrentPage - 1) * safeItemsPerPage : 0;
+  const endIndex = startIndex + safeItemsPerPage;
+  const paginatedItems = safeItems.slice(startIndex, endIndex);
 
   return {
     paginatedItems,
     totalPages,
     startIndex,
     endIndex,
-    itemsCount: items.length
+    itemsCount: safeItems.length,
+    currentPage: safeCurrentPage
   };
 };
 
@@ -32,46 +37,52 @@ export const PaginationControls = ({
   startIndex, 
   endIndex, 
   itemsCount,
+  totalItems,
   itemLabel = 'registros',
   className = ''
 }) => {
   const effectiveTotalPages = Math.max(1, totalPages || 0);
   const safeCurrentPage = Math.min(Math.max(currentPage || 1, 1), effectiveTotalPages);
-  const hasData = itemsCount > 0;
+  const totalCount = Number.isFinite(Number(itemsCount)) ? Number(itemsCount) : Number(totalItems || 0);
+  const hasData = totalCount > 0;
   const visibleStart = hasData ? startIndex + 1 : 0;
-  const visibleEnd = hasData ? Math.min(endIndex, itemsCount) : 0;
+  const visibleEnd = hasData ? Math.min(endIndex, totalCount) : 0;
+  const goToPage = (page) => {
+    const targetPage = Math.min(Math.max(Number(page) || 1, 1), effectiveTotalPages);
+    onPageChange(targetPage);
+  };
 
   return (
     <div className={`d-flex justify-content-between align-items-center mt-4 p-3 bg-light rounded ${className}`.trim()}>
       <span className="text-muted fw-bold">
-        Mostrando {visibleStart}-{visibleEnd} de {itemsCount} {itemLabel}
+        Mostrando {visibleStart}-{visibleEnd} de {totalCount} {itemLabel}
       </span>
       <nav>
         <ul className="pagination m-0">
           <li className={`page-item ${safeCurrentPage === 1 ? 'disabled' : ''}`}>
-            <button className="page-link" onClick={() => onPageChange(1)} disabled={safeCurrentPage === 1}>
+            <button type="button" className="page-link" onClick={() => goToPage(1)} disabled={safeCurrentPage === 1}>
               «« Primera
             </button>
           </li>
           <li className={`page-item ${safeCurrentPage === 1 ? 'disabled' : ''}`}>
-            <button className="page-link" onClick={() => onPageChange(safeCurrentPage - 1)} disabled={safeCurrentPage === 1}>
+            <button type="button" className="page-link" onClick={() => goToPage(safeCurrentPage - 1)} disabled={safeCurrentPage === 1}>
               « Anterior
             </button>
           </li>
           {Array.from({ length: effectiveTotalPages }, (_, i) => i + 1).map((page) => (
             <li key={page} className={`page-item ${safeCurrentPage === page ? 'active' : ''}`}>
-              <button className="page-link" onClick={() => onPageChange(page)}>
+              <button type="button" className="page-link" onClick={() => goToPage(page)}>
                 {page}
               </button>
             </li>
           ))}
           <li className={`page-item ${safeCurrentPage === effectiveTotalPages ? 'disabled' : ''}`}>
-            <button className="page-link" onClick={() => onPageChange(safeCurrentPage + 1)} disabled={safeCurrentPage === effectiveTotalPages}>
+            <button type="button" className="page-link" onClick={() => goToPage(safeCurrentPage + 1)} disabled={safeCurrentPage === effectiveTotalPages}>
               Siguiente »
             </button>
           </li>
           <li className={`page-item ${safeCurrentPage === effectiveTotalPages ? 'disabled' : ''}`}>
-            <button className="page-link" onClick={() => onPageChange(effectiveTotalPages)} disabled={safeCurrentPage === effectiveTotalPages}>
+            <button type="button" className="page-link" onClick={() => goToPage(effectiveTotalPages)} disabled={safeCurrentPage === effectiveTotalPages}>
               Última »»
             </button>
           </li>

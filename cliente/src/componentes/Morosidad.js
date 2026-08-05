@@ -89,6 +89,53 @@ function Morosidad() {
     });
   };
 
+  const getUsuarioActivo = () => {
+    try {
+      return JSON.parse(localStorage.getItem('usuario') || '{}');
+    } catch {
+      return {};
+    }
+  };
+
+  const eliminarMora = async (mora) => {
+    const confirmacion = await Swal.fire({
+      icon: 'warning',
+      title: `¿Eliminar la mora #${mora.id_morosidad}?`,
+      html: `<div class="text-start">
+               <div><strong>Contrato:</strong> ${getLabelContrato(mora.id_contrato)}</div>
+               <div><strong>Mes atrasado:</strong> ${mora.mes_atrasado}</div>
+               <div><strong>Monto:</strong> Q${Number(mora.monto_mora || 0).toFixed(2)}</div>
+             </div>
+             <p class="mt-2 mb-0">Esta acción no se puede deshacer.</p>`,
+      showCancelButton: true,
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#dc3545'
+    });
+
+    if (!confirmacion.isConfirmed) return;
+
+    const usuario = getUsuarioActivo();
+
+    try {
+      await Axios.delete(`${API_URL}/eliminar/${mora.id_morosidad}`, {
+        headers: {
+          'x-user-id': usuario?.id_usuario || '',
+          'x-user-name': usuario?.nombre_usuario || usuario?.nombre || 'DESCONOCIDO'
+        }
+      });
+
+      await cargarDatos();
+      Swal.fire({ icon: 'success', title: 'Mora eliminada', timer: 1500, showConfirmButton: false });
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'No se pudo eliminar',
+        text: error?.response?.data?.message || 'Ocurrió un error al eliminar la mora.'
+      });
+    }
+  };
+
   const addMora = async () => {
     if (!id_contrato) {
       Swal.fire({ icon: 'warning', title: 'Selecciona un contrato' });
@@ -159,6 +206,7 @@ function Morosidad() {
             <th>MONTO PENALIZACIÓN</th>
             <th>ESTADO</th>
             <th>CAMBIAR ESTADO</th>
+            <th>OPCIONES</th>
           </tr>
         </thead>
         <tbody>
@@ -180,6 +228,18 @@ function Morosidad() {
                     <option value="pagado">Pagado</option>
                     <option value="anulado">Anulado</option>
                 </select>
+              </td>
+              <td>
+                <button
+                  className="btn btn-danger btn-sm fw-bold"
+                  onClick={() => eliminarMora(val)}
+                  title={val.estado === 'pagado'
+                    ? 'No se puede eliminar una mora ya cobrada'
+                    : 'Eliminar esta mora'}
+                  disabled={val.estado === 'pagado'}
+                >
+                  ELIMINAR
+                </button>
               </td>
             </tr>
           ))}

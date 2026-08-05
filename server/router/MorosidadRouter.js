@@ -447,4 +447,63 @@ router.put("/actualizar-estado", (req, res) => {
     });
 });
 
+router.delete("/eliminar/:id_morosidad", async (req, res) => {
+    const idMorosidad = Number(req.params.id_morosidad || 0);
+
+    if (!Number.isInteger(idMorosidad) || idMorosidad <= 0) {
+        return res.status(400).json({ success: false, message: 'ID de mora inválido.' });
+    }
+
+    try {
+        const rows = await queryAsync(
+            'SELECT id_morosidad, id_contrato, mes_atrasado, monto_mora, estado FROM morosidad WHERE id_morosidad = ? LIMIT 1',
+            [idMorosidad]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ success: false, message: 'La mora ya no existe.' });
+        }
+
+        const mora = rows[0];
+
+        // Una mora pagada tiene un cobro que la respalda: borrarla dejaria el pago sin su cargo.
+        // Para descartarla sin romper la contabilidad hay que anular el cobro o cambiarla a 'anulado'.
+        if (String(mora.estado || '').toLowerCase() === 'pagado') {
+            return res.status(409).json({
+                success: false,
+                message: 'No se puede eliminar una mora ya cobrada. Anula primero el cobro asociado o cambia su estado a Anulado.'
+            });
+        }
+
+        await queryAsync('DELETE FROM morosidad WHERE id_morosidad = ?', [idMorosidad]);
+
+        registrarAuditoria(
+            req.body?.id_usuario || req.headers['x-user-id'] || null,
+            req.body?.nombre_usuario || req.headers['x-user-name'] || 'DESCONOCIDO',
+            'ELIMINADO',
+            'morosidad',
+            `Mora #${idMorosidad} eliminada | Contrato #${mora.id_contrato} | Mes ${mora.mes_atrasado} | Monto Q${Number(mora.monto_mora || 0).toFixed(2)} | Estado previo ${mora.estado}`,
+            obtenerIP(req),
+            'exitoso'
+        );
+
+        return res.status(200).json({ success: true, message: 'Mora eliminada correctamente.' });
+    } catch (error) {
+        console.error('Error al eliminar mora:', error);
+
+        if (String(error?.code || '').toUpperCase() === 'ER_ROW_IS_REFERENCED_2') {
+            return res.status(409).json({
+                success: false,
+                message: 'No se puede eliminar: la mora está referenciada por otro registro del sistema.'
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: 'Error al eliminar la mora.',
+            detail: error?.sqlMessage || error?.message || 'Error desconocido'
+        });
+    }
+});
+
 module.exports = router;

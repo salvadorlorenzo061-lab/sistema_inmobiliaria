@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { renderFacturaComprobante } from '../utils/facturaPdf';
+import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
@@ -305,9 +305,9 @@ function PagosDetalle() {
         doc.setTextColor(0, 0, 0);
       }
     } else {
-      const moraDetalle = detallesFactura
-        .filter((d) => d.tipo_concepto === "mora")
-        .reduce((s, d) => s + Number(d.subtotal || 0), 0);
+      const filasFactura = buildConsolidatedInvoiceRows(detallesFactura, {
+        usarCuotaCeroEnganche: Number(documento?.contrato?.enganche || 0) > 0
+      });
 
       renderFacturaComprobante(doc, {
         logo: empresaLogo,
@@ -334,16 +334,9 @@ function PagosDetalle() {
           fechaOperacion,
           boletaReferencia
         },
-        filas: detallesFactura.length
-          ? detallesFactura.map((item) => [
-              String(item?.nombre_concepto || item?.tipo_concepto || "Pago aplicado").replace(/_/g, " "),
-              String(item?.mes_pagado || "N/A"),
-              `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`
-            ])
-          : [["Pago de cuota", "N/A", `Q ${montoTotal.toFixed(2)}`]],
+        filas: filasFactura,
         resumen: [
           { label: "Subtotal deuda pagada", valor: montoTotal },
-          ...(moraDetalle > 0 ? [{ label: "Mora Aplicada", valor: moraDetalle }] : []),
           { label: "Total Cobrado Hoy", valor: montoTotal, bold: true }
         ],
         anulada: String(documento?.estado_factura || "").toUpperCase() === "ANULADA"

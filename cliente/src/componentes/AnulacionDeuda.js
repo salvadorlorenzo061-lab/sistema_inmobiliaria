@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { renderFacturaComprobante } from '../utils/facturaPdf';
+import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
 // La anulacion usa el mismo formato que la factura emitida (FACTURA / COMPROBANTE DE COBRO),
@@ -359,10 +359,10 @@ function AnulacionDeuda() {
       const detallesDoc = Array.isArray(documento?.detalles) ? documento.detalles : [];
       const totalDetalle = detallesDoc.reduce((acc, item) => acc + Number(item?.subtotal || 0), 0);
       const totalAnulado = totalDetalle > 0 ? totalDetalle : Math.abs(montoAnulado);
-      const moraDetalle = detallesDoc
-        .filter((item) => String(item?.tipo_concepto || "").toLowerCase() === "mora")
-        .reduce((acc, item) => acc + Number(item?.subtotal || 0), 0);
       const logoFactura = normalizeImageDataUrl(documento?.empresa?.logo_empresa || "") || logoEmpresa;
+      const filasFactura = buildConsolidatedInvoiceRows(detallesDoc, {
+        usarCuotaCeroEnganche: Number(documento?.contrato?.enganche || 0) > 0
+      });
 
       renderFacturaComprobante(doc, {
         logo: logoFactura,
@@ -388,22 +388,9 @@ function AnulacionDeuda() {
           metodo: documento?.metodo_pago,
           referencia: documento?.correlativo || correlativoTexto
         },
-        filas: detallesDoc.length
-          ? detallesDoc.map((item) => [
-              String(item?.nombre_concepto || item?.tipo_concepto || "Cargo anulado").replace(/_/g, " "),
-              String(item?.mes_pagado || "N/A"),
-              `Q ${parseFloat(item?.subtotal || 0).toFixed(2)}`
-            ])
-          : [[
-              "Anulacion de cobro registrado",
-              anulacion.fecha_anulacion
-                ? new Date(anulacion.fecha_anulacion).toLocaleDateString("es-GT")
-                : "N/A",
-              `Q ${totalAnulado.toFixed(2)}`
-            ]],
+        filas: filasFactura,
         resumen: [
           { label: "Subtotal documento anulado", valor: totalAnulado },
-          ...(moraDetalle > 0 ? [{ label: "Mora Aplicada", valor: moraDetalle }] : []),
           { label: "Total revertido", valor: totalAnulado, bold: true, rojo: true }
         ],
         anulada: true,

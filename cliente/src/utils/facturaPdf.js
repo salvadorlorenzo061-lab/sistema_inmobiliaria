@@ -50,6 +50,137 @@ const texto = (valor, alterno = 'N/A') => {
   return limpio || alterno;
 };
 
+const normalizarConcepto = (valor = '') => String(valor || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim();
+
+const inferirTipoConcepto = (detalle = {}) => {
+  const tipoDirecto = normalizarConcepto(detalle?.tipo_concepto || '');
+  if (tipoDirecto) return tipoDirecto;
+
+  const concepto = normalizarConcepto(detalle?.nombre_concepto || detalle?.concepto || '');
+  if (concepto.includes('enganche')) return 'enganche';
+  if (concepto.includes('abono a capital')) return 'abono_capital';
+  if (concepto.includes('interes')) return 'interes';
+  if (concepto.includes('mora')) return 'mora';
+  if (concepto.includes('extraordinario')) return 'extraordinario';
+  if (concepto.includes('servicio')) return 'servicio';
+  if (concepto.includes('cuota')) return 'cuota_terreno';
+  return 'otro';
+};
+
+export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
+  const usarCuotaCeroEnganche = Boolean(options?.usarCuotaCeroEnganche);
+  const normalizados = (Array.isArray(detalles) ? detalles : [])
+    .map((item, index) => ({
+      orden: index,
+      tipo: inferirTipoConcepto(item),
+      mes: texto(item?.mes_pagado || item?.mes, ''),
+      cuotaReal: Number(item?.numero_cuota_afectada || item?.numero_cuota || 0) || null,
+      monto: Number(item?.subtotal ?? item?.total ?? 0)
+    }))
+    .filter((item) => Number.isFinite(item.monto) && item.monto > 0);
+
+  if (!normalizados.length) {
+    return [['Pago aplicado', 'N/A', 'Q 0.00']];
+  }
+
+  const grupos = [];
+  const gruposPorClave = new Map();
+  const enganche = normalizados.find((item) => item.tipo === 'enganche');
+  const cuotasTerreno = normalizados.filter((item) => item.tipo === 'cuota_terreno');
+
+  const asegurarGrupo = (clave, base = {}) => {
+    if (!gruposPorClave.has(clave)) {
+      const grupo = {
+        clave,
+        orden: base.orden ?? grupos.length,
+        mes: base.mes || 'N/A',
+        cuotaReal: base.cuotaReal ?? null,
+        tieneEnganche: Boolean(base.tieneEnganche),
+        total: 0
+      };
+      gruposPorClave.set(clave, grupo);
+      grupos.push(grupo);
+    }
+    return gruposPorClave.get(clave);
+  };
+
+  cuotasTerreno.forEach((item) => {
+    asegurarGrupo(`mes:${item.mes}`, {
+      orden: item.orden,
+      mes: item.mes || 'N/A',
+      cuotaReal: item.cuotaReal,
+      tieneEnganche: false
+    });
+  });
+
+  if (enganche) {
+    const grupoEnganche = asegurarGrupo(`mes:${enganche.mes || 'N/A'}`, {
+      orden: enganche.orden,
+      mes: enganche.mes || 'N/A',
+      cuotaReal: 0,
+      tieneEnganche: true
+    });
+    grupoEnganche.tieneEnganche = true;
+    grupoEnganche.cuotaReal = 0;
+  }
+
+  if (!grupos.length) {
+    const primero = normalizados[0];
+    asegurarGrupo(`mes:${primero.mes || 'N/A'}`, {
+      orden: primero.orden,
+      mes: primero.mes || 'N/A',
+      cuotaReal: primero.tipo === 'enganche' ? 0 : primero.cuotaReal,
+      tieneEnganche: primero.tipo === 'enganche'
+    });
+  }
+
+  grupos.sort((a, b) => a.orden - b.orden);
+  const primerGrupo = grupos[0];
+
+  normalizados.forEach((item) => {
+    let grupoDestino = null;
+
+    if ((item.tipo === 'cuota_terreno' || item.tipo === 'interes' || item.tipo === 'servicio') && item.mes && gruposPorClave.has(`mes:${item.mes}`)) {
+      grupoDestino = gruposPorClave.get(`mes:${item.mes}`);
+    } else if (item.tipo === 'mora' && item.mes && gruposPorClave.has(`mes:${item.mes}`)) {
+      grupoDestino = gruposPorClave.get(`mes:${item.mes}`);
+    } else {
+      grupoDestino = primerGrupo;
+    }
+
+    grupoDestino.total = Number((grupoDestino.total + item.monto).toFixed(2));
+    if (item.tipo === 'enganche') {
+      grupoDestino.tieneEnganche = true;
+      grupoDestino.cuotaReal = 0;
+    }
+    if (item.tipo === 'cuota_terreno' && Number.isInteger(item.cuotaReal) && item.cuotaReal > 0) {
+      grupoDestino.cuotaReal = item.cuotaReal;
+    }
+  });
+
+  return grupos
+    .filter((grupo) => grupo.total > 0)
+    .sort((a, b) => a.orden - b.orden)
+    .map((grupo) => {
+      let cuotaVisual = grupo.cuotaReal;
+      if (grupo.tieneEnganche) {
+        cuotaVisual = 0;
+      } else if (Number.isInteger(cuotaVisual) && cuotaVisual > 0 && usarCuotaCeroEnganche) {
+        cuotaVisual = Math.max(cuotaVisual - 1, 1);
+      }
+
+      const concepto = Number.isInteger(cuotaVisual)
+        ? `Cuota ${cuotaVisual}`
+        : 'Pago aplicado';
+
+      return [concepto, texto(grupo.mes), `Q ${grupo.total.toFixed(2)}`];
+    });
+};
+
 /**
  * Dibuja el formato FACTURA / COMPROBANTE DE COBRO sobre un documento jsPDF ya creado.
  * No guarda el archivo: el llamador decide el nombre con doc.save().

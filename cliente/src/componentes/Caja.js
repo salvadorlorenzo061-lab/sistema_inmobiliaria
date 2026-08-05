@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { renderFacturaComprobante } from '../utils/facturaPdf';
+import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
@@ -320,6 +320,39 @@ const Caja = () => {
         const idProyecto = Number(registro?.id_proyecto || 0);
         const idEmpresaFacturacion = Number(registro?.id_empresa_facturacion || 0);
         return Number.isInteger(idProyecto) && idProyecto > 0 && Number.isInteger(idEmpresaFacturacion) && idEmpresaFacturacion > 0;
+    };
+
+    const usaCuotaCeroEnganche = Math.max(parseFloat(datosDeuda?.enganche || 0), 0) > 0;
+
+    const obtenerNumeroCuotaVisual = (numeroCuotaReal) => {
+        const numero = Number(numeroCuotaReal || 0);
+        if (!Number.isInteger(numero) || numero < 0) {
+            return null;
+        }
+
+        if (!usaCuotaCeroEnganche) {
+            return numero;
+        }
+
+        return Math.max(numero - 1, 0);
+    };
+
+    const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null) => {
+        const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
+        const primerMesPendiente = mesesLista[0] || '';
+        const engancheActual = enganchePendienteValor == null
+            ? enganchePendiente
+            : Math.max(Number(enganchePendienteValor || 0), 0);
+        return engancheActual > 0 && primerMesPendiente && mesEtiqueta === primerMesPendiente;
+    };
+
+    const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null) => {
+        if (esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase)) {
+            return `Cuota inicial 0 - ${mesEtiqueta}`;
+        }
+
+        const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
+        return `Cuota ${numeroVisual ?? '-'} - ${mesEtiqueta}`;
     };
 
     const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
@@ -645,7 +678,7 @@ const Caja = () => {
                         const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
                         return {
                             value: String(index + 1),
-                            label: `Cuota ${numeroCuotaReal} - ${mes}`
+                            label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, meses)
                         };
                     })
                     : [{ value: '0', label: 'Sin cuotas pendientes' }]
@@ -968,7 +1001,7 @@ const Caja = () => {
                                 const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
                                 return {
                                     value: String(index + 1),
-                                    label: `Cuota ${numeroCuotaReal} - ${mes}`
+                                    label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados)
                                 };
                             })
                             : [{ value: '0', label: 'Sin cuotas pendientes' }]
@@ -1254,17 +1287,12 @@ const Caja = () => {
                     boletaReferencia
                 },
                 filas: detalleCobro.length
-                    ? detalleCobro.map((item) => [
-                        String(item?.concepto || "Pago aplicado").replace(/_/g, " "),
-                        String(item?.mes || item?.mes_pagado || "N/A"),
-                        `Q ${parseFloat(item?.total ?? item?.subtotal ?? 0).toFixed(2)}`
-                    ])
+                    ? buildConsolidatedInvoiceRows(detalleCobro, {
+                        usarCuotaCeroEnganche: Math.max(parseFloat(residente?.enganche || 0), 0) > 0
+                    })
                     : [[conceptos, mesesPagadosRecibo.join(", ") || "N/A", `Q ${montoTotal.toFixed(2)}`]],
                 resumen: [
                     { label: "Subtotal deuda pagada", valor: montoTotal },
-                    ...(Number(recibo?.monto_mora || 0) > 0
-                        ? [{ label: "Mora Aplicada", valor: Number(recibo.monto_mora) }]
-                        : []),
                     { label: "Total Cobrado Hoy", valor: montoTotal, bold: true }
                 ],
                 anulada: false
@@ -1304,7 +1332,7 @@ const Caja = () => {
     const porcentajeInteresContrato = planFinancieroContrato.interesPorcentaje;
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
     const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
-    const cuotaInicioFinanciadaVista = Math.max(parseFloat(datosDeuda?.enganche || 0), 0) > 0 ? 2 : 1;
+    const cuotaInicioFinanciadaVista = 1;
     const capitalPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
     const interesPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0) / Math.max(Number(planFinancieroContrato?.cuotasPactadas || 1), 1), 0));
     const cuotaRegularSinDecimales = capitalPorCuotaRegular + interesPorCuotaRegular;
@@ -1349,8 +1377,20 @@ const Caja = () => {
         return parseFloat((capitalBaseInteresVista - (capitalPorCuotaEnteraVista * (cuotasPactadasVista - 1))).toFixed(2));
     };
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
-        const primerMesPendiente = (mesesPendientes || [])[0] || '';
-        const esCuotaEnganche = enganchePendiente > 0 && primerMesPendiente && mesEtiqueta === primerMesPendiente;
+        const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
+        const serviciosMensualesMes = serviciosSeleccionadosDetalleVista
+            .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
+            .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
+        const serviciosUnicosMes = esCuotaEnganche
+            ? serviciosSeleccionadosDetalleVista
+                .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
+                .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
+            : 0;
+        const cargosExtraMes = esCuotaEnganche ? montoCargosExtraSeleccionado : 0;
+        const moraMes = morasPendientes
+            .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
+            .filter((mora) => String(mora.mes_atrasado || '').trim().toLowerCase() === String(mesEtiqueta || '').trim().toLowerCase())
+            .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
         if (esCuotaEnganche) {
             const engancheBaseVista = Math.max(
                 Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),
@@ -1359,7 +1399,7 @@ const Caja = () => {
             const abonoManual = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
                 ? parseFloat(montoEngancheSeleccionado || 0)
                 : 0;
-            return parseFloat((engancheBaseVista + abonoManual).toFixed(2));
+            return parseFloat((engancheBaseVista + abonoManual + serviciosMensualesMes + serviciosUnicosMes + cargosExtraMes + moraMes).toFixed(2));
         }
 
         const capital = obtenerCapitalPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
@@ -1367,7 +1407,7 @@ const Caja = () => {
         const abono = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
             ? parseFloat(montoEngancheSeleccionado || 0)
             : 0;
-        return parseFloat((capital + interes + abono).toFixed(2));
+        return parseFloat((capital + interes + abono + serviciosMensualesMes + serviciosUnicosMes + cargosExtraMes + moraMes).toFixed(2));
     };
 
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
@@ -1385,9 +1425,6 @@ const Caja = () => {
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
-    const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
-    const tieneEnganchePendiente = enganchePendiente > 0;
-    const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
     const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes || tieneEnganchePendiente) && tienePermisoCobroSeleccion;
     const posibleCobroServiciosIniciales =
         !!datosDeuda
@@ -1560,7 +1597,7 @@ const Caja = () => {
                                 <div><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
                                 <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
                                 <div><strong>Capital financiado:</strong> Q{planFinancieroContrato.capitalBaseInteres.toFixed(2)}</div>
-                                <div><strong>Cuota 1:</strong> Enganche Q{planFinancieroContrato.enganche.toFixed(2)}</div>
+                                <div><strong>Cuota 0:</strong> Enganche Q{planFinancieroContrato.enganche.toFixed(2)}</div>
                                 <div><strong>Capital por cuota:</strong> Q{capitalPorCuotaRegular.toFixed(0)}</div>
                                 <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
                                 <div><strong>Interés por cuota:</strong> Q{interesPorCuotaRegular.toFixed(0)}</div>
@@ -1711,7 +1748,7 @@ const Caja = () => {
                                             <br />
                                             <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{interesMensualSeleccionado.toFixed(2)} / cuota
                                             <br />
-                                            <strong>Cuota 1 (enganche):</strong> Q{planFinancieroContrato.enganche.toFixed(2)}
+                                            <strong>Cuota 0 (enganche):</strong> Q{planFinancieroContrato.enganche.toFixed(2)}
                                             <br />
                                             <strong>Enganche pendiente:</strong> Q{enganchePendiente.toFixed(2)}
                                             <br />
@@ -1756,7 +1793,7 @@ const Caja = () => {
                                                 }}
                                             />
                                         </div>
-                                        <small className="text-muted">Este valor viene del contrato y se aplica a la cuota 1 mientras el enganche siga pendiente.</small>
+                                        <small className="text-muted">Este valor viene del contrato y se aplica a la cuota 0 mientras el enganche siga pendiente.</small>
                                     </div>
 
                                     <div className="mb-3 border rounded p-3 bg-light">
@@ -1865,7 +1902,7 @@ const Caja = () => {
                                                             />
                                                             <div className="flex-grow-1">
                                                                 <span className="fw-bold fs-5 text-dark">
-                                                                    Cuota {obtenerNumeroCuotaMesVista(mes) || '-'} - {mes}
+                                                                    {getEtiquetaCuotaMes(mes, obtenerNumeroCuotaMesVista(mes))}
                                                                 </span>
                                                             </div>
                                                             <span className="badge bg-primary">
@@ -1885,7 +1922,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoAplicado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} = Q{montoTotalSeleccionado.toFixed(2)}
+                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoAplicado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} + Mora Q{montoMoraActual.toFixed(2)} = Q{(montoTotalSeleccionado + montoMoraActual).toFixed(2)}
                                             </div>
                                         )}
                                     </div>

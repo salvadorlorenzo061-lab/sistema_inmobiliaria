@@ -129,6 +129,7 @@ router.get('/documento/:id_pago', (req, res) => {
             r.nit,
             r.direccion_notificacion,
             c.codigo_contrato,
+            c.enganche AS enganche_contrato,
             tc.nombre_tipo_contrato AS nombre_contrato,
             p.forma_pago,
             p.no_referencia,
@@ -170,7 +171,6 @@ router.get('/documento/:id_pago', (req, res) => {
             : rows;
 
         const detallesBase = rowsSeleccionadas.length ? rowsSeleccionadas : rows;
-        const emitidas = detallesBase.filter((row) => String(row.estado_factura || '').toUpperCase() === 'EMITIDA');
         const base = detallesBase[0];
 
         let evidenciaCabecera = {};
@@ -239,7 +239,8 @@ router.get('/documento/:id_pago', (req, res) => {
             },
             contrato: {
                 codigo_contrato: base.codigo_contrato || 'N/A',
-                nombre_contrato: base.nombre_contrato || 'N/A'
+                nombre_contrato: base.nombre_contrato || 'N/A',
+                enganche: Number(base.enganche_contrato || 0)
             },
             empresa: {
                 nombre_empresa: base.nombre_empresa || 'Inmobiliaria',
