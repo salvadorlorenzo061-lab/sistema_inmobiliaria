@@ -857,6 +857,17 @@ const Caja = () => {
             : ((Array.isArray(mesesPendientes) && mesesPendientes.length)
                 ? [mesesPendientes[0]]
                 : (mesPagado ? [mesPagado] : []));
+        const mesesFinanciadosParaPago = mesesParaPago.filter((mes) => !esMesEngancheVisual(mes));
+        const morasSeleccionadasPayload = mesesFinanciadosParaPago.length
+            ? (morasPendientes || [])
+                .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
+                .map((mora) => ({
+                    id_morosidad: Number(mora.id_morosidad || 0),
+                    mes_atrasado: String(mora.mes_atrasado || ''),
+                    monto_mora: Number(mora.monto_mora || 0)
+                }))
+            : [];
+        const montoMoraPayload = mesesFinanciadosParaPago.length ? parseFloat(montoMora || 0) : 0;
 
         if (!contratoTieneAsignacionValida(datosDeuda)) {
             mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
@@ -880,6 +891,11 @@ const Caja = () => {
 
         if (!mesesParaPago.length && !esSoloAbonoCapital) {
             mostrarToast('Debe seleccionar al menos un mes pendiente para generar el cobro.', 'warning');
+            return;
+        }
+
+        if (!mesesFinanciadosParaPago.length && morasSeleccionadasPayload.length) {
+            mostrarToast('La mora solo puede cobrarse junto a cuotas financiadas. No aplica sobre la cuota 0 de enganche.', 'warning');
             return;
         }
 
@@ -913,7 +929,7 @@ const Caja = () => {
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
             monto_interes: parseFloat(montoInteresSeleccionado || 0),
-            monto_mora: parseFloat(montoMora || 0),
+            monto_mora: montoMoraPayload,
             monto_enganche_pagar: parseFloat(montoEngancheContratoAplicado || 0),
             monto_abono_capital: parseFloat(montoEngancheSeleccionado || 0),
             metodo_pago: metodoPago,
@@ -926,13 +942,7 @@ const Caja = () => {
             meses_pagados: mesesParaPago,
             numero_cuota: parseInt(numCuota),
             servicios_pagados: serviciosPayload,
-            moras_aplicadas: (morasPendientes || [])
-                .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
-                .map((mora) => ({
-                    id_morosidad: Number(mora.id_morosidad || 0),
-                    mes_atrasado: String(mora.mes_atrasado || ''),
-                    monto_mora: Number(mora.monto_mora || 0)
-                }))
+            moras_aplicadas: morasSeleccionadasPayload
         };
 
         try {

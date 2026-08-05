@@ -174,10 +174,20 @@ router.get('/documento/:id_pago', (req, res) => {
         const base = detallesBase[0];
 
         let evidenciaCabecera = {};
+        let evidenciaEmitidaCabecera = {};
         try {
             evidenciaCabecera = JSON.parse(base.evidencia_json || '{}');
         } catch {
             evidenciaCabecera = {};
+        }
+
+        const baseEmitida = rows.find((row) => String(row.estado_factura || '').toUpperCase() === 'EMITIDA');
+        if (baseEmitida?.evidencia_json) {
+            try {
+                evidenciaEmitidaCabecera = JSON.parse(baseEmitida.evidencia_json || '{}');
+            } catch {
+                evidenciaEmitidaCabecera = {};
+            }
         }
 
         const estadoDocumento = estadoSolicitado
@@ -223,10 +233,10 @@ router.get('/documento/:id_pago', (req, res) => {
             correlativo: base.correlativo || base.no_referencia || evidenciaCabecera?.no_referencia || `REC-${base.id_pago}`,
             estado_factura: estadoDocumento,
             fecha_evento: base.fecha_evento || base.fecha_pago || null,
-            metodo_pago: base.forma_pago || evidenciaCabecera?.metodo_pago || 'N/A',
-            banco_pago: evidenciaCabecera?.banco_pago || null,
-            fecha_operacion: evidenciaCabecera?.fecha_operacion || null,
-            boleta_referencia: evidenciaCabecera?.boleta_referencia || null,
+            metodo_pago: base.forma_pago || evidenciaCabecera?.metodo_pago || evidenciaEmitidaCabecera?.metodo_pago || 'N/A',
+            banco_pago: evidenciaCabecera?.banco_pago || evidenciaEmitidaCabecera?.banco_pago || null,
+            fecha_operacion: evidenciaCabecera?.fecha_operacion || evidenciaEmitidaCabecera?.fecha_operacion || null,
+            boleta_referencia: evidenciaCabecera?.boleta_referencia || evidenciaEmitidaCabecera?.boleta_referencia || null,
             usuario_cobro: base.usuario_cobro || `Usuario #${base.id_usuario || 'N/A'}`,
             rol_usuario_cobro: base.rol_usuario_emisor || evidenciaCabecera?.rol_usuario_emisor || base.rol_usuario_cobro || null,
             monto_mora: montoMoraCabecera,

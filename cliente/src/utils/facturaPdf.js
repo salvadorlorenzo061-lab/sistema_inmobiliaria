@@ -102,7 +102,7 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   const ultimaCuotaPorMes = new Map();
 
   const obtenerEtiquetaCuota = (cuotaReal, esEnganche = false) => {
-    if (esEnganche) return 'Cuota 0';
+    if (esEnganche) return 'Cuota 0 Enganche';
 
     let cuotaVisual = Number(cuotaReal || 0);
     if (!Number.isInteger(cuotaVisual) || cuotaVisual <= 0) {
@@ -324,7 +324,10 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   doc.setFont('Helvetica', 'bold');
   doc.text('Referencia:', 120, y);
   doc.setFont('Helvetica', 'normal');
-  doc.text(texto(pago?.referencia || documentoNo), 143, y);
+  const referenciaPrincipal = (metodo.includes('deposit') || metodo.includes('transfer'))
+    ? texto(pago?.boletaReferencia || pago?.referencia || documentoNo)
+    : texto(pago?.referencia || documentoNo);
+  doc.text(referenciaPrincipal, 143, y);
   y += 10;
 
   const banco = texto(pago?.banco, '');
