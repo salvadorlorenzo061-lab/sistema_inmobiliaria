@@ -80,6 +80,7 @@ function Contratos_Residentes() {
   const [interes_porcentaje, setInteres_porcentaje] = useState("14");
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
+  const [plazo_anos, setPlazo_anos] = useState("5");
   const [plazo_meses, setPlazo_meses] = useState("60");
   const [mes_inicio_pagos, setMes_inicio_pagos] = useState("7");
   const [anio_inicio_pagos, setAnio_inicio_pagos] = useState("2026");
@@ -144,16 +145,40 @@ function Contratos_Residentes() {
     return limpio;
   };
 
+  const convertirMesesAAniosTexto = (mesesTexto) => {
+    const mesesNumero = Number.parseInt(mesesTexto || 0, 10);
+    if (!Number.isInteger(mesesNumero) || mesesNumero <= 0) return '';
+    if (mesesNumero % 12 === 0) return String(mesesNumero / 12);
+    return String((mesesNumero / 12).toFixed(2)).replace(/\.00$/, '');
+  };
+
+  const handlePlazoAniosChange = (valor) => {
+    const limpio = normalizarNumeroEnteroPositivo(valor);
+    setPlazo_anos(limpio);
+
+    if (!limpio) {
+      setPlazo_meses('');
+      setCuotas_pactadas('');
+      return;
+    }
+
+    const mesesCalculados = String(Number.parseInt(limpio, 10) * 12);
+    setPlazo_meses(mesesCalculados);
+    setCuotas_pactadas(mesesCalculados);
+  };
+
   const handleCuotasPactadasChange = (valor) => {
     const limpio = normalizarNumeroEnteroPositivo(valor);
     setCuotas_pactadas(limpio);
     setPlazo_meses(limpio);
+    setPlazo_anos(convertirMesesAAniosTexto(limpio));
   };
 
   const handlePlazoMesesChange = (valor) => {
     const limpio = normalizarNumeroEnteroPositivo(valor);
     setPlazo_meses(limpio);
     setCuotas_pactadas(limpio);
+    setPlazo_anos(convertirMesesAAniosTexto(limpio));
   };
 
   const calcularPagoMensualAmortizado = (capitalFinanciado, tasaAnualPct, cuotas) => {
@@ -772,6 +797,7 @@ function Contratos_Residentes() {
     setInteres_porcentaje(String(val.interes_porcentaje ?? '14'));
     setMora(String(val.mora ?? '0'));
     setPlazo_meses(String(val.plazo_meses ?? val.cuotas_pactadas ?? '60'));
+    setPlazo_anos(convertirMesesAAniosTexto(String(val.plazo_meses ?? val.cuotas_pactadas ?? '60')) || '');
     setMes_inicio_pagos(String(val.mes_inicio_pagos ?? '1'));
     setAnio_inicio_pagos(String(val.anio_inicio_pagos ?? new Date().getFullYear()));
     setDia_pago_limite(val.dia_pago_limite ?? '');
@@ -816,7 +842,7 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
-    setPorcentaje_dominio("80"); setPlazo_meses("60"); setMes_inicio_pagos("7"); setAnio_inicio_pagos("2026");
+    setPorcentaje_dominio("80"); setPlazo_anos("5"); setPlazo_meses("60"); setCuotas_pactadas("60"); setMes_inicio_pagos("7"); setAnio_inicio_pagos("2026");
   };
 
   const filtrados = contratosList.filter(c => 
@@ -1194,7 +1220,7 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
                   <input type="number" className="form-control" value={enganche} onChange={e => setEnganche(e.target.value)} />
-                  <small className="text-muted">La cuota 1 corresponde al enganche (pago unico).</small>
+                  <small className="text-muted">La cuota inicial 0 corresponde al enganche (pago unico).</small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
@@ -1203,6 +1229,11 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => handleCuotasPactadasChange(e.target.value)} />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Plazo (años):</label>
+                  <input type="number" className="form-control" value={plazo_anos} onChange={e => handlePlazoAniosChange(e.target.value)} placeholder="5" />
+                  <small className="text-muted">Si ingresa 5 años, el sistema calculará 60 cuotas.</small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Capital Financiado (Auto):</label>
@@ -1593,7 +1624,7 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche (Q):</label>
                   <input type="number" className="form-control" value={enganche} onChange={e => setEnganche(e.target.value)} />
-                  <small className="text-muted">La cuota 1 corresponde al enganche (pago unico).</small>
+                  <small className="text-muted">La cuota inicial 0 corresponde al enganche (pago unico).</small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
@@ -1602,6 +1633,11 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => handleCuotasPactadasChange(e.target.value)} />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Plazo (años):</label>
+                  <input type="number" className="form-control" value={plazo_anos} onChange={e => handlePlazoAniosChange(e.target.value)} />
+                  <small className="text-muted">Si ingresa 5 años, el sistema calculará 60 cuotas.</small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Capital Financiado (Auto):</label>
