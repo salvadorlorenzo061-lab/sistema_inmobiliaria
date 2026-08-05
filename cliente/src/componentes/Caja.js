@@ -280,7 +280,6 @@ const Caja = () => {
     const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
-    const [moraEditadaManual, setMoraEditadaManual] = useState(false);
     const [serviciosContrato, setServiciosContrato] = useState([]);
     const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
     const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
@@ -364,6 +363,25 @@ const Caja = () => {
         return `Cuota ${numeroVisual ?? '-'} - ${mesEtiqueta}`;
     };
 
+    const obtenerMorasAplicables = (mesesLista = []) => {
+        const mesesFinanciados = (Array.isArray(mesesLista) ? mesesLista : [])
+            .filter((mes) => !esMesEngancheVisual(mes));
+
+        if (!mesesFinanciados.length || !Array.isArray(morasPendientes) || !morasPendientes.length) {
+            return [];
+        }
+
+        const clavesExactas = new Set(mesesFinanciados.map((mes) => normalizarMesClave(mes)));
+        const clavesBase = new Set(mesesFinanciados.map((mes) => obtenerClaveMesBase(mes)));
+
+        return morasPendientes.filter((mora) => {
+            const mesMora = String(mora?.mes_atrasado || '').trim();
+            const claveExacta = normalizarMesClave(mesMora);
+            const claveBase = obtenerClaveMesBase(mesMora);
+            return (claveExacta && clavesExactas.has(claveExacta)) || (claveBase && clavesBase.has(claveBase));
+        });
+    };
+
     const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
 
     useEffect(() => {
@@ -417,7 +435,6 @@ const Caja = () => {
         setMesesSeleccionados([]);
         setMontoAPagar('');
         setMontoMora('0');
-        setMoraEditadaManual(false);
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMontoEngancheContratoSeleccionado(0);
@@ -641,7 +658,6 @@ const Caja = () => {
         setServiciosSeleccionados([]);
         setNumCuota('0');
         setMontoMora('0');
-        setMoraEditadaManual(false);
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
         setMontoEngancheContratoSeleccionado(0);
@@ -721,7 +737,7 @@ const Caja = () => {
                 const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${residente.id_contrato}`);
                 const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
                 setMorasPendientes(moras);
-                setMorasSeleccionadas(moras.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
+                setMorasSeleccionadas([]);
             } catch (moraError) {
                 console.error('Error al consultar moras pendientes:', moraError);
                 setMorasPendientes([]);
@@ -818,32 +834,21 @@ const Caja = () => {
         });
     };
 
-    const toggleMoraSeleccionada = (idMorosidad) => {
-        setMoraEditadaManual(false);
-        setMorasSeleccionadas((actuales) => {
-            if (actuales.includes(idMorosidad)) {
-                return actuales.filter((id) => id !== idMorosidad);
-            }
-            return [...actuales, idMorosidad];
-        });
-    };
-
     useEffect(() => {
-        if (moraEditadaManual) {
-            return;
-        }
-
         if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
+            setMorasSeleccionadas([]);
             setMontoMora('0');
             return;
         }
 
-        const totalSeleccionado = morasPendientes
-            .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
+        const morasAplicables = obtenerMorasAplicables(mesesSeleccionados);
+        setMorasSeleccionadas(morasAplicables.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
+
+        const totalSeleccionado = morasAplicables
             .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
 
         setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
-    }, [morasPendientes, morasSeleccionadas, moraEditadaManual]);
+    }, [morasPendientes, mesesSeleccionados]);
 
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
@@ -858,16 +863,13 @@ const Caja = () => {
                 ? [mesesPendientes[0]]
                 : (mesPagado ? [mesPagado] : []));
         const mesesFinanciadosParaPago = mesesParaPago.filter((mes) => !esMesEngancheVisual(mes));
-        const morasSeleccionadasPayload = mesesFinanciadosParaPago.length
-            ? (morasPendientes || [])
-                .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
-                .map((mora) => ({
-                    id_morosidad: Number(mora.id_morosidad || 0),
-                    mes_atrasado: String(mora.mes_atrasado || ''),
-                    monto_mora: Number(mora.monto_mora || 0)
-                }))
-            : [];
-        const montoMoraPayload = mesesFinanciadosParaPago.length ? parseFloat(montoMora || 0) : 0;
+        const morasSeleccionadasPayload = obtenerMorasAplicables(mesesFinanciadosParaPago)
+            .map((mora) => ({
+                id_morosidad: Number(mora.id_morosidad || 0),
+                mes_atrasado: String(mora.mes_atrasado || ''),
+                monto_mora: Number(mora.monto_mora || 0)
+            }));
+        const montoMoraPayload = parseFloat(morasSeleccionadasPayload.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0).toFixed(2));
 
         if (!contratoTieneAsignacionValida(datosDeuda)) {
             mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
@@ -891,11 +893,6 @@ const Caja = () => {
 
         if (!mesesParaPago.length && !esSoloAbonoCapital) {
             mostrarToast('Debe seleccionar al menos un mes pendiente para generar el cobro.', 'warning');
-            return;
-        }
-
-        if (!mesesFinanciadosParaPago.length && morasSeleccionadasPayload.length) {
-            mostrarToast('La mora solo puede cobrarse junto a cuotas financiadas. No aplica sobre la cuota 0 de enganche.', 'warning');
             return;
         }
 
@@ -1984,49 +1981,17 @@ const Caja = () => {
                                     </div>
 
                                     <div className="row mb-3">
-                                        {/* Mora */}
                                         <div className="col-md-6">
-                                            <label className="form-label fw-bold">Recargo por mora (Q):</label>
-                                            <input
-                                                className="form-control"
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                value={montoMora}
-                                                onChange={(e) => {
-                                                    setMoraEditadaManual(true);
-                                                    setMontoMora(e.target.value);
-                                                }}
-                                                onBlur={() => {
-                                                    const valor = Math.max(parseFloat(montoMora || 0), 0);
-                                                    setMontoMora(String(valor.toFixed(2)));
-                                                }}
-                                            />
-                                            {morasPendientes.length > 0 && (
-                                                <div className="border rounded p-2 mt-1 bg-light" style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                                                    {morasPendientes.map((mora) => (
-                                                        <label key={mora.id_morosidad} className="form-check d-flex justify-content-between align-items-center mb-1">
-                                                            <div>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    className="form-check-input me-2"
-                                                                    checked={morasSeleccionadas.includes(Number(mora.id_morosidad))}
-                                                                    onChange={() => toggleMoraSeleccionada(Number(mora.id_morosidad))}
-                                                                />
-                                                                <span className="form-check-label">{mora.mes_atrasado}</span>
-                                                            </div>
-                                                            <span className="badge bg-danger">Q{Number(mora.monto_mora || 0).toFixed(2)}</span>
-                                                        </label>
-                                                    ))}
+                                            {montoMoraActual > 0 ? (
+                                                <div className="alert alert-warning py-2 mb-0">
+                                                    <strong>Mora automática aplicada:</strong> Q{montoMoraActual.toFixed(2)}
+                                                </div>
+                                            ) : (
+                                                <div className="alert alert-light border py-2 mb-0 text-muted">
+                                                    La mora se aplica automáticamente solo cuando el mes financiado seleccionado tiene recargo pendiente.
                                                 </div>
                                             )}
-                                            {morasPendientes.length === 0 && (
-                                                <small className="text-muted d-block mt-1">
-                                                    No hay moras pendientes registradas para este contrato.
-                                                </small>
-                                            )}
                                         </div>
-                                        {/* Método de pago */}
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">Método de pago:</label>
                                             <select
