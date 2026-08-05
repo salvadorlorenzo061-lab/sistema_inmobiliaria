@@ -77,6 +77,7 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
     .map((item, index) => ({
       orden: index,
       tipo: inferirTipoConcepto(item),
+      conceptoOriginal: texto(item?.nombre_concepto || item?.concepto || item?.tipo_concepto || 'Pago aplicado'),
       mes: texto(item?.mes_pagado || item?.mes, ''),
       cuotaReal: Number(item?.numero_cuota_afectada || item?.numero_cuota || 0) || null,
       monto: Number(item?.subtotal ?? item?.total ?? 0)
@@ -87,98 +88,88 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
     return [['Pago aplicado', 'N/A', 'Q 0.00']];
   }
 
-  const grupos = [];
-  const gruposPorClave = new Map();
-  const enganche = normalizados.find((item) => item.tipo === 'enganche');
-  const cuotasTerreno = normalizados.filter((item) => item.tipo === 'cuota_terreno');
+  const filas = [];
+  const filasPorClave = new Map();
+  const ultimaCuotaPorMes = new Map();
 
-  const asegurarGrupo = (clave, base = {}) => {
-    if (!gruposPorClave.has(clave)) {
-      const grupo = {
-        clave,
-        orden: base.orden ?? grupos.length,
-        mes: base.mes || 'N/A',
-        cuotaReal: base.cuotaReal ?? null,
-        tieneEnganche: Boolean(base.tieneEnganche),
-        total: 0
-      };
-      gruposPorClave.set(clave, grupo);
-      grupos.push(grupo);
+  const obtenerEtiquetaCuota = (cuotaReal, esEnganche = false) => {
+    if (esEnganche) return 'Cuota 0';
+
+    let cuotaVisual = Number(cuotaReal || 0);
+    if (!Number.isInteger(cuotaVisual) || cuotaVisual <= 0) {
+      return 'Cuota';
     }
-    return gruposPorClave.get(clave);
+
+    if (usarCuotaCeroEnganche) {
+      cuotaVisual = Math.max(cuotaVisual - 1, 1);
+    }
+
+    return `Cuota ${cuotaVisual}`;
   };
 
-  cuotasTerreno.forEach((item) => {
-    asegurarGrupo(`mes:${item.mes}`, {
-      orden: item.orden,
-      mes: item.mes || 'N/A',
-      cuotaReal: item.cuotaReal,
-      tieneEnganche: false
-    });
-  });
+  const asegurarFila = (clave, base = {}) => {
+    if (!filasPorClave.has(clave)) {
+      const fila = {
+        clave,
+        orden: base.orden ?? filas.length,
+        concepto: base.concepto || 'Pago aplicado',
+        mes: base.mes || 'N/A',
+        total: 0
+      };
+      filasPorClave.set(clave, fila);
+      filas.push(fila);
+    }
 
-  if (enganche) {
-    const grupoEnganche = asegurarGrupo(`mes:${enganche.mes || 'N/A'}`, {
-      orden: enganche.orden,
-      mes: enganche.mes || 'N/A',
-      cuotaReal: 0,
-      tieneEnganche: true
-    });
-    grupoEnganche.tieneEnganche = true;
-    grupoEnganche.cuotaReal = 0;
-  }
-
-  if (!grupos.length) {
-    const primero = normalizados[0];
-    asegurarGrupo(`mes:${primero.mes || 'N/A'}`, {
-      orden: primero.orden,
-      mes: primero.mes || 'N/A',
-      cuotaReal: primero.tipo === 'enganche' ? 0 : primero.cuotaReal,
-      tieneEnganche: primero.tipo === 'enganche'
-    });
-  }
-
-  grupos.sort((a, b) => a.orden - b.orden);
-  const primerGrupo = grupos[0];
+    return filasPorClave.get(clave);
+  };
 
   normalizados.forEach((item) => {
-    let grupoDestino = null;
-
-    if ((item.tipo === 'cuota_terreno' || item.tipo === 'interes' || item.tipo === 'servicio') && item.mes && gruposPorClave.has(`mes:${item.mes}`)) {
-      grupoDestino = gruposPorClave.get(`mes:${item.mes}`);
-    } else if (item.tipo === 'mora' && item.mes && gruposPorClave.has(`mes:${item.mes}`)) {
-      grupoDestino = gruposPorClave.get(`mes:${item.mes}`);
-    } else {
-      grupoDestino = primerGrupo;
-    }
-
-    grupoDestino.total = Number((grupoDestino.total + item.monto).toFixed(2));
     if (item.tipo === 'enganche') {
-      grupoDestino.tieneEnganche = true;
-      grupoDestino.cuotaReal = 0;
+      const fila = asegurarFila(`enganche:${item.mes || item.orden}`, {
+        orden: item.orden,
+        concepto: obtenerEtiquetaCuota(0, true),
+        mes: item.mes || 'N/A'
+      });
+      fila.total = Number((fila.total + item.monto).toFixed(2));
+      return;
     }
-    if (item.tipo === 'cuota_terreno' && Number.isInteger(item.cuotaReal) && item.cuotaReal > 0) {
-      grupoDestino.cuotaReal = item.cuotaReal;
+
+    if (item.tipo === 'cuota_terreno') {
+      const clave = `cuota:${item.mes || item.orden}:${item.cuotaReal || 'sin-cuota'}`;
+      const fila = asegurarFila(clave, {
+        orden: item.orden,
+        concepto: obtenerEtiquetaCuota(item.cuotaReal, false),
+        mes: item.mes || 'N/A'
+      });
+      fila.total = Number((fila.total + item.monto).toFixed(2));
+      if (item.mes) {
+        ultimaCuotaPorMes.set(item.mes, clave);
+      }
+      return;
     }
+
+    if (item.tipo === 'interes' || item.tipo === 'mora') {
+      const claveCuota = item.mes ? ultimaCuotaPorMes.get(item.mes) : null;
+      if (claveCuota && filasPorClave.has(claveCuota)) {
+        const fila = filasPorClave.get(claveCuota);
+        fila.total = Number((fila.total + item.monto).toFixed(2));
+        return;
+      }
+    }
+
+    const clave = `${item.tipo}:${item.mes || 'sin-mes'}:${item.conceptoOriginal}:${item.orden}`;
+    const fila = asegurarFila(clave, {
+      orden: item.orden,
+      concepto: item.conceptoOriginal.replace(/_/g, ' '),
+      mes: item.mes || 'N/A'
+    });
+    fila.total = Number((fila.total + item.monto).toFixed(2));
   });
 
-  return grupos
-    .filter((grupo) => grupo.total > 0)
+  return filas
+    .filter((fila) => fila.total > 0)
     .sort((a, b) => a.orden - b.orden)
-    .map((grupo) => {
-      let cuotaVisual = grupo.cuotaReal;
-      if (grupo.tieneEnganche) {
-        cuotaVisual = 0;
-      } else if (Number.isInteger(cuotaVisual) && cuotaVisual > 0 && usarCuotaCeroEnganche) {
-        cuotaVisual = Math.max(cuotaVisual - 1, 1);
-      }
-
-      const concepto = Number.isInteger(cuotaVisual)
-        ? `Cuota ${cuotaVisual}`
-        : 'Pago aplicado';
-
-      return [concepto, texto(grupo.mes), `Q ${grupo.total.toFixed(2)}`];
-    });
+    .map((fila) => [fila.concepto, texto(fila.mes), `Q ${fila.total.toFixed(2)}`]);
 };
 
 /**
