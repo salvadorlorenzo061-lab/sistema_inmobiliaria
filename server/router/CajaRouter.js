@@ -1439,10 +1439,8 @@ router.post("/procesar-pago", (req, res) => {
             .filter((item) => Number.isFinite(item.monto_mora) && item.monto_mora > 0)
             .filter((item) => {
                 const mes = String(item?.mes_atrasado || '').trim();
-                if (!mes || !esMesVencidoParaMora(mes)) {
-                    return false;
-                }
-                return (mesesAProcesar || []).some((mesPago) => compararMesesMora(mesPago, mes));
+                // Solo valida que el mes sea vencido; no exige coincidencia con meses del pago
+                return !mes || esMesVencidoParaMora(mes);
             })
         : [];
 

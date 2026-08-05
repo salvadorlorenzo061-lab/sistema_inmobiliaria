@@ -435,39 +435,13 @@ const Caja = () => {
     };
 
     const obtenerMorasAplicables = (mesesLista = []) => {
-        const mesesFinanciados = (Array.isArray(mesesLista) ? mesesLista : [])
-            .filter((mes) => !esMesEngancheVisual(mes));
-
-        if (!mesesFinanciados.length || !Array.isArray(morasPendientes) || !morasPendientes.length) {
+        if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
             return [];
         }
-
-        const mesesSeleccionadosKeys = mesesFinanciados
-            .map((mes) => obtenerMesKeyLocal(mes))
-            .filter(Boolean);
-
+        // Retorna TODAS las moras vencidas pendientes — si el residente está al día no hay registros
         return morasPendientes.filter((mora) => {
             const mesMora = String(mora?.mes_atrasado || '').trim();
-            if (!mesMora || !esMesVencidoParaMoraLocal(mesMora)) {
-                return false;
-            }
-
-            const keyMora = obtenerMesKeyLocal(mesMora);
-            if (!keyMora) {
-                return false;
-            }
-
-            return mesesSeleccionadosKeys.some((keySeleccionado) => {
-                if (keySeleccionado.anio && keyMora.anio) {
-                    return keySeleccionado.mes === keyMora.mes && keySeleccionado.anio === keyMora.anio;
-                }
-
-                if (keySeleccionado.anio || keyMora.anio) {
-                    return false;
-                }
-
-                return keySeleccionado.mes === keyMora.mes;
-            });
+            return mesMora && esMesVencidoParaMoraLocal(mesMora);
         });
     };
 
