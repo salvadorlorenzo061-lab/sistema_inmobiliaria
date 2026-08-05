@@ -337,6 +337,15 @@ const Caja = () => {
         return Math.max(numero - 1, 0);
     };
 
+    const normalizarMesClave = (valor = '') => String(valor || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '').split(' ')[0] || '');
+
     const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null) => {
         const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
         const primerMesPendiente = mesesLista[0] || '';
@@ -1387,10 +1396,23 @@ const Caja = () => {
                 .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
             : 0;
         const cargosExtraMes = esCuotaEnganche ? montoCargosExtraSeleccionado : 0;
-        const moraMes = morasPendientes
-            .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
-            .filter((mora) => String(mora.mes_atrasado || '').trim().toLowerCase() === String(mesEtiqueta || '').trim().toLowerCase())
-            .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
+        const mesesFinanciadosSeleccionados = (mesesSeleccionados || []).filter((mes) => !esMesEngancheVisual(mes));
+        const primerMesFinanciado = mesesFinanciadosSeleccionados[0] || '';
+        const moraMes = esCuotaEnganche
+            ? 0
+            : morasPendientes
+                .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
+                .reduce((sum, mora) => {
+                    const mesMora = String(mora.mes_atrasado || '').trim();
+                    const claveMoraExacta = normalizarMesClave(mesMora);
+                    const claveMoraBase = obtenerClaveMesBase(mesMora);
+                    const coincideExacto = claveMoraExacta && claveMoraExacta === normalizarMesClave(mesEtiqueta);
+                    const coincideBase = claveMoraBase && claveMoraBase === obtenerClaveMesBase(mesEtiqueta);
+                    const sinCoincidenciaPeroPrimeraFinanciada = !coincideExacto && !coincideBase && primerMesFinanciado && mesEtiqueta === primerMesFinanciado;
+                    return (coincideExacto || coincideBase || sinCoincidenciaPeroPrimeraFinanciada)
+                        ? sum + Number(mora.monto_mora || 0)
+                        : sum;
+                }, 0);
         if (esCuotaEnganche) {
             const engancheBaseVista = Math.max(
                 Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),

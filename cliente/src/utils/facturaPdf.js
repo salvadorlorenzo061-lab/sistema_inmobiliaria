@@ -71,6 +71,15 @@ const inferirTipoConcepto = (detalle = {}) => {
   return 'otro';
 };
 
+const normalizarMesClave = (valor = '') => String(valor || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '').split(' ')[0] || '');
+
 export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   const usarCuotaCeroEnganche = Boolean(options?.usarCuotaCeroEnganche);
   const normalizados = (Array.isArray(detalles) ? detalles : [])
@@ -149,9 +158,26 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
     }
 
     if (item.tipo === 'interes' || item.tipo === 'mora') {
-      const claveCuota = item.mes ? ultimaCuotaPorMes.get(item.mes) : null;
-      if (claveCuota && filasPorClave.has(claveCuota)) {
-        const fila = filasPorClave.get(claveCuota);
+      const clavesCuota = [...filasPorClave.keys()].filter((clave) => clave.startsWith('cuota:'));
+      const claveCuotaExacta = item.mes
+        ? clavesCuota.find((clave) => {
+            const fila = filasPorClave.get(clave);
+            return normalizarMesClave(fila?.mes) === normalizarMesClave(item.mes);
+          })
+        : null;
+      const claveCuotaBase = item.mes && !claveCuotaExacta
+        ? clavesCuota.find((clave) => {
+            const fila = filasPorClave.get(clave);
+            return obtenerClaveMesBase(fila?.mes) === obtenerClaveMesBase(item.mes);
+          })
+        : null;
+      const primeraCuotaFinanciada = !claveCuotaExacta && !claveCuotaBase
+        ? clavesCuota[0]
+        : null;
+      const claveDestino = claveCuotaExacta || claveCuotaBase || primeraCuotaFinanciada;
+
+      if (claveDestino && filasPorClave.has(claveDestino)) {
+        const fila = filasPorClave.get(claveDestino);
         fila.total = Number((fila.total + item.monto).toFixed(2));
         return;
       }
