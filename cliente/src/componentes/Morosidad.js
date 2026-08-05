@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
@@ -6,181 +6,65 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { API_BASE_URL } from '../config';
 
 function Morosidad() {
-  const [id_contrato, setId_contrato] = useState("");
-  const [monto_mora, setMonto_mora] = useState("");
-  const [dias_retraso, setDias_retraso] = useState("");
-  const [estado] = useState("pendiente");
-  const [mesesPendientes, setMesesPendientes] = useState([]);
-  const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
-  const [cargandoMeses, setCargandoMeses] = useState(false);
-  
   const [morosidades, setMorosidades] = useState([]);
-  const [contratos, setContratos] = useState([]);
-  const [showModal, setShowModal] = useState(false);
+  const [procesando, setProcesando] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
   const API_URL = `${API_BASE_URL}/api/morosidad`;
-  const CONTRATOS_API_URL = `${API_BASE_URL}/api/contratos_residentes`;
 
-  const cargarMesesPendientes = useCallback(async (contratoId) => {
-    if (!contratoId) {
-      setMesesPendientes([]);
-      setMesesSeleccionados([]);
-      return;
-    }
-
-    setCargandoMeses(true);
-    try {
-      const res = await Axios.get(`${API_URL}/meses-pendientes`, { params: { id_contrato: contratoId } });
-      const lista = Array.isArray(res.data?.meses) ? res.data.meses : [];
-      setMesesPendientes(lista);
-      setMesesSeleccionados(lista.length ? [lista[0]] : []);
-    } catch {
-      setMesesPendientes([]);
-      setMesesSeleccionados([]);
-    } finally {
-      setCargandoMeses(false);
-    }
-  }, [API_URL]);
-
-  const cargarDatos = useCallback(() => Promise.all([
-    Axios.get(API_URL)
-      .then(res => setMorosidades(res.data || []))
-      .catch(() => setMorosidades([])),
-    Axios.get(CONTRATOS_API_URL)
-      .then(res => setContratos(res.data || []))
-      .catch(() => setContratos([]))
-  ]), [API_URL, CONTRATOS_API_URL]);
-
-  useEffect(() => { 
-    Axios.post(`${API_URL}/generar-automatico`)
-      .catch(() => null)
-      .finally(() => {
-        cargarDatos();
-      });
-  }, [API_URL, cargarDatos]);
+  const cargarMorosidades = () => {
+    Axios.get(API_URL).then(res => setMorosidades(res.data));
+  };
 
   useEffect(() => {
-    if (showModal) {
-      cargarMesesPendientes(id_contrato);
-    }
-  }, [showModal, id_contrato, cargarMesesPendientes]);
+    const inicializarMorosidad = async () => {
+      try {
+        await Axios.post(`${API_URL}/generar-automatico`);
+      } catch (_error) {
+        // Si falla la generacion, igual cargamos listado para no bloquear la pantalla.
+      } finally {
+        cargarMorosidades();
+      }
+    };
 
-  const contratoPorId = new Map((contratos || []).map((c) => [String(c.id_contrato), c]));
-
-  const getLabelContrato = (idContrato) => {
-    const contrato = contratoPorId.get(String(idContrato));
-    if (!contrato) {
-      return `Contrato #${idContrato}`;
-    }
-
-    const codigo = contrato.codigo_contrato || `#${contrato.id_contrato}`;
-    const residente = contrato.nombre_residente || 'Sin residente';
-    const identificacion = contrato.numero_identificacion ? ` · ${contrato.numero_identificacion}` : '';
-    return `${codigo} - ${residente}${identificacion}`;
-  };
+    inicializarMorosidad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const actualizarEstado = (id, nuevoEstado) => {
     Axios.put(`${API_URL}/actualizar-estado`, { id_morosidad: id, estado: nuevoEstado })
     .then(() => {
-        cargarDatos();
+        cargarMorosidades();
         Swal.fire({ icon: "success", title: "Estado Actualizado", timer: 1500, showConfirmButton: false });
     });
   };
 
-  const getUsuarioActivo = () => {
+  const generarMoraAutomatica = async () => {
+    if (procesando) return;
+
+    setProcesando(true);
     try {
-      return JSON.parse(localStorage.getItem('usuario') || '{}');
-    } catch {
-      return {};
-    }
-  };
+      const res = await Axios.post(`${API_URL}/generar-automatico`);
+      await cargarMorosidades();
 
-  const eliminarMora = async (mora) => {
-    const confirmacion = await Swal.fire({
-      icon: 'warning',
-      title: `¿Eliminar la mora #${mora.id_morosidad}?`,
-      html: `<div class="text-start">
-               <div><strong>Contrato:</strong> ${getLabelContrato(mora.id_contrato)}</div>
-               <div><strong>Mes atrasado:</strong> ${mora.mes_atrasado}</div>
-               <div><strong>Monto:</strong> Q${Number(mora.monto_mora || 0).toFixed(2)}</div>
-             </div>
-             <p class="mt-2 mb-0">Esta acción no se puede deshacer.</p>`,
-      showCancelButton: true,
-      confirmButtonText: 'Sí, eliminar',
-      cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#dc3545'
-    });
-
-    if (!confirmacion.isConfirmed) return;
-
-    const usuario = getUsuarioActivo();
-
-    try {
-      await Axios.delete(`${API_URL}/eliminar/${mora.id_morosidad}`, {
-        headers: {
-          'x-user-id': usuario?.id_usuario || '',
-          'x-user-name': usuario?.nombre_usuario || usuario?.nombre || 'DESCONOCIDO'
-        }
+      const generadas = Number(res?.data?.generated || 0);
+      Swal.fire({
+        icon: 'success',
+        title: 'Mora actualizada',
+        text: generadas > 0
+          ? `Se generaron ${generadas} mora(s) vencida(s).`
+          : 'No se generaron moras nuevas. Todo esta al dia o aun no vence.'
       });
-
-      await cargarDatos();
-      Swal.fire({ icon: 'success', title: 'Mora eliminada', timer: 1500, showConfirmButton: false });
     } catch (error) {
       Swal.fire({
         icon: 'error',
-        title: 'No se pudo eliminar',
-        text: error?.response?.data?.message || 'Ocurrió un error al eliminar la mora.'
+        title: 'Error',
+        text: error?.response?.data?.message || 'No se pudo generar la mora automatica.'
       });
+    } finally {
+      setProcesando(false);
     }
-  };
-
-  const addMora = async () => {
-    if (!id_contrato) {
-      Swal.fire({ icon: 'warning', title: 'Selecciona un contrato' });
-      return;
-    }
-
-    if (!mesesSeleccionados.length) {
-      Swal.fire({ icon: 'warning', title: 'Selecciona al menos un mes pendiente' });
-      return;
-    }
-
-    try {
-      await Promise.all(mesesSeleccionados.map((mes_atrasado) => Axios.post(`${API_URL}/crear`, {
-        id_contrato,
-        mes_atrasado,
-        monto_mora,
-        dias_retraso,
-        estado
-      })));
-
-      await cargarDatos();
-      setShowModal(false);
-      setId_contrato("");
-      setMesesPendientes([]);
-      setMesesSeleccionados([]);
-      setMonto_mora("");
-      setDias_retraso("");
-      Swal.fire("Agregado", "Mora generada manualmente", "success");
-    } catch (error) {
-      Swal.fire({
-        icon: 'error',
-        title: 'No se pudo aplicar la mora',
-        text: error?.response?.data?.detail || error?.response?.data?.message || 'Revisa el contrato y los meses seleccionados'
-      });
-    }
-  };
-
-  const toggleMesSeleccionado = (mes) => {
-    setMesesSeleccionados((actuales) => {
-      if (actuales.includes(mes)) {
-        return actuales.filter((item) => item !== mes);
-      }
-
-      return [...actuales, mes];
-    });
   };
 
   // Paginación (sin filtro)
@@ -192,7 +76,9 @@ function Morosidad() {
       <div className="module-header">
       <div className="d-flex justify-content-between align-items-center bg-light p-3">
         <h4>CONTROL DE MOROSIDAD</h4>
-        <button className="btn btn-warning fw-bold" onClick={() => setShowModal(true)}>➕ GENERAR MORA</button>
+        <button className="btn btn-warning fw-bold" onClick={generarMoraAutomatica} disabled={procesando}>
+          {procesando ? 'Generando...' : '⚙️ GENERAR MORA AUTOMATICA'}
+        </button>
       </div>
       </div>
       
@@ -206,14 +92,13 @@ function Morosidad() {
             <th>MONTO PENALIZACIÓN</th>
             <th>ESTADO</th>
             <th>CAMBIAR ESTADO</th>
-            <th>OPCIONES</th>
           </tr>
         </thead>
         <tbody>
           {morosidades.map((val) => (
             <tr key={val.id_morosidad}>
               <td>#{val.id_morosidad}</td>
-              <td>{getLabelContrato(val.id_contrato)}</td>
+              <td>Contrato #{val.id_contrato}</td>
               <td>{val.mes_atrasado}</td>
               <td>{val.dias_retraso} días</td>
               <td className="fw-bold">Q{val.monto_mora}</td>
@@ -229,18 +114,6 @@ function Morosidad() {
                     <option value="anulado">Anulado</option>
                 </select>
               </td>
-              <td>
-                <button
-                  className="btn btn-danger btn-sm fw-bold"
-                  onClick={() => eliminarMora(val)}
-                  title={val.estado === 'pagado'
-                    ? 'No se puede eliminar una mora ya cobrada'
-                    : 'Eliminar esta mora'}
-                  disabled={val.estado === 'pagado'}
-                >
-                  ELIMINAR
-                </button>
-              </td>
             </tr>
           ))}
         </tbody>
@@ -255,55 +128,6 @@ function Morosidad() {
         endIndex={endIndex}
         itemsCount={morosidades.length}
       />
-
-      {/* MODAL CREAR MORA MANUAL */}
-      {showModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog">
-            <div className="modal-content border-danger">
-              <div className="modal-header bg-danger text-white"><h5 className="modal-title">Aplicar Mora Manual</h5></div>
-              <div className="modal-body">
-                <select className="form-select mb-2" value={id_contrato} onChange={e => setId_contrato(e.target.value)}>
-                  <option value="">-- Contrato a Penalizar --</option>
-                  {contratos.map(c => (
-                    <option key={c.id_contrato} value={c.id_contrato}>
-                      {getLabelContrato(c.id_contrato)}
-                    </option>
-                  ))}
-                </select>
-                <div className="border rounded p-2 mb-2 bg-light">
-                  <div className="fw-bold mb-2">Meses pendientes</div>
-                  {cargandoMeses ? (
-                    <div className="text-muted">Cargando meses pendientes...</div>
-                  ) : mesesPendientes.length ? (
-                    <div className="d-grid gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                      {mesesPendientes.map((mes) => (
-                        <label key={mes} className="form-check d-flex align-items-center gap-2 mb-0">
-                          <input
-                            type="checkbox"
-                            className="form-check-input m-0"
-                            checked={mesesSeleccionados.includes(mes)}
-                            onChange={() => toggleMesSeleccionado(mes)}
-                          />
-                          <span className="form-check-label">{mes}</span>
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-muted">No hay meses pendientes para este contrato.</div>
-                  )}
-                </div>
-                <input type="number" placeholder="Días de Retraso" className="form-control mb-2" onChange={e => setDias_retraso(e.target.value)} />
-                <input type="number" step="0.01" placeholder="Monto Penalización (Q)" className="form-control mb-2" onChange={e => setMonto_mora(e.target.value)} />
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cerrar</button>
-                <button className="btn btn-danger" onClick={addMora}>Aplicar Cargo</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

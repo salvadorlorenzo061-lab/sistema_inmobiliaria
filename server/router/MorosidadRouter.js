@@ -91,6 +91,43 @@ const parseFecha = (value) => {
 
 const labelMes = (date) => `${NOMBRES_MESES[date.getMonth()]} ${date.getFullYear()}`;
 
+const parsearMesAtrasado = (label) => {
+    const texto = String(label || '').trim().toLowerCase();
+    if (!texto) return null;
+
+    const match = texto.match(/^([a-záéíóúñ]+)\s+(\d{4})$/i);
+    if (!match) return null;
+
+    const normalizar = (value) => value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+    const mesTexto = normalizar(match[1]);
+    const anio = Number(match[2]);
+
+    const mesesLookup = {
+        enero: 0,
+        febrero: 1,
+        marzo: 2,
+        abril: 3,
+        mayo: 4,
+        junio: 5,
+        julio: 6,
+        agosto: 7,
+        septiembre: 8,
+        setiembre: 8,
+        octubre: 9,
+        noviembre: 10,
+        diciembre: 11
+    };
+
+    const mes = mesesLookup[mesTexto];
+    if (!Number.isInteger(mes) || !Number.isInteger(anio)) return null;
+
+    return new Date(anio, mes, 1);
+};
+
 router.get('/meses-pendientes', async (req, res) => {
     try {
         const idContrato = Number(req.query?.id_contrato || 0);
@@ -398,6 +435,23 @@ router.post("/crear", async (req, res) => {
 
         if (!mesAtrasado) {
             return res.status(400).json({ success: false, message: 'Debes indicar el mes atrasado.' });
+        }
+
+        const mesAtrasadoDate = parsearMesAtrasado(mesAtrasado);
+        if (!mesAtrasadoDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'Mes atrasado invalido. Usa el formato "Mes YYYY", por ejemplo "Agosto 2026".'
+            });
+        }
+
+        const hoy = new Date();
+        const inicioMesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        if (mesAtrasadoDate > inicioMesActual) {
+            return res.status(400).json({
+                success: false,
+                message: 'No se puede aplicar mora a meses futuros.'
+            });
         }
 
         const existeContratoRows = await queryAsync(
