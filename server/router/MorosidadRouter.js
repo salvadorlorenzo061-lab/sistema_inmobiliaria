@@ -305,11 +305,13 @@ const calcularMorasAutomaticas = async () => {
             const etiquetaMes = labelMes(cursor);
 
             const fechaVencimiento = new Date(cursor.getFullYear(), cursor.getMonth(), diaPagoLimite);
-            const vencido = hoy > fechaVencimiento;
+            const DIAS_GRACIA = 5;
+            const fechaLimiteConGracia = new Date(fechaVencimiento.getTime() + (DIAS_GRACIA * 24 * 60 * 60 * 1000));
+            const vencido = hoy > fechaLimiteConGracia;
 
             if (vencido && !pagadosSet.has(etiquetaMes) && !morasSet.has(etiquetaMes)) {
                 const msPorDia = 1000 * 60 * 60 * 24;
-                const diasRetraso = Math.max(Math.floor((hoy - fechaVencimiento) / msPorDia), 1);
+                const diasRetraso = Math.max(Math.floor((hoy - fechaLimiteConGracia) / msPorDia), 1);
                 const moraCalculada = moraContrato > 0
                     ? Number(moraContrato.toFixed(2))
                     : 0;

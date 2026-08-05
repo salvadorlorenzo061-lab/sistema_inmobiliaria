@@ -438,7 +438,14 @@ const Caja = () => {
         if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
             return [];
         }
-        // Retorna TODAS las moras vencidas pendientes — si el residente está al día no hay registros
+        // Mora solo aplica sobre cuota financiada, no sobre el enganche
+        const mesesFinanciados = (Array.isArray(mesesLista) ? mesesLista : [])
+            .filter((mes) => !esMesEngancheVisual(mes));
+
+        if (!mesesFinanciados.length) {
+            return [];
+        }
+
         return morasPendientes.filter((mora) => {
             const mesMora = String(mora?.mes_atrasado || '').trim();
             return mesMora && esMesVencidoParaMoraLocal(mesMora);
