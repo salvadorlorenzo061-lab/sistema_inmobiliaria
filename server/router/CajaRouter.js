@@ -83,6 +83,78 @@ const parsearEtiquetaMes = (mesTexto = '') => {
 
 const etiquetaMesDesdeFecha = (fecha) => `${NOMBRES_MESES[fecha.getMonth()]} ${fecha.getFullYear()}`;
 
+const obtenerIdentificadorMes = (mesTexto = '') => {
+    const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+    if (!limpio) return null;
+
+    const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+    if (conAnio) {
+        return {
+            mes: normalizeText(conAnio[1]),
+            anio: Number(conAnio[2])
+        };
+    }
+
+    const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+    if (soloMes) {
+        return {
+            mes: normalizeText(soloMes[1]),
+            anio: null
+        };
+    }
+
+    return {
+        mes: normalizeText(limpio),
+        anio: null
+    };
+};
+
+const compararMesesMora = (mesA = '', mesB = '') => {
+    const keyA = obtenerIdentificadorMes(mesA);
+    const keyB = obtenerIdentificadorMes(mesB);
+
+    if (!keyA || !keyB) {
+        return false;
+    }
+
+    if (keyA.anio && keyB.anio) {
+        return keyA.mes === keyB.mes && keyA.anio === keyB.anio;
+    }
+
+    if (keyA.anio || keyB.anio) {
+        return false;
+    }
+
+    return keyA.mes === keyB.mes;
+};
+
+const esMesVencidoParaMora = (mesTexto = '') => {
+    const hoy = new Date();
+    const hoyMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+    if (!limpio) return false;
+
+    const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+    if (conAnio) {
+        const indiceMes = obtenerIndiceMes(conAnio[1]);
+        if (indiceMes >= 0) {
+            const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
+            return fechaMes <= hoyMes;
+        }
+    }
+
+    const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+    if (soloMes) {
+        const indiceMes = obtenerIndiceMes(soloMes[1]);
+        if (indiceMes >= 0) {
+            const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
+            return fechaMes <= hoyMes;
+        }
+    }
+
+    return false;
+};
+
 const obtenerNumeroCuotaDesdeFechas = (fechaInicioContrato, fechaMes) => {
     if (!(fechaInicioContrato instanceof Date) || Number.isNaN(fechaInicioContrato.getTime())) return null;
     if (!(fechaMes instanceof Date) || Number.isNaN(fechaMes.getTime())) return null;
@@ -1365,6 +1437,13 @@ router.post("/procesar-pago", (req, res) => {
                 monto_mora: Number(item?.monto_mora || 0)
             }))
             .filter((item) => Number.isFinite(item.monto_mora) && item.monto_mora > 0)
+            .filter((item) => {
+                const mes = String(item?.mes_atrasado || '').trim();
+                if (!mes || !esMesVencidoParaMora(mes)) {
+                    return false;
+                }
+                return (mesesAProcesar || []).some((mesPago) => compararMesesMora(mesPago, mes));
+            })
         : [];
 
     const moraTotalSeleccionada = parseFloat(
@@ -1565,16 +1644,11 @@ router.post("/procesar-pago", (req, res) => {
             const montoCuotaBaseContrato = Number.isFinite(montoCuotaContratoRaw) && montoCuotaContratoRaw > 0
                 ? redondear2(montoCuotaContratoRaw)
                 : 0;
-            const montoCuotaBaseEnteraContrato = Math.floor(Math.max(montoCuotaBaseContrato, 0));
             const fechaInicioContrato = (fechaCompraContrato && !Number.isNaN(fechaCompraContrato.getTime()))
                 ? new Date(fechaCompraContrato.getFullYear(), fechaCompraContrato.getMonth(), 1)
                 : ((fechaFirmaContrato && !Number.isNaN(fechaFirmaContrato.getTime()))
                     ? new Date(fechaFirmaContrato.getFullYear(), fechaFirmaContrato.getMonth(), 1)
                     : null);
-
-            const cuotasRestantesContrato = (montoCuotaContratoRaw > 0 && saldoActual > 0)
-                ? Math.max(Math.ceil(saldoActual / montoCuotaContratoRaw), 1)
-                : Math.max(mesesAProcesar.length, 1);
             const cuotasBaseInteres = Number.isInteger(cuotasContratoBase) && cuotasContratoBase > 0
                 ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
@@ -1582,6 +1656,28 @@ router.post("/procesar-pago", (req, res) => {
             const capitalTotalContrato = redondear2(Math.max(saldoActual + capitalPagadoContrato, 0));
             const capitalBaseContrato = redondear2(Math.max(capitalTotalContrato - engancheContrato, 0));
             const capitalBaseInteresContrato = redondear2(Math.max(capitalBaseContrato, 0));
+            const cuotaCapitalTeoricaContrato = (capitalBaseInteresContrato > 0 && cuotasBaseInteres > 0)
+                ? redondear2(capitalBaseInteresContrato / cuotasBaseInteres)
+                : 0;
+            const referenciaCuotaCapitalContrato = montoCuotaBaseContrato > 0
+                ? montoCuotaBaseContrato
+                : cuotaCapitalTeoricaContrato;
+            const desfaseRelativoCuotaContrato = cuotaCapitalTeoricaContrato > 0
+                ? Math.abs(referenciaCuotaCapitalContrato - cuotaCapitalTeoricaContrato) / cuotaCapitalTeoricaContrato
+                : 0;
+            const usarCuotaCapitalTeoricaContrato = cuotaCapitalTeoricaContrato > 0
+                && (referenciaCuotaCapitalContrato <= 0 || desfaseRelativoCuotaContrato > 0.1);
+            const montoCuotaCapitalNormalizadaContrato = usarCuotaCapitalTeoricaContrato
+                ? cuotaCapitalTeoricaContrato
+                : referenciaCuotaCapitalContrato;
+            const montoCuotaBaseEnteraContrato = Math.floor(Math.max(montoCuotaCapitalNormalizadaContrato, 0));
+            const cuotaBaseParaSaldo = montoCuotaCapitalNormalizadaContrato > 0
+                ? montoCuotaCapitalNormalizadaContrato
+                : montoCuotaContratoRaw;
+
+            const cuotasRestantesContrato = (cuotaBaseParaSaldo > 0 && saldoActual > 0)
+                ? Math.max(Math.ceil(saldoActual / cuotaBaseParaSaldo), 1)
+                : Math.max(mesesAProcesar.length, 1);
             const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
             const tasaMensualContrato = interesPorcentajeContrato > 0
                 ? ((interesPorcentajeContrato / 100 / 12) * FACTOR_AJUSTE_TASA_MENSUAL)

@@ -145,7 +145,7 @@ const Caja = () => {
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
         const montoTotalContrato = Math.max(parseFloat(contrato?.monto_total_original || contrato?.monto_total_contrato || 0), 0);
         const enganche = Math.max(parseFloat(contrato?.enganche || 0), 0);
-        const capitalPorCuota = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
+        const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
         const interesPorcentaje = Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
         const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
@@ -164,10 +164,20 @@ const Caja = () => {
 
         const capitalTotalContrato = montoTotalContrato > 0
             ? parseFloat(Math.max(montoTotalContrato - enganche, 0).toFixed(2))
-            : ((capitalPorCuota > 0 && cuotasPactadas > 0)
-                ? parseFloat((capitalPorCuota * cuotasPactadas).toFixed(2))
+            : ((capitalPorCuotaContrato > 0 && cuotasPactadas > 0)
+                ? parseFloat((capitalPorCuotaContrato * cuotasPactadas).toFixed(2))
                 : parseFloat(saldoPendiente.toFixed(2)));
         const capitalBaseInteres = Math.max(parseFloat(capitalTotalContrato.toFixed(2)), 0);
+        const cuotaCapitalTeorica = (capitalBaseInteres > 0 && cuotasPactadas > 0)
+            ? parseFloat((capitalBaseInteres / cuotasPactadas).toFixed(2))
+            : 0;
+        const referenciaCuotaCapital = capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica;
+        const desfaseRelativoCuota = cuotaCapitalTeorica > 0
+            ? Math.abs(referenciaCuotaCapital - cuotaCapitalTeorica) / cuotaCapitalTeorica
+            : 0;
+        const usarCuotaCapitalTeorica = cuotaCapitalTeorica > 0
+            && (referenciaCuotaCapital <= 0 || desfaseRelativoCuota > 0.1);
+        const capitalPorCuota = usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital;
         const cuotaMensualAmortizada = calcularCuotaAmortizada(capitalBaseInteres, tasaMensual, cuotasPactadas);
         const cuotaMensualConInteres = parseFloat(cuotaMensualAmortizada.toFixed(2));
         const interesTotalContrato = (capitalBaseInteres > 0 && cuotasPactadas > 0)
@@ -344,6 +354,7 @@ const Caja = () => {
         .trim();
 
     const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '').split(' ')[0] || '');
+    const tieneAnioEnEtiquetaMes = (valor = '') => /\b(19|20)\d{2}\b/.test(String(valor || ''));
 
     const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null) => {
         const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
@@ -352,6 +363,66 @@ const Caja = () => {
             ? enganchePendiente
             : Math.max(Number(enganchePendienteValor || 0), 0);
         return engancheActual > 0 && primerMesPendiente && mesEtiqueta === primerMesPendiente;
+    };
+
+    const obtenerMesKeyLocal = (mesTexto = '') => {
+        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+        if (!limpio) return null;
+
+        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+        if (conAnio) {
+            return {
+                mes: normalizarMesClave(conAnio[1]),
+                anio: Number(conAnio[2])
+            };
+        }
+
+        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+        if (soloMes) {
+            return {
+                mes: normalizarMesClave(soloMes[1]),
+                anio: null
+            };
+        }
+
+        return {
+            mes: normalizarMesClave(limpio),
+            anio: null
+        };
+    };
+
+    const esMesVencidoParaMoraLocal = (mesTexto = '') => {
+        const hoy = new Date();
+        const hoyMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+        if (!limpio) return false;
+
+        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+        if (conAnio) {
+            const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
+            if (indiceMes >= 0) {
+                const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
+                return fechaMes <= hoyMes;
+            }
+        }
+
+        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+        if (soloMes) {
+            const indiceMes = obtenerIndiceMesLocal(soloMes[1]);
+            if (indiceMes >= 0) {
+                const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
+                return fechaMes <= hoyMes;
+            }
+        }
+
+        return false;
+    };
+
+    const obtenerIndiceMesLocal = (mesTexto = '') => {
+        const objetivo = normalizarMesClave(mesTexto);
+        if (!objetivo) return -1;
+        const nombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        return nombres.findIndex((nombre) => nombre === objetivo);
     };
 
     const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null) => {
@@ -371,14 +442,32 @@ const Caja = () => {
             return [];
         }
 
-        const clavesExactas = new Set(mesesFinanciados.map((mes) => normalizarMesClave(mes)));
-        const clavesBase = new Set(mesesFinanciados.map((mes) => obtenerClaveMesBase(mes)));
+        const mesesSeleccionadosKeys = mesesFinanciados
+            .map((mes) => obtenerMesKeyLocal(mes))
+            .filter(Boolean);
 
         return morasPendientes.filter((mora) => {
             const mesMora = String(mora?.mes_atrasado || '').trim();
-            const claveExacta = normalizarMesClave(mesMora);
-            const claveBase = obtenerClaveMesBase(mesMora);
-            return (claveExacta && clavesExactas.has(claveExacta)) || (claveBase && clavesBase.has(claveBase));
+            if (!mesMora || !esMesVencidoParaMoraLocal(mesMora)) {
+                return false;
+            }
+
+            const keyMora = obtenerMesKeyLocal(mesMora);
+            if (!keyMora) {
+                return false;
+            }
+
+            return mesesSeleccionadosKeys.some((keySeleccionado) => {
+                if (keySeleccionado.anio && keyMora.anio) {
+                    return keySeleccionado.mes === keyMora.mes && keySeleccionado.anio === keyMora.anio;
+                }
+
+                if (keySeleccionado.anio || keyMora.anio) {
+                    return false;
+                }
+
+                return keySeleccionado.mes === keyMora.mes;
+            });
         });
     };
 
