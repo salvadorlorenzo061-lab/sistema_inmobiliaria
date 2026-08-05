@@ -1396,23 +1396,7 @@ const Caja = () => {
                 .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
             : 0;
         const cargosExtraMes = esCuotaEnganche ? montoCargosExtraSeleccionado : 0;
-        const mesesFinanciadosSeleccionados = (mesesSeleccionados || []).filter((mes) => !esMesEngancheVisual(mes));
-        const primerMesFinanciado = mesesFinanciadosSeleccionados[0] || '';
-        const moraMes = esCuotaEnganche
-            ? 0
-            : morasPendientes
-                .filter((mora) => morasSeleccionadas.includes(Number(mora.id_morosidad)))
-                .reduce((sum, mora) => {
-                    const mesMora = String(mora.mes_atrasado || '').trim();
-                    const claveMoraExacta = normalizarMesClave(mesMora);
-                    const claveMoraBase = obtenerClaveMesBase(mesMora);
-                    const coincideExacto = claveMoraExacta && claveMoraExacta === normalizarMesClave(mesEtiqueta);
-                    const coincideBase = claveMoraBase && claveMoraBase === obtenerClaveMesBase(mesEtiqueta);
-                    const sinCoincidenciaPeroPrimeraFinanciada = !coincideExacto && !coincideBase && primerMesFinanciado && mesEtiqueta === primerMesFinanciado;
-                    return (coincideExacto || coincideBase || sinCoincidenciaPeroPrimeraFinanciada)
-                        ? sum + Number(mora.monto_mora || 0)
-                        : sum;
-                }, 0);
+        const moraMes = esCuotaEnganche ? 0 : montoMoraActual;
         if (esCuotaEnganche) {
             const engancheBaseVista = Math.max(
                 Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),
@@ -1446,6 +1430,8 @@ const Caja = () => {
         .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
+    const mesesFinanciadosSeleccionadosVista = (mesesSeleccionados || []).filter((mes) => !esMesEngancheVisual(mes));
+    const moraTotalDistribuidaVista = parseFloat((montoMoraActual * mesesFinanciadosSeleccionadosVista.length).toFixed(2));
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
     const tieneEnganchePendiente = enganchePendiente > 0;
     const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
@@ -1791,10 +1777,10 @@ const Caja = () => {
                                             Total financiado: Q{totalSeleccionCapitalInteres.toFixed(2)}
                                             <br />
                                             Servicios: Q{montoServiciosSeleccionado.toFixed(2)}
-                                            {montoMoraActual > 0 && (
+                                            {moraTotalDistribuidaVista > 0 && (
                                                 <>
                                                     <br />
-                                                    Total con mora: Q{(montoTotalSeleccionado + montoMoraActual).toFixed(2)}
+                                                    Total con mora: Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
                                                 </>
                                             )}
                                         </span>
@@ -1947,7 +1933,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoAplicado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} + Mora Q{montoMoraActual.toFixed(2)} = Q{(montoTotalSeleccionado + montoMoraActual).toFixed(2)}
+                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoAplicado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} + Mora Q{moraTotalDistribuidaVista.toFixed(2)} = Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
                                             </div>
                                         )}
                                     </div>
