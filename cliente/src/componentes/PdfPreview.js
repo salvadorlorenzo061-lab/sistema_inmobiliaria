@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { generarPdfContrato } from '../utils/contractPdfGenerator';
 
 /**
@@ -8,33 +8,50 @@ import { generarPdfContrato } from '../utils/contractPdfGenerator';
 function PdfPreview({ datosContrato, datosResidente, mostrar = true }) {
   const [pdfUrl, setPdfUrl] = useState(null);
   const [cargando, setCargando] = useState(false);
+  const [errorPreview, setErrorPreview] = useState('');
+  const lastUrlRef = useRef(null);
 
   useEffect(() => {
-    if (!mostrar || !datosContrato.codigo_contrato || !datosResidente.id_residente) {
+    if (!mostrar) {
+      setPdfUrl(null);
+      setErrorPreview('');
+      return;
+    }
+
+    if (!datosContrato?.codigo_contrato || !datosResidente?.id_residente) {
+      setPdfUrl(null);
+      setErrorPreview('');
       return;
     }
 
     setCargando(true);
+    setErrorPreview('');
+
     try {
-      // Generar PDF
       const doc = generarPdfContrato(datosContrato, datosResidente);
-      
-      // Convertir a blob y crear URL
       const blob = doc.output('blob');
-      const url = URL.createObjectURL(blob);
-      
-      // Limpiar URL anterior
-      if (pdfUrl) {
-        URL.revokeObjectURL(pdfUrl);
+      const nextUrl = URL.createObjectURL(blob);
+
+      if (lastUrlRef.current) {
+        URL.revokeObjectURL(lastUrlRef.current);
       }
-      
-      setPdfUrl(url);
+      lastUrlRef.current = nextUrl;
+      setPdfUrl(nextUrl);
     } catch (error) {
       console.error('Error al generar PDF preview:', error);
+      setPdfUrl(null);
+      setErrorPreview('No se pudo generar la previsualización del contrato.');
     } finally {
       setCargando(false);
     }
-  }, [datosContrato, datosResidente, mostrar, pdfUrl]);
+  }, [datosContrato, datosResidente, mostrar]);
+
+  useEffect(() => () => {
+    if (lastUrlRef.current) {
+      URL.revokeObjectURL(lastUrlRef.current);
+      lastUrlRef.current = null;
+    }
+  }, []);
 
   if (!mostrar) {
     return null;
@@ -68,6 +85,7 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true }) {
         <div className="card-body p-0" style={{ height: '600px', overflow: 'auto' }}>
           {pdfUrl ? (
             <iframe
+              key={pdfUrl}
               src={pdfUrl}
               style={{
                 width: '100%',
@@ -79,7 +97,7 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true }) {
             />
           ) : (
             <div className="alert alert-warning m-3">
-              No se pudo generar la previsualización del PDF
+              {errorPreview || 'No se pudo generar la previsualización del PDF'}
             </div>
           )}
         </div>

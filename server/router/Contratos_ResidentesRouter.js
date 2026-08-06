@@ -7,6 +7,62 @@ const path = require('path');
 const multer = require('multer');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 
+const EXT_TO_MIME = {
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.txt': 'text/plain; charset=utf-8',
+    '.rtf': 'application/rtf',
+    '.zip': 'application/zip'
+};
+
+const MIME_TO_EXT = {
+    'application/pdf': '.pdf',
+    'application/msword': '.doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'text/plain': '.txt',
+    'application/rtf': '.rtf',
+    'application/zip': '.zip'
+};
+
+const sanitizeFilename = (value = '') => String(value || '')
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/[\\/]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const normalizeMimeType = (filename = '', mimeType = '') => {
+    const ext = path.extname(String(filename || '').trim()).toLowerCase();
+    const mimeRaw = String(mimeType || '').trim().toLowerCase();
+    const mimeBase = mimeRaw.split(';')[0];
+
+    if (ext && EXT_TO_MIME[ext]) {
+        if (!mimeBase || mimeBase === 'application/octet-stream') {
+            return EXT_TO_MIME[ext];
+        }
+        if (mimeBase === 'text/plain' && ext !== '.txt') {
+            return EXT_TO_MIME[ext];
+        }
+    }
+
+    return mimeRaw || 'application/octet-stream';
+};
+
+const ensureFileExtension = (filename = '', mimeType = '', fallbackBase = 'archivo_contrato') => {
+    const cleanName = sanitizeFilename(filename);
+    const currentExt = path.extname(cleanName).toLowerCase();
+
+    if (cleanName && currentExt) {
+        return cleanName;
+    }
+
+    const mimeBase = String(mimeType || '').trim().toLowerCase().split(';')[0];
+    const inferredExt = MIME_TO_EXT[mimeBase] || currentExt || '.bin';
+    const baseName = sanitizeFilename(cleanName ? cleanName.replace(/\.[^.]+$/, '') : fallbackBase);
+
+    return `${baseName || fallbackBase}${inferredExt}`;
+};
+
 router.use(cors());
 router.use(express.json());
 
@@ -667,7 +723,7 @@ router.post('/subir-word/:id_contrato', (req, res) => {
         }
 
         const replaceExisting = String(req.body?.replace_existing || '').trim() === '1';
-        const nombreOriginal = String(req.file.originalname || '').replace(/[\r\n|]/g, ' ').trim();
+                const nombreOriginal = sanitizeFilename(String(req.file.originalname || '').replace(/[|]/g, ' '));
         const nombreServidor = String(req.file.filename || '').trim();
         const valorDocumento = `db|${nombreOriginal || nombreServidor}`;
 
@@ -707,7 +763,7 @@ router.post('/subir-word/:id_contrato', (req, res) => {
                 const oldStoredName = path.basename(String(oldStoredNameRaw || '').trim());
 
                 const contenido = fs.readFileSync(path.join(contratosUploadDir, nombreServidor));
-                const mimeType = String(req.file.mimetype || 'application/octet-stream').trim();
+                const mimeType = normalizeMimeType(nombreOriginal || nombreServidor, String(req.file.mimetype || 'application/octet-stream'));
 
                 db.query(
                     `
@@ -809,13 +865,15 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
             }
 
             if (row.contenido) {
-                const nombreOriginalDb = String(row.nombre_original || '').trim();
+                const nombreOriginalDb = sanitizeFilename(String(row.nombre_original || '').trim());
                 const safeCodigoDb = String(row.codigo_contrato || `CONTRATO-${idContrato}`).replace(/[^A-Za-z0-9_-]/g, '_');
-                const downloadNameDb = nombreOriginalDb || `${safeCodigoDb}.bin`;
-                const mimeDb = String(row.mime_type || 'application/octet-stream').trim();
+                const mimeDb = normalizeMimeType(nombreOriginalDb, String(row.mime_type || 'application/octet-stream').trim());
+                const downloadNameDb = ensureFileExtension(nombreOriginalDb, mimeDb, safeCodigoDb);
+                const asciiName = downloadNameDb.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '_');
 
                 res.setHeader('Content-Type', mimeDb || 'application/octet-stream');
-                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadNameDb)}`);
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+                res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(downloadNameDb)}`);
                 return res.status(200).send(row.contenido);
             }
 
@@ -828,7 +886,7 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
                 ? docValue.split('|')
                 : [docValue, docValue];
             const storedName = path.basename(String(storedNameRaw || '').trim());
-            const originalName = String(originalNameRaw || '').trim();
+            const originalName = sanitizeFilename(String(originalNameRaw || '').trim());
 
             let archivoServidor = storedName;
             let absPath = archivoServidor ? path.join(contratosUploadDir, archivoServidor) : '';
@@ -861,7 +919,11 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
 
             const ext = path.extname(archivoServidor).toLowerCase() || '.bin';
             const safeCodigo = String(row.codigo_contrato || `CONTRATO-${idContrato}`).replace(/[^A-Za-z0-9_-]/g, '_');
-            const downloadName = originalName || `${safeCodigo}${ext}`;
+            const mimeLegacy = normalizeMimeType(archivoServidor, '');
+            const downloadName = ensureFileExtension(originalName || `${safeCodigo}${ext}`, mimeLegacy, safeCodigo);
+
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.type(mimeLegacy || 'application/octet-stream');
 
             return res.download(absPath, downloadName);
         }

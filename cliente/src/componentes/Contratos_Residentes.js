@@ -378,6 +378,19 @@ function Contratos_Residentes() {
     return partes[0] || '';
   };
 
+  const extensionDesdeMime = (mime = '') => {
+    const mimeBase = String(mime || '').toLowerCase().split(';')[0].trim();
+    const mapa = {
+      'application/pdf': '.pdf',
+      'application/msword': '.doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'text/plain': '.txt',
+      'application/rtf': '.rtf',
+      'application/zip': '.zip'
+    };
+    return mapa[mimeBase] || '';
+  };
+
   const subirArchivoContrato = async (contrato, forzarReemplazo = false) => {
     const inputResultado = await Swal.fire({
       title: forzarReemplazo ? 'Reemplazar archivo del contrato' : 'Subir archivo del contrato',
@@ -467,9 +480,20 @@ function Contratos_Residentes() {
       const contentDisposition = String(response.headers?.['content-disposition'] || '');
       const matchUtf8 = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
       const matchSimple = contentDisposition.match(/filename="?([^";]+)"?/i);
-      const nombreDescarga = decodeURIComponent(matchUtf8?.[1] || matchSimple?.[1] || `${contrato.codigo_contrato || 'contrato'}_archivo`);
+      const mimeDescarga = String(response.headers?.['content-type'] || response.data?.type || 'application/octet-stream');
+      let nombreDescarga = decodeURIComponent(matchUtf8?.[1] || matchSimple?.[1] || `${contrato.codigo_contrato || 'contrato'}_archivo`);
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      if (!/\.[A-Za-z0-9]{2,8}$/.test(nombreDescarga)) {
+        const ext = extensionDesdeMime(mimeDescarga);
+        if (ext) {
+          nombreDescarga = `${nombreDescarga}${ext}`;
+        }
+      }
+
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: mimeDescarga || 'application/octet-stream' });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', nombreDescarga);
