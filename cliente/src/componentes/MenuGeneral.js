@@ -25,6 +25,7 @@ const getFallbackPermisosByRole = (rolNormalizado = '') => {
       normalizeText('Caja Ingresos Manual'),
       normalizeText('Mora y Atrasos'),
       normalizeText('Convenio de Pagos'),
+      normalizeText('Cuenta Estado Capital'),
       normalizeText('Pagos'),
       normalizeText('Detalle Pagos')
     ]);

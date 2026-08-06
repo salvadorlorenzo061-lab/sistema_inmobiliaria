@@ -18,6 +18,7 @@ import PagosExtraordinarios from '../componentes/PagosExtraordinarios';
 import Pagos from '../componentes/Pagos';
 import PagosDetalle from '../componentes/Pagos_detalle';
 import EstadoCuenta from '../componentes/Estado_Cuenta';
+import CuentaEstado from '../componentes/CuentaEstado';
 import MenuGeneral from '../componentes/MenuGeneral';
 import AsignarCorrelativo from '../componentes/Asignar_correlativo';
 import Convenio from '../componentes/Convenio';
@@ -183,6 +184,14 @@ export const modulesConfig = [
     path: '/estado_cuenta',
     component: EstadoCuenta,
     category: 'Reportes'
+  },
+  {
+    id: 'cuenta_estado_capital',
+    label: 'Cuenta Estado Capital',
+    icon: '🧮',
+    path: '/cuenta_estado_capital',
+    component: CuentaEstado,
+    category: 'Caja'
   },
   {
     id: 'empresas',
