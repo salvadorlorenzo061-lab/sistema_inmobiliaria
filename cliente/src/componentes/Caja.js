@@ -432,6 +432,23 @@ const Caja = () => {
         return false;
     };
 
+    const compararMesesMoraLocal = (mesA = '', mesB = '') => {
+        const keyA = obtenerMesKeyLocal(mesA);
+        const keyB = obtenerMesKeyLocal(mesB);
+
+        if (!keyA || !keyB) return false;
+
+        if (keyA.anio && keyB.anio) {
+            return keyA.mes === keyB.mes && keyA.anio === keyB.anio;
+        }
+
+        if (keyA.anio || keyB.anio) {
+            return false;
+        }
+
+        return keyA.mes === keyB.mes;
+    };
+
     const obtenerIndiceMesLocal = (mesTexto = '') => {
         const objetivo = normalizarMesClave(mesTexto);
         if (!objetivo) return -1;
@@ -462,7 +479,11 @@ const Caja = () => {
 
         return morasPendientes.filter((mora) => {
             const mesMora = String(mora?.mes_atrasado || '').trim();
-            return mesMora && esMesVencidoParaMoraLocal(mesMora);
+            if (!mesMora || !esMesVencidoParaMoraLocal(mesMora)) {
+                return false;
+            }
+
+            return mesesFinanciados.some((mesSeleccionado) => compararMesesMoraLocal(mesSeleccionado, mesMora));
         });
     };
 
@@ -908,9 +929,21 @@ const Caja = () => {
             const next = prev.includes(mes) ? prev.filter(item => item !== mes) : [...prev, mes];
             const siguienteMes = next.length ? next[0] : (mesesPendientes[0] || '');
             setMesPagado(siguienteMes);
+            const indexCuota = (mesesPendientes || []).indexOf(siguienteMes);
+            setNumCuota(indexCuota >= 0 ? String(indexCuota + 1) : '0');
             actualizarMontoParaSeleccion(next);
             return next;
         });
+    };
+
+    const seleccionarCuotaCeroEnganche = () => {
+        const engancheActual = Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
+        if (engancheActual <= 0) return;
+
+        setNumCuota('0');
+        setMesesSeleccionados([]);
+        setMesPagado(mesesPendientes[0] || '');
+        recalcularTotalesCobro([], serviciosSeleccionados, datosDeuda);
     };
 
     const toggleServicioSeleccionado = (idServicio) => {
@@ -1992,6 +2025,30 @@ const Caja = () => {
                                     <div className="mb-4">
                                         <label className="form-label fw-bold">📅 Meses a Pagar (seleccione cuáles paga el residente):</label>
                                         <div className="border rounded-3 p-3 bg-light">
+                                            {enganchePendiente > 0 && (
+                                                <div
+                                                    className={`d-flex align-items-center p-3 border rounded-2 mb-2 ${String(numCuota) === '0' ? 'bg-warning bg-opacity-10 border-warning border-2' : 'bg-white border-secondary'}`}
+                                                    style={{ cursor: 'pointer' }}
+                                                    onClick={seleccionarCuotaCeroEnganche}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        className="form-check-input me-3"
+                                                        checked={String(numCuota) === '0'}
+                                                        onChange={seleccionarCuotaCeroEnganche}
+                                                        style={{ cursor: 'pointer', width: '20px', height: '20px' }}
+                                                    />
+                                                    <div className="flex-grow-1">
+                                                        <span className="fw-bold fs-5 text-dark">Cuota 0 - Enganche</span>
+                                                    </div>
+                                                    <span className="badge bg-warning text-dark">
+                                                        Q{enganchePendiente.toFixed(2)}
+                                                    </span>
+                                                    {String(numCuota) === '0' && (
+                                                        <span className="ms-2 text-warning fw-bold">✓ Seleccionado</span>
+                                                    )}
+                                                </div>
+                                            )}
                                             {mesesPendientes.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">
                                                     {mesesPendientes.map((mes) => (
