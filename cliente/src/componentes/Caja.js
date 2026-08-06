@@ -1472,6 +1472,7 @@ const Caja = () => {
     const numeroCuotaPrimerMes = obtenerNumeroCuotaMesVista(primerMesSeleccionado);
     const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
     const mesAplicacionAbonoCapital = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
+    const mesAplicacionCobroUnico = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
     const capitalBaseInteresVista = Math.max(Number(planFinancieroContrato?.capitalBaseInteres || 0), 0);
     const cuotasPactadasVista = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
     const capitalPorCuotaExactaVista = redondear2(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
@@ -1485,16 +1486,19 @@ const Caja = () => {
     };
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
         const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
+        const aplicarCobroUnicoMes = Boolean(mesEtiqueta) && mesEtiqueta === mesAplicacionCobroUnico;
         const serviciosMensualesMes = serviciosSeleccionadosDetalleVista
             .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
             .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
-        const serviciosUnicosMes = esCuotaEnganche
+        const serviciosUnicosMes = aplicarCobroUnicoMes
             ? serviciosSeleccionadosDetalleVista
                 .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
                 .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
             : 0;
-        const cargosExtraMes = esCuotaEnganche ? montoCargosExtraSeleccionado : 0;
-        const moraMes = esCuotaEnganche ? 0 : montoMoraActual;
+        const cargosExtraMes = aplicarCobroUnicoMes ? montoCargosExtraSeleccionado : 0;
+        const moraMes = esCuotaEnganche
+            ? 0
+            : parseFloat(obtenerMorasAplicables([mesEtiqueta]).reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0).toFixed(2));
         if (esCuotaEnganche) {
             const engancheBaseVista = Math.max(
                 Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),
@@ -1528,8 +1532,10 @@ const Caja = () => {
         .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
-    const mesesFinanciadosSeleccionadosVista = (mesesSeleccionados || []).filter((mes) => !esMesEngancheVisual(mes));
-    const moraTotalDistribuidaVista = parseFloat((montoMoraActual * mesesFinanciadosSeleccionadosVista.length).toFixed(2));
+    const moraTotalDistribuidaVista = parseFloat((mesesSeleccionados || [])
+        .filter((mes) => !esMesEngancheVisual(mes))
+        .reduce((sum, mes) => sum + Number(obtenerMorasAplicables([mes]).reduce((acc, mora) => acc + Number(mora?.monto_mora || 0), 0)), 0)
+        .toFixed(2));
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
     const tieneEnganchePendiente = enganchePendiente > 0;
     const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});

@@ -348,6 +348,21 @@ function Contratos_Residentes() {
     setShowEditModal(true);
   };
 
+  const manejarAccionContrato = (accion, contrato) => {
+    if (!accion) return;
+    if (accion === 'editar') {
+      abrirEditarModal(contrato);
+      return;
+    }
+    if (accion === 'imprimir') {
+      imprimirContrato(contrato);
+      return;
+    }
+    if (accion === 'borrar') {
+      deleteContrato(contrato);
+    }
+  };
+
   const limpiarCampos = () => {
     setId_contrato(""); setCodigo_contrato(""); setId_residente(""); setId_tipo_contrato("");
     setMonto_total(""); setCuotas_pactadas(""); setMonto_cuota(""); setDia_pago_limite("");
@@ -441,10 +456,21 @@ function Contratos_Residentes() {
                     {val.estado.toUpperCase()}
                   </span>
                 </td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  <button className="btn btn-info btn-sm fw-bold" style={{padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginRight: '2px'}} onClick={() => abrirEditarModal(val)}>EDITAR</button>
-                  <button className="btn btn-success btn-sm fw-bold" style={{padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginRight: '2px'}} onClick={() => imprimirContrato(val)}>🖨️</button>
-                  <button className="btn btn-danger btn-sm fw-bold" style={{padding: '0.25rem 0.5rem', fontSize: '0.75rem'}} onClick={() => deleteContrato(val)}>BORRAR</button>
+                <td style={{ minWidth: '170px' }}>
+                  <select
+                    className="form-select form-select-sm"
+                    defaultValue=""
+                    onChange={(e) => {
+                      manejarAccionContrato(e.target.value, val);
+                      e.target.value = '';
+                    }}
+                    aria-label={`Acciones para contrato ${val.codigo_contrato}`}
+                  >
+                    <option value="">Seleccione acción</option>
+                    <option value="editar">Editar</option>
+                    <option value="imprimir">Imprimir</option>
+                    <option value="borrar">Borrar</option>
+                  </select>
                 </td>
               </tr>
             ))
