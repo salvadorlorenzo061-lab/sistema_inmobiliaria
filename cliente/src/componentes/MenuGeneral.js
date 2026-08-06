@@ -18,6 +18,9 @@ const MODULE_PERMISSION_ALIASES = {
   empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa']
 };
 
+// Ocultar temporalmente del menu principal (sin eliminar el modulo del sistema).
+const TEMP_HIDDEN_MENU_MODULE_IDS = new Set(['convenio', 'cuenta_estado_capital']);
+
 const getFallbackPermisosByRole = (rolNormalizado = '') => {
   if (rolNormalizado.includes('cobro') || rolNormalizado.includes('caja')) {
     return new Set([
@@ -111,6 +114,10 @@ function MenuGeneral() {
     ]);
 
     return modulesConfig.filter((modulo) => {
+      if (TEMP_HIDDEN_MENU_MODULE_IDS.has(modulo.id)) {
+        return false;
+      }
+
       if (esAdmin || modulo.id === 'menu_general') {
         return true;
       }

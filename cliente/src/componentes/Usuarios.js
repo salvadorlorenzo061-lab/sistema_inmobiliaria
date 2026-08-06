@@ -20,7 +20,6 @@ const PERMISOS_MODULOS = [
   'Caja (General)',
   'Caja Ingresos Manual',
   'Mora y Atrasos',
-  'Convenio de Pagos',
   'Anulación Deuda',
   'Cobros Extra',
   'Pagos',
