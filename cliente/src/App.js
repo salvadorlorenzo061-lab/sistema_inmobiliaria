@@ -15,6 +15,7 @@ const normalizeText = (value = '') => value
 const MODULE_PERMISSION_ALIASES = {
   menu_general: ['menu principal', 'menu general'],
   anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
+  convenio: ['convenio', 'convenio pagos', 'convenio de pagos'],
   caja_ingresos: ['caja ingresos manual'],
   asignar_correlativo: ['asignar correlativos', 'asignar correlativo', 'cuadre del dia', 'cuadre del mes'],
   proyectos: ['proyecto', 'proyectos', 'catalogo de proyectos', 'catalogo proyectos'],
@@ -27,6 +28,7 @@ const getFallbackPermisosByRole = (rolNormalizado = '') => {
       normalizeText('Caja (General)'),
       normalizeText('Caja Ingresos Manual'),
       normalizeText('Mora y Atrasos'),
+      normalizeText('Convenio de Pagos'),
       normalizeText('Pagos'),
       normalizeText('Detalle Pagos')
     ]);

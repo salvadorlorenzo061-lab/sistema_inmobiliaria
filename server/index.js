@@ -48,6 +48,7 @@ const servicioRouter = require('./router/Servicio/ServicioRouter');
 const rolesRouter = require('./router/RolesRouter');
 const pagosExtraordinariosRouter = require('./router/Pagos_ExtraordinariosRouter');
 const estadoCuentaRouter = require('./router/Estado_CuentaRouter');
+const convenioRouter = require('./router/ConvenioRouter');
 
 
 // 2. Declarar los prefijos de la API global existentes
@@ -74,6 +75,7 @@ app.use('/api/servicio', servicioRouter);
 app.use('/api/roles', rolesRouter);
 app.use('/api/pagos_extraordinarios', pagosExtraordinariosRouter);
 app.use('/api/estado_cuenta', estadoCuentaRouter);
+app.use('/api/convenio', convenioRouter);
 
 
 // 3. Inicialización del servidor central

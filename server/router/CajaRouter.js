@@ -2481,19 +2481,72 @@ router.post("/procesar-pago", (req, res) => {
                                                 });
                                             };
 
+                                            const sincronizarConvenio = (descuentoCapital, callbackSync) => {
+                                                if (!Number.isFinite(descuentoCapital) || descuentoCapital <= 0) {
+                                                    return callbackSync();
+                                                }
+
+                                                const sqlConvenioActivo = `
+                                                    SELECT id_convenio, saldo_actual, estado
+                                                    FROM convenio_pagos
+                                                    WHERE id_contrato = ?
+                                                      AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'incumplido')
+                                                    ORDER BY id_convenio DESC
+                                                    LIMIT 1
+                                                `;
+
+                                                db.query(sqlConvenioActivo, [id_contrato], (convErr, convRows) => {
+                                                    if (convErr) {
+                                                        if (String(convErr?.code || '').toUpperCase() === 'ER_NO_SUCH_TABLE') {
+                                                            return callbackSync();
+                                                        }
+                                                        return db.rollback(() => res.status(500).send('Error al consultar convenio de pago: ' + convErr.message));
+                                                    }
+
+                                                    if (!convRows || !convRows.length) {
+                                                        return callbackSync();
+                                                    }
+
+                                                    const convenio = convRows[0];
+                                                    const saldoActualConvenio = Number(convenio.saldo_actual || 0);
+                                                    const nuevoSaldoConvenio = Math.max(saldoActualConvenio - descuentoCapital, 0);
+                                                    const nuevoEstadoConvenio = nuevoSaldoConvenio <= 0 ? 'cumplido' : String(convenio.estado || 'activo');
+
+                                                    const sqlActualizarConvenio = `
+                                                        UPDATE convenio_pagos
+                                                        SET saldo_actual = ?,
+                                                            estado = ?
+                                                        WHERE id_convenio = ?
+                                                    `;
+
+                                                    db.query(
+                                                        sqlActualizarConvenio,
+                                                        [nuevoSaldoConvenio, nuevoEstadoConvenio, convenio.id_convenio],
+                                                        (updConvErr) => {
+                                                            if (updConvErr) {
+                                                                return db.rollback(() => res.status(500).send('Error al actualizar saldo del convenio: ' + updConvErr.message));
+                                                            }
+                                                            return callbackSync();
+                                                        }
+                                                    );
+                                                });
+                                            };
+
                                             sincronizarMorosidadPagada(() => {
                                             // monto_total del contrato es el capital completo e incluye el enganche
                                             // (al crear el contrato: capital financiado = monto_total - enganche).
                                             // Los tres conceptos de capital deben descontarlo, y la anulacion los devuelve igual.
                                             const descuentoCapital = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
+                                            const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, finalizarCommit);
+
                                             if (descuentoCapital > 0) {
                                                 const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
                                                 db.query(sqlRestar, [descuentoCapital, id_contrato], (updErr) => {
                                                     if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
-                                                    return finalizarCommit();
+                                                    return finalizarConConvenio();
                                                 });
                                             } else {
-                                                return finalizarCommit();
+                                                return finalizarConConvenio();
                                             }
                                             });
                                         };

@@ -518,7 +518,52 @@ router.post('/anular-por-correlativo', (req, res) => {
                                     return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
                                 }
 
-                                db.query('DELETE FROM pagos_detalle WHERE id_pago = ?', [pago.id_pago], (delDetalleErr) => {
+                                const restaurarConvenio = (callbackRestore) => {
+                                    if (!Number.isFinite(capitalRestaurar) || capitalRestaurar <= 0) {
+                                        return callbackRestore();
+                                    }
+
+                                    const sqlConvenioActivo = `
+                                        SELECT id_convenio, monto_original, saldo_actual, estado
+                                        FROM convenio_pagos
+                                        WHERE id_contrato = ?
+                                          AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'cumplido', 'incumplido')
+                                        ORDER BY id_convenio DESC
+                                        LIMIT 1
+                                    `;
+
+                                    db.query(sqlConvenioActivo, [pago.id_contrato], (convErr, convRows) => {
+                                        if (convErr) {
+                                            if (String(convErr?.code || '').toUpperCase() === 'ER_NO_SUCH_TABLE') {
+                                                return callbackRestore();
+                                            }
+                                            return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del convenio.' }));
+                                        }
+
+                                        if (!convRows || !convRows.length) {
+                                            return callbackRestore();
+                                        }
+
+                                        const convenio = convRows[0];
+                                        const montoOriginalConvenio = Number(convenio.monto_original || 0);
+                                        const saldoActualConvenio = Number(convenio.saldo_actual || 0);
+                                        const saldoRestaurado = Math.min(saldoActualConvenio + capitalRestaurar, montoOriginalConvenio > 0 ? montoOriginalConvenio : saldoActualConvenio + capitalRestaurar);
+                                        const estadoRestaurado = saldoRestaurado > 0 ? 'activo' : String(convenio.estado || 'activo');
+
+                                        db.query(
+                                            'UPDATE convenio_pagos SET saldo_actual = ?, estado = ? WHERE id_convenio = ?',
+                                            [saldoRestaurado, estadoRestaurado, convenio.id_convenio],
+                                            (updConvErr) => {
+                                                if (updConvErr) {
+                                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo actualizar convenio al anular cobro.' }));
+                                                }
+                                                return callbackRestore();
+                                            }
+                                        );
+                                    });
+                                };
+
+                                restaurarConvenio(() => db.query('DELETE FROM pagos_detalle WHERE id_pago = ?', [pago.id_pago], (delDetalleErr) => {
                                     if (delDetalleErr) {
                                         return db.rollback(() => res.status(500).send({ message: 'No se pudo eliminar el detalle del cobro.' }));
                                     }
@@ -662,7 +707,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                             return revertirExtras();
                                         });
                                     });
-                                });
+                                }));
                             }
                         );
                     });
