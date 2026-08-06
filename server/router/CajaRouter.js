@@ -966,6 +966,7 @@ router.get("/meses-pendientes", (req, res) => {
     // Traer datos de contrato para calcular todos los meses cobrables del contrato
     db.query(`
         SELECT
+            conv.id_convenio AS id_convenio_activo,
             COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
             c.fecha_fin,
             c.fecha_firma,
@@ -988,7 +989,7 @@ router.get("/meses-pendientes", (req, res) => {
             INNER JOIN (
                 SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
                 FROM convenio_pagos
-                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'incumplido')
+                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido')
                 GROUP BY id_contrato
             ) ult ON ult.ultimo_id_convenio = cp.id_convenio
         ) conv ON conv.id_contrato = c.id_contrato
@@ -1020,6 +1021,7 @@ router.get("/meses-pendientes", (req, res) => {
         const candidatos = [];
         const plazoMesesContrato = Number(contratoResult[0].plazo_meses || 0);
         const cuotasPactadas = Number(contratoResult[0].cuotas_pactadas || 0);
+        const tieneConvenioActivo = Number(contratoResult[0].id_convenio_activo || 0) > 0;
         const engancheContrato = Number(contratoResult[0].enganche || 0);
         const enganchePagado = Number(contratoResult[0].enganche_pagado || 0);
         const cuotasBaseContrato = Number.isInteger(plazoMesesContrato) && plazoMesesContrato > 0
@@ -1170,7 +1172,7 @@ router.get("/meses-pendientes", (req, res) => {
 
             // Regla de negocio: la cuota 1 corresponde al enganche.
             // Al liquidarse totalmente el enganche, el primer mes contractual se considera atendido.
-            if (engancheContrato > 0 && enganchePagado >= (engancheContrato - 0.01) && candidatosMeta.length > 0) {
+            if (!tieneConvenioActivo && engancheContrato > 0 && enganchePagado >= (engancheContrato - 0.01) && candidatosMeta.length > 0) {
                 mesesPagadosSet.add(candidatosMeta[0].mes);
             }
 
