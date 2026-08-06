@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { API_BASE_URL } from '../config';
 
 const toNumber = (value, fallback = 0) => {
@@ -12,6 +14,8 @@ const formatoMoneda = (value) => {
   const numero = toNumber(value, 0);
   return `Q ${numero.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
+
+const round2 = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
 
 const CuentaEstado = () => {
   const [busqueda, setBusqueda] = useState('');
@@ -143,11 +147,156 @@ const CuentaEstado = () => {
     return { precio, enganche, capital };
   }, [precioTotal, enganchePagado]);
 
+  const tablaAmortizacionPendiente = useMemo(() => {
+    if (!simulacion) return [];
+
+    const mesesPendientes = Math.max(parseInt(simulacion.meses_pendientes || 0, 10), 0);
+    const capitalRestanteCalc = Math.max(toNumber(simulacion.capital_restante, 0), 0);
+    const tasaMensual = Math.max(toNumber(simulacion.tasa_mensual, 0) / 100, 0);
+    const cuotaBaseNumero = Math.max(parseInt(simulacion.cuotas_pagadas || 0, 10), 0);
+
+    if (!mesesPendientes || !capitalRestanteCalc) return [];
+
+    const rows = [];
+    let saldo = capitalRestanteCalc;
+    let interesAcumulado = 0;
+
+    for (let i = 1; i <= mesesPendientes; i += 1) {
+      const esUltima = i === mesesPendientes;
+      const capitalCuota = esUltima ? saldo : round2(capitalRestanteCalc / mesesPendientes);
+      const interesMes = round2(saldo * tasaMensual);
+      const cuotaEstimada = round2(capitalCuota + interesMes);
+      const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
+
+      interesAcumulado = round2(interesAcumulado + interesMes);
+
+      rows.push({
+        indice: i,
+        numero_cuota: cuotaBaseNumero + i,
+        saldo_inicial: round2(saldo),
+        capital_cuota: round2(capitalCuota),
+        interes_mes: interesMes,
+        cuota_estimada: cuotaEstimada,
+        saldo_final: saldoFinal,
+        interes_acumulado: interesAcumulado
+      });
+
+      saldo = saldoFinal;
+    }
+
+    return rows;
+  }, [simulacion]);
+
+  const exportarTablaPDF = () => {
+    if (!simulacion || !tablaAmortizacionPendiente.length) {
+      showToast('Primero calcula la liquidacion para exportar.', 'warning');
+      return;
+    }
+
+    const doc = new jsPDF('l', 'mm', 'letter');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
+    const nombreResidente = String(contrato?.nombre_residente || 'SIN-RESIDENTE');
+    const fecha = new Date().toLocaleDateString('es-GT');
+
+    doc.setFontSize(14);
+    doc.setTextColor(23, 42, 69);
+    doc.text('Liquidacion a Capital - Tabla de Amortizacion Pendiente', 14, 14);
+    doc.setFontSize(10);
+    doc.setTextColor(60, 60, 60);
+    doc.text(`Contrato: ${codigoContrato}`, 14, 20);
+    doc.text(`Residente: ${nombreResidente}`, 14, 25);
+    doc.text(`Fecha: ${fecha}`, pageWidth - 14, 20, { align: 'right' });
+
+    autoTable(doc, {
+      startY: 30,
+      head: [[
+        'Cuota',
+        'Saldo Inicial',
+        'Capital Cuota',
+        'Interes Mes',
+        'Cuota Estimada',
+        'Saldo Final',
+        'Interes Acumulado'
+      ]],
+      body: tablaAmortizacionPendiente.map((row) => ([
+        String(row.numero_cuota),
+        formatoMoneda(row.saldo_inicial),
+        formatoMoneda(row.capital_cuota),
+        formatoMoneda(row.interes_mes),
+        formatoMoneda(row.cuota_estimada),
+        formatoMoneda(row.saldo_final),
+        formatoMoneda(row.interes_acumulado)
+      ])),
+      theme: 'striped',
+      styles: { fontSize: 8, cellPadding: 1.6 },
+      headStyles: { fillColor: [36, 99, 235] },
+      margin: { left: 12, right: 12 }
+    });
+
+    const lastY = (doc.lastAutoTable?.finalY || 45) + 8;
+    doc.setFontSize(10);
+    doc.setTextColor(18, 84, 44);
+    doc.text(`Total liquidacion estimada: ${formatoMoneda(simulacion.total_liquidacion)}`, 14, lastY);
+    doc.text(`Interes total pendiente: ${formatoMoneda(simulacion.interes_total_pendiente)}`, 14, lastY + 5);
+
+    doc.save(`Liquidacion_${codigoContrato}.pdf`);
+  };
+
+  const exportarTablaExcel = () => {
+    if (!simulacion || !tablaAmortizacionPendiente.length) {
+      showToast('Primero calcula la liquidacion para exportar.', 'warning');
+      return;
+    }
+
+    const encabezados = [
+      'Contrato',
+      'Residente',
+      'Cuota',
+      'Saldo Inicial',
+      'Capital Cuota',
+      'Interes Mes',
+      'Cuota Estimada',
+      'Saldo Final',
+      'Interes Acumulado'
+    ];
+
+    const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
+    const nombreResidente = String(contrato?.nombre_residente || 'SIN-RESIDENTE');
+
+    const filas = tablaAmortizacionPendiente.map((row) => ([
+      codigoContrato,
+      nombreResidente,
+      row.numero_cuota,
+      row.saldo_inicial,
+      row.capital_cuota,
+      row.interes_mes,
+      row.cuota_estimada,
+      row.saldo_final,
+      row.interes_acumulado
+    ]));
+
+    const csvContent = [encabezados, ...filas]
+      .map((linea) => linea.map((valor) => `"${String(valor).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([`\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Liquidacion_${codigoContrato}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="container-fluid p-4">
       <div className="card shadow-sm">
-        <div className="card-header bg-dark text-white">
+        <div className="card-header bg-dark text-white d-flex justify-content-between align-items-center">
           <h4 className="mb-0">Liquidacion a Capital con Interes Pendiente</h4>
+          <span className="badge bg-light text-dark">Modulo de simulacion financiera</span>
         </div>
 
         <div className="card-body">
@@ -275,6 +424,15 @@ const CuentaEstado = () => {
             <div className="card mt-3 border-success">
               <div className="card-header bg-success text-white">Resultado de liquidacion a capital</div>
               <div className="card-body">
+                <div className="d-flex flex-wrap gap-2 mb-3">
+                  <button type="button" className="btn btn-outline-danger btn-sm" onClick={exportarTablaPDF}>
+                    Imprimir PDF
+                  </button>
+                  <button type="button" className="btn btn-outline-success btn-sm" onClick={exportarTablaExcel}>
+                    Exportar Excel
+                  </button>
+                </div>
+
                 <div className="row g-3">
                   <div className="col-md-4"><strong>Capital restante:</strong> {formatoMoneda(simulacion.capital_restante)}</div>
                   <div className="col-md-4"><strong>Interes anual:</strong> {toNumber(simulacion.interes_anual, 0).toFixed(2)}%</div>
@@ -291,6 +449,45 @@ const CuentaEstado = () => {
                 <p className="mb-1"><strong>Formula aplicada:</strong></p>
                 <p className="mb-1">Interes pendiente = Capital restante x (Interes anual / 12) x Meses pendientes</p>
                 <p className="mb-0">Total a liquidar = Capital restante + Interes pendiente</p>
+
+                {tablaAmortizacionPendiente.length > 0 && (
+                  <>
+                    <hr />
+                    <h6 className="fw-bold mb-3">Tabla de amortizacion de cuotas pendientes</h6>
+                    <div className="table-responsive">
+                      <table className="table table-sm table-bordered table-striped align-middle">
+                        <thead className="table-dark">
+                          <tr>
+                            <th>Cuota</th>
+                            <th>Saldo Inicial</th>
+                            <th>Capital Cuota</th>
+                            <th>Interes Mes</th>
+                            <th>Cuota Estimada</th>
+                            <th>Saldo Final</th>
+                            <th>Interes Acumulado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tablaAmortizacionPendiente.map((row) => (
+                            <tr key={row.indice}>
+                              <td className="fw-bold">{row.numero_cuota}</td>
+                              <td>{formatoMoneda(row.saldo_inicial)}</td>
+                              <td>{formatoMoneda(row.capital_cuota)}</td>
+                              <td>{formatoMoneda(row.interes_mes)}</td>
+                              <td>{formatoMoneda(row.cuota_estimada)}</td>
+                              <td>{formatoMoneda(row.saldo_final)}</td>
+                              <td>{formatoMoneda(row.interes_acumulado)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                <div className="alert alert-info mt-3 mb-0">
+                  <strong>Enlace con Caja:</strong> este modulo actualmente funciona como simulador y reporte. El cobro real en Caja no se ejecuta automaticamente desde aqui; para cobrar debes registrar el pago en el modulo Caja.
+                </div>
               </div>
             </div>
           )}
