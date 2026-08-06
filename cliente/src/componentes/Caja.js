@@ -146,7 +146,7 @@ const Caja = () => {
         const tieneConvenioActivo = Number(contrato?.id_convenio_activo || 0) > 0;
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
         const montoTotalContrato = Math.max(parseFloat(contrato?.monto_total_original || contrato?.monto_total_contrato || 0), 0);
-        const enganche = Math.max(parseFloat(contrato?.enganche || 0), 0);
+        const enganche = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche || 0), 0);
         const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
         const interesPorcentaje = tieneConvenioActivo
@@ -368,6 +368,9 @@ const Caja = () => {
     const tieneAnioEnEtiquetaMes = (valor = '') => /\b(19|20)\d{2}\b/.test(String(valor || ''));
 
     const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null) => {
+        if (Number(datosDeuda?.id_convenio_activo || 0) > 0) {
+            return false;
+        }
         const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
         const primerMesPendiente = mesesLista[0] || '';
         const engancheActual = enganchePendienteValor == null
@@ -554,6 +557,7 @@ const Caja = () => {
     ) => {
         const cantidadMeses = (meses || []).length;
         const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
+        const tieneConvenioActivo = Number(residenteActual?.id_convenio_activo || 0) > 0;
         const saldoPendiente = planContrato.saldoPendiente;
         const capitalPorCuota = planContrato.capitalPorCuota;
 
@@ -597,7 +601,7 @@ const Caja = () => {
             .filter((s) => Boolean(s.es_extraordinario))
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
 
-        const enganchePendienteContrato = Math.max(Number(residenteActual?.enganche_pendiente || 0), 0);
+        const enganchePendienteContrato = tieneConvenioActivo ? 0 : Math.max(Number(residenteActual?.enganche_pendiente || 0), 0);
         const abonoManualBase = engancheOverride == null
             ? parseFloat(montoEngancheSeleccionado || 0)
             : parseFloat(engancheOverride || 0);
@@ -607,7 +611,7 @@ const Caja = () => {
             .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
         const primerMesConEnganche = (mesesPendientes || [])[0] || '';
         const engancheContratoBase = engancheContratoOverride == null
-            ? parseFloat(montoEngancheContratoSeleccionado || residenteActual?.enganche_pendiente || 0)
+            ? parseFloat(tieneConvenioActivo ? 0 : (montoEngancheContratoSeleccionado || residenteActual?.enganche_pendiente || 0))
             : parseFloat(engancheContratoOverride || 0);
         const engancheContratoAplicado = (enganchePendienteContrato > 0 && primerMesConEnganche && mesesOrdenados.includes(primerMesConEnganche))
             ? Math.max(Math.min(engancheContratoBase, enganchePendienteContrato), 0)
@@ -776,7 +780,9 @@ const Caja = () => {
             } else {
                 setMesPagado('');
             }
-            const engancheInicial = Math.max(Number(residenteActualizado?.enganche_pendiente || 0), 0);
+            const engancheInicial = Number(residenteActualizado?.id_convenio_activo || 0) > 0
+                ? 0
+                : Math.max(Number(residenteActualizado?.enganche_pendiente || 0), 0);
             setMontoEngancheContratoSeleccionado(engancheInicial);
             setOpcionesCuota(
                 meses.length
@@ -1090,7 +1096,9 @@ const Caja = () => {
                     setMesesDetalleMap(mapaMesesActualizados);
                     setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
                     setNumCuota(mesesActualizados.length ? '1' : '0');
-                    const engancheRefrescado = Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
+                    const engancheRefrescado = Number(datosDeuda?.id_convenio_activo || 0) > 0
+                        ? 0
+                        : Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
                     setMontoEngancheContratoSeleccionado(engancheRefrescado);
                     setOpcionesCuota(
                         mesesActualizados.length
@@ -1420,7 +1428,9 @@ const Caja = () => {
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
     const planFinancieroContrato = calcularPlanFinancieroContrato(datosDeuda || {});
     const saldoTerrenoPendiente = planFinancieroContrato.saldoPendiente;
-    const enganchePendienteContrato = Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
+    const enganchePendienteContrato = Number(datosDeuda?.id_convenio_activo || 0) > 0
+        ? 0
+        : Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
     const enganchePendiente = Math.max(
         enganchePendienteContrato,
         Math.max(parseFloat(montoEngancheContratoSeleccionado || 0), 0),
