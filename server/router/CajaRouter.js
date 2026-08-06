@@ -760,7 +760,7 @@ router.get("/residentes-pendientes", (req, res) => {
             INNER JOIN (
                 SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
                 FROM convenio_pagos
-                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido')
+                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
                 GROUP BY id_contrato
             ) ult ON ult.ultimo_id_convenio = cp.id_convenio
         ) conv ON conv.id_contrato = c.id_contrato
@@ -910,7 +910,7 @@ router.get("/buscar-residente", (req, res) => {
             INNER JOIN (
                 SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
                 FROM convenio_pagos
-                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido')
+                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
                 GROUP BY id_contrato
             ) ult ON ult.ultimo_id_convenio = cp.id_convenio
         ) conv ON conv.id_contrato = c.id_contrato
@@ -989,7 +989,7 @@ router.get("/meses-pendientes", (req, res) => {
             INNER JOIN (
                 SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
                 FROM convenio_pagos
-                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido')
+                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
                 GROUP BY id_contrato
             ) ult ON ult.ultimo_id_convenio = cp.id_convenio
         ) conv ON conv.id_contrato = c.id_contrato
@@ -1666,7 +1666,7 @@ router.post("/procesar-pago", (req, res) => {
                     INNER JOIN (
                         SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
                         FROM convenio_pagos
-                        WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido')
+                        WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
                         GROUP BY id_contrato
                     ) ult ON ult.ultimo_id_convenio = cp.id_convenio
                 ) conv ON conv.id_contrato = c.id_contrato
@@ -2616,7 +2616,7 @@ router.post("/procesar-pago", (req, res) => {
                                                     SELECT id_convenio, saldo_actual, estado
                                                     FROM convenio_pagos
                                                     WHERE id_contrato = ?
-                                                      AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido')
+                                                      AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
                                                     ORDER BY id_convenio DESC
                                                     LIMIT 1
                                                 `;
