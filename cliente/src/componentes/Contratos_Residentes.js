@@ -325,6 +325,48 @@ function Contratos_Residentes() {
     }
   };
 
+  const descargarContratoPdf = (val) => {
+    try {
+      const residente = residentesList.find(r => String(r.id_residente) === String(val.id_residente));
+
+      if (!residente) {
+        Swal.fire({ icon: "error", title: "Error", text: "No se encontraron datos del residente" });
+        return;
+      }
+
+      const datosParaPdf = {
+        codigo_contrato: val.codigo_contrato,
+        monto_total: val.monto_total,
+        cuotas_pactadas: val.cuotas_pactadas,
+        monto_cuota: val.monto_cuota,
+        dia_pago_limite: val.dia_pago_limite,
+        dia_firma: new Date(val.fecha_firma).getDate(),
+        mes_firma: new Date(val.fecha_firma).getMonth() + 1,
+        anio_firma: new Date(val.fecha_firma).getFullYear(),
+        // Datos vendedor
+        nombre_vendedor, edad_vendedor, estado_civil_vendedor, profesion_vendedor,
+        dpi_vendedor, empresa_vendedor, notario, fecha_nombramiento,
+        registro_numero, registro_folio, registro_libro,
+        // Datos propiedad
+        numero_finca, folio_propiedad, libro_propiedad, numero_lote,
+        manzana_propiedad, area_propiedad, proyecto_propiedad,
+        // Medidas
+        medida_norte, medida_sur, medida_oriente, medida_poniente,
+        // Datos económicos
+        enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
+        mes_inicio_pagos, anio_inicio_pagos
+      };
+
+      // Generar y descargar PDF automático con el formato programado.
+      descargarPdfContrato(datosParaPdf, residente);
+
+      Swal.fire({ icon: "success", title: "PDF generado", text: "El contrato se descargó en formato PDF.", timer: 2000, showConfirmButton: false });
+    } catch (error) {
+      console.error('Error al generar PDF del contrato:', error);
+      Swal.fire({ icon: "error", title: "Error", text: "No se pudo generar el PDF del contrato" });
+    }
+  };
+
   const obtenerNombreDocumentoContrato = (valorDocumento = '') => {
     const raw = String(valorDocumento || '').trim();
     if (!raw) return '';
@@ -479,6 +521,10 @@ function Contratos_Residentes() {
       imprimirContrato(contrato);
       return;
     }
+    if (accion === 'pdf') {
+      descargarContratoPdf(contrato);
+      return;
+    }
     if (accion === 'borrar') {
       deleteContrato(contrato);
       return;
@@ -606,6 +652,7 @@ function Contratos_Residentes() {
                   >
                     <option value="">Seleccione acción</option>
                     <option value="editar">Editar</option>
+                    <option value="pdf">PDF contrato automático</option>
                     <option value="imprimir">Imprimir</option>
                     <option value="subir_archivo">Subir archivo</option>
                     <option value="reemplazar_archivo">Reemplazar archivo</option>
