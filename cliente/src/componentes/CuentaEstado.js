@@ -24,13 +24,13 @@ const CuentaEstado = () => {
   const [contrato, setContrato] = useState(null);
   const [simulacion, setSimulacion] = useState(null);
 
-  const [capitalRestante, setCapitalRestante] = useState('0');
-  const [interesAnual, setInteresAnual] = useState('14');
-  const [cuotasTotales, setCuotasTotales] = useState('0');
-  const [cuotasPagadas, setCuotasPagadas] = useState('0');
+  const [capitalRestante, setCapitalRestante] = useState('');
+  const [interesAnual, setInteresAnual] = useState('');
+  const [cuotasTotales, setCuotasTotales] = useState('');
+  const [cuotasPagadas, setCuotasPagadas] = useState('');
   const [cuotaObjetivo, setCuotaObjetivo] = useState('');
-  const [enganchePagado, setEnganchePagado] = useState('0');
-  const [precioTotal, setPrecioTotal] = useState('0');
+  const [enganchePagado, setEnganchePagado] = useState('');
+  const [precioTotal, setPrecioTotal] = useState('');
 
   const showToast = (message, icon = 'info') => {
     Swal.fire({
@@ -49,13 +49,13 @@ const CuentaEstado = () => {
     setResultados([]);
     setContrato(null);
     setSimulacion(null);
-    setCapitalRestante('0');
-    setInteresAnual('14');
-    setCuotasTotales('0');
-    setCuotasPagadas('0');
+    setCapitalRestante('');
+    setInteresAnual('');
+    setCuotasTotales('');
+    setCuotasPagadas('');
     setCuotaObjetivo('');
-    setEnganchePagado('0');
-    setPrecioTotal('0');
+    setEnganchePagado('');
+    setPrecioTotal('');
   };
 
   const buscarResidente = async () => {
@@ -97,11 +97,11 @@ const CuentaEstado = () => {
       setResultados([]);
 
       setCapitalRestante(String(toNumber(contratoApi.capital_restante, 0)));
-      setInteresAnual(String(toNumber(contratoApi.interes_anual, 14)));
+      setInteresAnual(String(toNumber(contratoApi.interes_anual, 0)));
       setCuotasTotales(String(toNumber(contratoApi.cuotas_totales, 0)));
       setCuotasPagadas(String(toNumber(contratoApi.cuotas_pagadas, 0)));
       setEnganchePagado(String(toNumber(contratoApi.enganche_pagado, 0)));
-      setPrecioTotal(String(toNumber(contratoApi.precio_total_estimado, 0)));
+      setPrecioTotal(String(toNumber(contratoApi.precio_total_terreno, 0)));
       setCuotaObjetivo('');
     } catch (error) {
       showToast(String(error?.response?.data || 'No se pudo cargar el detalle del contrato.'), 'error');
@@ -146,6 +146,52 @@ const CuentaEstado = () => {
     const capital = Math.max(precio - enganche, 0);
     return { precio, enganche, capital };
   }, [precioTotal, enganchePagado]);
+
+  const irACajaConPrefill = (payload) => {
+    if (!contrato?.id_contrato || !contrato?.codigo_contrato) {
+      showToast('No hay contrato seleccionado para enviar a Caja.', 'warning');
+      return;
+    }
+
+    const prefill = {
+      source: 'cuenta_estado_capital',
+      createdAt: new Date().toISOString(),
+      id_contrato: contrato.id_contrato,
+      codigo_contrato: contrato.codigo_contrato,
+      id_residente: contrato.id_residente || null,
+      ...payload
+    };
+
+    localStorage.setItem('prefill_caja_desde_cuenta_estado', JSON.stringify(prefill));
+    window.location.href = '/caja';
+  };
+
+  const enviarCuotaACaja = (row) => {
+    if (!row) return;
+
+    irACajaConPrefill({
+      tipo: 'cuota',
+      cuota_objetivo: Number(row.numero_cuota || 0),
+      monto_capital: toNumber(row.capital_cuota, 0),
+      monto_interes: toNumber(row.interes_mes, 0),
+      monto_total: toNumber(row.cuota_estimada, 0)
+    });
+  };
+
+  const enviarLiquidacionACaja = () => {
+    if (!simulacion) {
+      showToast('Calcula primero la liquidacion.', 'warning');
+      return;
+    }
+
+    irACajaConPrefill({
+      tipo: 'liquidacion',
+      cuota_objetivo: cuotaObjetivo ? parseInt(cuotaObjetivo, 10) : null,
+      monto_capital: toNumber(simulacion.capital_restante, 0),
+      monto_interes: toNumber(simulacion.interes_total_pendiente, 0),
+      monto_total: toNumber(simulacion.total_liquidacion, 0)
+    });
+  };
 
   const tablaAmortizacionPendiente = useMemo(() => {
     if (!simulacion) return [];
@@ -352,7 +398,11 @@ const CuentaEstado = () => {
                     <div className="card-body">
                       <p className="mb-1"><strong>Residente:</strong> {contrato.nombre_residente}</p>
                       <p className="mb-1"><strong>Contrato:</strong> {contrato.codigo_contrato}</p>
+                      <p className="mb-1"><strong>Precio total terreno:</strong> {formatoMoneda(contrato.precio_total_terreno)}</p>
+                      <p className="mb-1"><strong>Enganche pagado:</strong> {formatoMoneda(contrato.enganche_pagado)}</p>
+                      <p className="mb-1"><strong>Capital inicial financiado:</strong> {formatoMoneda(contrato.capital_inicial_financiado)}</p>
                       <p className="mb-1"><strong>Cuotas pagadas (historico):</strong> {contrato.cuotas_pagadas}</p>
+                      <p className="mb-1"><strong>Cuota siguiente:</strong> {contrato.cuota_siguiente}</p>
                       <p className="mb-0"><strong>Convenio activo:</strong> {contrato.id_convenio_activo > 0 ? 'Si' : 'No'}</p>
                     </div>
                   </div>
@@ -364,7 +414,7 @@ const CuentaEstado = () => {
                     <div className="card-body">
                       <p className="mb-1">Precio terreno: <strong>{formatoMoneda(resumenEjemplo.precio)}</strong></p>
                       <p className="mb-1">Enganche pagado: <strong>{formatoMoneda(resumenEjemplo.enganche)}</strong></p>
-                      <p className="mb-0">Capital inicial: <strong>{formatoMoneda(resumenEjemplo.capital)}</strong></p>
+                      <p className="mb-0">Capital inicial: <strong>{formatoMoneda(contrato.capital_inicial_financiado || resumenEjemplo.capital)}</strong></p>
                     </div>
                   </div>
                 </div>
@@ -431,6 +481,9 @@ const CuentaEstado = () => {
                   <button type="button" className="btn btn-outline-success btn-sm" onClick={exportarTablaExcel}>
                     Exportar Excel
                   </button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={enviarLiquidacionACaja}>
+                    Cobrar Cuota/Liquidacion en Caja
+                  </button>
                 </div>
 
                 <div className="row g-3">
@@ -465,6 +518,7 @@ const CuentaEstado = () => {
                             <th>Cuota Estimada</th>
                             <th>Saldo Final</th>
                             <th>Interes Acumulado</th>
+                            <th>Accion</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -477,6 +531,11 @@ const CuentaEstado = () => {
                               <td>{formatoMoneda(row.cuota_estimada)}</td>
                               <td>{formatoMoneda(row.saldo_final)}</td>
                               <td>{formatoMoneda(row.interes_acumulado)}</td>
+                              <td>
+                                <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
+                                  Cobrar en Caja
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -486,7 +545,7 @@ const CuentaEstado = () => {
                 )}
 
                 <div className="alert alert-info mt-3 mb-0">
-                  <strong>Enlace con Caja:</strong> este modulo actualmente funciona como simulador y reporte. El cobro real en Caja no se ejecuta automaticamente desde aqui; para cobrar debes registrar el pago en el modulo Caja.
+                  <strong>Enlace con Caja:</strong> ahora puedes enviar cuota o liquidacion a Caja con prellenado (opcion B: redireccion con estado). El operador solo confirma y procesa en el modal de cobro.
                 </div>
               </div>
             </div>

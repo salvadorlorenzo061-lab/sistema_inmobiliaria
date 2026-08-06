@@ -138,6 +138,8 @@ const BANCOS_GUATEMALA = [
     'Otro'
 ];
 
+const PREFILL_CAJA_KEY = 'prefill_caja_desde_cuenta_estado';
+
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
@@ -335,6 +337,26 @@ const Caja = () => {
         }
     };
 
+    const obtenerPrefillCaja = () => {
+        try {
+            const raw = localStorage.getItem(PREFILL_CAJA_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return null;
+            return parsed;
+        } catch {
+            return null;
+        }
+    };
+
+    const limpiarPrefillCaja = () => {
+        try {
+            localStorage.removeItem(PREFILL_CAJA_KEY);
+        } catch {
+            // noop
+        }
+    };
+
     const contratoTieneAsignacionValida = (registro = {}) => {
         const idProyecto = Number(registro?.id_proyecto || 0);
         const idEmpresaFacturacion = Number(registro?.id_empresa_facturacion || 0);
@@ -488,6 +510,44 @@ const Caja = () => {
     };
 
     const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
+
+    useEffect(() => {
+        const prefill = obtenerPrefillCaja();
+        if (!prefill?.codigo_contrato) return;
+
+        setBusqueda(String(prefill.codigo_contrato));
+
+        const ejecutarBusquedaPrefill = async () => {
+            try {
+                const idUsuario = obtenerUsuarioActivo();
+                setDatosDeuda(null);
+                setListaResidentesPendientes([]);
+                const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
+                    params: {
+                        criterio: String(prefill.codigo_contrato).trim(),
+                        ...(idUsuario ? { id_usuario: idUsuario } : {})
+                    }
+                });
+
+                const lista = Array.isArray(res?.data) ? res.data : [];
+                setListaResidentes(lista);
+
+                const candidato = lista.find((item) => Number(item?.id_contrato || 0) === Number(prefill?.id_contrato || 0))
+                    || lista.find((item) => String(item?.codigo_contrato || '').trim() === String(prefill.codigo_contrato).trim())
+                    || null;
+
+                if (candidato) {
+                    await seleccionarResidente(candidato);
+                    await abrirModalCobroConDatosActualizados();
+                }
+            } catch (error) {
+                console.error('No se pudo aplicar prefill desde Cuenta Estado:', error);
+            }
+        };
+
+        ejecutarBusquedaPrefill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         const consultarEstadoCorrelativoUsuario = async () => {
@@ -914,6 +974,46 @@ const Caja = () => {
             parseFloat(montoEngancheSeleccionado || 0),
             engancheActualizado
         );
+
+        const prefill = obtenerPrefillCaja();
+        if (prefill
+            && Number(prefill?.id_contrato || 0) === Number(actualizado?.id_contrato || 0)
+        ) {
+            const cuotaObjetivo = Number(prefill?.cuota_objetivo || 0);
+            const mesObjetivo = (mesesPendientes || []).find((mes, idx) => {
+                const cuotaReal = Number(mesesDetalleMap?.[mes] || (idx + 1));
+                return cuotaObjetivo > 0 && cuotaReal === cuotaObjetivo;
+            });
+
+            const seleccionPrefill = mesObjetivo ? [mesObjetivo] : seleccionBase;
+            const abonoCapitalPrefill = String(prefill?.tipo || '').toLowerCase() === 'liquidacion'
+                ? Math.max(Number(prefill?.monto_capital || 0), 0)
+                : 0;
+
+            if (seleccionPrefill.length) {
+                const idx = (mesesPendientes || []).indexOf(seleccionPrefill[0]);
+                setMesesSeleccionados(seleccionPrefill);
+                setMesPagado(seleccionPrefill[0]);
+                setNumCuota(idx >= 0 ? String(idx + 1) : '1');
+            }
+
+            if (abonoCapitalPrefill > 0) {
+                setMontoEngancheSeleccionado(abonoCapitalPrefill);
+            }
+
+            recalcularTotalesCobro(
+                seleccionPrefill,
+                serviciosSeleccionados,
+                actualizado,
+                serviciosContrato,
+                abonoCapitalPrefill,
+                engancheActualizado
+            );
+
+            mostrarToast('Prefill aplicado desde Cuenta Estado. Verifica y confirma el cobro.', 'info');
+            limpiarPrefillCaja();
+        }
+
         setShowModalCobro(true);
     };
 
