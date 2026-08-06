@@ -1150,83 +1150,117 @@ router.get("/meses-pendientes", (req, res) => {
                 }
             });
 
-            // Compatibilidad con datos historicos guardados solo como "Mes" sin año.
-            // Se asigna cada mes legado a la primera ocurrencia cronologica no marcada.
-            if (legacySoloMes.length) {
-                const usados = new Set(mesesPagadosSet);
-                legacySoloMes.forEach((indiceMesLegacy) => {
-                    const match = candidatosMeta.find((item) => item.fecha.getMonth() === indiceMesLegacy && !usados.has(item.mes));
-                    if (match) {
-                        usados.add(match.mes);
-                        mesesPagadosSet.add(match.mes);
-                    }
-                });
-            }
+            let pendientesMeta = [];
+            let mesesPagadosOrdenados = [];
+            let totalCuotasContrato = (Number.isInteger(cuotasPactadas) && cuotasPactadas > 0)
+                ? cuotasPactadas
+                : Math.max(candidatosMeta.length, 1);
+            let cuotasPagadasContrato = 0;
+            let cuotasPendientesContrato = 0;
 
-            // Si un mes fue anulado, debe volver a considerarse pendiente aunque haya quedado rastro legacy.
-            mesesAnuladosSet.forEach((mes) => {
-                if (mesesPagadosSet.has(mes)) {
-                    mesesPagadosSet.delete(mes);
-                }
-            });
-
-            // Regla de negocio: la cuota 1 corresponde al enganche.
-            // Al liquidarse totalmente el enganche, el primer mes contractual se considera atendido.
-            if (!tieneConvenioActivo && engancheContrato > 0 && enganchePagado >= (engancheContrato - 0.01) && candidatosMeta.length > 0) {
-                mesesPagadosSet.add(candidatosMeta[0].mes);
-            }
-
-            // Filtrar: solo retornar meses que NO estén en pagados
-            let pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
-
-            // Si hay saldo pendiente, asegurar que existan meses pendientes suficientes para poder cobrar.
             const cuotasRestantesPorSaldo = (montoCuota > 0 && saldoPendiente > 0)
                 ? Math.ceil(saldoPendiente / montoCuota)
                 : 0;
 
-            if (cuotasRestantesPorSaldo > 0 && pendientesMeta.length < cuotasRestantesPorSaldo) {
-                const pendientesSet = new Set(pendientesMeta.map((item) => item.mes));
-                const base = fechaFinMes
-                    ? new Date(fechaFinMes.getFullYear(), fechaFinMes.getMonth(), 1)
-                    : new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), 1);
-                let offset = fechaFinMes ? 1 : candidatos.length;
+            if (tieneConvenioActivo) {
+                const cuotasPendientesConvenio = Math.min(
+                    Math.max(cuotasRestantesPorSaldo, 0),
+                    Math.max(totalCuotasContrato, 0)
+                );
+                cuotasPagadasContrato = Math.max(totalCuotasContrato - cuotasPendientesConvenio, 0);
+                cuotasPendientesContrato = cuotasPendientesConvenio;
 
-                while (pendientesMeta.length < cuotasRestantesPorSaldo) {
-                    const extra = new Date(base.getFullYear(), base.getMonth(), 1);
-                    extra.setMonth(extra.getMonth() + offset);
-                    const numeroCuotaExtra = obtenerNumeroCuotaDesdeFechas(fechaInicio, extra) || (candidatosMeta.length + pendientesMeta.length + 1);
+                for (let indice = 0; indice < totalCuotasContrato; indice += 1) {
+                    const fechaCuota = new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), 1);
+                    fechaCuota.setMonth(fechaCuota.getMonth() + indice);
+                    const itemMeta = {
+                        mes: etiquetaMesDesdeFecha(fechaCuota),
+                        numero_cuota: indice + 1,
+                        fecha: new Date(fechaCuota.getFullYear(), fechaCuota.getMonth(), 1)
+                    };
 
-                    if (Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0 && numeroCuotaExtra > cuotasBaseContrato) {
-                        break;
+                    if (indice < cuotasPagadasContrato) {
+                        mesesPagadosOrdenados.push(itemMeta.mes);
+                    } else {
+                        pendientesMeta.push(itemMeta);
                     }
-
-                    const etiqueta = etiquetaMesDesdeFecha(extra);
-                    if (!mesesPagadosSet.has(etiqueta) && !pendientesSet.has(etiqueta)) {
-                        pendientesSet.add(etiqueta);
-                        pendientesMeta.push({
-                            mes: etiqueta,
-                            numero_cuota: numeroCuotaExtra,
-                            fecha: new Date(extra.getFullYear(), extra.getMonth(), 1)
-                        });
-                    }
-                    offset += 1;
                 }
+            } else {
+                // Compatibilidad con datos historicos guardados solo como "Mes" sin año.
+                // Se asigna cada mes legado a la primera ocurrencia cronologica no marcada.
+                if (legacySoloMes.length) {
+                    const usados = new Set(mesesPagadosSet);
+                    legacySoloMes.forEach((indiceMesLegacy) => {
+                        const match = candidatosMeta.find((item) => item.fecha.getMonth() === indiceMesLegacy && !usados.has(item.mes));
+                        if (match) {
+                            usados.add(match.mes);
+                            mesesPagadosSet.add(match.mes);
+                        }
+                    });
+                }
+
+                // Si un mes fue anulado, debe volver a considerarse pendiente aunque haya quedado rastro legacy.
+                mesesAnuladosSet.forEach((mes) => {
+                    if (mesesPagadosSet.has(mes)) {
+                        mesesPagadosSet.delete(mes);
+                    }
+                });
+
+                // Regla de negocio: la cuota 1 corresponde al enganche.
+                // Al liquidarse totalmente el enganche, el primer mes contractual se considera atendido.
+                if (engancheContrato > 0 && enganchePagado >= (engancheContrato - 0.01) && candidatosMeta.length > 0) {
+                    mesesPagadosSet.add(candidatosMeta[0].mes);
+                }
+
+                // Filtrar: solo retornar meses que NO estén en pagados
+                pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
+
+                // Si hay saldo pendiente, asegurar que existan meses pendientes suficientes para poder cobrar.
+                if (cuotasRestantesPorSaldo > 0 && pendientesMeta.length < cuotasRestantesPorSaldo) {
+                    const pendientesSet = new Set(pendientesMeta.map((item) => item.mes));
+                    const base = fechaFinMes
+                        ? new Date(fechaFinMes.getFullYear(), fechaFinMes.getMonth(), 1)
+                        : new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), 1);
+                    let offset = fechaFinMes ? 1 : candidatos.length;
+
+                    while (pendientesMeta.length < cuotasRestantesPorSaldo) {
+                        const extra = new Date(base.getFullYear(), base.getMonth(), 1);
+                        extra.setMonth(extra.getMonth() + offset);
+                        const numeroCuotaExtra = obtenerNumeroCuotaDesdeFechas(fechaInicio, extra) || (candidatosMeta.length + pendientesMeta.length + 1);
+
+                        if (Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0 && numeroCuotaExtra > cuotasBaseContrato) {
+                            break;
+                        }
+
+                        const etiqueta = etiquetaMesDesdeFecha(extra);
+                        if (!mesesPagadosSet.has(etiqueta) && !pendientesSet.has(etiqueta)) {
+                            pendientesSet.add(etiqueta);
+                            pendientesMeta.push({
+                                mes: etiqueta,
+                                numero_cuota: numeroCuotaExtra,
+                                fecha: new Date(extra.getFullYear(), extra.getMonth(), 1)
+                            });
+                        }
+                        offset += 1;
+                    }
+                }
+
+                pendientesMeta = pendientesMeta.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+                mesesPagadosOrdenados = candidatosMeta
+                    .filter((item) => mesesPagadosSet.has(item.mes))
+                    .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
+                    .map((item) => item.mes);
+
+                totalCuotasContrato = (Number.isInteger(cuotasPactadas) && cuotasPactadas > 0)
+                    ? cuotasPactadas
+                    : Math.max(candidatosMeta.length, mesesPagadosOrdenados.length + pendientesMeta.length, 1);
+
+                cuotasPagadasContrato = Math.min(mesesPagadosOrdenados.length, totalCuotasContrato);
+                cuotasPendientesContrato = Math.max(totalCuotasContrato - cuotasPagadasContrato, 0);
             }
 
             pendientesMeta = pendientesMeta.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
             const mesesPendientes = pendientesMeta.map((item) => item.mes);
-
-            const mesesPagadosOrdenados = candidatosMeta
-                .filter((item) => mesesPagadosSet.has(item.mes))
-                .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
-                .map((item) => item.mes);
-
-            const totalCuotasContrato = (Number.isInteger(cuotasPactadas) && cuotasPactadas > 0)
-                ? cuotasPactadas
-                : Math.max(candidatosMeta.length, mesesPagadosOrdenados.length + mesesPendientes.length, 1);
-
-            const cuotasPagadasContrato = Math.min(mesesPagadosOrdenados.length, totalCuotasContrato);
-            const cuotasPendientesContrato = Math.max(totalCuotasContrato - cuotasPagadasContrato, 0);
 
             return res.status(200).json({
                 meses: mesesPendientes,
