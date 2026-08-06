@@ -811,10 +811,7 @@ const Caja = () => {
                     label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, meses)
                 };
             });
-            const opciones = [
-                ...(engancheInicial > 0 ? [{ value: '0', label: 'Cuota 0 - Enganche' }] : []),
-                ...opcionesMeses
-            ];
+            const opciones = [...opcionesMeses];
             setOpcionesCuota(opciones.length ? opciones : [{ value: '0', label: 'Sin cuotas pendientes' }]);
 
             const primerMes = mesesASeleccionar[0] || meses[0] || '';
@@ -934,16 +931,6 @@ const Caja = () => {
             actualizarMontoParaSeleccion(next);
             return next;
         });
-    };
-
-    const seleccionarCuotaCeroEnganche = () => {
-        const engancheActual = Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
-        if (engancheActual <= 0) return;
-
-        setNumCuota('0');
-        setMesesSeleccionados([]);
-        setMesPagado(mesesPendientes[0] || '');
-        recalcularTotalesCobro([], serviciosSeleccionados, datosDeuda);
     };
 
     const toggleServicioSeleccionado = (idServicio) => {
@@ -1137,10 +1124,7 @@ const Caja = () => {
                             label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados)
                         };
                     });
-                    const opcionesActualizadas = [
-                        ...(engancheRefrescado > 0 ? [{ value: '0', label: 'Cuota 0 - Enganche' }] : []),
-                        ...opcionesMesesActualizadas
-                    ];
+                    const opcionesActualizadas = [...opcionesMesesActualizadas];
                     setOpcionesCuota(opcionesActualizadas.length ? opcionesActualizadas : [{ value: '0', label: 'Sin cuotas pendientes' }]);
                     setNumCuota(mesesActualizados.length ? '1' : (engancheRefrescado > 0 ? '0' : '0'));
                     if (mesesActualizados.length) {
@@ -2025,30 +2009,6 @@ const Caja = () => {
                                     <div className="mb-4">
                                         <label className="form-label fw-bold">📅 Meses a Pagar (seleccione cuáles paga el residente):</label>
                                         <div className="border rounded-3 p-3 bg-light">
-                                            {enganchePendiente > 0 && (
-                                                <div
-                                                    className={`d-flex align-items-center p-3 border rounded-2 mb-2 ${String(numCuota) === '0' ? 'bg-warning bg-opacity-10 border-warning border-2' : 'bg-white border-secondary'}`}
-                                                    style={{ cursor: 'pointer' }}
-                                                    onClick={seleccionarCuotaCeroEnganche}
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        className="form-check-input me-3"
-                                                        checked={String(numCuota) === '0'}
-                                                        onChange={seleccionarCuotaCeroEnganche}
-                                                        style={{ cursor: 'pointer', width: '20px', height: '20px' }}
-                                                    />
-                                                    <div className="flex-grow-1">
-                                                        <span className="fw-bold fs-5 text-dark">Cuota 0 - Enganche</span>
-                                                    </div>
-                                                    <span className="badge bg-warning text-dark">
-                                                        Q{enganchePendiente.toFixed(2)}
-                                                    </span>
-                                                    {String(numCuota) === '0' && (
-                                                        <span className="ms-2 text-warning fw-bold">✓ Seleccionado</span>
-                                                    )}
-                                                </div>
-                                            )}
                                             {mesesPendientes.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">
                                                     {mesesPendientes.map((mes) => (
