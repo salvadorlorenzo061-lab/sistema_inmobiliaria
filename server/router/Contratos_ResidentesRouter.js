@@ -639,7 +639,7 @@ router.put("/actualizar", (req, res) => {
 
     const queryUpdate = `
         UPDATE contratos_residentes SET 
-        codigo_contrato=?, id_residente=?, id_empresa_marca=?, id_proyecto=?, id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
+        codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
         enganche=?, cuotas_pactadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
         dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
         WHERE id_contrato=?

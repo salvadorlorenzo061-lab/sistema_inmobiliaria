@@ -27,6 +27,8 @@ function Contratos_Residentes() {
   const [id_contrato, setId_contrato] = useState("");
   const [codigo_contrato, setCodigo_contrato] = useState("");
   const [id_residente, setId_residente] = useState("");
+  const [id_empresa_marca, setId_empresa_marca] = useState("");
+  const [id_proyecto, setId_proyecto] = useState("");
   const [id_tipo_contrato, setId_tipo_contrato] = useState("");
   const [monto_total, setMonto_total] = useState("120000");
   const [cuotas_pactadas, setCuotas_pactadas] = useState("60");
@@ -79,7 +81,7 @@ function Contratos_Residentes() {
   const [contratosList, setContratosList] = useState([]);
   const [residentesList, setResidentesList] = useState([]);
   const [tiposContratoList, setTiposContratoList] = useState([]);
-  const [empresasList, setEmpresasLista] = useState([]);
+  const [proyectosList, setProyectosList] = useState([]);
   const [busqueda, setBusqueda] = useState("");
 
   // Modales
@@ -105,17 +107,90 @@ function Contratos_Residentes() {
       const resTipos = await Axios.get(`${API_BASE_URL}/api/tipos_contratos`);
       setTiposContratoList(resTipos.data);
 
-      // Traer las empresas para el selector de proyectos
-      const resEmpresas = await Axios.get(`${API_BASE_URL}/api/empresas`);
-      setEmpresasLista(resEmpresas.data);
+      // Traer proyectos reales para persistir id_proyecto/id_empresa_marca
+      const resProyectos = await Axios.get(`${API_BASE_URL}/api/proyectos`);
+      setProyectosList(Array.isArray(resProyectos?.data) ? resProyectos.data : []);
     } catch (error) {
       console.error("Error al cargar catálogos del sistema", error);
     }
   }, [API_URL]);
 
+  const seleccionarProyectoContrato = (proyectoId) => {
+    const idProyectoValue = String(proyectoId || '').trim();
+    setId_proyecto(idProyectoValue);
+
+    if (!idProyectoValue) {
+      setId_empresa_marca('');
+      setProyecto_propiedad('');
+      return;
+    }
+
+    const proyectoSel = proyectosList.find((p) => String(p.id_proyecto) === idProyectoValue);
+    if (proyectoSel) {
+      setId_empresa_marca(String(proyectoSel.id_empresa || ''));
+      setProyecto_propiedad(String(proyectoSel.nombre || proyectoSel.nombre_proyecto || '').trim());
+    }
+  };
+
+  const resolverProyectoContrato = (contrato = {}) => {
+    const idProyectoContrato = String(contrato.id_proyecto || '').trim();
+    if (idProyectoContrato) {
+      const proyectoPorId = proyectosList.find((p) => String(p.id_proyecto) === idProyectoContrato);
+      return {
+        idProyecto: idProyectoContrato,
+        idEmpresa: contrato.id_empresa_marca ? String(contrato.id_empresa_marca) : String(proyectoPorId?.id_empresa || ''),
+        nombreProyecto: String(contrato.nombre_proyecto || proyectoPorId?.nombre || proyectoPorId?.nombre_proyecto || '').trim()
+      };
+    }
+
+    const nombreObjetivo = String(contrato.nombre_proyecto || contrato.nombre_proyecto_pdf || '').trim().toLowerCase();
+    if (!nombreObjetivo) {
+      return {
+        idProyecto: '',
+        idEmpresa: contrato.id_empresa_marca ? String(contrato.id_empresa_marca) : '',
+        nombreProyecto: ''
+      };
+    }
+
+    const proyectoPorNombre = proyectosList.find((p) => {
+      const nombre = String(p.nombre || p.nombre_proyecto || '').trim().toLowerCase();
+      return nombre && nombre === nombreObjetivo;
+    });
+
+    if (proyectoPorNombre) {
+      return {
+        idProyecto: String(proyectoPorNombre.id_proyecto || ''),
+        idEmpresa: String(contrato.id_empresa_marca || proyectoPorNombre.id_empresa || ''),
+        nombreProyecto: String(proyectoPorNombre.nombre || proyectoPorNombre.nombre_proyecto || '').trim()
+      };
+    }
+
+    return {
+      idProyecto: '',
+      idEmpresa: contrato.id_empresa_marca ? String(contrato.id_empresa_marca) : '',
+      nombreProyecto: String(contrato.nombre_proyecto || contrato.nombre_proyecto_pdf || '').trim()
+    };
+  };
+
   useEffect(() => {
     cargarCatalogos();
   }, [cargarCatalogos]);
+
+  useEffect(() => {
+    if (!showEditModal) return;
+    if (id_proyecto || !proyecto_propiedad || !proyectosList.length) return;
+
+    const proyectoPorNombre = proyectosList.find((p) => {
+      const nombre = String(p.nombre || p.nombre_proyecto || '').trim().toLowerCase();
+      return nombre && nombre === String(proyecto_propiedad || '').trim().toLowerCase();
+    });
+
+    if (proyectoPorNombre) {
+      setId_proyecto(String(proyectoPorNombre.id_proyecto || ''));
+      setId_empresa_marca(String(proyectoPorNombre.id_empresa || id_empresa_marca || ''));
+      setProyecto_propiedad(String(proyectoPorNombre.nombre || proyectoPorNombre.nombre_proyecto || '').trim());
+    }
+  }, [showEditModal, id_proyecto, proyecto_propiedad, proyectosList, id_empresa_marca]);
 
   // Cálculo automático del valor de cuota si cambia el monto total o las cuotas
   useEffect(() => {
@@ -154,8 +229,10 @@ function Contratos_Residentes() {
     }
 
     Axios.post(`${API_URL}/crear`, {
-      codigo_contrato, 
-      id_residente, 
+      codigo_contrato,
+      id_residente,
+      id_empresa_marca: id_empresa_marca || null,
+      id_proyecto: id_proyecto || null,
       id_tipo_contrato, 
       monto_total,
       enganche,
@@ -233,7 +310,10 @@ function Contratos_Residentes() {
     }
 
     Axios.put(`${API_URL}/actualizar`, {
-      id_contrato, codigo_contrato, id_residente, id_tipo_contrato, monto_total,
+      id_contrato, codigo_contrato, id_residente,
+      id_empresa_marca: id_empresa_marca || null,
+      id_proyecto: id_proyecto || null,
+      id_tipo_contrato, monto_total,
       enganche,
       cuotas_pactadas,
       monto_cuota,
@@ -520,9 +600,14 @@ function Contratos_Residentes() {
   };
 
   const abrirEditarModal = (val) => {
+    const proyectoResuelto = resolverProyectoContrato(val);
+
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
     setId_residente(val.id_residente);
+    setId_empresa_marca(proyectoResuelto.idEmpresa);
+    setId_proyecto(proyectoResuelto.idProyecto);
+    setProyecto_propiedad(proyectoResuelto.nombreProyecto);
     setId_tipo_contrato(val.id_tipo_contrato);
     setMonto_total(val.monto_total);
     setCuotas_pactadas(val.cuotas_pactadas);
@@ -574,7 +659,8 @@ function Contratos_Residentes() {
   };
 
   const limpiarCampos = () => {
-    setId_contrato(""); setCodigo_contrato(""); setId_residente(""); setId_tipo_contrato("");
+    setId_contrato(""); setCodigo_contrato(""); setId_residente("");
+    setId_empresa_marca(""); setId_proyecto(""); setId_tipo_contrato("");
     setMonto_total(""); setCuotas_pactadas(""); setMonto_cuota(""); setDia_pago_limite("");
     setFecha_firma(""); setFecha_compra(""); setFecha_fin(""); setEstado(""); setDocumento_contrato("");
     // Restablecer valores del vendedor/empresa a los valores por defecto
@@ -590,7 +676,7 @@ function Contratos_Residentes() {
     // Propiedad
     setNumero_finca("30052"); setFolio_propiedad("133"); setLibro_propiedad("268");
     setNumero_lote("1"); setManzana_propiedad("A"); setArea_propiedad("89.65");
-    setProyecto_propiedad("VILLAS DE TAPACUN");
+    setProyecto_propiedad("");
     // Medidas
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
@@ -793,11 +879,11 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Proyecto:</label>
-                  <select className="form-control" value={proyecto_propiedad} onChange={e => setProyecto_propiedad(e.target.value)}>
+                  <select className="form-control" value={id_proyecto} onChange={e => seleccionarProyectoContrato(e.target.value)}>
                     <option value="">-- Seleccionar Proyecto --</option>
-                    {empresasList.map((empresa) => (
-                      <option key={empresa.id_empresa} value={empresa.nombre_corporativo || empresa.nombre_empresa}>
-                        {empresa.nombre_corporativo || empresa.nombre_empresa}
+                    {proyectosList.map((proyecto) => (
+                      <option key={proyecto.id_proyecto} value={proyecto.id_proyecto}>
+                        {proyecto.nombre || proyecto.nombre_proyecto}
                       </option>
                     ))}
                   </select>
@@ -1032,11 +1118,11 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Proyecto:</label>
-                  <select className="form-control" value={proyecto_propiedad} onChange={e => setProyecto_propiedad(e.target.value)}>
+                  <select className="form-control" value={id_proyecto} onChange={e => seleccionarProyectoContrato(e.target.value)}>
                     <option value="">-- Seleccionar Proyecto --</option>
-                    {empresasList.map((empresa) => (
-                      <option key={empresa.id_empresa} value={empresa.nombre_corporativo || empresa.nombre_empresa}>
-                        {empresa.nombre_corporativo || empresa.nombre_empresa}
+                    {proyectosList.map((proyecto) => (
+                      <option key={proyecto.id_proyecto} value={proyecto.id_proyecto}>
+                        {proyecto.nombre || proyecto.nombre_proyecto}
                       </option>
                     ))}
                   </select>

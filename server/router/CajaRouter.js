@@ -765,8 +765,6 @@ router.get("/residentes-pendientes", (req, res) => {
             ) ult ON ult.ultimo_id_convenio = cp.id_convenio
         ) conv ON conv.id_contrato = c.id_contrato
         WHERE c.estado = 'activo'
-        AND COALESCE(c.id_proyecto, 0) > 0
-        AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
         ${filtroPermisos}
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
     `;
@@ -777,21 +775,6 @@ router.get("/residentes-pendientes", (req, res) => {
             if (err) {
                 console.error("Error al obtener residentes pendientes:", err.message);
                 return res.status(500).send("Error al obtener residentes: " + err.message);
-            }
-
-            if ((!result || result.length === 0) && filtrarPorPermiso) {
-                const queryFallback = query
-                    .replace(filtroPermisos, '')
-                    .replace('1 AS permiso_cobro_usuario', '0 AS permiso_cobro_usuario');
-
-                return db.query(queryFallback, [], (fallbackErr, fallbackRows) => {
-                    if (fallbackErr) {
-                        console.error('Error en fallback residentes-pendientes:', fallbackErr.message);
-                        return res.status(500).send('Error al obtener residentes: ' + fallbackErr.message);
-                    }
-
-                    return res.status(200).json(fallbackRows || []);
-                });
             }
 
             return res.status(200).json(result || []);
@@ -930,8 +913,6 @@ router.get("/buscar-residente", (req, res) => {
             ) ult ON ult.ultimo_id_convenio = cp.id_convenio
         ) conv ON conv.id_contrato = c.id_contrato
         WHERE c.estado = 'activo'
-        AND COALESCE(c.id_proyecto, 0) > 0
-        AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
         ${filtroPermisos}
         AND (
             r.nombre LIKE ? 
@@ -953,28 +934,6 @@ router.get("/buscar-residente", (req, res) => {
                 console.error("Error en la consulta:", err.message);
                 return res.status(500).send("Error al consultar el residente: " + err.message);
             }
-
-            if (result.length === 0 && filtrarPorPermiso) {
-                const queryFallback = query
-                    .replace(filtroPermisos, '')
-                    .replace('1 AS permiso_cobro_usuario', '0 AS permiso_cobro_usuario');
-
-                const fallbackParams = [searchTerm, searchTerm, searchTerm, searchTerm];
-
-                return db.query(queryFallback, fallbackParams, (fallbackErr, fallbackRows) => {
-                    if (fallbackErr) {
-                        console.error("Error en consulta fallback de Caja:", fallbackErr.message);
-                        return res.status(500).send("Error al consultar el residente: " + fallbackErr.message);
-                    }
-
-                    if (!fallbackRows || fallbackRows.length === 0) {
-                        return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
-                    }
-
-                    return res.status(200).json(fallbackRows);
-                });
-            }
-
             if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
             
             return res.status(200).json(result);
