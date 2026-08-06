@@ -325,6 +325,127 @@ function Contratos_Residentes() {
     }
   };
 
+  const obtenerNombreDocumentoContrato = (valorDocumento = '') => {
+    const raw = String(valorDocumento || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('db|')) {
+      return raw.slice(3).trim();
+    }
+    const partes = raw.split('|').map((item) => String(item || '').trim()).filter(Boolean);
+    if (partes.length >= 2) return partes[1];
+    return partes[0] || '';
+  };
+
+  const subirArchivoContrato = async (contrato, forzarReemplazo = false) => {
+    const inputResultado = await Swal.fire({
+      title: forzarReemplazo ? 'Reemplazar archivo del contrato' : 'Subir archivo del contrato',
+      text: 'Puedes subir cualquier formato de archivo (PDF, Word, imágenes, ZIP, etc.).',
+      input: 'file',
+      inputAttributes: {
+        'aria-label': 'Seleccionar archivo del contrato'
+      },
+      showCancelButton: true,
+      confirmButtonText: forzarReemplazo ? 'Reemplazar archivo' : 'Subir archivo',
+      cancelButtonText: 'Cancelar'
+    });
+
+    const archivo = inputResultado.value;
+    if (!archivo) return;
+
+    if (archivo.size > 15 * 1024 * 1024) {
+      Swal.fire({ icon: 'warning', title: 'Archivo muy grande', text: 'El archivo no puede superar 15 MB.' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    if (forzarReemplazo) {
+      formData.append('replace_existing', '1');
+    }
+
+    try {
+      await Axios.post(`${API_URL}/subir-word/${contrato.id_contrato}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      await cargarCatalogos();
+      Swal.fire({
+        icon: 'success',
+        title: forzarReemplazo ? 'Archivo reemplazado' : 'Archivo subido',
+        text: `${archivo.name} guardado correctamente en el contrato.`
+      });
+    } catch (error) {
+      const status = Number(error?.response?.status || 0);
+      const mensaje = error?.response?.data?.message || 'No se pudo guardar el archivo.';
+
+      if (status === 409) {
+        const confirmacion = await Swal.fire({
+          icon: 'question',
+          title: 'Este contrato ya tiene archivo',
+          text: '¿Deseas reemplazar el archivo existente con este nuevo archivo?',
+          showCancelButton: true,
+          confirmButtonText: 'Sí, reemplazar',
+          cancelButtonText: 'Cancelar'
+        });
+
+        if (!confirmacion.isConfirmed) return;
+
+        const formDataReemplazo = new FormData();
+        formDataReemplazo.append('archivo', archivo);
+        formDataReemplazo.append('replace_existing', '1');
+
+        try {
+          await Axios.post(`${API_URL}/subir-word/${contrato.id_contrato}`, formDataReemplazo, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+
+          await cargarCatalogos();
+          Swal.fire({ icon: 'success', title: 'Archivo reemplazado', text: `${archivo.name} reemplazó el archivo anterior.` });
+        } catch (replaceErr) {
+          Swal.fire({
+            icon: 'error',
+            title: 'No se pudo reemplazar',
+            text: replaceErr?.response?.data?.message || 'Error al reemplazar archivo del contrato.'
+          });
+        }
+
+        return;
+      }
+
+      Swal.fire({ icon: 'error', title: 'Error al subir archivo', text: mensaje });
+    }
+  };
+
+  const descargarArchivoContrato = async (contrato) => {
+    try {
+      const response = await Axios.get(`${API_URL}/descargar-word/${contrato.id_contrato}`, {
+        responseType: 'blob'
+      });
+
+      const contentDisposition = String(response.headers?.['content-disposition'] || '');
+      const matchUtf8 = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+      const matchSimple = contentDisposition.match(/filename="?([^";]+)"?/i);
+      const nombreDescarga = decodeURIComponent(matchUtf8?.[1] || matchSimple?.[1] || `${contrato.codigo_contrato || 'contrato'}_archivo`);
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', nombreDescarga);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      Swal.fire({ icon: 'success', title: 'Descarga iniciada', text: `Archivo descargado: ${nombreDescarga}` });
+    } catch (error) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'No se pudo descargar',
+        text: error?.response?.data?.message || 'Este contrato no tiene archivo cargado o no fue posible descargarlo.'
+      });
+    }
+  };
+
   const abrirEditarModal = (val) => {
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
@@ -360,6 +481,18 @@ function Contratos_Residentes() {
     }
     if (accion === 'borrar') {
       deleteContrato(contrato);
+      return;
+    }
+    if (accion === 'subir_archivo') {
+      subirArchivoContrato(contrato, false);
+      return;
+    }
+    if (accion === 'reemplazar_archivo') {
+      subirArchivoContrato(contrato, true);
+      return;
+    }
+    if (accion === 'descargar_archivo') {
+      descargarArchivoContrato(contrato);
     }
   };
 
@@ -456,7 +589,12 @@ function Contratos_Residentes() {
                     {val.estado.toUpperCase()}
                   </span>
                 </td>
-                <td style={{ minWidth: '170px' }}>
+                <td style={{ minWidth: '220px' }}>
+                  {!!val.documento_contrato && (
+                    <div className="small text-success fw-semibold mb-1" title={obtenerNombreDocumentoContrato(val.documento_contrato)}>
+                      📎 {obtenerNombreDocumentoContrato(val.documento_contrato)}
+                    </div>
+                  )}
                   <select
                     className="form-select form-select-sm"
                     defaultValue=""
@@ -469,6 +607,9 @@ function Contratos_Residentes() {
                     <option value="">Seleccione acción</option>
                     <option value="editar">Editar</option>
                     <option value="imprimir">Imprimir</option>
+                    <option value="subir_archivo">Subir archivo</option>
+                    <option value="reemplazar_archivo">Reemplazar archivo</option>
+                    <option value="descargar_archivo">Descargar archivo</option>
                     <option value="borrar">Borrar</option>
                   </select>
                 </td>
