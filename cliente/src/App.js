@@ -54,6 +54,45 @@ const parsePermisos = (permisos) => {
   return [];
 };
 
+const extraerPermisoTokens = (item) => {
+  if (!item) {
+    return [];
+  }
+
+  if (typeof item === 'string' || typeof item === 'number') {
+    return [normalizeText(item)];
+  }
+
+  if (typeof item === 'object') {
+    return [
+      item.id,
+      item.nombre,
+      item.label,
+      item.modulo,
+      item.path
+    ]
+      .filter((value) => value !== null && typeof value !== 'undefined' && String(value).trim())
+      .map((value) => normalizeText(String(value).replace(/^\//, '')));
+  }
+
+  return [];
+};
+
+const detectarPerfilCaja = (rolNormalizado, permisosNormalizados) => {
+  if (rolNormalizado.includes('cobro') || rolNormalizado.includes('caja')) {
+    return true;
+  }
+
+  const pistasCaja = ['caja', 'cobro', 'morosidad', 'pagos', 'convenio'];
+  for (const permiso of permisosNormalizados) {
+    if (pistasCaja.some((pista) => permiso.includes(pista))) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const showFadeToast = (message, icon = 'info') => {
   Swal.fire({
     toast: true,
@@ -231,11 +270,17 @@ function App() {
     }
 
     const permisos = parsePermisos(usuarioActivo.permisos);
-    const permisosNormalizados = new Set(permisos.map((item) => normalizeText(item)));
+    const permisosNormalizados = new Set(
+      permisos.flatMap((item) => extraerPermisoTokens(item)).filter(Boolean)
+    );
     const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
     const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
     const fallbackPermisos = getFallbackPermisosByRole(rolNormalizado);
-    const permisosEfectivos = permisosNormalizados.size > 0 ? permisosNormalizados : fallbackPermisos;
+    const perfilCaja = detectarPerfilCaja(rolNormalizado, permisosNormalizados);
+    const permisosEfectivos = new Set([
+      ...permisosNormalizados,
+      ...(perfilCaja ? Array.from(fallbackPermisos) : [])
+    ]);
 
     return modulesConfig.filter((module) => {
       if (esAdmin) {
