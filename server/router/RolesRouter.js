@@ -7,15 +7,39 @@ const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 router.use(cors());
 router.use(express.json());
 
+const asegurarRolConvenio = (callback) => {
+    const sql = `
+        INSERT INTO roles (nombre_rol, descripcion)
+        SELECT ?, ?
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM roles
+            WHERE LOWER(TRIM(nombre_rol)) = LOWER(TRIM(?))
+        )
+    `;
+
+    db.query(
+        sql,
+        ['Convenio', 'Rol operativo para gestion de convenios de pago', 'Convenio'],
+        (err) => callback(err || null)
+    );
+};
+
 // === 1. LISTAR ROLES ===
 router.get("/", (req, res) => {
-    db.query('SELECT * FROM roles ORDER BY id_rol ASC', (err, result) => {
-        if (err) {
-            console.error(err);
-            res.status(500).send("Error al obtener los roles");
-        } else {
-            res.send(result);
+    asegurarRolConvenio((ensureErr) => {
+        if (ensureErr) {
+            console.error('Error asegurando rol Convenio:', ensureErr);
         }
+
+        db.query('SELECT * FROM roles ORDER BY id_rol ASC', (err, result) => {
+            if (err) {
+                console.error(err);
+                res.status(500).send("Error al obtener los roles");
+            } else {
+                res.send(result);
+            }
+        });
     });
 });
 
