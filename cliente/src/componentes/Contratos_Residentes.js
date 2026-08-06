@@ -611,6 +611,20 @@ function Contratos_Residentes() {
     setCurrentPage(1);
   };
 
+  const thCompacto = {
+    fontSize: '0.88rem',
+    padding: '0.45rem 0.35rem',
+    lineHeight: 1.15,
+    whiteSpace: 'normal',
+    verticalAlign: 'middle'
+  };
+
+  const tdCompacto = {
+    fontSize: '0.9rem',
+    padding: '0.45rem 0.35rem',
+    verticalAlign: 'middle'
+  };
+
   return (
     <div className="container mt-4">
       <div className="module-header">
@@ -627,52 +641,52 @@ function Contratos_Residentes() {
       </div>
 
       <div style={{ marginBottom: '20px' }}>
-      <table className="table table-striped table-bordered shadow-sm align-middle" style={{ width: '100%', tableLayout: 'fixed', marginBottom: '0' }}>
+      <table className="table table-sm table-striped table-bordered shadow-sm align-middle" style={{ width: '100%', tableLayout: 'auto', marginBottom: '0' }}>
         <thead className="table-dark">
           <tr>
-            <th>CÓDIGO</th>
-            <th>RESIDENTE</th>
-            <th>IDENTIFICACIÓN</th>
-            <th>TIPO CONTRATO</th>
-            <th>MONTO TOTAL</th>
-            <th>CUOTAS</th>
-            <th>VALOR CUOTA</th>
-            <th>DÍA LÍMITE</th>
-            <th>FECHA FIRMA</th>
-            <th>FECHA COMPRA</th>
-            <th>FECHA FIN</th>
-            <th>ESTADO</th>
-            <th style={{ width: '220px' }}>ACCIONES</th>
+            <th style={thCompacto}>CÓDIGO</th>
+            <th style={thCompacto}>RESIDENTE</th>
+            <th style={thCompacto}>IDENTIFICACIÓN</th>
+            <th style={thCompacto}>TIPO CONTRATO</th>
+            <th style={thCompacto}>MONTO TOTAL</th>
+            <th style={thCompacto}>CUOTAS</th>
+            <th style={thCompacto}>VALOR CUOTA</th>
+            <th style={thCompacto}>DÍA LÍMITE</th>
+            <th style={thCompacto}>FECHA FIRMA</th>
+            <th style={thCompacto}>FECHA COMPRA</th>
+            <th style={thCompacto}>FECHA FIN</th>
+            <th style={thCompacto}>ESTADO</th>
+            <th style={{ ...thCompacto, width: '190px' }}>ACCIONES</th>
           </tr>
         </thead>
         <tbody>
           {filtrados.length > 0 ? (
             contratosPaginados.map(val => (
               <tr key={val.id_contrato}>
-                <td className="fw-bold text-primary">{val.codigo_contrato}</td>
-                <td>{val.nombre_residente?.toUpperCase()}</td>
-                <td><span className="fw-bold text-primary">{val.numero_identificacion || 'Sin asignar'}</span></td>
-                <td><span className="badge bg-info text-dark">{val.nombre_tipo_contrato}</span></td>
-                <td className="fw-bold">Q {parseFloat(val.monto_total).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                <td className="text-center">{val.cuotas_pactadas}</td>
-                <td className="text-success fw-bold">Q {parseFloat(val.monto_cuota).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                <td className="text-center fw-bold text-danger">Día {val.dia_pago_limite}</td>
-                <td className="text-center text-muted" style={{fontSize:'0.85rem'}}>{val.fecha_firma ? new Date(val.fecha_firma).toLocaleDateString('es-GT') : '-'}</td>
-                <td className="text-center text-muted" style={{fontSize:'0.85rem'}}>{val.fecha_compra ? new Date(val.fecha_compra).toLocaleDateString('es-GT') : <span className="text-info fw-bold">-</span>}</td>
-                <td className="text-center text-muted" style={{fontSize:'0.85rem'}}>{val.fecha_fin ? new Date(val.fecha_fin).toLocaleDateString('es-GT') : <span className="text-warning fw-bold">Indefinida</span>}</td>
-                <td>
+                <td className="fw-bold text-primary" style={tdCompacto}>{val.codigo_contrato}</td>
+                <td style={tdCompacto}>{val.nombre_residente?.toUpperCase()}</td>
+                <td style={tdCompacto}><span className="fw-bold text-primary">{val.numero_identificacion || 'Sin asignar'}</span></td>
+                <td style={tdCompacto}><span className="badge bg-info text-dark">{val.nombre_tipo_contrato}</span></td>
+                <td className="fw-bold" style={tdCompacto}>Q {parseFloat(val.monto_total).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                <td className="text-center" style={tdCompacto}>{val.cuotas_pactadas}</td>
+                <td className="text-success fw-bold" style={tdCompacto}>Q {parseFloat(val.monto_cuota).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                <td className="text-center fw-bold text-danger" style={tdCompacto}>Día {val.dia_pago_limite}</td>
+                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_firma ? new Date(val.fecha_firma).toLocaleDateString('es-GT') : '-'}</td>
+                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_compra ? new Date(val.fecha_compra).toLocaleDateString('es-GT') : <span className="text-info fw-bold">-</span>}</td>
+                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_fin ? new Date(val.fecha_fin).toLocaleDateString('es-GT') : <span className="text-warning fw-bold">Indefinida</span>}</td>
+                <td style={tdCompacto}>
                   <span className={`badge ${val.estado === 'activo' ? 'bg-success' : val.estado === 'finalizado' ? 'bg-secondary' : 'bg-warning'}`}>
                     {val.estado.toUpperCase()}
                   </span>
                 </td>
-                <td style={{ width: '220px' }}>
+                <td style={{ ...tdCompacto, width: '190px' }}>
                   {!!val.documento_contrato && (
                     <div
                       className="small text-success fw-semibold mb-1"
                       title={obtenerNombreDocumentoContrato(val.documento_contrato)}
                       style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                     >
-                      📎 {truncarTexto(obtenerNombreDocumentoContrato(val.documento_contrato), 28)}
+                      📎 {truncarTexto(obtenerNombreDocumentoContrato(val.documento_contrato), 22)}
                     </div>
                   )}
                   <select
