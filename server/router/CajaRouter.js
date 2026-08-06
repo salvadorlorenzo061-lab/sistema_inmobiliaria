@@ -704,8 +704,8 @@ router.get("/residentes-pendientes", (req, res) => {
                                     AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
                         ), 0)
             ) AS monto_total_original,
-            CASE WHEN conv.id_convenio IS NOT NULL THEN 0 ELSE c.enganche END AS enganche,
-            CASE WHEN conv.id_convenio IS NOT NULL THEN 0 ELSE c.enganche END AS enganche_total,
+            c.enganche,
+            c.enganche AS enganche_total,
             COALESCE((
                 SELECT SUM(pd_enganche.subtotal)
                 FROM pagos_detalle pd_enganche
@@ -713,9 +713,7 @@ router.get("/residentes-pendientes", (req, res) => {
                 WHERE p_enganche.id_contrato = c.id_contrato
                   AND pd_enganche.tipo_concepto = 'enganche'
             ), 0) AS enganche_pagado,
-            CASE
-                WHEN conv.id_convenio IS NOT NULL THEN 0
-                ELSE GREATEST(
+            GREATEST(
                 c.enganche - COALESCE((
                     SELECT SUM(pd_enganche.subtotal)
                     FROM pagos_detalle pd_enganche
@@ -724,8 +722,7 @@ router.get("/residentes-pendientes", (req, res) => {
                       AND pd_enganche.tipo_concepto = 'enganche'
                 ), 0),
                 0
-                )
-            END AS enganche_pendiente,
+            ) AS enganche_pendiente,
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
@@ -852,14 +849,17 @@ router.get("/buscar-residente", (req, res) => {
         const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
-            c.id_contrato, c.codigo_contrato, c.monto_total AS saldo_pendiente, 
+            c.id_contrato, c.codigo_contrato,
+            COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
+            COALESCE(conv.monto_original,
                         c.monto_total + COALESCE((
                                 SELECT SUM(pd_capital.subtotal)
                                 FROM pagos_detalle pd_capital
                                 INNER JOIN pagos p_capital ON p_capital.id_pago = pd_capital.id_pago
                                 WHERE p_capital.id_contrato = c.id_contrato
                                     AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
-                        ), 0) AS monto_total_original,
+                        ), 0)
+            ) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE((
@@ -879,8 +879,16 @@ router.get("/buscar-residente", (req, res) => {
                 ), 0),
                 0
             ) AS enganche_pendiente,
-            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.interes_porcentaje, c.mora, tc.id_tipo_contrato, 
+            COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
+            COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
+            COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
+            c.interes_porcentaje,
+            c.mora,
+            tc.id_tipo_contrato,
             tc.nombre_tipo_contrato AS nombre_contrato,
+            conv.id_convenio AS id_convenio_activo,
+            conv.fecha_inicio AS convenio_fecha_inicio,
+            conv.estado AS convenio_estado,
             c.id_proyecto,
             COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion,
             ${permisoSelect} AS permiso_cobro_usuario,
@@ -896,6 +904,16 @@ router.get("/buscar-residente", (req, res) => {
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
         LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
+        LEFT JOIN (
+            SELECT cp.id_convenio, cp.id_contrato, cp.fecha_inicio, cp.monto_original, cp.saldo_actual, cp.cuotas_pactadas, cp.monto_cuota, cp.estado
+            FROM convenio_pagos cp
+            INNER JOIN (
+                SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
+                FROM convenio_pagos
+                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'incumplido')
+                GROUP BY id_contrato
+            ) ult ON ult.ultimo_id_convenio = cp.id_convenio
+        ) conv ON conv.id_contrato = c.id_contrato
         WHERE c.estado = 'activo'
         AND COALESCE(c.id_proyecto, 0) > 0
         AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
@@ -955,7 +973,7 @@ router.get("/meses-pendientes", (req, res) => {
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
             COALESCE(conv.saldo_actual, c.monto_total) AS monto_total,
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
-            CASE WHEN conv.id_convenio IS NOT NULL THEN 0 ELSE c.enganche END AS enganche,
+            c.enganche AS enganche,
             COALESCE((
                 SELECT SUM(pd_enganche.subtotal)
                 FROM pagos_detalle pd_enganche
@@ -1579,7 +1597,7 @@ router.post("/procesar-pago", (req, res) => {
 
             const sqlContratoCobro = `
                 SELECT
-                    c.monto_total,
+                    COALESCE(conv.saldo_actual, c.monto_total) AS monto_total,
                     c.enganche,
                     COALESCE((
                         SELECT SUM(pd_capital.subtotal)
@@ -1595,16 +1613,27 @@ router.post("/procesar-pago", (req, res) => {
                         WHERE p_enganche.id_contrato = c.id_contrato
                           AND pd_enganche.tipo_concepto = 'enganche'
                     ), 0) AS enganche_pagado,
-                    c.fecha_compra,
+                    COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
                     c.fecha_firma,
-                    c.cuotas_pactadas,
-                    c.plazo_meses,
-                    c.monto_cuota,
+                    COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
+                    COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
+                    COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
                     c.interes_porcentaje,
+                    conv.id_convenio AS id_convenio_activo,
                     c.id_proyecto,
                     COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
                 FROM contratos_residentes c
                 LEFT JOIN residentes r ON r.id_residente = c.id_residente
+                LEFT JOIN (
+                    SELECT cp.id_convenio, cp.id_contrato, cp.fecha_inicio, cp.saldo_actual, cp.cuotas_pactadas, cp.monto_cuota
+                    FROM convenio_pagos cp
+                    INNER JOIN (
+                        SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
+                        FROM convenio_pagos
+                        WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'incumplido')
+                        GROUP BY id_contrato
+                    ) ult ON ult.ultimo_id_convenio = cp.id_convenio
+                ) conv ON conv.id_contrato = c.id_contrato
                 WHERE c.id_contrato = ?
                 LIMIT 1
             `;

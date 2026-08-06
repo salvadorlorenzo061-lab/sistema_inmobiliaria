@@ -142,12 +142,15 @@ const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
     const calcularPlanFinancieroContrato = (contrato = {}) => {
+        const tieneConvenioActivo = Number(contrato?.id_convenio_activo || 0) > 0;
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
         const montoTotalContrato = Math.max(parseFloat(contrato?.monto_total_original || contrato?.monto_total_contrato || 0), 0);
         const enganche = Math.max(parseFloat(contrato?.enganche || 0), 0);
         const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
-        const interesPorcentaje = Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
+        const interesPorcentaje = tieneConvenioActivo
+            ? 0
+            : Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
         const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
         const tasaMensual = interesPorcentaje > 0 ? ((interesPorcentaje / 100 / 12) * FACTOR_AJUSTE_TASA_MENSUAL) : 0;
 
@@ -177,10 +180,16 @@ const Caja = () => {
             : 0;
         const usarCuotaCapitalTeorica = cuotaCapitalTeorica > 0
             && (referenciaCuotaCapital <= 0 || desfaseRelativoCuota > 0.1);
-        const capitalPorCuota = usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital;
+        const capitalPorCuota = tieneConvenioActivo
+            ? (capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica)
+            : (usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital);
         const cuotaMensualAmortizada = calcularCuotaAmortizada(capitalBaseInteres, tasaMensual, cuotasPactadas);
-        const cuotaMensualConInteres = parseFloat(cuotaMensualAmortizada.toFixed(2));
-        const interesTotalContrato = (capitalBaseInteres > 0 && cuotasPactadas > 0)
+        const cuotaMensualConInteres = tieneConvenioActivo
+            ? parseFloat((capitalPorCuota || 0).toFixed(2))
+            : parseFloat(cuotaMensualAmortizada.toFixed(2));
+        const interesTotalContrato = tieneConvenioActivo
+            ? 0
+            : (capitalBaseInteres > 0 && cuotasPactadas > 0)
             ? parseFloat(Math.max((cuotaMensualConInteres * cuotasPactadas) - capitalBaseInteres, 0).toFixed(2))
             : 0;
         const interesPorCuota = cuotasPactadas > 0
