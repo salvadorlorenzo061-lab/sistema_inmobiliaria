@@ -37,8 +37,8 @@ const asegurarTablaConvenios = async () => {
 
 const normalizarEstado = (estado) => {
     const value = String(estado || '').trim().toLowerCase();
-    const permitidos = ['activo', 'cumplido', 'incumplido', 'anulado'];
-    return permitidos.includes(value) ? value : 'activo';
+    const permitidos = ['activo', 'pendiente', 'pagado', 'cumplido', 'incumplido', 'anulado'];
+    return permitidos.includes(value) ? value : 'pendiente';
 };
 
 router.get('/', async (_req, res) => {

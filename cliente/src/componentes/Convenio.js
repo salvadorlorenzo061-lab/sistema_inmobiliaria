@@ -7,6 +7,24 @@ import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { API_BASE_URL } from '../config';
 
+const resolverEstadoVisualConvenio = (item = {}) => {
+  const saldoActual = Number(item?.saldo_actual || 0);
+  const estadoActual = String(item?.estado || '').trim().toLowerCase();
+
+  if (estadoActual === 'anulado') return 'anulado';
+  if (estadoActual === 'incumplido') return 'incumplido';
+  if (saldoActual <= 0 || estadoActual === 'pagado' || estadoActual === 'cumplido') return 'pagado';
+  if (estadoActual === 'pendiente' || estadoActual === 'activo') return 'pendiente';
+  return estadoActual || 'pendiente';
+};
+
+const getBadgeEstadoConvenio = (estadoVisual = '') => {
+  if (estadoVisual === 'pagado') return 'success';
+  if (estadoVisual === 'anulado') return 'dark';
+  if (estadoVisual === 'incumplido') return 'danger';
+  return 'warning';
+};
+
 function Convenio() {
   const [id_convenio, setIdConvenio] = useState('');
   const [id_contrato, setIdContrato] = useState('');
@@ -17,7 +35,7 @@ function Convenio() {
   const [monto_cuota, setMontoCuota] = useState('');
   const [fecha_inicio, setFechaInicio] = useState('');
   const [observaciones, setObservaciones] = useState('');
-  const [estado, setEstado] = useState('activo');
+  const [estado, setEstado] = useState('pendiente');
 
   const [convenios, setConvenios] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -62,7 +80,7 @@ function Convenio() {
     setMontoCuota('');
     setFechaInicio('');
     setObservaciones('');
-    setEstado('activo');
+    setEstado('pendiente');
     setBusquedaResidente('');
     setResultadosResidentes([]);
     setResidenteSeleccionado(null);
@@ -84,7 +102,7 @@ function Convenio() {
     setMontoCuota(String(item.monto_cuota ?? ''));
     setFechaInicio(item.fecha_inicio ? String(item.fecha_inicio).slice(0, 10) : '');
     setObservaciones(String(item.observaciones || ''));
-    setEstado(String(item.estado || 'activo'));
+    setEstado(String(item.estado || 'pendiente'));
     setBusquedaResidente(`${item.nombre_residente || ''} · ${item.codigo_contrato || `#${item.id_contrato}`}`);
     setResultadosResidentes([]);
     setResidenteSeleccionado({
@@ -376,14 +394,15 @@ function Convenio() {
               <td>{item.cuotas_pactadas}</td>
               <td>Q{Number(item.monto_cuota || 0).toFixed(2)}</td>
               <td>
-                <span className={`badge bg-${item.estado === 'cumplido' ? 'success' : item.estado === 'anulado' ? 'dark' : item.estado === 'incumplido' ? 'danger' : 'warning'}`}>
-                  {String(item.estado || 'activo').toUpperCase()}
+                <span className={`badge bg-${getBadgeEstadoConvenio(resolverEstadoVisualConvenio(item))}`}>
+                  {resolverEstadoVisualConvenio(item).toUpperCase()}
                 </span>
               </td>
               <td style={{ whiteSpace: 'nowrap' }}>
                 <button className="btn btn-sm btn-warning fw-bold me-1" onClick={() => abrirEditar(item)}>EDITAR</button>
                 <button className="btn btn-sm btn-info fw-bold me-1" onClick={() => imprimirConvenioPdf(item)}>PDF</button>
-                <button className="btn btn-sm btn-success fw-bold me-1" onClick={() => cambiarEstadoConvenio(item, 'cumplido')}>CUMPLIDO</button>
+                <button className="btn btn-sm btn-success fw-bold me-1" onClick={() => cambiarEstadoConvenio(item, 'pagado')}>PAGADO</button>
+                <button className="btn btn-sm btn-warning fw-bold me-1" onClick={() => cambiarEstadoConvenio(item, 'pendiente')}>PENDIENTE</button>
                 <button className="btn btn-sm btn-secondary fw-bold me-1" onClick={() => cambiarEstadoConvenio(item, 'anulado')}>ANULAR</button>
                 <button className="btn btn-sm btn-danger fw-bold" onClick={() => eliminarConvenio(item)}>ELIMINAR</button>
               </td>
@@ -487,6 +506,8 @@ function Convenio() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Estado:</label>
                   <select className="form-select" value={estado} onChange={(e) => setEstado(e.target.value)}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagado">Pagado</option>
                     <option value="activo">Activo</option>
                     <option value="cumplido">Cumplido</option>
                     <option value="incumplido">Incumplido</option>

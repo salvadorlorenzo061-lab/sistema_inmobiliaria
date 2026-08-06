@@ -141,6 +141,7 @@ const BANCOS_GUATEMALA = [
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
+    const redondear2 = (valor) => parseFloat((Number(valor || 0)).toFixed(2));
     const calcularPlanFinancieroContrato = (contrato = {}) => {
         const tieneConvenioActivo = Number(contrato?.id_convenio_activo || 0) > 0;
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
@@ -166,7 +167,7 @@ const Caja = () => {
         };
 
         const capitalTotalContrato = montoTotalContrato > 0
-            ? parseFloat(Math.max(montoTotalContrato - enganche, 0).toFixed(2))
+            ? parseFloat(Math.max(tieneConvenioActivo ? montoTotalContrato : (montoTotalContrato - enganche), 0).toFixed(2))
             : ((capitalPorCuotaContrato > 0 && cuotasPactadas > 0)
                 ? parseFloat((capitalPorCuotaContrato * cuotasPactadas).toFixed(2))
                 : parseFloat(saldoPendiente.toFixed(2)));
@@ -340,7 +341,8 @@ const Caja = () => {
         return Number.isInteger(idProyecto) && idProyecto > 0 && Number.isInteger(idEmpresaFacturacion) && idEmpresaFacturacion > 0;
     };
 
-    const usaCuotaCeroEnganche = Math.max(parseFloat(datosDeuda?.enganche || 0), 0) > 0;
+    const usaCuotaCeroEnganche = Number(datosDeuda?.id_convenio_activo || 0) <= 0
+        && Math.max(parseFloat(datosDeuda?.enganche || 0), 0) > 0;
 
     const obtenerNumeroCuotaVisual = (numeroCuotaReal) => {
         const numero = Number(numeroCuotaReal || 0);
@@ -572,13 +574,13 @@ const Caja = () => {
             if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
                 return 0;
             }
-            const interesBaseEntero = Math.floor(totalInteres / cuotasPactadas);
-            const residuoFinal = parseFloat((totalInteres - (interesBaseEntero * cuotasPactadas)).toFixed(2));
+            const interesBase = redondear2(totalInteres / cuotasPactadas);
+            const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
             const esUltimaCuota = numeroCuota === cuotasPactadas;
 
             return esUltimaCuota
-                ? parseFloat((interesBaseEntero + residuoFinal).toFixed(2))
-                : interesBaseEntero;
+                ? residuoFinal
+                : interesBase;
         };
 
         // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
@@ -612,16 +614,16 @@ const Caja = () => {
             : 0;
         const capitalBaseInteres = Math.max(Number(planContrato?.capitalBaseInteres || 0), 0);
         const cuotasPactadas = Math.max(Number(planContrato?.cuotasPactadas || 0), 0);
-        const capitalPorCuotaEntera = Math.floor(Math.max(Number(planContrato?.capitalPorCuota || 0), 0));
+        const capitalPorCuotaExacta = redondear2(Math.max(Number(planContrato?.capitalPorCuota || 0), 0));
         const obtenerCapitalPorNumeroCuota = (numeroCuota) => {
             if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadas <= 0 || capitalBaseInteres <= 0) {
                 return 0;
             }
             const esUltimaCuota = numeroCuota === cuotasPactadas;
             if (!esUltimaCuota) {
-                return capitalPorCuotaEntera;
+                return capitalPorCuotaExacta;
             }
-            return parseFloat((capitalBaseInteres - (capitalPorCuotaEntera * (cuotasPactadas - 1))).toFixed(2));
+            return redondear2(capitalBaseInteres - (capitalPorCuotaExacta * (cuotasPactadas - 1)));
         };
         const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
             if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
@@ -1428,8 +1430,8 @@ const Caja = () => {
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
     const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
     const cuotaInicioFinanciadaVista = 1;
-    const capitalPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
-    const interesPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0) / Math.max(Number(planFinancieroContrato?.cuotasPactadas || 1), 1), 0));
+    const capitalPorCuotaRegular = redondear2(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
+    const interesPorCuotaRegular = redondear2(Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0) / Math.max(Number(planFinancieroContrato?.cuotasPactadas || 1), 1), 0));
     const cuotaRegularSinDecimales = capitalPorCuotaRegular + interesPorCuotaRegular;
     const obtenerInteresPorNumeroCuotaVista = (numeroCuota) => {
         const totalInteres = Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0), 0);
@@ -1438,13 +1440,13 @@ const Caja = () => {
         if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
             return 0;
         }
-        const interesBaseEntero = Math.floor(totalInteres / cuotasPactadas);
-        const residuoFinal = parseFloat((totalInteres - (interesBaseEntero * cuotasPactadas)).toFixed(2));
+        const interesBase = redondear2(totalInteres / cuotasPactadas);
+        const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
         const esUltimaCuota = numeroCuota === cuotasPactadas;
 
         return esUltimaCuota
-            ? parseFloat((interesBaseEntero + residuoFinal).toFixed(2))
-            : interesBaseEntero;
+            ? residuoFinal
+            : interesBase;
     };
 
     const obtenerNumeroCuotaMesVista = (mesEtiqueta = '') => {
@@ -1462,14 +1464,14 @@ const Caja = () => {
     const mesAplicacionAbonoCapital = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
     const capitalBaseInteresVista = Math.max(Number(planFinancieroContrato?.capitalBaseInteres || 0), 0);
     const cuotasPactadasVista = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
-    const capitalPorCuotaEnteraVista = Math.floor(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
+    const capitalPorCuotaExactaVista = redondear2(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
     const obtenerCapitalPorNumeroCuotaVista = (numeroCuota) => {
         if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadasVista <= 0 || capitalBaseInteresVista <= 0) {
             return 0;
         }
         const esUltimaCuota = numeroCuota === cuotasPactadasVista;
-        if (!esUltimaCuota) return capitalPorCuotaEnteraVista;
-        return parseFloat((capitalBaseInteresVista - (capitalPorCuotaEnteraVista * (cuotasPactadasVista - 1))).toFixed(2));
+        if (!esUltimaCuota) return capitalPorCuotaExactaVista;
+        return redondear2(capitalBaseInteresVista - (capitalPorCuotaExactaVista * (cuotasPactadasVista - 1)));
     };
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
         const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
@@ -1695,10 +1697,10 @@ const Caja = () => {
                                 <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
                                 <div><strong>Capital financiado:</strong> Q{planFinancieroContrato.capitalBaseInteres.toFixed(2)}</div>
                                 <div><strong>Cuota 0:</strong> Enganche Q{planFinancieroContrato.enganche.toFixed(2)}</div>
-                                <div><strong>Capital por cuota:</strong> Q{capitalPorCuotaRegular.toFixed(0)}</div>
+                                <div><strong>Capital por cuota:</strong> Q{capitalPorCuotaRegular.toFixed(2)}</div>
                                 <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
-                                <div><strong>Interés por cuota:</strong> Q{interesPorCuotaRegular.toFixed(0)}</div>
-                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{cuotaRegularSinDecimales.toFixed(0)}</div>
+                                <div><strong>Interés por cuota:</strong> Q{interesPorCuotaRegular.toFixed(2)}</div>
+                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{cuotaRegularSinDecimales.toFixed(2)}</div>
                             </div>
                         </div>
                         <hr />
@@ -1841,7 +1843,7 @@ const Caja = () => {
                                     {/* Monto fijo y total a pagar */}
                                     <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{capitalPorCuotaRegular.toFixed(0)}
+                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{capitalPorCuotaRegular.toFixed(2)}
                                             <br />
                                             <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{interesMensualSeleccionado.toFixed(2)} / cuota
                                             <br />
