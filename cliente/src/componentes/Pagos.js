@@ -3,7 +3,6 @@ import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { API_BASE_URL } from '../config';
 
 function Pagos() {
   const [id_pago, setId_pago] = useState("");
@@ -23,16 +22,16 @@ function Pagos() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
-  const API_URL = `${API_BASE_URL}/api/pagos`;
+  const API_URL = "http://localhost:3001/api/pagos";
 
   const cargarDatosRelacionales = () => {
     // Carga de contratos para los select
-    Axios.get(`${API_BASE_URL}/api/contratos_residentes`)
+    Axios.get("http://localhost:3001/api/contratos_residentes")
       .then((res) => setContratos(res.data))
       .catch((err) => console.error("Error al cargar contratos", err));
 
     // Carga de usuarios/empleados para los select
-    Axios.get(`${API_BASE_URL}/api/usuarios`)
+    Axios.get("http://localhost:3001/api/usuarios")
       .then((res) => setUsuarios(res.data))
       .catch((err) => console.error("Error al cargar usuarios", err));
   };
@@ -253,9 +252,7 @@ function Pagos() {
                   <select value={id_contrato} onChange={(e) => setId_contrato(e.target.value)} className="form-select">
                     <option value="">-- Seleccione el Contrato --</option>
                     {contratosList.map(c => (
-                      <option key={c.id_contrato} value={c.id_contrato}>
-                        ID: {c.id_contrato} - Residente: {c.nombre_residente || c.nombre || c.id_residente}
-                      </option>
+                      <option key={c.id_contrato} value={c.id_contrato}>ID: {c.id_contrato} - Residente: {c.nombre || c.id_residente}</option>
                     ))}
                   </select>
                 </div>
@@ -264,10 +261,7 @@ function Pagos() {
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
                     <option value="">-- Seleccione Usuario --</option>
                     {usuariosList.map(u => (
-                      <option key={u.id_usuario} value={u.id_usuario}>
-                        {u.nombre || u.nombre_usuario || u.usuario || u.correo || `Usuario #${u.id_usuario}`}
-                        {u.nombre_rol ? ` (${u.nombre_rol})` : ''}
-                      </option>
+                      <option key={u.id_usuario} value={u.id_usuario}>{u.nombre_usuario || u.usuario}</option>
                     ))}
                   </select>
                 </div>
@@ -321,10 +315,7 @@ function Pagos() {
                   <label className="form-label fw-bold">Usuario Receptor:</label>
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
                     {usuariosList.map(u => (
-                      <option key={u.id_usuario} value={u.id_usuario}>
-                        {u.nombre || u.nombre_usuario || u.usuario || u.correo || `Usuario #${u.id_usuario}`}
-                        {u.nombre_rol ? ` (${u.nombre_rol})` : ''}
-                      </option>
+                      <option key={u.id_usuario} value={u.id_usuario}>{u.nombre_usuario || u.usuario}</option>
                     ))}
                   </select>
                 </div>
