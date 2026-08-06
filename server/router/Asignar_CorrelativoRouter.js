@@ -8,6 +8,7 @@ router.use(cors());
 router.use(express.json());
 
 const padCorrelativo = (value) => String(Number(value) || 0).padStart(8, '0');
+const normalizarToken = (value) => String(value || '').trim().toUpperCase();
 
 const ensureAsignacionesTable = () => {
     const sql = `
@@ -42,6 +43,7 @@ router.get('/', (req, res) => {
             ac.*,
             u.nombre AS nombre_usuario,
             u.correo,
+            r.nombre_rol,
             e.nombre_empresa,
             rf.numero_resolucion,
             CONCAT(ac.serie, '-', LPAD(ac.correlativo_inicio, 8, '0')) AS correlativo_inicio_display,
@@ -53,6 +55,7 @@ router.get('/', (req, res) => {
             GREATEST((ac.correlativo_fin - ac.correlativo_actual) + 1, 0) AS correlativos_disponibles
         FROM asignar_correlativos ac
         INNER JOIN usuarios u ON u.id_usuario = ac.id_usuario
+        LEFT JOIN roles r ON r.id_rol = u.id_rol
         INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
         LEFT JOIN empresas e ON e.id_empresa = ac.id_empresa
         ORDER BY ac.id_asignacion DESC
@@ -75,81 +78,90 @@ router.get('/estado-usuario', (req, res) => {
         return res.status(400).send({ message: 'Debe enviar un id_usuario válido.' });
     }
 
-    const usuarioQuery = `
-        SELECT r.nombre_rol
-        FROM usuarios u
-        LEFT JOIN roles r ON r.id_rol = u.id_rol
-        WHERE u.id_usuario = ?
-        LIMIT 1
-    `;
-
-    db.query(usuarioQuery, [idUsuario], (usuarioErr, usuarioRows) => {
-        if (usuarioErr) {
-            console.error(usuarioErr);
-            return res.status(500).send({ message: 'No se pudo validar el rol del usuario.' });
-        }
-
-        const rolNormalizado = String(usuarioRows?.[0]?.nombre_rol || '')
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .trim();
-        const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
-
-        const asignacionQuery = `
+    const asignacionQuery = `
             SELECT
                 ac.id_asignacion,
                 ac.serie,
-                ac.correlativo_actual,
+                ac.correlativo_inicio,
+                                COALESCE(ac.correlativo_actual, ac.correlativo_inicio) AS correlativo_actual,
                 ac.correlativo_fin,
                 ac.id_empresa,
                 e.nombre_empresa,
-                CONCAT(ac.serie, '-', LPAD(ac.correlativo_actual, 8, '0')) AS correlativo_actual_display
+                CONCAT(ac.serie, '-', LPAD(ac.correlativo_inicio, 8, '0')) AS correlativo_inicio_display,
+                                CONCAT(ac.serie, '-', LPAD(COALESCE(ac.correlativo_actual, ac.correlativo_inicio), 8, '0')) AS correlativo_actual_display
             FROM asignar_correlativos ac
             LEFT JOIN empresas e ON e.id_empresa = ac.id_empresa
             WHERE ac.id_usuario = ?
               AND ac.estado = 'activo'
-              AND ac.correlativo_actual <= ac.correlativo_fin
+                            AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
             ORDER BY ac.fecha_asignacion ASC, ac.id_asignacion ASC
             LIMIT 1
         `;
 
-        db.query(asignacionQuery, [idUsuario], (asignErr, asignRows) => {
-            if (asignErr) {
-                console.error(asignErr);
-                return res.status(500).send({ message: 'No se pudo consultar el estado de correlativos del usuario.' });
+    db.query(asignacionQuery, [idUsuario], (asignErr, asignRows) => {
+        if (asignErr) {
+            console.error(asignErr);
+            return res.status(500).send({ message: 'No se pudo consultar el estado de correlativos del usuario.' });
+        }
+
+        if (asignRows && asignRows.length) {
+            const asignacion = asignRows[0];
+            return res.send({
+                disponible: true,
+                origen: 'asignado',
+                correlativo_inicio: asignacion.correlativo_inicio_display,
+                correlativo: asignacion.correlativo_actual_display,
+                correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
+                id_asignacion: asignacion.id_asignacion,
+                id_empresa: asignacion.id_empresa,
+                nombre_empresa: asignacion.nombre_empresa || null,
+                mensaje: 'Tienes correlativos asignados disponibles para cobrar.'
+            });
+        }
+
+        const resolucionUsuarioQuery = `
+            SELECT
+                rf.id_resolucion,
+                rf.id_empresa,
+                rf.serie,
+                rf.correlativo_actual,
+                rf.rango_final,
+                e.nombre_empresa
+            FROM resoluciones_facturas rf
+            LEFT JOIN empresas e ON e.id_empresa = rf.id_empresa
+            WHERE rf.id_usuario = ?
+              AND rf.estado = 'activo'
+              AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final
+              AND (rf.fecha_vencimiento IS NULL OR rf.fecha_vencimiento >= CURDATE())
+            ORDER BY rf.fecha_vencimiento ASC, rf.id_resolucion ASC
+            LIMIT 1
+        `;
+
+        db.query(resolucionUsuarioQuery, [idUsuario], (resErr, resRows) => {
+            if (resErr) {
+                console.error(resErr);
+                return res.status(500).send({ message: 'No se pudo consultar resolución asignada al usuario.' });
             }
 
-            if (asignRows && asignRows.length) {
-                const asignacion = asignRows[0];
+            if (resRows && resRows.length) {
+                const resolucion = resRows[0];
                 return res.send({
                     disponible: true,
-                    origen: 'asignado',
-                    correlativo: asignacion.correlativo_actual_display,
-                    correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
-                    id_asignacion: asignacion.id_asignacion,
-                    id_empresa: asignacion.id_empresa,
-                    nombre_empresa: asignacion.nombre_empresa || null,
-                    mensaje: 'Tienes correlativos asignados disponibles para cobrar.'
-                });
-            }
-
-            if (esAdmin) {
-                return res.send({
-                    disponible: true,
-                    origen: 'resolucion',
-                    correlativo: null,
-                    correlativo_fin: null,
+                    origen: 'resolucion_usuario',
+                    correlativo_inicio: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
+                    correlativo: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
+                    correlativo_fin: `${resolucion.serie}-${padCorrelativo(resolucion.rango_final)}`,
                     id_asignacion: null,
-                    id_empresa: null,
-                    nombre_empresa: null,
-                    mensaje: 'No tienes lote asignado, pero como administrador puedes usar la resolución general.'
+                    id_empresa: resolucion.id_empresa,
+                    nombre_empresa: resolucion.nombre_empresa || null,
+                    mensaje: 'Tienes resolución asignada directamente con correlativos disponibles.'
                 });
             }
 
             return res.send({
                 disponible: false,
                 origen: null,
+                correlativo_inicio: null,
                 correlativo: null,
                 correlativo_fin: null,
                 id_asignacion: null,
@@ -184,118 +196,121 @@ router.get('/siguiente-correlativo', (req, res) => {
             return res.status(500).send({ message: 'No se pudo obtener la empresa del contrato.' });
         }
 
-        const idEmpresa = Number(empresaRows?.[0]?.id_empresa_facturacion || 0);
-        if (!idEmpresa) {
-            return res.send({
-                disponible: false,
-                origen: null,
-                correlativo: null,
-                id_asignacion: null,
-                mensaje: 'El contrato no tiene empresa de facturación configurada.'
-            });
-        }
+        const idEmpresaRaw = Number(empresaRows?.[0]?.id_empresa_facturacion || 0);
+        const idEmpresa = idEmpresaRaw > 0 ? idEmpresaRaw : null;
 
-        const usuarioQuery = `
-            SELECT r.nombre_rol
-            FROM usuarios u
-            LEFT JOIN roles r ON r.id_rol = u.id_rol
-            WHERE u.id_usuario = ?
-            LIMIT 1
-        `;
-
-        db.query(usuarioQuery, [idUsuario], (usuarioErr, usuarioRows) => {
-            if (usuarioErr) {
-                console.error(usuarioErr);
-                return res.status(500).send({ message: 'No se pudo validar el rol del usuario.' });
-            }
-
-            const rolNormalizado = String(usuarioRows?.[0]?.nombre_rol || '')
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .trim();
-            const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
-
-            const asignacionQuery = `
+                const asignacionQuery = `
                 SELECT
                     ac.id_asignacion,
+                    ac.id_empresa,
                     ac.serie,
-                    ac.correlativo_actual,
+                                        COALESCE(ac.correlativo_actual, ac.correlativo_inicio) AS correlativo_actual,
                     ac.correlativo_fin,
-                    CONCAT(ac.serie, '-', LPAD(ac.correlativo_actual, 8, '0')) AS correlativo_actual_display
+                                        CONCAT(ac.serie, '-', LPAD(COALESCE(ac.correlativo_actual, ac.correlativo_inicio), 8, '0')) AS correlativo_actual_display
                 FROM asignar_correlativos ac
+                                INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
+                                LEFT JOIN empresas e_contract ON e_contract.id_empresa = ?
                 WHERE ac.id_usuario = ?
-                  AND ac.id_empresa = ?
                   AND ac.estado = 'activo'
-                  AND ac.correlativo_actual <= ac.correlativo_fin
-                ORDER BY ac.fecha_asignacion ASC, ac.id_asignacion ASC
+                                    AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                                    AND (
+                                                ? IS NULL
+                                                OR EXISTS (
+                                                        SELECT 1
+                                                        FROM resoluciones_facturas rf_match
+                                                        LEFT JOIN empresas e_match ON e_match.id_empresa = rf_match.id_empresa
+                                                        WHERE rf_match.id_usuario = ac.id_usuario
+                                                            AND LOWER(TRIM(COALESCE(rf_match.estado, 'activo'))) = 'activo'
+                                                            AND UPPER(TRIM(COALESCE(rf_match.numero_resolucion, ''))) = UPPER(TRIM(COALESCE(rf_ac.numero_resolucion, '')))
+                                                            AND UPPER(TRIM(COALESCE(rf_match.serie, ''))) = UPPER(TRIM(COALESCE(rf_ac.serie, '')))
+                                                            AND (
+                                                                        rf_match.id_empresa = ?
+                                                                        OR UPPER(TRIM(COALESCE(e_match.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contract.nombre_empresa, '')))
+                                                            )
+                                                )
+                                    )
+                ORDER BY CASE
+                                                        WHEN ? IS NOT NULL AND ac.id_empresa = ? THEN 0
+                                                        WHEN ? IS NOT NULL THEN 1
+                                                        ELSE 2
+                         END ASC,
+                         ac.fecha_asignacion ASC,
+                         ac.id_asignacion ASC
                 LIMIT 1
             `;
 
-            db.query(asignacionQuery, [idUsuario, idEmpresa], (asignErr, asignRows) => {
-                if (asignErr) {
-                    console.error(asignErr);
-                    return res.status(500).send({ message: 'No se pudo consultar el correlativo asignado.' });
+                db.query(asignacionQuery, [idEmpresa, idUsuario, idEmpresa, idEmpresa, idEmpresa, idEmpresa, idEmpresa], (asignErr, asignRows) => {
+            if (asignErr) {
+                console.error(asignErr);
+                return res.status(500).send({ message: 'No se pudo consultar el correlativo asignado.' });
+            }
+
+            if (asignRows && asignRows.length) {
+                const asignacion = asignRows[0];
+                const empresaCoincide = idEmpresa && Number(asignacion.id_empresa || 0) === idEmpresa;
+                return res.send({
+                    disponible: true,
+                    origen: 'asignado',
+                    correlativo: asignacion.correlativo_actual_display,
+                    id_asignacion: asignacion.id_asignacion,
+                    correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
+                    mensaje: empresaCoincide
+                        ? 'Este correlativo asignado será usado al generar el cobro.'
+                        : 'Se usará tu correlativo activo disponible para este cobro.'
+                });
+            }
+
+                        const resolucionUsuarioQuery = `
+                                SELECT rf.id_empresa, rf.serie, rf.correlativo_actual, rf.rango_final
+                                FROM resoluciones_facturas rf
+                                LEFT JOIN empresas e_rf ON e_rf.id_empresa = rf.id_empresa
+                                LEFT JOIN empresas e_contract ON e_contract.id_empresa = ?
+                                WHERE rf.id_usuario = ?
+                                    AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                                    AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final
+                                    AND (rf.fecha_vencimiento IS NULL OR rf.fecha_vencimiento >= CURDATE())
+                                    AND (
+                                                ? IS NULL
+                                                OR rf.id_empresa = ?
+                                                OR UPPER(TRIM(COALESCE(e_rf.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contract.nombre_empresa, '')))
+                                    )
+                                ORDER BY CASE
+                                                        WHEN ? IS NOT NULL AND rf.id_empresa = ? THEN 0
+                                                        WHEN ? IS NOT NULL THEN 1
+                                                        ELSE 2
+                                                 END ASC,
+                                                 rf.fecha_vencimiento ASC,
+                                                 rf.id_resolucion ASC
+                                LIMIT 1
+                        `;
+
+                        db.query(resolucionUsuarioQuery, [idEmpresa, idUsuario, idEmpresa, idEmpresa, idEmpresa, idEmpresa, idEmpresa], (resErr, resRows) => {
+                if (resErr) {
+                    console.error(resErr);
+                    return res.status(500).send({ message: 'No se pudo consultar resolución asignada al usuario.' });
                 }
 
-                if (asignRows && asignRows.length) {
-                    const asignacion = asignRows[0];
-                    return res.send({
-                        disponible: true,
-                        origen: 'asignado',
-                        correlativo: asignacion.correlativo_actual_display,
-                        id_asignacion: asignacion.id_asignacion,
-                        correlativo_fin: `${asignacion.serie}-${padCorrelativo(asignacion.correlativo_fin)}`,
-                        mensaje: 'Este correlativo asignado será usado al generar el cobro.'
-                    });
-                }
-
-                if (!esAdmin) {
-                    return res.send({
-                        disponible: false,
-                        origen: null,
-                        correlativo: null,
-                        id_asignacion: null,
-                        mensaje: 'Este usuario no tiene correlativos asignados para este contrato.'
-                    });
-                }
-
-                const resolucionQuery = `
-                    SELECT serie, correlativo_actual, rango_final
-                    FROM resoluciones_facturas
-                    WHERE id_empresa = ?
-                      AND estado = 'activo'
-                      AND correlativo_actual BETWEEN rango_inicial AND rango_final
-                      AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURDATE())
-                    ORDER BY fecha_vencimiento ASC, id_resolucion ASC
-                    LIMIT 1
-                `;
-
-                db.query(resolucionQuery, [idEmpresa], (resErr, resRows) => {
-                    if (resErr) {
-                        console.error(resErr);
-                        return res.status(500).send({ message: 'No se pudo consultar la resolución de respaldo.' });
-                    }
-
-                    if (!resRows || !resRows.length) {
-                        return res.send({
-                            disponible: false,
-                            origen: null,
-                            correlativo: null,
-                            id_asignacion: null,
-                            mensaje: 'No hay correlativo asignado ni resolución activa disponible para este contrato.'
-                        });
-                    }
-
+                if (resRows && resRows.length) {
                     const resolucion = resRows[0];
+                    const empresaCoincide = idEmpresa && Number(resolucion.id_empresa || 0) === idEmpresa;
                     return res.send({
                         disponible: true,
-                        origen: 'resolucion',
+                        origen: 'resolucion_usuario',
                         correlativo: `${resolucion.serie}-${padCorrelativo(resolucion.correlativo_actual)}`,
                         id_asignacion: null,
                         correlativo_fin: `${resolucion.serie}-${padCorrelativo(resolucion.rango_final)}`,
-                        mensaje: 'No hay lote asignado. Como es administrador, se usará la resolución general.'
+                        mensaje: empresaCoincide
+                            ? 'Este correlativo de tu resolución asignada será usado al generar el cobro.'
+                            : 'Se usará tu resolución activa disponible para este cobro.'
                     });
+                }
+
+                return res.send({
+                    disponible: false,
+                    origen: null,
+                    correlativo: null,
+                    id_asignacion: null,
+                    mensaje: 'Este usuario no tiene correlativos asignados para este contrato.'
                 });
             });
         });
@@ -303,7 +318,8 @@ router.get('/siguiente-correlativo', (req, res) => {
 });
 
 router.post('/crear', (req, res) => {
-    const { id_usuario, id_resolucion, cantidad, observaciones } = req.body || {};
+    const { id_empresa, id_usuario, id_resolucion, cantidad, observaciones } = req.body || {};
+    const idEmpresaSeleccionada = Number(id_empresa || 0) || null;
     const cantidadNumerica = Number(cantidad);
 
     if (!id_usuario || !id_resolucion || !Number.isInteger(cantidadNumerica) || cantidadNumerica <= 0) {
@@ -322,7 +338,7 @@ router.post('/crear', (req, res) => {
             res.status(status).send({ message });
         });
 
-        db.query('SELECT id_usuario, nombre FROM usuarios WHERE id_usuario = ? LIMIT 1', [id_usuario], (userErr, userRows) => {
+        db.query('SELECT u.id_usuario, u.nombre, r.nombre_rol FROM usuarios u LEFT JOIN roles r ON r.id_rol = u.id_rol WHERE u.id_usuario = ? LIMIT 1', [id_usuario], (userErr, userRows) => {
             if (userErr) {
                 return rollback(500, 'No se pudo validar el usuario.', userErr);
             }
@@ -352,7 +368,7 @@ router.post('/crear', (req, res) => {
                 }
 
                 const resolucionQuery = `
-                    SELECT id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, estado, fecha_vencimiento
+                    SELECT id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, estado, fecha_vencimiento, rol
                     FROM resoluciones_facturas
                     WHERE id_resolucion = ?
                     LIMIT 1
@@ -369,65 +385,178 @@ router.post('/crear', (req, res) => {
                     }
 
                     const resolucion = resRows[0];
-                    const correlativoInicio = Number(resolucion.correlativo_actual || 0);
-                    const correlativoFin = correlativoInicio + cantidadNumerica - 1;
+                    const correlativoInicioBase = Number(resolucion.correlativo_actual || 0);
                     const rangoFinal = Number(resolucion.rango_final || 0);
                     const rangoInicial = Number(resolucion.rango_inicial || 0);
+                    const numeroResolucionNorm = normalizarToken(resolucion.numero_resolucion);
+                    const serieNorm = normalizarToken(resolucion.serie);
+                    const rolUsuario = String(userRows?.[0]?.nombre_rol || '')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .trim();
+                    const rolResolucion = String(resolucion.rol || 'caja')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .trim();
+                    const esAdminOGerente = rolUsuario.includes('admin') || rolUsuario.includes('gerente');
+                    const usuarioEsCaja = rolUsuario.includes('caja') || rolUsuario.includes('cobro');
+                    const usuarioEsJuridico = rolUsuario.includes('jurid') || rolUsuario.includes('legal');
+                    const rolCompatible = rolResolucion === 'ambos'
+                        || (rolResolucion === 'caja' && usuarioEsCaja)
+                        || (rolResolucion === 'juridico' && usuarioEsJuridico)
+                        || esAdminOGerente;
 
                     if (String(resolucion.estado || '').toLowerCase() !== 'activo') {
                         return rollback(400, 'La resolución no está activa.');
+                    }
+
+                    if (idEmpresaSeleccionada && Number(resolucion.id_empresa || 0) !== idEmpresaSeleccionada) {
+                        return rollback(400, 'La empresa seleccionada no coincide con la empresa de la resolución.');
+                    }
+
+                    if (!rolCompatible) {
+                        return rollback(400, `La resolución está configurada para rol ${resolucion.rol || 'caja'} y el usuario no coincide con ese rol.`);
                     }
 
                     if (resolucion.fecha_vencimiento && new Date(resolucion.fecha_vencimiento) < new Date()) {
                         return rollback(400, 'La resolución seleccionada ya está vencida.');
                     }
 
-                    if (!Number.isFinite(correlativoInicio) || correlativoInicio < rangoInicial || correlativoInicio > rangoFinal) {
+                    if (!Number.isFinite(correlativoInicioBase) || correlativoInicioBase < rangoInicial || correlativoInicioBase > rangoFinal) {
                         return rollback(400, 'La resolución no tiene un correlativo actual válido para asignar.');
                     }
 
-                    if (correlativoFin > rangoFinal) {
-                        return rollback(400, `La resolución no tiene suficiente rango disponible. Solo llega hasta ${resolucion.serie}-${padCorrelativo(rangoFinal)}.`);
-                    }
-
-                    const insertQuery = `
-                        INSERT INTO asignar_correlativos
-                        (id_usuario, id_resolucion, id_empresa, serie, correlativo_inicio, correlativo_fin, correlativo_actual, estado, observaciones)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'activo', ?)
+                    const activeEquivalentQuery = `
+                        SELECT ac.id_asignacion
+                        FROM asignar_correlativos ac
+                        INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                        WHERE ac.id_usuario = ?
+                          AND ac.estado = 'activo'
+                          AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
+                          AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
+                          AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                        LIMIT 1
+                        FOR UPDATE
                     `;
 
-                    db.query(
-                        insertQuery,
-                        [id_usuario, id_resolucion, resolucion.id_empresa || null, resolucion.serie, correlativoInicio, correlativoFin, correlativoInicio, observaciones || null],
-                        (insertErr, insertResult) => {
-                            if (insertErr) {
-                                return rollback(500, 'No se pudo guardar la asignación de correlativos.', insertErr);
+                    db.query(activeEquivalentQuery, [id_usuario, numeroResolucionNorm, serieNorm], (activeEqErr, activeEqRows) => {
+                        if (activeEqErr) {
+                            return rollback(500, 'No se pudo validar asignaciones activas equivalentes.', activeEqErr);
+                        }
+
+                        if (activeEqRows && activeEqRows.length) {
+                            return rollback(409, 'El usuario ya tiene un lote activo pendiente de consumir para esta resolución/serie.');
+                        }
+
+                        const maxCorrEqQuery = `
+                            SELECT MAX(COALESCE(rf.correlativo_actual, 0)) AS correlativo_compartido
+                            FROM resoluciones_facturas rf
+                            WHERE rf.id_usuario = ?
+                              AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
+                              AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                        `;
+
+                        db.query(maxCorrEqQuery, [id_usuario, numeroResolucionNorm, serieNorm], (maxErr, maxRows) => {
+                            if (maxErr) {
+                                return rollback(500, 'No se pudo validar el correlativo compartido de la resolución.', maxErr);
                             }
 
+                            const correlativoCompartido = Number(maxRows?.[0]?.correlativo_compartido || correlativoInicioBase);
+                            const correlativoInicio = Math.max(correlativoInicioBase, correlativoCompartido, rangoInicial);
+                            const correlativoFin = correlativoInicio + cantidadNumerica - 1;
+
+                            if (correlativoFin > rangoFinal) {
+                                return rollback(400, `La resolución no tiene suficiente rango disponible. Solo llega hasta ${resolucion.serie}-${padCorrelativo(rangoFinal)}.`);
+                            }
+
+                            const overlapQuery = `
+                                SELECT ac.id_asignacion
+                                FROM asignar_correlativos ac
+                                INNER JOIN resoluciones_facturas rf ON rf.id_resolucion = ac.id_resolucion
+                                WHERE rf.id_usuario = ?
+                                  AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
+                                  AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                                  AND (
+                                        (? BETWEEN ac.correlativo_inicio AND ac.correlativo_fin)
+                                        OR (? BETWEEN ac.correlativo_inicio AND ac.correlativo_fin)
+                                        OR (ac.correlativo_inicio BETWEEN ? AND ?)
+                                        OR (ac.correlativo_fin BETWEEN ? AND ?)
+                                      )
+                                LIMIT 1
+                                FOR UPDATE
+                            `;
+
                             db.query(
-                                'UPDATE resoluciones_facturas SET correlativo_actual = ? WHERE id_resolucion = ?',
-                                [correlativoFin + 1, id_resolucion],
-                                (updateErr) => {
-                                    if (updateErr) {
-                                        return rollback(500, 'No se pudo reservar el rango en la resolución.', updateErr);
+                                overlapQuery,
+                                [id_usuario, numeroResolucionNorm, serieNorm, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin],
+                                (overlapErr, overlapRows) => {
+                            if (overlapErr) {
+                                return rollback(500, 'No se pudo validar la unicidad de correlativos.', overlapErr);
+                            }
+
+                            if (overlapRows && overlapRows.length) {
+                                return rollback(409, 'El rango de correlativos ya fue asignado previamente. Actualiza la resolución e intenta de nuevo.');
+                            }
+
+                            const insertQuery = `
+                                INSERT INTO asignar_correlativos
+                                (id_usuario, id_resolucion, id_empresa, serie, correlativo_inicio, correlativo_fin, correlativo_actual, estado, observaciones)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, 'activo', ?)
+                            `;
+
+                            db.query(
+                                insertQuery,
+                                [id_usuario, id_resolucion, resolucion.id_empresa || null, resolucion.serie, correlativoInicio, correlativoFin, correlativoInicio, observaciones || null],
+                                (insertErr, insertResult) => {
+                                    if (insertErr) {
+                                        return rollback(500, 'No se pudo guardar la asignación de correlativos.', insertErr);
                                     }
 
-                                    db.commit((commitErr) => {
-                                        if (commitErr) {
-                                            return rollback(500, 'No se pudo confirmar la asignación.', commitErr);
-                                        }
+                                    db.query(
+                                        'UPDATE resoluciones_facturas SET correlativo_actual = ? WHERE id_resolucion = ?',
+                                        [correlativoFin + 1, id_resolucion],
+                                        (updateErr) => {
+                                            if (updateErr) {
+                                                return rollback(500, 'No se pudo reservar el rango en la resolución.', updateErr);
+                                            }
 
-                                        return res.status(200).send({
-                                            message: 'Lote de correlativos asignado correctamente.',
-                                            id_asignacion: insertResult.insertId,
-                                            correlativo_inicio: `${resolucion.serie}-${padCorrelativo(correlativoInicio)}`,
-                                            correlativo_fin: `${resolucion.serie}-${padCorrelativo(correlativoFin)}`
-                                        });
-                                    });
+                                            const syncEquivalentesQuery = `
+                                                UPDATE resoluciones_facturas
+                                                SET correlativo_actual = ?
+                                                WHERE id_usuario = ?
+                                                  AND UPPER(TRIM(COALESCE(numero_resolucion, ''))) = ?
+                                                  AND UPPER(TRIM(COALESCE(serie, ''))) = ?
+                                                  AND correlativo_actual < ?
+                                            `;
+
+                                            db.query(syncEquivalentesQuery, [correlativoFin + 1, id_usuario, numeroResolucionNorm, serieNorm, correlativoFin + 1], (syncErr) => {
+                                                if (syncErr) {
+                                                    return rollback(500, 'No se pudo sincronizar correlativo entre resoluciones equivalentes.', syncErr);
+                                                }
+
+                                                db.commit((commitErr) => {
+                                                    if (commitErr) {
+                                                        return rollback(500, 'No se pudo confirmar la asignación.', commitErr);
+                                                    }
+
+                                                    return res.status(200).send({
+                                                        message: 'Lote de correlativos asignado correctamente.',
+                                                        id_asignacion: insertResult.insertId,
+                                                        correlativo_inicio: `${resolucion.serie}-${padCorrelativo(correlativoInicio)}`,
+                                                        correlativo_fin: `${resolucion.serie}-${padCorrelativo(correlativoFin)}`
+                                                    });
+                                                });
+                                            });
+                                        }
+                                    );
                                 }
                             );
-                        }
-                    );
+                                }
+                            );
+                        });
+                    });
                 });
             });
         });
@@ -464,8 +593,27 @@ const getPeriodoConfig = (scope, query) => {
 
         return {
             label: fecha,
-            whereSql: 'DATE(p.fecha_pago) = ?',
+            whereSqlTemplate: 'DATE(__DATE_FIELD__) = ?',
             params: [fecha]
+        };
+    }
+
+    const fechaInicio = String(query.fecha_inicio || '').trim();
+    const fechaFin = String(query.fecha_fin || '').trim();
+
+    if (fechaInicio || fechaFin) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin)) {
+            return { error: 'Debe enviar fecha_inicio y fecha_fin válidas en formato YYYY-MM-DD.' };
+        }
+
+        if (fechaInicio > fechaFin) {
+            return { error: 'La fecha de inicio no puede ser mayor que la fecha de fin.' };
+        }
+
+        return {
+            label: `${fechaInicio} a ${fechaFin}`,
+            whereSqlTemplate: 'DATE(__DATE_FIELD__) BETWEEN ? AND ?',
+            params: [fechaInicio, fechaFin]
         };
     }
 
@@ -476,7 +624,7 @@ const getPeriodoConfig = (scope, query) => {
 
     return {
         label: periodo,
-        whereSql: "DATE_FORMAT(p.fecha_pago, '%Y-%m') = ?",
+        whereSqlTemplate: "DATE_FORMAT(__DATE_FIELD__, '%Y-%m') = ?",
         params: [periodo]
     };
 };
@@ -487,81 +635,144 @@ const obtenerCuadre = (scope) => (req, res) => {
         return res.status(400).send({ message: periodo.error });
     }
 
-    const detalleBase = `
-        SELECT
-            p.id_pago,
-            p.id_usuario,
-            u.nombre AS nombre_usuario,
-            p.no_referencia,
-            p.forma_pago,
-            p.fecha_pago,
-            COALESCE(SUM(pd.subtotal), 0) AS subtotal,
-            COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0) AS iva_total,
-            p.monto_total_pagado AS total_cobrado,
-            GREATEST(p.monto_total_pagado - (COALESCE(SUM(pd.subtotal), 0) + COALESCE(SUM(ROUND(pd.subtotal * 0.12, 2)), 0)), 0) AS monto_mora
-        FROM pagos p
-        LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-        LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
-        WHERE ${periodo.whereSql}
-        GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
-    `;
+    const accion = String(req.query?.accion || 'emitio').trim().toLowerCase();
+    if (!['emitio', 'anulo'].includes(accion)) {
+        return res.status(400).send({ message: 'La acción debe ser emitio o anulo.' });
+    }
 
-    const resumenUsuariosQuery = `
-        SELECT
-            base.id_usuario,
-            base.nombre_usuario,
-            COUNT(*) AS total_facturas,
-            MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
-            MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
-            ROUND(SUM(base.subtotal), 2) AS subtotal,
-            ROUND(SUM(base.iva_total), 2) AS iva_total,
-            ROUND(SUM(base.monto_mora), 2) AS monto_mora,
-            ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
-        FROM (${detalleBase}) base
-        GROUP BY base.id_usuario, base.nombre_usuario
-        ORDER BY total_cobrado DESC, base.nombre_usuario ASC
-    `;
+    const idUsuario = Number(req.query?.id_usuario || 0);
+    const filtrarUsuario = Number.isInteger(idUsuario) && idUsuario > 0;
 
-    const totalGeneralQuery = `
-        SELECT
-            COUNT(*) AS total_facturas,
-            MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
-            MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
-            ROUND(SUM(base.subtotal), 2) AS subtotal,
-            ROUND(SUM(base.iva_total), 2) AS iva_total,
-            ROUND(SUM(base.monto_mora), 2) AS monto_mora,
-            ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
-        FROM (${detalleBase}) base
-    `;
+    const buildQueries = (detalleBase) => {
+        const resumenUsuariosQuery = `
+            SELECT
+                base.id_usuario,
+                base.nombre_usuario,
+                COUNT(*) AS total_facturas,
+                MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
+                MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
+                ROUND(SUM(base.subtotal), 2) AS subtotal,
+                ROUND(SUM(base.iva_total), 2) AS iva_total,
+                ROUND(SUM(base.monto_mora), 2) AS monto_mora,
+                ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
+            FROM (${detalleBase}) base
+            GROUP BY base.id_usuario, base.nombre_usuario
+            ORDER BY total_cobrado DESC, base.nombre_usuario ASC
+        `;
 
-    const detalleFacturasQuery = `
-        SELECT
-            base.id_pago,
-            base.nombre_usuario,
-            base.no_referencia,
-            base.forma_pago,
-            base.fecha_pago,
-            ROUND(base.subtotal, 2) AS subtotal,
-            ROUND(base.iva_total, 2) AS iva_total,
-            ROUND(base.monto_mora, 2) AS monto_mora,
-            ROUND(base.total_cobrado, 2) AS total_cobrado
-        FROM (${detalleBase}) base
-        ORDER BY base.fecha_pago ASC, base.id_pago ASC
-    `;
+        const totalGeneralQuery = `
+            SELECT
+                COUNT(*) AS total_facturas,
+                MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
+                MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
+                ROUND(SUM(base.subtotal), 2) AS subtotal,
+                ROUND(SUM(base.iva_total), 2) AS iva_total,
+                ROUND(SUM(base.monto_mora), 2) AS monto_mora,
+                ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
+            FROM (${detalleBase}) base
+        `;
 
-    db.query(resumenUsuariosQuery, periodo.params, (userErr, rowsUsuarios) => {
+        const detalleFacturasQuery = `
+            SELECT
+                base.id_pago,
+                base.nombre_usuario,
+                base.no_referencia,
+                base.forma_pago,
+                base.fecha_pago,
+                ROUND(base.subtotal, 2) AS subtotal,
+                ROUND(base.iva_total, 2) AS iva_total,
+                ROUND(base.monto_mora, 2) AS monto_mora,
+                ROUND(base.total_cobrado, 2) AS total_cobrado
+            FROM (${detalleBase}) base
+            ORDER BY base.fecha_pago ASC, base.id_pago ASC
+        `;
+
+        return { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery };
+    };
+
+    const params = [...periodo.params, ...(filtrarUsuario ? [idUsuario] : [])];
+    let detalleBase = '';
+
+    if (accion === 'emitio') {
+        const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'p.fecha_pago');
+        const filtroUsuarioSql = filtrarUsuario ? ' AND p.id_usuario = ?' : '';
+
+        detalleBase = `
+            SELECT
+                p.id_pago,
+                p.id_usuario,
+                u.nombre AS nombre_usuario,
+                p.no_referencia,
+                p.forma_pago,
+                p.fecha_pago,
+                ROUND(
+                    GREATEST(
+                        COALESCE(SUM(pd.subtotal), 0)
+                        - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
+                        0
+                    ) / 1.12,
+                    2
+                ) AS subtotal,
+                ROUND(
+                    GREATEST(
+                        COALESCE(SUM(pd.subtotal), 0)
+                        - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
+                        0
+                    )
+                    - ROUND(
+                        GREATEST(
+                            COALESCE(SUM(pd.subtotal), 0)
+                            - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
+                            0
+                        ) / 1.12,
+                        2
+                    ),
+                    2
+                ) AS iva_total,
+                p.monto_total_pagado AS total_cobrado,
+                COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora
+            FROM pagos p
+            LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
+            WHERE ${whereSql}${filtroUsuarioSql}
+            GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
+        `;
+    } else {
+        const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'ad.fecha_anulacion');
+        const filtroUsuarioSql = filtrarUsuario ? ' AND ad.id_usuario_autoriza = ?' : '';
+
+        detalleBase = `
+            SELECT
+                COALESCE(ad.id_pago, ad.id_anulacion) AS id_pago,
+                ad.id_usuario_autoriza AS id_usuario,
+                u.nombre AS nombre_usuario,
+                COALESCE(ad.correlativo, CONCAT('ANU-', ad.id_anulacion)) AS no_referencia,
+                'ANULACION' AS forma_pago,
+                ad.fecha_anulacion AS fecha_pago,
+                COALESCE(ad.monto_anulado, 0) AS subtotal,
+                0 AS iva_total,
+                COALESCE(ad.monto_anulado, 0) AS total_cobrado,
+                0 AS monto_mora
+            FROM anulacion_deuda ad
+            LEFT JOIN usuarios u ON u.id_usuario = ad.id_usuario_autoriza
+            WHERE ${whereSql}${filtroUsuarioSql}
+        `;
+    }
+    const { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery } = buildQueries(detalleBase);
+
+    db.query(resumenUsuariosQuery, params, (userErr, rowsUsuarios) => {
         if (userErr) {
             console.error(userErr);
             return res.status(500).send({ message: 'No se pudo generar el resumen por usuario.' });
         }
 
-        db.query(totalGeneralQuery, periodo.params, (totalErr, rowsTotales) => {
+        db.query(totalGeneralQuery, params, (totalErr, rowsTotales) => {
             if (totalErr) {
                 console.error(totalErr);
                 return res.status(500).send({ message: 'No se pudo generar el total general.' });
             }
 
-            db.query(detalleFacturasQuery, periodo.params, (detailErr, rowsDetalle) => {
+            db.query(detalleFacturasQuery, params, (detailErr, rowsDetalle) => {
                 if (detailErr) {
                     console.error(detailErr);
                     return res.status(500).send({ message: 'No se pudo generar el detalle de facturas.' });
@@ -569,6 +780,7 @@ const obtenerCuadre = (scope) => (req, res) => {
 
                 return res.send({
                     scope,
+                    accion,
                     periodo: periodo.label,
                     resumen_por_usuario: rowsUsuarios || [],
                     total_general: rowsTotales?.[0] || {

@@ -12,7 +12,10 @@ const normalizeText = (value = '') => value
 const MODULE_PERMISSION_ALIASES = {
   menu_general: ['menu principal', 'menu general'],
   anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
-  caja_ingresos: ['caja ingresos manual']
+  convenio: ['convenio', 'convenio pagos', 'convenio de pagos'],
+  caja_ingresos: ['caja ingresos manual'],
+  proyectos: ['proyecto', 'proyectos', 'catalogo de proyectos', 'catalogo proyectos'],
+  empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa']
 };
 
 const getFallbackPermisosByRole = (rolNormalizado = '') => {
@@ -21,6 +24,7 @@ const getFallbackPermisosByRole = (rolNormalizado = '') => {
       normalizeText('Caja (General)'),
       normalizeText('Caja Ingresos Manual'),
       normalizeText('Mora y Atrasos'),
+      normalizeText('Convenio de Pagos'),
       normalizeText('Pagos'),
       normalizeText('Detalle Pagos')
     ]);
@@ -42,6 +46,45 @@ const parsePermisos = (permisos) => {
   return [];
 };
 
+const extraerPermisoTokens = (item) => {
+  if (!item) {
+    return [];
+  }
+
+  if (typeof item === 'string' || typeof item === 'number') {
+    return [normalizeText(item)];
+  }
+
+  if (typeof item === 'object') {
+    return [
+      item.id,
+      item.nombre,
+      item.label,
+      item.modulo,
+      item.path
+    ]
+      .filter((value) => value !== null && typeof value !== 'undefined' && String(value).trim())
+      .map((value) => normalizeText(String(value).replace(/^\//, '')));
+  }
+
+  return [];
+};
+
+const detectarPerfilCaja = (rolNormalizado, permisosNormalizados) => {
+  if (rolNormalizado.includes('cobro') || rolNormalizado.includes('caja')) {
+    return true;
+  }
+
+  const pistasCaja = ['caja', 'cobro', 'morosidad', 'pagos', 'convenio'];
+  for (const permiso of permisosNormalizados) {
+    if (pistasCaja.some((pista) => permiso.includes(pista))) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 function MenuGeneral() {
   const [busqueda, setBusqueda] = useState('');
   const usuarioActivo = useMemo(() => {
@@ -54,11 +97,17 @@ function MenuGeneral() {
 
   const modulosPermitidos = useMemo(() => {
     const permisos = parsePermisos(usuarioActivo.permisos);
-    const permisosNormalizados = new Set(permisos.map((item) => normalizeText(item)));
+    const permisosNormalizados = new Set(
+      permisos.flatMap((item) => extraerPermisoTokens(item)).filter(Boolean)
+    );
     const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
     const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
     const fallbackPermisos = getFallbackPermisosByRole(rolNormalizado);
-    const permisosEfectivos = permisosNormalizados.size > 0 ? permisosNormalizados : fallbackPermisos;
+    const perfilCaja = detectarPerfilCaja(rolNormalizado, permisosNormalizados);
+    const permisosEfectivos = new Set([
+      ...permisosNormalizados,
+      ...(perfilCaja ? Array.from(fallbackPermisos) : [])
+    ]);
 
     return modulesConfig.filter((modulo) => {
       if (esAdmin || modulo.id === 'menu_general') {

@@ -8,37 +8,88 @@ import { API_BASE_URL } from '../config';
 
 const getToday = () => new Date().toISOString().slice(0, 10);
 const getCurrentMonth = () => new Date().toISOString().slice(0, 7);
+const getMonthDateRange = (monthValue = getCurrentMonth()) => {
+  const [yearRaw, monthRaw] = String(monthValue || '').split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    const today = getToday();
+    return { inicio: today, fin: today };
+  }
+
+  const inicio = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(year, month, 0).getDate();
+  const fin = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+
+  return { inicio, fin };
+};
 
 const formatMoney = (value) => `Q ${Number(value || 0).toFixed(2)}`;
 const normalizeFileSegment = (value = '') => String(value || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
+const normalizeRole = (value = '') => String(value || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim();
 
 function AsignarCorrelativo() {
+  const [empresasList, setEmpresasList] = useState([]);
   const [usuariosList, setUsuariosList] = useState([]);
   const [resolucionesList, setResolucionesList] = useState([]);
   const [asignacionesList, setAsignacionesList] = useState([]);
 
+  const [idEmpresa, setIdEmpresa] = useState('');
   const [idUsuario, setIdUsuario] = useState('');
   const [idResolucion, setIdResolucion] = useState('');
   const [cantidad, setCantidad] = useState('1');
   const [observaciones, setObservaciones] = useState('');
 
   const [tipoCuadre, setTipoCuadre] = useState('dia');
+  const [accionCuadre, setAccionCuadre] = useState('emitio');
+  const [idUsuarioCuadre, setIdUsuarioCuadre] = useState('');
   const [fechaCuadre, setFechaCuadre] = useState(getToday());
   const [periodoMes, setPeriodoMes] = useState(getCurrentMonth());
+  const [fechaInicioMes, setFechaInicioMes] = useState(() => getMonthDateRange(getCurrentMonth()).inicio);
+  const [fechaFinMes, setFechaFinMes] = useState(() => getMonthDateRange(getCurrentMonth()).fin);
   const [reporte, setReporte] = useState(null);
   const [loadingReporte, setLoadingReporte] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   const API_URL = `${API_BASE_URL}/api/asignar_correlativo`;
 
-  const resolucionesActivas = useMemo(() => (
-    resolucionesList.filter((item) => String(item.estado || '').toLowerCase() === 'activo')
-  ), [resolucionesList]);
+  const empresaSeleccionada = useMemo(() => (
+    empresasList.find((item) => String(item.id_empresa) === String(idEmpresa)) || null
+  ), [empresasList, idEmpresa]);
+
+  const resolucionesActivas = useMemo(() => {
+    const activas = resolucionesList.filter((item) => String(item.estado || '').toLowerCase() === 'activo');
+    if (!idEmpresa) return activas;
+    return activas.filter((item) => String(item.id_empresa) === String(idEmpresa));
+  }, [resolucionesList, idEmpresa]);
+
+  const resolucionSeleccionada = useMemo(() => {
+    if (!idResolucion) return null;
+    return resolucionesActivas.find((item) => String(item.id_resolucion) === String(idResolucion)) || null;
+  }, [idResolucion, resolucionesActivas]);
+
+  const usuariosDisponibles = useMemo(() => {
+    return [...usuariosList].sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')));
+  }, [usuariosList, resolucionSeleccionada]);
+
+  useEffect(() => {
+    if (!idResolucion) return;
+    const existeEnFiltroActual = resolucionesActivas.some((item) => String(item.id_resolucion) === String(idResolucion));
+    if (!existeEnFiltroActual) {
+      setIdResolucion('');
+    }
+  }, [idResolucion, resolucionesActivas]);
 
   const cargarCatalogos = useCallback(async () => {
-    const [usuariosRes, resolucionesRes] = await Promise.allSettled([
+    const [usuariosRes, resolucionesRes, empresasRes] = await Promise.allSettled([
       Axios.get(`${API_BASE_URL}/api/usuarios`),
-      Axios.get(`${API_BASE_URL}/api/resoluciones_facturas`)
+      Axios.get(`${API_BASE_URL}/api/resoluciones_facturas`),
+      Axios.get(`${API_BASE_URL}/api/empresas`)
     ]);
 
     if (usuariosRes.status === 'fulfilled') {
@@ -53,7 +104,13 @@ function AsignarCorrelativo() {
       setResolucionesList([]);
     }
 
-    if (usuariosRes.status === 'rejected' || resolucionesRes.status === 'rejected') {
+    if (empresasRes.status === 'fulfilled') {
+      setEmpresasList(empresasRes.value?.data || []);
+    } else {
+      setEmpresasList([]);
+    }
+
+    if (usuariosRes.status === 'rejected' || resolucionesRes.status === 'rejected' || empresasRes.status === 'rejected') {
       throw new Error('No se pudieron cargar los catálogos del módulo. Verifica que el backend tenga habilitadas las rutas necesarias.');
     }
   }, []);
@@ -79,6 +136,7 @@ function AsignarCorrelativo() {
   }, [cargarCatalogos, cargarAsignaciones]);
 
   const limpiarFormulario = () => {
+    setIdEmpresa('');
     setIdUsuario('');
     setIdResolucion('');
     setCantidad('1');
@@ -86,13 +144,14 @@ function AsignarCorrelativo() {
   };
 
   const asignarLote = async () => {
-    if (!idUsuario || !idResolucion || !cantidad) {
-      Swal.fire({ icon: 'warning', title: 'Datos incompletos', text: 'Selecciona usuario, resolución y cantidad.' });
+    if (!idEmpresa || !idUsuario || !idResolucion || !cantidad) {
+      Swal.fire({ icon: 'warning', title: 'Datos incompletos', text: 'Selecciona empresa, persona, resolución y cantidad.' });
       return;
     }
 
     try {
       const response = await Axios.post(`${API_URL}/crear`, {
+        id_empresa: idEmpresa,
         id_usuario: idUsuario,
         id_resolucion: idResolucion,
         cantidad: Number(cantidad),
@@ -139,9 +198,26 @@ function AsignarCorrelativo() {
   };
 
   const consultarCuadre = async () => {
-    const query = tipoCuadre === 'dia'
+    if (tipoCuadre === 'mes') {
+      if (!fechaInicioMes || !fechaFinMes) {
+        Swal.fire({ icon: 'warning', title: 'Rango incompleto', text: 'Debes seleccionar fecha inicio y fecha fin para el cuadre del mes.' });
+        return;
+      }
+
+      if (fechaInicioMes > fechaFinMes) {
+        Swal.fire({ icon: 'warning', title: 'Rango inválido', text: 'La fecha inicio no puede ser mayor que la fecha fin.' });
+        return;
+      }
+    }
+
+    let query = tipoCuadre === 'dia'
       ? `fecha=${encodeURIComponent(fechaCuadre)}`
-      : `periodo=${encodeURIComponent(periodoMes)}`;
+      : `fecha_inicio=${encodeURIComponent(fechaInicioMes)}&fecha_fin=${encodeURIComponent(fechaFinMes)}`;
+
+    query = `${query}&accion=${encodeURIComponent(accionCuadre)}`;
+    if (idUsuarioCuadre) {
+      query = `${query}&id_usuario=${encodeURIComponent(idUsuarioCuadre)}`;
+    }
 
     setLoadingReporte(true);
     try {
@@ -299,25 +375,76 @@ function AsignarCorrelativo() {
             <div className="card-header bg-primary text-white fw-bold">Asignación de Lote</div>
             <div className="card-body">
               <div className="mb-3">
-                <label className="form-label fw-bold">Usuario que cobrará</label>
-                <select className="form-select" value={idUsuario} onChange={(e) => setIdUsuario(e.target.value)}>
-                  <option value="">-- Seleccione usuario --</option>
-                  {usuariosList.map((item) => (
-                    <option key={item.id_usuario} value={item.id_usuario}>{item.nombre} - {item.correo}</option>
+                <label className="form-label fw-bold">Empresa</label>
+                <select className="form-select" value={idEmpresa} onChange={(e) => setIdEmpresa(e.target.value)}>
+                  <option value="">-- Seleccione empresa --</option>
+                  {empresasList.map((item) => (
+                    <option key={item.id_empresa} value={item.id_empresa}>
+                      {item.nombre_empresa} (ID: {item.id_empresa})
+                    </option>
                   ))}
                 </select>
+                {empresaSeleccionada && (
+                  <small className="text-muted d-block mt-1">Empresa seleccionada: <strong>{empresaSeleccionada.nombre_empresa}</strong></small>
+                )}
               </div>
 
               <div className="mb-3">
                 <label className="form-label fw-bold">Resolución activa</label>
-                <select className="form-select" value={idResolucion} onChange={(e) => setIdResolucion(e.target.value)}>
+                <select
+                  className="form-select"
+                  value={idResolucion}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setIdResolucion(nextId);
+                    const resolucion = resolucionesActivas.find((item) => String(item.id_resolucion) === String(nextId));
+                    if (resolucion?.id_empresa) {
+                      setIdEmpresa(String(resolucion.id_empresa));
+                    }
+                    setIdUsuario('');
+                  }}
+                >
                   <option value="">-- Seleccione resolución --</option>
                   {resolucionesActivas.map((item) => (
                     <option key={item.id_resolucion} value={item.id_resolucion}>
-                      {item.numero_resolucion} | {item.serie} | {item.correlativo_actual} a {item.rango_final}
+                      {item.numero_resolucion} | {item.serie} | {item.correlativo_actual} a {item.rango_final} | ROL: {String(item.rol || 'caja').toUpperCase()}
                     </option>
                   ))}
                 </select>
+                {idEmpresa && !resolucionesActivas.length && (
+                  <small className="text-danger d-block mt-1">No hay resoluciones activas para la empresa seleccionada.</small>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label fw-bold">Persona que cobrará</label>
+                <select
+                  className="form-select"
+                  value={idUsuario}
+                  onChange={(e) => setIdUsuario(e.target.value)}
+                  disabled={!idResolucion}
+                >
+                  <option value="">-- Seleccione persona --</option>
+                  {usuariosDisponibles.map((item) => (
+                    <option key={item.id_usuario} value={item.id_usuario}>
+                      {item.nombre} - {item.correo} ({String(item.nombre_rol || 'sin rol')})
+                    </option>
+                  ))}
+                </select>
+                {!idResolucion && (
+                  <small className="text-muted d-block mt-1">Primero selecciona la resolución para habilitar personas por rol.</small>
+                )}
+                {!!idResolucion && !!resolucionSeleccionada?.rol && (
+                  <small className="text-muted d-block mt-1">
+                    Esta resolución está destinada al rol: <strong>{String(resolucionSeleccionada.rol).toUpperCase()}</strong>
+                  </small>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <div className="alert alert-info py-2 mb-0 small">
+                  El sistema reserva correlativos en rangos consecutivos por resolución, evitando repetición entre usuarios.
+                </div>
               </div>
 
               <div className="mb-3">
@@ -346,6 +473,7 @@ function AsignarCorrelativo() {
                 <table className="table table-striped table-bordered m-0 align-middle">
                   <thead className="table-dark">
                     <tr>
+                      <th>Empresa</th>
                       <th>Usuario</th>
                       <th>Resolución</th>
                       <th>Rango</th>
@@ -359,12 +487,17 @@ function AsignarCorrelativo() {
                     {asignacionesList.length ? asignacionesList.map((item) => (
                       <tr key={item.id_asignacion}>
                         <td>
+                          <div className="fw-bold">{item.nombre_empresa || 'Sin empresa'}</div>
+                          <div className="small text-muted">ID: {item.id_empresa || 'N/A'}</div>
+                        </td>
+                        <td>
                           <div className="fw-bold">{item.nombre_usuario}</div>
                           <div className="small text-muted">{item.correo}</div>
+                          <div className="small text-muted">Rol: {String(item.nombre_rol || 'sin rol')}</div>
                         </td>
                         <td>
                           <div>{item.numero_resolucion}</div>
-                          <div className="small text-muted">{item.nombre_empresa || 'Sin empresa'}</div>
+                          <div className="small text-muted">Serie {item.serie}</div>
                         </td>
                         <td>
                           <div>{item.correlativo_inicio_display}</div>
@@ -387,7 +520,7 @@ function AsignarCorrelativo() {
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan="7" className="text-center text-muted py-4">No hay lotes asignados todavía.</td>
+                        <td colSpan="8" className="text-center text-muted py-4">No hay lotes asignados todavía.</td>
                       </tr>
                     )}
                   </tbody>
@@ -402,7 +535,7 @@ function AsignarCorrelativo() {
         <div className="card-header bg-info text-dark fw-bold">Cuadre de Cobros</div>
         <div className="card-body">
           <div className="row g-3 align-items-end">
-            <div className="col-md-3">
+            <div className="col-md-2">
               <label className="form-label fw-bold">Tipo de cuadre</label>
               <select className="form-select" value={tipoCuadre} onChange={(e) => setTipoCuadre(e.target.value)}>
                 <option value="dia">Cuadre del día</option>
@@ -411,16 +544,58 @@ function AsignarCorrelativo() {
             </div>
 
             <div className="col-md-3">
+              <label className="form-label fw-bold">Acción</label>
+              <select className="form-select" value={accionCuadre} onChange={(e) => setAccionCuadre(e.target.value)}>
+                <option value="emitio">Emitió factura/recibo</option>
+                <option value="anulo">Anuló factura/recibo</option>
+              </select>
+            </div>
+
+            <div className="col-md-3">
+              <label className="form-label fw-bold">Cobrador / Usuario</label>
+              <select className="form-select" value={idUsuarioCuadre} onChange={(e) => setIdUsuarioCuadre(e.target.value)}>
+                <option value="">Todos los usuarios</option>
+                {usuariosList.map((item) => (
+                  <option key={item.id_usuario} value={item.id_usuario}>
+                    {item.nombre} ({item.nombre_rol || 'sin rol'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="col-md-2">
               <label className="form-label fw-bold">Fecha del cuadre</label>
               <input type="date" className="form-control" value={fechaCuadre} onChange={(e) => setFechaCuadre(e.target.value)} disabled={tipoCuadre !== 'dia'} />
             </div>
 
-            <div className="col-md-3">
-              <label className="form-label fw-bold">Mes del cuadre</label>
-              <input type="month" className="form-control" value={periodoMes} onChange={(e) => setPeriodoMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
+            <div className="col-md-2">
+              <label className="form-label fw-bold">Fecha inicio</label>
+              <input type="date" className="form-control" value={fechaInicioMes} onChange={(e) => setFechaInicioMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
             </div>
 
-            <div className="col-md-3">
+            <div className="col-md-2">
+              <label className="form-label fw-bold">Fecha fin</label>
+              <input type="date" className="form-control" value={fechaFinMes} onChange={(e) => setFechaFinMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
+            </div>
+
+            <div className="col-md-2">
+              <label className="form-label fw-bold">Mes rápido</label>
+              <input
+                type="month"
+                className="form-control"
+                value={periodoMes}
+                onChange={(e) => {
+                  const month = e.target.value;
+                  setPeriodoMes(month);
+                  const range = getMonthDateRange(month);
+                  setFechaInicioMes(range.inicio);
+                  setFechaFinMes(range.fin);
+                }}
+                disabled={tipoCuadre !== 'mes'}
+              />
+            </div>
+
+            <div className="col-md-2">
               <button className="btn btn-info fw-bold text-dark w-100" onClick={consultarCuadre} disabled={loadingReporte}>
                 {loadingReporte ? 'GENERANDO...' : 'GENERAR REPORTE'}
               </button>
@@ -439,7 +614,7 @@ function AsignarCorrelativo() {
               <div className="row g-3 mt-3">
                 <div className="col-md-3">
                   <div className="border rounded p-3 bg-light h-100">
-                    <div className="text-muted small">Facturas cobradas</div>
+                    <div className="text-muted small">{accionCuadre === 'anulo' ? 'Facturas anuladas' : 'Facturas cobradas'}</div>
                     <div className="fs-4 fw-bold">{reporte.total_general?.total_facturas || 0}</div>
                   </div>
                 </div>
@@ -513,7 +688,7 @@ function AsignarCorrelativo() {
               </div>
 
               <div className="mt-4">
-                <h5 className="fw-bold">Detalle de facturas cobradas</h5>
+                <h5 className="fw-bold">{accionCuadre === 'anulo' ? 'Detalle de facturas/recibos anulados' : 'Detalle de facturas cobradas'}</h5>
                 <div className="table-responsive">
                   <table className="table table-bordered table-striped align-middle">
                     <thead className="table-dark">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
@@ -6,67 +6,65 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { API_BASE_URL } from '../config';
 
 function Morosidad() {
-  const [id_contrato, setId_contrato] = useState("");
-  const [mes_atrasado, setMes_atrasado] = useState("");
-  const [monto_mora, setMonto_mora] = useState("");
-  const [dias_retraso, setDias_retraso] = useState("");
-  const [estado] = useState("pendiente");
-  
   const [morosidades, setMorosidades] = useState([]);
-  const [contratos, setContratos] = useState([]);
-  const [showModal, setShowModal] = useState(false);
+  const [procesando, setProcesando] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
   const API_URL = `${API_BASE_URL}/api/morosidad`;
-  const CONTRATOS_API_URL = `${API_BASE_URL}/api/contratos_residentes`;
 
-  const cargarDatos = useCallback(() => Promise.all([
-    Axios.get(API_URL)
-      .then(res => setMorosidades(res.data || []))
-      .catch(() => setMorosidades([])),
-    Axios.get(CONTRATOS_API_URL)
-      .then(res => setContratos(res.data || []))
-      .catch(() => setContratos([]))
-  ]), [API_URL, CONTRATOS_API_URL]);
-
-  useEffect(() => { 
-    Axios.post(`${API_URL}/generar-automatico`)
-      .catch(() => null)
-      .finally(() => {
-        cargarDatos();
-      });
-  }, [API_URL, cargarDatos]);
-
-  const contratoPorId = new Map((contratos || []).map((c) => [String(c.id_contrato), c]));
-
-  const getLabelContrato = (idContrato) => {
-    const contrato = contratoPorId.get(String(idContrato));
-    if (!contrato) {
-      return `Contrato #${idContrato}`;
-    }
-
-    const codigo = contrato.codigo_contrato || `#${contrato.id_contrato}`;
-    const residente = contrato.nombre_residente || 'Sin residente';
-    const identificacion = contrato.numero_identificacion ? ` · ${contrato.numero_identificacion}` : '';
-    return `${codigo} - ${residente}${identificacion}`;
+  const cargarMorosidades = () => {
+    Axios.get(API_URL).then(res => setMorosidades(res.data));
   };
+
+  useEffect(() => {
+    const inicializarMorosidad = async () => {
+      try {
+        await Axios.post(`${API_URL}/generar-automatico`);
+      } catch (_error) {
+        // Si falla la generacion, igual cargamos listado para no bloquear la pantalla.
+      } finally {
+        cargarMorosidades();
+      }
+    };
+
+    inicializarMorosidad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const actualizarEstado = (id, nuevoEstado) => {
     Axios.put(`${API_URL}/actualizar-estado`, { id_morosidad: id, estado: nuevoEstado })
     .then(() => {
-        cargarDatos();
+        cargarMorosidades();
         Swal.fire({ icon: "success", title: "Estado Actualizado", timer: 1500, showConfirmButton: false });
     });
   };
 
-  const addMora = () => {
-    Axios.post(`${API_URL}/crear`, { id_contrato, mes_atrasado, monto_mora, dias_retraso, estado })
-    .then(() => {
-        cargarDatos();
-        setShowModal(false);
-        Swal.fire("Agregado", "Mora generada manualmente", "success");
-    });
+  const generarMoraAutomatica = async () => {
+    if (procesando) return;
+
+    setProcesando(true);
+    try {
+      const res = await Axios.post(`${API_URL}/generar-automatico`);
+      await cargarMorosidades();
+
+      const generadas = Number(res?.data?.generated || 0);
+      Swal.fire({
+        icon: 'success',
+        title: 'Mora actualizada',
+        text: generadas > 0
+          ? `Se generaron ${generadas} mora(s) vencida(s).`
+          : 'No se generaron moras nuevas. Todo esta al dia o aun no vence.'
+      });
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: error?.response?.data?.message || 'No se pudo generar la mora automatica.'
+      });
+    } finally {
+      setProcesando(false);
+    }
   };
 
   // Paginación (sin filtro)
@@ -78,7 +76,9 @@ function Morosidad() {
       <div className="module-header">
       <div className="d-flex justify-content-between align-items-center bg-light p-3">
         <h4>CONTROL DE MOROSIDAD</h4>
-        <button className="btn btn-warning fw-bold" onClick={() => setShowModal(true)}>➕ GENERAR MORA</button>
+        <button className="btn btn-warning fw-bold" onClick={generarMoraAutomatica} disabled={procesando}>
+          {procesando ? 'Generando...' : '⚙️ GENERAR MORA AUTOMATICA'}
+        </button>
       </div>
       </div>
       
@@ -98,7 +98,7 @@ function Morosidad() {
           {morosidades.map((val) => (
             <tr key={val.id_morosidad}>
               <td>#{val.id_morosidad}</td>
-              <td>{getLabelContrato(val.id_contrato)}</td>
+              <td>Contrato #{val.id_contrato}</td>
               <td>{val.mes_atrasado}</td>
               <td>{val.dias_retraso} días</td>
               <td className="fw-bold">Q{val.monto_mora}</td>
@@ -128,34 +128,6 @@ function Morosidad() {
         endIndex={endIndex}
         itemsCount={morosidades.length}
       />
-
-      {/* MODAL CREAR MORA MANUAL */}
-      {showModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog">
-            <div className="modal-content border-danger">
-              <div className="modal-header bg-danger text-white"><h5 className="modal-title">Aplicar Mora Manual</h5></div>
-              <div className="modal-body">
-                <select className="form-select mb-2" value={id_contrato} onChange={e => setId_contrato(e.target.value)}>
-                  <option value="">-- Contrato a Penalizar --</option>
-                  {contratos.map(c => (
-                    <option key={c.id_contrato} value={c.id_contrato}>
-                      {getLabelContrato(c.id_contrato)}
-                    </option>
-                  ))}
-                </select>
-                <input type="text" placeholder="Mes Atrasado (Ej: Agosto 2026)" className="form-control mb-2" onChange={e => setMes_atrasado(e.target.value)} />
-                <input type="number" placeholder="Días de Retraso" className="form-control mb-2" onChange={e => setDias_retraso(e.target.value)} />
-                <input type="number" step="0.01" placeholder="Monto Penalización (Q)" className="form-control mb-2" onChange={e => setMonto_mora(e.target.value)} />
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cerrar</button>
-                <button className="btn btn-danger" onClick={addMora}>Aplicar Cargo</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

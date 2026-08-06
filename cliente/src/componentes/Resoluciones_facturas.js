@@ -5,12 +5,23 @@ import Swal from 'sweetalert2';
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils'; 
+import { API_BASE_URL } from '../config';
 
 const LOTE_FACTURAS = 10000;
+
+const toDateInputValue = (value) => {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+};
 
 function Resoluciones_facturas() {
   const [id_resolucion, setId_resolucion] = useState(""); 
   const [id_empresa, setId_empresa] = useState("");
+  const [id_usuario, setId_usuario] = useState("");
   const [numero_resolucion, setNumero_resolucion] = useState("");
   const [serie, setSerie] = useState("");
   const [rango_inicial, setRango_inicial] = useState("");
@@ -19,7 +30,12 @@ function Resoluciones_facturas() {
   const [fecha_autorizacion, setFecha_autorizacion] = useState("");
   const [fecha_vencimiento, setFecha_vencimiento] = useState("");
   const [estado, setEstado] = useState("");
-  // 🔴 Se eliminó el estado 'rol'
+  const [rol, setRol] = useState("caja");
+  const [empresasList, setEmpresasList] = useState([]);
+  const [empresasSeleccionadas, setEmpresasSeleccionadas] = useState([]);
+  const [proyectosList, setProyectosList] = useState([]);
+  const [usuariosList, setUsuariosList] = useState([]);
+  const [resolucionesEdicionGrupo, setResolucionesEdicionGrupo] = useState([]);
   
   const [Resoluciones_facturasList, setResoluciones_facturas] = useState([]);
   const [busqueda, setBusqueda] = useState("");
@@ -29,7 +45,160 @@ function Resoluciones_facturas() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
-  const API_URL = "http://localhost:3001/api/resoluciones_facturas";
+  const API_URL = `${API_BASE_URL}/api/resoluciones_facturas`;
+
+  const getEmpresas = () => {
+    Axios.get(`${API_BASE_URL}/api/empresas`)
+      .then((response) => {
+        setEmpresasList(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error al obtener empresas', error);
+        setEmpresasList([]);
+      });
+  };
+
+  const getUsuarios = () => {
+    Axios.get(`${API_BASE_URL}/api/usuarios`)
+      .then((response) => {
+        setUsuariosList(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error al obtener usuarios', error);
+        setUsuariosList([]);
+      });
+  };
+
+  const getProyectos = () => {
+    Axios.get(`${API_BASE_URL}/api/proyectos`)
+      .then((response) => {
+        setProyectosList(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch((error) => {
+        console.error('Error al obtener proyectos', error);
+        setProyectosList([]);
+      });
+  };
+
+  const getNombreEmpresa = (empresaId) => {
+    const empresa = empresasList.find((item) => String(item.id_empresa) === String(empresaId));
+    return empresa?.nombre_empresa || `Empresa #${empresaId}`;
+  };
+
+  const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
+
+  const agruparResoluciones = (resoluciones = []) => {
+    const mapa = new Map();
+
+    (Array.isArray(resoluciones) ? resoluciones : []).forEach((item) => {
+      const key = [
+        String(item?.id_usuario || ''),
+        normalizarTexto(item?.numero_resolucion),
+        normalizarTexto(item?.serie),
+        String(item?.rango_inicial ?? ''),
+        String(item?.rango_final ?? '')
+      ].join('|');
+
+      const empresaId = String(item?.id_empresa || '');
+      const nombreEmpresa = getNombreEmpresa(item?.id_empresa);
+
+      if (!mapa.has(key)) {
+        mapa.set(key, {
+          ...item,
+          group_key: key,
+          empresas_ids: empresaId ? [empresaId] : [],
+          empresas_nombres: nombreEmpresa ? [nombreEmpresa] : [],
+          roles_set: [String(item?.rol || 'caja').toLowerCase()],
+          estados_set: [String(item?.estado || '').toLowerCase()],
+          resoluciones_ids: Number.isFinite(Number(item?.id_resolucion)) ? [Number(item.id_resolucion)] : []
+        });
+        return;
+      }
+
+      const actual = mapa.get(key);
+      if (empresaId && !actual.empresas_ids.includes(empresaId)) {
+        actual.empresas_ids.push(empresaId);
+      }
+      if (nombreEmpresa && !actual.empresas_nombres.includes(nombreEmpresa)) {
+        actual.empresas_nombres.push(nombreEmpresa);
+      }
+      if (Number.isFinite(Number(item?.id_resolucion))) {
+        actual.resoluciones_ids.push(Number(item.id_resolucion));
+      }
+
+      const rolActual = String(item?.rol || 'caja').toLowerCase();
+      if (rolActual && !actual.roles_set.includes(rolActual)) {
+        actual.roles_set.push(rolActual);
+      }
+
+      const estadoActual = String(item?.estado || '').toLowerCase();
+      if (estadoActual && !actual.estados_set.includes(estadoActual)) {
+        actual.estados_set.push(estadoActual);
+      }
+
+      if (Number(item?.id_resolucion || 0) > Number(actual?.id_resolucion || 0)) {
+        actual.id_resolucion = item.id_resolucion;
+      }
+
+      if (Number(item?.correlativo_actual || 0) > Number(actual?.correlativo_actual || 0)) {
+        actual.correlativo_actual = item.correlativo_actual;
+      }
+
+      if (actual.roles_set.includes('ambos')) {
+        actual.rol = 'ambos';
+      } else if (actual.roles_set.length > 1) {
+        actual.rol = 'ambos';
+      } else {
+        actual.rol = actual.roles_set[0] || String(actual?.rol || 'caja').toLowerCase();
+      }
+    });
+
+    return Array.from(mapa.values());
+  };
+
+  const getNombreUsuario = (usuarioId, usuarioRegistro = null) => {
+    if (usuarioRegistro?.nombre_usuario) return usuarioRegistro.nombre_usuario;
+    const usuario = usuariosList.find((item) => String(item.id_usuario) === String(usuarioId));
+    return usuario?.nombre || `Usuario #${usuarioId || 'N/A'}`;
+  };
+
+  const usuariosDisponibles = Array.isArray(usuariosList)
+    ? [...usuariosList].sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')))
+    : [];
+
+  useEffect(() => {
+    if (!id_usuario) return;
+    const existe = usuariosDisponibles.some((item) => String(item.id_usuario) === String(id_usuario));
+    if (!existe) {
+      setId_usuario('');
+    }
+  }, [id_usuario, usuariosDisponibles]);
+
+  const toggleEmpresaSeleccionada = (idEmpresa) => {
+    const id = String(idEmpresa);
+    setEmpresasSeleccionadas((prev) => (
+      prev.includes(id)
+        ? prev.filter((item) => item !== id)
+        : [...prev, id]
+    ));
+  };
+
+  const idsEmpresasObjetivo = empresasSeleccionadas.length
+    ? empresasSeleccionadas
+    : (id_empresa ? [String(id_empresa)] : []);
+
+  const proyectosPorEmpresaSeleccionada = idsEmpresasObjetivo.map((idEmp) => {
+    const empresa = empresasList.find((item) => String(item.id_empresa) === String(idEmp));
+    const proyectos = proyectosList
+      .filter((proyecto) => String(proyecto?.id_empresa) === String(idEmp))
+      .sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')));
+
+    return {
+      id_empresa: idEmp,
+      nombre_empresa: empresa?.nombre_empresa || `Empresa #${idEmp}`,
+      proyectos
+    };
+  });
 
   const calcularRangoFinalPorLote = (inicio) => {
     const n = Number(inicio);
@@ -40,10 +209,17 @@ function Resoluciones_facturas() {
   const aplicarLoteDesdeRangoInicial = (valorInicial) => {
     setRango_inicial(valorInicial);
     const finalCalculado = calcularRangoFinalPorLote(valorInicial);
-    setRango_final(finalCalculado);
+    if (!String(rango_final || '').trim()) {
+      setRango_final(finalCalculado);
+    }
     if (!String(correlativo_actual || '').trim()) {
       setCorrelativo_actual(String(valorInicial || ''));
     }
+  };
+
+  const autocalcularRangoFinal = () => {
+    const finalCalculado = calcularRangoFinalPorLote(rango_inicial);
+    setRango_final(finalCalculado);
   };
 
   // =========================================================================
@@ -99,13 +275,14 @@ function Resoluciones_facturas() {
       head: [['PARÁMETRO DE SEGURIDAD', 'VALOR / CREDENCIAL ASIGNADA']],
       body: [
         ['CÓDIGO INTERNO RESOLUCION', `RES-${val.id_resolucion}2026`],
+        ['USUARIO RESPONSABLE', getNombreUsuario(val.id_usuario, val)],
         ['SERIE', val.serie.toUpperCase()],
         ['RANGO INICIAL', val.rango_inicial],
         ['RANGO FINAL', val.rango_final],
         ['CORRELATIVO ACTUAL', String(val.correlativo_actual).toUpperCase()],
         ['FECHA AUTORIZACION', val.fecha_autorizacion],
         ['FECHA VENCIMIENTO', val.fecha_vencimiento],
-        // 🔴 Se eliminó la fila del Rol
+        ['ROL ASIGNADO', String(val.rol || 'caja').toUpperCase()],
         ['ESTADO OPERATIVO EN SISTEMA', val.estado.toUpperCase()],
       ],
       theme: 'striped',
@@ -131,8 +308,12 @@ function Resoluciones_facturas() {
   //   CONTROLADORES DE BASE DE DATOS (CRUD)
   // =========================================================================
   const add = () => {
-    // 🔴 Se quitó 'rol.trim()' de la condición
-    if (!id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim()) {
+    const empresasObjetivoRaw = empresasSeleccionadas.length
+      ? empresasSeleccionadas
+      : (id_empresa ? [String(id_empresa)] : []);
+    const empresasObjetivo = [...new Set(empresasObjetivoRaw.map((item) => String(item)))];
+
+    if (!empresasObjetivo.length || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({
         position: "top-end",
         icon: "warning",
@@ -157,37 +338,102 @@ function Resoluciones_facturas() {
       return;
     }
 
-    // 🔴 Se quitó 'rol' del objeto enviado
-    Axios.post(`${API_URL}/crear`, { 
-      id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado 
-    })
-    .then(() => {
-      getResoluciones();
-      limpiarCampos();
-      setShowRegModal(false);
-      Swal.fire({
-        position: "top-end",
-        icon: "success",
-        title: 'Resolución ' + numero_resolucion + ' creada correctamente',
-        showConfirmButton: false,
-        timer: 3000
+    Axios.get(API_URL)
+      .then((respListado) => {
+        const resolucionesExistentes = Array.isArray(respListado?.data) ? respListado.data : [];
+        const normalizarTexto = (valor) => String(valor || '').trim().toUpperCase();
+
+        const operaciones = empresasObjetivo.map((empresaId) => {
+          const idEmp = Number(empresaId);
+          const existente = resolucionesExistentes.find((item) => (
+            Number(item?.id_empresa) === idEmp
+            && Number(item?.id_usuario) === Number(id_usuario)
+            && normalizarTexto(item?.numero_resolucion) === normalizarTexto(numero_resolucion)
+            && normalizarTexto(item?.serie) === normalizarTexto(serie)
+          ));
+
+          if (existente?.id_resolucion) {
+            return Axios.put(`${API_URL}/actualizar`, {
+              id_resolucion: Number(existente.id_resolucion),
+              id_empresa: idEmp,
+              id_usuario,
+              numero_resolucion,
+              serie,
+              rango_inicial,
+              rango_final,
+              correlativo_actual,
+              fecha_autorizacion,
+              fecha_vencimiento,
+              estado,
+              rol
+            });
+          }
+
+          return Axios.post(`${API_URL}/crear`, {
+            id_empresa: idEmp,
+            id_usuario,
+            numero_resolucion,
+            serie,
+            rango_inicial,
+            rango_final,
+            correlativo_actual,
+            fecha_autorizacion,
+            fecha_vencimiento,
+            estado,
+            rol
+          });
+        });
+
+        return Promise.allSettled(operaciones);
+      })
+      .then((resultados) => {
+        const exitos = resultados.filter((item) => item.status === 'fulfilled').length;
+        const fallos = resultados.filter((item) => item.status === 'rejected');
+
+        getResoluciones();
+
+        if (exitos > 0) {
+          limpiarCampos();
+          setShowRegModal(false);
+        }
+
+        if (fallos.length === 0) {
+          Swal.fire({
+            position: "top-end",
+            icon: "success",
+            title: `Resolución ${numero_resolucion} creada en ${exitos} empresa(s)`,
+            showConfirmButton: false,
+            timer: 3200
+          });
+          return;
+        }
+
+        const mensajeError = fallos[0]?.reason?.response?.data?.message || 'Hubo errores en parte del registro.';
+        Swal.fire({
+          title: '<strong>Registro parcial</strong>',
+          text: `${exitos} empresa(s) registradas. ${fallos.length} con error. ${mensajeError}`,
+          icon: 'warning'
+        });
+      })
+      .catch((error) => {
+        Swal.fire({
+          title: "<strong>No se registró!</strong>",
+          text: error?.response?.data?.message || 'Hubo un error en el sistema',
+          icon: 'warning',
+          timer: 3000,
+          showConfirmButton: false
+        });
+        console.error(error);
       });
-    })
-    .catch((error) => {
-      Swal.fire({
-        title: "<strong>No se registró!</strong>",
-        text: error.response?.data?.message || 'Hubo un error en el sistema',
-        icon: 'warning',
-        timer: 3000,
-        showConfirmButton: false
-      });
-      console.error(error);
-    });
   };
 
   const actualizar = () => {
-    // 🔴 Se quitó 'rol.trim()' de la condición
-    if (!id_resolucion || !id_empresa || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim()) {
+    const empresasObjetivoRaw = empresasSeleccionadas.length
+      ? empresasSeleccionadas
+      : (id_empresa ? [String(id_empresa)] : []);
+    const empresasObjetivo = [...new Set(empresasObjetivoRaw.map((item) => String(item)))];
+
+    if (!id_resolucion || !empresasObjetivo.length || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({ icon: 'warning', title: 'Campos incompletos' });
       return;
     }
@@ -206,25 +452,124 @@ function Resoluciones_facturas() {
       return;
     }
 
-    // 🔴 Se quitó 'rol' del objeto enviado
-    Axios.put(`${API_URL}/actualizar`, { 
-      id_resolucion, id_empresa, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado 
-    })
-    .then(() => {
-      getResoluciones();
-      limpiarCampos();
-      setShowEditModal(false);
-      Swal.fire({
-        html: '<strong>¡Éxito!</strong><p>Resolución actualizada correctamente</p>',
-        icon: 'success',
-        timer: 3000,
-        showConfirmButton: false
+    const hayTraslape = (inicioA, finA, inicioB, finB) => Math.max(inicioA, inicioB) <= Math.min(finA, finB);
+
+    const payloadBase = {
+      id_usuario,
+      numero_resolucion,
+      serie,
+      rango_inicial,
+      rango_final,
+      correlativo_actual,
+      fecha_autorizacion,
+      fecha_vencimiento,
+      estado,
+      rol
+    };
+
+    Axios.get(API_URL)
+      .then((respListado) => {
+        const resolucionesExistentes = Array.isArray(respListado?.data) ? respListado.data : [];
+        const resolucionesGrupoActual = Array.isArray(resolucionesEdicionGrupo) && resolucionesEdicionGrupo.length
+          ? resolucionesEdicionGrupo
+          : resolucionesExistentes.filter((item) => Number(item?.id_resolucion) === Number(id_resolucion));
+
+        const operaciones = [];
+        const empresasSeleccionadasSet = new Set(empresasObjetivo.map((item) => String(item)));
+        const empresasExistentesSet = new Set(
+          resolucionesGrupoActual
+            .map((item) => String(item?.id_empresa || ''))
+            .filter(Boolean)
+        );
+
+        resolucionesGrupoActual.forEach((item) => {
+          const idEmp = String(item?.id_empresa || '');
+          const idResolucionActual = Number(item?.id_resolucion || 0);
+          if (!idEmp || !idResolucionActual) return;
+
+          if (!empresasSeleccionadasSet.has(idEmp)) {
+            operaciones.push(Axios.delete(`${API_URL}/delete/${idResolucionActual}`));
+            return;
+          }
+
+          operaciones.push(
+            Axios.put(`${API_URL}/actualizar`, {
+              id_resolucion: idResolucionActual,
+              id_empresa: Number(idEmp),
+              ...payloadBase
+            })
+          );
+        });
+
+        empresasObjetivo.forEach((empresaId) => {
+          const idEmp = String(empresaId);
+          if (empresasExistentesSet.has(idEmp)) {
+            return;
+          }
+
+          const resolucionExistente = resolucionesExistentes.find((item) => {
+            if (Number(item?.id_empresa) !== Number(idEmp)) return false;
+            if (normalizarTexto(item?.numero_resolucion) !== normalizarTexto(numero_resolucion)) return false;
+            if (normalizarTexto(item?.serie) !== normalizarTexto(serie)) return false;
+
+            const iniItem = Number(item?.rango_inicial);
+            const finItem = Number(item?.rango_final);
+            return Number.isFinite(iniItem) && Number.isFinite(finItem) && hayTraslape(iniItem, finItem, rInicial, rFinal);
+          });
+
+          if (resolucionExistente?.id_resolucion) {
+            operaciones.push(
+              Axios.put(`${API_URL}/actualizar`, {
+                id_resolucion: Number(resolucionExistente.id_resolucion),
+                id_empresa: Number(idEmp),
+                ...payloadBase
+              })
+            );
+            return;
+          }
+
+          operaciones.push(
+            Axios.post(`${API_URL}/crear`, {
+              id_empresa: Number(idEmp),
+              ...payloadBase
+            })
+          );
+        });
+
+        return Promise.allSettled(operaciones);
+      })
+      .then((resultados) => {
+        const exitos = resultados.filter((item) => item.status === 'fulfilled').length;
+        const fallos = resultados.filter((item) => item.status === 'rejected');
+
+        getResoluciones();
+
+        if (exitos > 0) {
+          limpiarCampos();
+          setShowEditModal(false);
+        }
+
+        if (fallos.length === 0) {
+          Swal.fire({
+            html: `<strong>¡Éxito!</strong><p>Actualización aplicada en ${exitos} empresa(s) sin duplicados.</p>`,
+            icon: 'success',
+            timer: 3200,
+            showConfirmButton: false
+          });
+          return;
+        }
+
+        const mensajeError = fallos[0]?.reason?.response?.data?.message || 'Hubo errores en parte de la operación.';
+        Swal.fire({
+          title: '<strong>Actualización parcial</strong>',
+          text: `${exitos} empresa(s) procesadas. ${fallos.length} con error. ${mensajeError}`,
+          icon: 'warning'
+        });
+      })
+      .catch((error) => {
+        console.error(error);
+        Swal.fire({ icon: 'error', title: 'Error al actualizar' });
       });
-    })
-    .catch((error) => {
-      console.error(error);
-      Swal.fire({ icon: 'error', title: 'Error al actualizar' });
-    });
   };
 
   const deteleResolucion = (val) => {
@@ -252,6 +597,8 @@ function Resoluciones_facturas() {
   const limpiarCampos = () => {
     setId_resolucion("");
     setId_empresa("");
+    setEmpresasSeleccionadas([]);
+    setId_usuario("");
     setNumero_resolucion(""); 
     setSerie(""); 
     setRango_inicial(""); 
@@ -260,7 +607,8 @@ function Resoluciones_facturas() {
     setFecha_autorizacion("");
     setFecha_vencimiento("");
     setEstado("");
-    // 🔴 Se quitó 'setRol("")'
+    setRol('caja');
+    setResolucionesEdicionGrupo([]);
   };
 
   const getResoluciones = () => {
@@ -269,24 +617,39 @@ function Resoluciones_facturas() {
     .catch((error) => { console.error("Error al obtener resoluciones", error); });
   };
 
-  useEffect(() => { getResoluciones(); }, []);
+  useEffect(() => {
+    getResoluciones();
+    getEmpresas();
+    getUsuarios();
+    getProyectos();
+  }, []);
 
   const abrirEditarModal = (val) => {
+    const resolucionesGrupo = (Array.isArray(Resoluciones_facturasList) ? Resoluciones_facturasList : [])
+      .filter((item) => val?.resoluciones_ids?.includes(Number(item?.id_resolucion)));
+
     setId_resolucion(val.id_resolucion);
     setId_empresa(val.id_empresa);
+    setEmpresasSeleccionadas(Array.isArray(val?.empresas_ids) && val.empresas_ids.length
+      ? val.empresas_ids.map((item) => String(item))
+      : (val.id_empresa ? [String(val.id_empresa)] : []));
+    setId_usuario(val.id_usuario ? String(val.id_usuario) : '');
     setNumero_resolucion(val.numero_resolucion);
     setSerie(val.serie);
     setRango_inicial(val.rango_inicial); 
     setRango_final(val.rango_final);
     setCorrelativo_actual(val.correlativo_actual);
-    setFecha_autorizacion(val.fecha_autorizacion);
-    setFecha_vencimiento(val.fecha_vencimiento);
+    setFecha_autorizacion(toDateInputValue(val.fecha_autorizacion));
+    setFecha_vencimiento(toDateInputValue(val.fecha_vencimiento));
     setEstado(val.estado);
-    // 🔴 Se quitó la asignación de rol
+    setRol(String(val.rol || 'caja'));
+    setResolucionesEdicionGrupo(resolucionesGrupo);
     setShowEditModal(true);
   };
 
-  const resoluciones_facturasFiltrados = Resoluciones_facturasList.filter((prov) => 
+  const resolucionesAgrupadas = agruparResoluciones(Resoluciones_facturasList);
+
+  const resoluciones_facturasFiltrados = resolucionesAgrupadas.filter((prov) => 
     prov.numero_resolucion?.toLowerCase().includes(busqueda.toLowerCase())
   );
 
@@ -334,6 +697,7 @@ function Resoluciones_facturas() {
         <thead className="table-dark">
           <tr>
             <th>EMPRESA</th>
+            <th>USUARIO</th>
             <th>NUMERO RESOLUCION</th>
             <th>SERIE</th>
             <th>RANGO INICIAL</th>
@@ -341,7 +705,7 @@ function Resoluciones_facturas() {
             <th>CORRELATIVO ACTUAL</th>
             <th>FECHA AUTORIZACION</th>
             <th>FECHA VENCIMIENTO</th>
-            {/* 🔴 Se eliminó la cabecera del ROL */}
+            <th>ROL</th>
             <th>ESTADO</th>
             <th>OPCIONES</th>
           </tr>
@@ -349,8 +713,15 @@ function Resoluciones_facturas() {
         <tbody>
           {resolucionesPaginadas.length > 0 ? (
             resolucionesPaginadas.map((val) => (
-              <tr key={val.id_resolucion}>
-                <td>{val.id_empresa}</td>
+              <tr key={val.group_key || val.id_resolucion}>
+                <td>
+                  <div className="fw-bold">{Array.isArray(val.empresas_nombres) && val.empresas_nombres.length ? val.empresas_nombres.join(' | ') : getNombreEmpresa(val.id_empresa)}</div>
+                  <div className="small text-muted">ID: {Array.isArray(val.empresas_ids) && val.empresas_ids.length ? val.empresas_ids.join(', ') : val.id_empresa}</div>
+                </td>
+                <td>
+                  <div className="fw-bold">{getNombreUsuario(val.id_usuario, val)}</div>
+                  <div className="small text-muted">ID: {val.id_usuario || 'N/A'}</div>
+                </td>
                 <td>{val.numero_resolucion}</td>
                 <td>{val.serie}</td>
                 <td>{val.rango_inicial}</td>
@@ -358,7 +729,11 @@ function Resoluciones_facturas() {
                 <td>{val.correlativo_actual}</td>
                 <td>{val.fecha_autorizacion}</td>
                 <td>{val.fecha_vencimiento}</td>
-                {/* 🔴 Se eliminó la celda del ROL */}
+                <td>
+                  <span className={`badge ${String(val.rol || '').toLowerCase() === 'juridico' ? 'bg-primary' : String(val.rol || '').toLowerCase() === 'ambos' ? 'bg-dark' : 'bg-info text-dark'}`}>
+                    {String(val.rol || 'caja').toUpperCase()}
+                  </span>
+                </td>
                 <td>
                   <span className={`badge ${val.estado === 'activo' ? 'bg-success' : val.estado === 'inactivo' ? 'bg-danger' : 'bg-warning'}`}>
                     {val.estado.toUpperCase()}
@@ -375,7 +750,7 @@ function Resoluciones_facturas() {
             ))
           ) : (
             <tr>
-              <td colSpan="10" className="text-center text-muted py-3">No se encontraron resoluciones coincidentes.</td>
+              <td colSpan="12" className="text-center text-muted py-3">No se encontraron resoluciones coincidentes.</td>
             </tr>
           )}
         </tbody>
@@ -401,8 +776,60 @@ function Resoluciones_facturas() {
               </div>
               <div className="modal-body">
                 <div className="mb-3">
-                  <label className="form-label fw-bold">EMPRESA (ID)</label>
-                  <input type="number" value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-control" placeholder="ID Empresa" />
+                  <label className="form-label fw-bold">Empresa</label>
+                  <div className="border rounded p-2 mb-2" style={{ maxHeight: '140px', overflowY: 'auto' }}>
+                    {empresasList.map((empresa) => {
+                      const checked = empresasSeleccionadas.includes(String(empresa.id_empresa));
+                      return (
+                        <label key={`check-${empresa.id_empresa}`} className="form-check d-flex align-items-center justify-content-between mb-1">
+                          <div>
+                            <input
+                              className="form-check-input me-2"
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
+                            />
+                            <span className="form-check-label">{empresa.nombre_empresa}</span>
+                          </div>
+                          <small className="text-muted">ID: {empresa.id_empresa}</small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <small className="text-muted">Si marcas checkboxes, se creará una resolución por cada empresa seleccionada.</small>
+                </div>
+                {idsEmpresasObjetivo.length > 0 && (
+                  <div className="mb-3 border rounded p-2 bg-light">
+                    <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
+                    {proyectosPorEmpresaSeleccionada.map((grupo) => (
+                      <div key={`proy-${grupo.id_empresa}`} className="mb-2">
+                        <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
+                        {grupo.proyectos.length > 0 ? (
+                          <ul className="small mb-1 ps-3">
+                            {grupo.proyectos.map((proyecto) => (
+                              <li key={`proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`}>
+                                {proyecto.nombre} (ID: {proyecto.id_proyecto})
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="small text-muted">Sin proyectos asociados.</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Usuario asignado</label>
+                  <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
+                    <option value="">-- Seleccione usuario --</option>
+                    {usuariosDisponibles.map((usuario) => (
+                      <option key={usuario.id_usuario} value={usuario.id_usuario}>
+                        {usuario.nombre} ({String(usuario.nombre_rol || 'sin rol').toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
+                  <small className="text-muted">Se muestran todos los usuarios; el rol de resolución sigue validándose al asignar correlativos.</small>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Número resolución:</label>
@@ -418,8 +845,11 @@ function Resoluciones_facturas() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Rango Final (automático):</label>
-                  <input type="number" value={rango_final} readOnly className="form-control bg-light" placeholder="Rango Final" />
-                  <small className="text-muted">Se calcula automáticamente con un lote de {LOTE_FACTURAS.toLocaleString()} facturas.</small>
+                  <input type="number" value={rango_final} onChange={(e) => setRango_final(e.target.value)} className="form-control" placeholder="Rango Final" />
+                  <div className="d-flex justify-content-between align-items-center mt-1">
+                    <small className="text-muted">Puedes editarlo manualmente o autocalcular por lote estándar.</small>
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={autocalcularRangoFinal}>Autocalcular</button>
+                  </div>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Correlativo actual:</label>
@@ -433,7 +863,15 @@ function Resoluciones_facturas() {
                   <label className="form-label fw-bold">Fecha vencimiento:</label>
                   <input type="date" value={fecha_vencimiento} onChange={(e) => setFecha_vencimiento(e.target.value)} className="form-control" />
                 </div>
-                {/* 🔴 Se eliminó por completo el <div mb-3> del select de Rol */}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rol para uso de correlativos:</label>
+                  <select value={rol} onChange={(e) => setRol(e.target.value)} className="form-select">
+                    <option value="caja">Caja</option>
+                    <option value="juridico">Juridico</option>
+                    <option value="ambos">Ambos</option>
+                  </select>
+                  <small className="text-muted">Define qué tipo de usuario podrá consumir esta resolución al asignar lotes.</small>
+                </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Estado:</label>
                   <select value={estado} onChange={(e) => setEstado(e.target.value)} className="form-select">
@@ -464,8 +902,59 @@ function Resoluciones_facturas() {
               </div>
               <div className="modal-body">
                 <div className="mb-3">
-                  <label className="form-label fw-bold">EMPRESA (ID)</label>
-                  <input type="number" value={id_empresa} onChange={(e) => setId_empresa(e.target.value)} className="form-control" />
+                  <label className="form-label fw-bold">Empresa</label>
+                  <div className="border rounded p-2 mb-2" style={{ maxHeight: '140px', overflowY: 'auto' }}>
+                    {empresasList.map((empresa) => {
+                      const checked = empresasSeleccionadas.includes(String(empresa.id_empresa));
+                      return (
+                        <label key={`edit-check-${empresa.id_empresa}`} className="form-check d-flex align-items-center justify-content-between mb-1">
+                          <div>
+                            <input
+                              className="form-check-input me-2"
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleEmpresaSeleccionada(empresa.id_empresa)}
+                            />
+                            <span className="form-check-label">{empresa.nombre_empresa}</span>
+                          </div>
+                          <small className="text-muted">ID: {empresa.id_empresa}</small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <small className="text-muted">Puedes marcar varias empresas; se asignará sin duplicar resoluciones existentes.</small>
+                </div>
+                {idsEmpresasObjetivo.length > 0 && (
+                  <div className="mb-3 border rounded p-2 bg-light">
+                    <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
+                    {proyectosPorEmpresaSeleccionada.map((grupo) => (
+                      <div key={`edit-proy-${grupo.id_empresa}`} className="mb-2">
+                        <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
+                        {grupo.proyectos.length > 0 ? (
+                          <ul className="small mb-1 ps-3">
+                            {grupo.proyectos.map((proyecto) => (
+                              <li key={`edit-proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`}>
+                                {proyecto.nombre} (ID: {proyecto.id_proyecto})
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="small text-muted">Sin proyectos asociados.</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Usuario asignado</label>
+                  <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
+                    <option value="">-- Seleccione usuario --</option>
+                    {usuariosDisponibles.map((usuario) => (
+                      <option key={usuario.id_usuario} value={usuario.id_usuario}>
+                        {usuario.nombre} ({String(usuario.nombre_rol || 'sin rol').toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Número resolución:</label>
@@ -481,8 +970,11 @@ function Resoluciones_facturas() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Rango Final (automático):</label>
-                  <input type="number" value={rango_final} readOnly className="form-control bg-light" />
-                  <small className="text-muted">Lote estándar aplicado: {LOTE_FACTURAS.toLocaleString()} facturas.</small>
+                  <input type="number" value={rango_final} onChange={(e) => setRango_final(e.target.value)} className="form-control" />
+                  <div className="d-flex justify-content-between align-items-center mt-1">
+                    <small className="text-muted">Puedes editarlo manualmente o autocalcular por lote estándar.</small>
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={autocalcularRangoFinal}>Autocalcular</button>
+                  </div>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Correlativo actual:</label>
@@ -496,7 +988,14 @@ function Resoluciones_facturas() {
                   <label className="form-label fw-bold">Fecha vencimiento:</label>
                   <input type="date" value={fecha_vencimiento} onChange={(e) => setFecha_vencimiento(e.target.value)} className="form-control" />
                 </div>
-                {/* 🔴 Se eliminó por completo el <div mb-3> del select de Rol */}
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Rol para uso de correlativos:</label>
+                  <select value={rol} onChange={(e) => setRol(e.target.value)} className="form-select">
+                    <option value="caja">Caja</option>
+                    <option value="juridico">Juridico</option>
+                    <option value="ambos">Ambos</option>
+                  </select>
+                </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Estado:</label>
                   <select value={estado} onChange={(e) => setEstado(e.target.value)} className="form-select">

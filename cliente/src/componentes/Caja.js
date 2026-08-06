@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
+
+// El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
+// Los layouts de Recibo Juridico y Recibo de Caja se conservan mas abajo, desactivados.
+const USAR_FORMATO_RECIBO_JURIDICO = false;
 
 const getImageFormatFromDataUrl = (dataUrl = '') => {
     const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/i);
@@ -45,9 +49,175 @@ const normalizeImageDataUrl = (value = '') => {
     return `data:${mime};base64,${cleaned}`;
 };
 
+const normalizeSearchValue = (value = '') => String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+const UNIDADES = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciseis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidos', 'veintitres', 'veinticuatro', 'veinticinco', 'veintiseis', 'veintisiete', 'veintiocho', 'veintinueve'];
+const DECENAS = ['', '', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+const CENTENAS = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+
+const cientosALetras = (n) => {
+    if (n === 100) return 'cien';
+    const c = Math.floor(n / 100);
+    const r = n % 100;
+    if (r === 0) return CENTENAS[c];
+    if (r < 30) return `${CENTENAS[c]} ${UNIDADES[r]}`.trim();
+    const d = Math.floor(r / 10);
+    const u = r % 10;
+    return `${CENTENAS[c]} ${DECENAS[d]}${u ? ` y ${UNIDADES[u]}` : ''}`.trim();
+};
+
+const numeroALetrasRecibo = (n) => {
+    const numero = Math.floor(Number(n || 0));
+    if (!Number.isFinite(numero) || numero <= 0) return 'cero';
+    let restante = numero;
+    let salida = '';
+
+    if (restante >= 1000000) {
+        const millones = Math.floor(restante / 1000000);
+        salida += `${numeroALetrasRecibo(millones)} ${millones === 1 ? 'millon' : 'millones'} `;
+        restante %= 1000000;
+    }
+    if (restante >= 1000) {
+        const miles = Math.floor(restante / 1000);
+        salida += `${miles === 1 ? 'mil' : `${cientosALetras(miles)} mil`} `;
+        restante %= 1000;
+    }
+    if (restante > 0) salida += cientosALetras(restante);
+    return salida.trim();
+};
+
+const montoALetrasRecibo = (monto) => {
+    const base = numeroALetrasRecibo(monto);
+    return `${base.charAt(0).toUpperCase()}${base.slice(1)} quetzales exactos`;
+};
+
+const fechaLargaGT = (valor) => {
+    const fecha = valor instanceof Date && !Number.isNaN(valor.getTime()) ? valor : new Date();
+    return fecha.toLocaleDateString('es-GT', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+};
+
+const getUsuarioSesion = () => {
+    try {
+        return JSON.parse(localStorage.getItem('usuario') || '{}');
+    } catch {
+        return {};
+    }
+};
+
+const esRolJuridico = (usuario = {}) => {
+    const rol = String(usuario?.nombre_rol || '').toLowerCase();
+    return rol.includes('jurid') || rol.includes('legal');
+};
+
+const BANCOS_GUATEMALA = [
+    'Banco Industrial',
+    'Banco G&T Continental',
+    'Banco Agromercantil de Guatemala',
+    'Banco Internacional',
+    'Banco Promerica',
+    'Banrural',
+    'Banco Ficohsa Guatemala',
+    'Banco Cuscatlan Guatemala',
+    'Banco de los Trabajadores',
+    'Banco Azteca Guatemala',
+    'Banco Inmobiliario',
+    'Banco CHN',
+    'Banco Americano',
+    'Banco Industrial Internacional',
+    'Banco Lafise',
+    'Credibanco',
+    'Otro'
+];
+
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
+    const redondear2 = (valor) => parseFloat((Number(valor || 0)).toFixed(2));
+    const calcularPlanFinancieroContrato = (contrato = {}) => {
+        const tieneConvenioActivo = Number(contrato?.id_convenio_activo || 0) > 0;
+        const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
+        const montoTotalContrato = Math.max(parseFloat(contrato?.monto_total_original || contrato?.monto_total_contrato || 0), 0);
+        const enganche = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche || 0), 0);
+        const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
+        const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
+        const interesPorcentaje = tieneConvenioActivo
+            ? 0
+            : Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
+        const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
+        const tasaMensual = interesPorcentaje > 0 ? ((interesPorcentaje / 100 / 12) * FACTOR_AJUSTE_TASA_MENSUAL) : 0;
+
+        const calcularCuotaAmortizada = (principal, tasa, cuotas) => {
+            if (principal <= 0 || cuotas <= 0) return 0;
+            if (tasa <= 0) return principal / cuotas;
+            const factor = Math.pow(1 + tasa, cuotas);
+            const denominador = factor - 1;
+            if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+                return principal / cuotas;
+            }
+            return principal * ((tasa * factor) / denominador);
+        };
+
+        const capitalTotalContrato = montoTotalContrato > 0
+            ? parseFloat(Math.max(tieneConvenioActivo ? montoTotalContrato : (montoTotalContrato - enganche), 0).toFixed(2))
+            : ((capitalPorCuotaContrato > 0 && cuotasPactadas > 0)
+                ? parseFloat((capitalPorCuotaContrato * cuotasPactadas).toFixed(2))
+                : parseFloat(saldoPendiente.toFixed(2)));
+        const capitalBaseInteres = Math.max(parseFloat(capitalTotalContrato.toFixed(2)), 0);
+        const cuotaCapitalTeorica = (capitalBaseInteres > 0 && cuotasPactadas > 0)
+            ? parseFloat((capitalBaseInteres / cuotasPactadas).toFixed(2))
+            : 0;
+        const referenciaCuotaCapital = capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica;
+        const desfaseRelativoCuota = cuotaCapitalTeorica > 0
+            ? Math.abs(referenciaCuotaCapital - cuotaCapitalTeorica) / cuotaCapitalTeorica
+            : 0;
+        const usarCuotaCapitalTeorica = cuotaCapitalTeorica > 0
+            && (referenciaCuotaCapital <= 0 || desfaseRelativoCuota > 0.1);
+        const capitalPorCuota = tieneConvenioActivo
+            ? (capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica)
+            : (usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital);
+        const cuotaMensualAmortizada = calcularCuotaAmortizada(capitalBaseInteres, tasaMensual, cuotasPactadas);
+        const cuotaMensualConInteres = tieneConvenioActivo
+            ? parseFloat((capitalPorCuota || 0).toFixed(2))
+            : parseFloat(cuotaMensualAmortizada.toFixed(2));
+        const interesTotalContrato = tieneConvenioActivo
+            ? 0
+            : (capitalBaseInteres > 0 && cuotasPactadas > 0)
+            ? parseFloat(Math.max((cuotaMensualConInteres * cuotasPactadas) - capitalBaseInteres, 0).toFixed(2))
+            : 0;
+        const interesPorCuota = cuotasPactadas > 0
+            ? parseFloat((interesTotalContrato / cuotasPactadas).toFixed(2))
+            : 0;
+        const cuotaTotalConInteres = cuotasPactadas > 0 ? cuotaMensualConInteres : 0;
+        const cuotasRestantes = (saldoPendiente > 0 && capitalPorCuota > 0)
+            ? Math.max(Math.ceil(saldoPendiente / capitalPorCuota), 0)
+            : 0;
+        const totalContratoConInteres = parseFloat((capitalTotalContrato + interesTotalContrato).toFixed(2));
+
+        return {
+            saldoPendiente,
+            enganche,
+            capitalPorCuota,
+            cuotasPactadas,
+            interesPorcentaje,
+            capitalTotalContrato,
+            capitalBaseInteres,
+            interesTotalContrato,
+            interesPorCuota,
+            cuotaTotalConInteres,
+            cuotasRestantes,
+            totalContratoConInteres
+        };
+    };
+
     const esServicioCobroUnico = (periodicidad = '', nombreServicio = '') => {
         const periodicidadNormalizada = String(periodicidad || '').trim().toLowerCase();
         if (periodicidadNormalizada === 'unico') {
@@ -69,10 +239,20 @@ const Caja = () => {
 
     const filtrarServiciosMostrables = (servicios = []) => {
         return (Array.isArray(servicios) ? servicios : []).filter((servicio) => {
-            const esUnico = esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
+            const esUnico = typeof servicio?.es_cobro_unico === 'boolean'
+                ? servicio.es_cobro_unico
+                : esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
             const yaPagadoAlgunaVez = Boolean(servicio?.ya_pagado_alguna_vez);
             return !(esUnico && yaPagadoAlgunaVez);
         });
+    };
+
+    const esCobroUnicoServicio = (servicio = {}) => {
+        if (typeof servicio?.es_cobro_unico === 'boolean') {
+            return servicio.es_cobro_unico;
+        }
+
+        return esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
     };
 
     // ✅ Función helper para mostrar notificaciones flotantes (toast)
@@ -107,13 +287,23 @@ const Caja = () => {
     const [opcionesCuota, setOpcionesCuota] = useState([]);
     const [metodoPago, setMetodoPago] = useState('Efectivo');
     const [referencia, setReferencia] = useState('');
+    const [bancoPago, setBancoPago] = useState('');
+    const [fechaOperacion, setFechaOperacion] = useState('');
     const [mesesPendientes, setMesesPendientes] = useState([]);
+    const [mesesDetalleMap, setMesesDetalleMap] = useState({});
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
+    const [montoEngancheContratoSeleccionado, setMontoEngancheContratoSeleccionado] = useState(0);
+    const [montoEngancheContratoAplicado, setMontoEngancheContratoAplicado] = useState(0);
+    const [montoEngancheSeleccionado, setMontoEngancheSeleccionado] = useState(0);
+    const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
+    const [morasPendientes, setMorasPendientes] = useState([]);
+    const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
     const [serviciosContrato, setServiciosContrato] = useState([]);
     const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
     const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
+    const [montoCargosExtraSeleccionado, setMontoCargosExtraSeleccionado] = useState(0);
     const [showModalCobro, setShowModalCobro] = useState(false);
     const [estadoCorrelativoUsuario, setEstadoCorrelativoUsuario] = useState(null);
     const [estadoCorrelativo, setEstadoCorrelativo] = useState(null);
@@ -145,6 +335,139 @@ const Caja = () => {
         }
     };
 
+    const contratoTieneAsignacionValida = (registro = {}) => {
+        const idProyecto = Number(registro?.id_proyecto || 0);
+        const idEmpresaFacturacion = Number(registro?.id_empresa_facturacion || 0);
+        return Number.isInteger(idProyecto) && idProyecto > 0 && Number.isInteger(idEmpresaFacturacion) && idEmpresaFacturacion > 0;
+    };
+
+    const usaCuotaCeroEnganche = Number(datosDeuda?.id_convenio_activo || 0) <= 0
+        && Math.max(parseFloat(datosDeuda?.enganche || 0), 0) > 0;
+
+    const obtenerNumeroCuotaVisual = (numeroCuotaReal) => {
+        const numero = Number(numeroCuotaReal || 0);
+        if (!Number.isInteger(numero) || numero < 0) {
+            return null;
+        }
+
+        if (!usaCuotaCeroEnganche) {
+            return numero;
+        }
+
+        return Math.max(numero - 1, 0);
+    };
+
+    const normalizarMesClave = (valor = '') => String(valor || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '').split(' ')[0] || '');
+    const tieneAnioEnEtiquetaMes = (valor = '') => /\b(19|20)\d{2}\b/.test(String(valor || ''));
+
+    const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null) => {
+        if (Number(datosDeuda?.id_convenio_activo || 0) > 0) {
+            return false;
+        }
+        const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
+        const primerMesPendiente = mesesLista[0] || '';
+        const engancheActual = enganchePendienteValor == null
+            ? enganchePendiente
+            : Math.max(Number(enganchePendienteValor || 0), 0);
+        return engancheActual > 0 && primerMesPendiente && mesEtiqueta === primerMesPendiente;
+    };
+
+    const obtenerMesKeyLocal = (mesTexto = '') => {
+        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+        if (!limpio) return null;
+
+        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+        if (conAnio) {
+            return {
+                mes: normalizarMesClave(conAnio[1]),
+                anio: Number(conAnio[2])
+            };
+        }
+
+        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+        if (soloMes) {
+            return {
+                mes: normalizarMesClave(soloMes[1]),
+                anio: null
+            };
+        }
+
+        return {
+            mes: normalizarMesClave(limpio),
+            anio: null
+        };
+    };
+
+    const esMesVencidoParaMoraLocal = (mesTexto = '') => {
+        const hoy = new Date();
+        const hoyMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+        if (!limpio) return false;
+
+        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+        if (conAnio) {
+            const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
+            if (indiceMes >= 0) {
+                const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
+                return fechaMes <= hoyMes;
+            }
+        }
+
+        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+        if (soloMes) {
+            const indiceMes = obtenerIndiceMesLocal(soloMes[1]);
+            if (indiceMes >= 0) {
+                const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
+                return fechaMes <= hoyMes;
+            }
+        }
+
+        return false;
+    };
+
+    const obtenerIndiceMesLocal = (mesTexto = '') => {
+        const objetivo = normalizarMesClave(mesTexto);
+        if (!objetivo) return -1;
+        const nombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        return nombres.findIndex((nombre) => nombre === objetivo);
+    };
+
+    const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null) => {
+        if (esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase)) {
+            return `Cuota inicial 0 - ${mesEtiqueta}`;
+        }
+
+        const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
+        return `Cuota ${numeroVisual ?? '-'} - ${mesEtiqueta}`;
+    };
+
+    const obtenerMorasAplicables = (mesesLista = []) => {
+        if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
+            return [];
+        }
+        // Mora solo aplica sobre cuota financiada, no sobre el enganche
+        const mesesFinanciados = (Array.isArray(mesesLista) ? mesesLista : [])
+            .filter((mes) => !esMesEngancheVisual(mes));
+
+        if (!mesesFinanciados.length) {
+            return [];
+        }
+
+        return morasPendientes.filter((mora) => {
+            const mesMora = String(mora?.mes_atrasado || '').trim();
+            return mesMora && esMesVencidoParaMoraLocal(mesMora);
+        });
+    };
+
+    const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
+
     useEffect(() => {
         const consultarEstadoCorrelativoUsuario = async () => {
             const idUsuario = obtenerUsuarioActivo();
@@ -171,8 +494,11 @@ const Caja = () => {
     // ✅ Cargar lista inicial de residentes con pagos pendientes al iniciar
     useEffect(() => {
         const cargarResidentesPendientes = async () => {
+            const idUsuario = obtenerUsuarioActivo();
             try {
-                const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`);
+                const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`, {
+                    params: idUsuario ? { id_usuario: idUsuario } : {}
+                });
                 setListaResidentesPendientes(res.data || []);
             } catch (error) {
                 console.error("Error al cargar residentes pendientes:", error);
@@ -189,19 +515,31 @@ const Caja = () => {
         setDatosDeuda(null);
         setIdResidenteActivo('');
         setMesesPendientes([]);
+        setMesesDetalleMap({});
         setMesesSeleccionados([]);
         setMontoAPagar('');
+        setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
+        setMontoEngancheContratoSeleccionado(0);
+        setMontoEngancheContratoAplicado(0);
+        setMontoEngancheSeleccionado(0);
+        setMontoInteresSeleccionado(0);
+        setMorasPendientes([]);
+        setMorasSeleccionadas([]);
         setServiciosContrato([]);
         setServiciosSeleccionados([]);
         setMontoServiciosSeleccionado(0);
+        setMontoCargosExtraSeleccionado(0);
         setShowModalCobro(false);
         setEstadoCorrelativo(null);
         setResumenServiciosIniciales(null);
 
         try {
-            const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`);
+            const idUsuario = obtenerUsuarioActivo();
+            const res = await axios.get(`${API_BASE_URL}/api/caja/residentes-pendientes`, {
+                params: idUsuario ? { id_usuario: idUsuario } : {}
+            });
             setListaResidentesPendientes(res.data || []);
         } catch (error) {
             console.error("Error al recargar residentes pendientes:", error);
@@ -209,31 +547,115 @@ const Caja = () => {
         }
     };
 
-    const recalcularTotalesCobro = (meses = mesesSeleccionados, serviciosIds = serviciosSeleccionados, residenteActual = datosDeuda, serviciosDisponibles = serviciosContrato) => {
+    const recalcularTotalesCobro = (
+        meses = mesesSeleccionados,
+        serviciosIds = serviciosSeleccionados,
+        residenteActual = datosDeuda,
+        serviciosDisponibles = serviciosContrato,
+        engancheOverride = null,
+        engancheContratoOverride = null
+    ) => {
         const cantidadMeses = (meses || []).length;
-        const saldoPendiente = parseFloat(residenteActual?.saldo_pendiente || 0);
-        const montoCuota = parseFloat(residenteActual?.monto_cuota || 0);
+        const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
+        const tieneConvenioActivo = Number(residenteActual?.id_convenio_activo || 0) > 0;
+        const saldoPendiente = planContrato.saldoPendiente;
+        const capitalPorCuota = planContrato.capitalPorCuota;
+
+        const obtenerNumeroCuotaMes = (mesEtiqueta = '') => {
+            const mapNumero = Number(mesesDetalleMap?.[mesEtiqueta] || 0);
+            if (Number.isInteger(mapNumero) && mapNumero > 0) {
+                return mapNumero;
+            }
+
+            const idx = (mesesPendientes || []).indexOf(mesEtiqueta);
+            return idx >= 0 ? idx + 1 : null;
+        };
+
+        const obtenerInteresPorNumeroCuota = (numeroCuota) => {
+            const totalInteres = Math.max(Number(planContrato?.interesTotalContrato || 0), 0);
+            const cuotasPactadas = Math.max(Number(planContrato?.cuotasPactadas || 0), 0);
+
+            if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
+                return 0;
+            }
+            const interesBase = redondear2(totalInteres / cuotasPactadas);
+            const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
+            const esUltimaCuota = numeroCuota === cuotasPactadas;
+
+            return esUltimaCuota
+                ? residuoFinal
+                : interesBase;
+        };
 
         // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
-        const cuotasRestantes = (saldoPendiente > 0 && montoCuota > 0)
-            ? Math.ceil(saldoPendiente / montoCuota)
-            : 0;
-        const mesesTerrenoACobrar = Math.min(cantidadMeses, cuotasRestantes);
-        const terrenoCalculado = saldoPendiente > 0 && mesesTerrenoACobrar > 0 ? (montoCuota * mesesTerrenoACobrar) : 0;
-        const terrenoTotal = Math.min(terrenoCalculado, Math.max(saldoPendiente, 0));
+        const cuotasRestantes = planContrato.cuotasRestantes;
         const serviciosSeleccionadosDetalle = (serviciosDisponibles || [])
             .filter((s) => serviciosIds.includes(s.id_servicio));
         const costoServiciosMensual = serviciosSeleccionadosDetalle
-            .filter((s) => !esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
+            .filter((s) => !esCobroUnicoServicio(s))
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
         const costoServiciosUnicos = serviciosSeleccionadosDetalle
-            .filter((s) => esServicioCobroUnico(s.periodicidad, s.nombre_servicio))
+            .filter((s) => esCobroUnicoServicio(s) && !s.es_extraordinario)
             .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
-        const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos) : 0;
-        const total = terrenoTotal + serviciosTotal;
+        const costoCargosExtra = serviciosSeleccionadosDetalle
+            .filter((s) => Boolean(s.es_extraordinario))
+            .reduce((sum, s) => sum + parseFloat(s.costo_servicio || 0), 0);
 
-        setMontoTerrenoSeleccionado(terrenoTotal);
+        const enganchePendienteContrato = tieneConvenioActivo ? 0 : Math.max(Number(residenteActual?.enganche_pendiente || 0), 0);
+        const abonoManualBase = engancheOverride == null
+            ? parseFloat(montoEngancheSeleccionado || 0)
+            : parseFloat(engancheOverride || 0);
+        const abonoCapitalManualAplicado = Math.max(abonoManualBase, 0);
+        const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos + costoCargosExtra) : 0;
+        const mesesOrdenados = [...(meses || [])]
+            .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
+        const primerMesConEnganche = (mesesPendientes || [])[0] || '';
+        const engancheContratoBase = engancheContratoOverride == null
+            ? parseFloat(tieneConvenioActivo ? 0 : (montoEngancheContratoSeleccionado || residenteActual?.enganche_pendiente || 0))
+            : parseFloat(engancheContratoOverride || 0);
+        const engancheContratoAplicado = (enganchePendienteContrato > 0 && primerMesConEnganche && mesesOrdenados.includes(primerMesConEnganche))
+            ? Math.max(Math.min(engancheContratoBase, enganchePendienteContrato), 0)
+            : 0;
+        const capitalBaseInteres = Math.max(Number(planContrato?.capitalBaseInteres || 0), 0);
+        const cuotasPactadas = Math.max(Number(planContrato?.cuotasPactadas || 0), 0);
+        const capitalPorCuotaExacta = redondear2(Math.max(Number(planContrato?.capitalPorCuota || 0), 0));
+        const obtenerCapitalPorNumeroCuota = (numeroCuota) => {
+            if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadas <= 0 || capitalBaseInteres <= 0) {
+                return 0;
+            }
+            const esUltimaCuota = numeroCuota === cuotasPactadas;
+            if (!esUltimaCuota) {
+                return capitalPorCuotaExacta;
+            }
+            return redondear2(capitalBaseInteres - (capitalPorCuotaExacta * (cuotasPactadas - 1)));
+        };
+        const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
+            if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
+            return mes !== primerMesConEnganche;
+        });
+        const mesesTerrenoReales = Math.min(mesesElegiblesTerreno.length, cuotasRestantes);
+        const mesesConTerreno = mesesElegiblesTerreno.slice(0, mesesTerrenoReales);
+        const terrenoCalculadoAjustado = mesesConTerreno.reduce((sum, mes) => {
+            const numeroCuotaMes = obtenerNumeroCuotaMes(mes);
+            return sum + obtenerCapitalPorNumeroCuota(numeroCuotaMes);
+        }, 0);
+        const terrenoTotalAjustado = Math.min(parseFloat(terrenoCalculadoAjustado.toFixed(2)), Math.max(saldoPendiente, 0));
+        const interesSeleccionado = parseFloat(
+            mesesConTerreno
+                .reduce((acc, mes) => {
+                    const numeroCuotaMes = obtenerNumeroCuotaMes(mes);
+                    return acc + obtenerInteresPorNumeroCuota(numeroCuotaMes);
+                }, 0)
+                .toFixed(2)
+        );
+        const total = terrenoTotalAjustado + engancheContratoAplicado + abonoCapitalManualAplicado + serviciosTotal + interesSeleccionado;
+
+        setMontoTerrenoSeleccionado(terrenoTotalAjustado);
+        setMontoEngancheContratoAplicado(engancheContratoAplicado);
+        setMontoEngancheSeleccionado(abonoCapitalManualAplicado);
         setMontoServiciosSeleccionado(serviciosTotal);
+        setMontoCargosExtraSeleccionado(costoCargosExtra);
+        setMontoInteresSeleccionado(interesSeleccionado);
         setMontoTotalSeleccionado(total);
         setMontoAPagar(String(total.toFixed(2)));
     };
@@ -264,9 +686,15 @@ const Caja = () => {
     const buscarResidente = async () => {
         if (!busqueda.trim()) return mostrarToast("Ingresa nombre, apellido, DPI o número de contrato para buscar", "warning");
         try {
+            const idUsuario = obtenerUsuarioActivo();
             setDatosDeuda(null); // Resetea selecciones anteriores
             setListaResidentesPendientes([]); // Limpia la lista inicial
-            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente?criterio=${busqueda}`);
+            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
+                params: {
+                    criterio: busqueda.trim(),
+                    ...(idUsuario ? { id_usuario: idUsuario } : {})
+                }
+            });
             
             setListaResidentes(res.data);
             
@@ -281,35 +709,69 @@ const Caja = () => {
         }
     };
 
+    const obtenerDatosContratoActualizados = async (residenteBase) => {
+        if (!residenteBase?.codigo_contrato) return residenteBase;
+
+        try {
+            const idUsuario = obtenerUsuarioActivo();
+            const res = await axios.get(`${API_BASE_URL}/api/caja/buscar-residente`, {
+                params: {
+                    criterio: String(residenteBase.codigo_contrato || '').trim(),
+                    ...(idUsuario ? { id_usuario: idUsuario } : {})
+                }
+            });
+
+            const lista = Array.isArray(res?.data) ? res.data : [];
+            const actualizado = lista.find((item) => Number(item?.id_contrato) === Number(residenteBase?.id_contrato));
+            return actualizado || residenteBase;
+        } catch (error) {
+            console.error('No se pudo refrescar el contrato en Caja, se usara la version actual en memoria:', error);
+            return residenteBase;
+        }
+    };
+
     // Al dar clic sobre un residente de la lista de resultados
     const seleccionarResidente = async (residente) => {
-        setDatosDeuda(residente);
-        setIdResidenteActivo(residente.id_residente);
+        const residenteActualizado = await obtenerDatosContratoActualizados(residente);
+
+        setDatosDeuda(residenteActualizado);
+        setIdResidenteActivo(residenteActualizado.id_residente);
         setEstadoCorrelativo(null);
         setListaResidentes([]); // Limpia la lista de búsqueda en pantalla
         setMesesSeleccionados([]);
         setServiciosContrato([]);
         setServiciosSeleccionados([]);
         setNumCuota('0');
+        setMontoMora('0');
         setMontoTotalSeleccionado(0);
         setMontoTerrenoSeleccionado(0);
+        setMontoEngancheContratoSeleccionado(0);
+        setMontoEngancheContratoAplicado(0);
+        setMontoEngancheSeleccionado(0);
+        setMontoInteresSeleccionado(0);
+        setMorasPendientes([]);
+        setMorasSeleccionadas([]);
         setMontoServiciosSeleccionado(0);
+        setMontoCargosExtraSeleccionado(0);
         setResumenServiciosIniciales(null);
 
         try {
-            await consultarSiguienteCorrelativo(residente.id_contrato);
-            const res = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${residente.id_contrato}`);
+            await consultarSiguienteCorrelativo(residenteActualizado.id_contrato);
+            const res = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${residenteActualizado.id_contrato}`);
             const meses = res?.data?.meses || [];
-            setMesesPendientes(meses);
-            
-            // ✅ Seleccionar mes actual y el siguiente (si existe)
-            const mesesASeleccionar = [];
-            if (meses.length > 0) {
-                mesesASeleccionar.push(meses[0]); // Mes actual
-                if (meses.length > 1) {
-                    mesesASeleccionar.push(meses[1]); // Mes siguiente
+            const mesesDetalle = Array.isArray(res?.data?.meses_detalle) ? res.data.meses_detalle : [];
+            const mapaMeses = {};
+            mesesDetalle.forEach((item) => {
+                const mes = String(item?.mes || '').trim();
+                const numero = Number(item?.numero_cuota || 0);
+                if (mes && Number.isInteger(numero) && numero > 0) {
+                    mapaMeses[mes] = numero;
                 }
-            }
+            });
+            setMesesPendientes(meses);
+            setMesesDetalleMap(mapaMeses);
+            
+            const mesesASeleccionar = meses.length > 0 ? [meses[0]] : [];
             setMesesSeleccionados(mesesASeleccionar);
             setNumCuota(meses.length ? '1' : '0');
             
@@ -318,12 +780,26 @@ const Caja = () => {
             } else {
                 setMesPagado('');
             }
-            setOpcionesCuota(meses.length ? meses.map((mes, index) => ({ value: String(index + 1), label: `Cuota ${index + 1} - ${mes}` })) : [{ value: '0', label: 'Sin cuotas pendientes' }]);
+            const engancheInicial = Number(residenteActualizado?.id_convenio_activo || 0) > 0
+                ? 0
+                : Math.max(Number(residenteActualizado?.enganche_pendiente || 0), 0);
+            setMontoEngancheContratoSeleccionado(engancheInicial);
+            setOpcionesCuota(
+                meses.length
+                    ? meses.map((mes, index) => {
+                        const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
+                        return {
+                            value: String(index + 1),
+                            label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, meses)
+                        };
+                    })
+                    : [{ value: '0', label: 'Sin cuotas pendientes' }]
+            );
 
             const primerMes = mesesASeleccionar[0] || meses[0] || '';
             if (primerMes) {
                 try {
-                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residente.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
+                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residenteActualizado.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
                     const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
 
@@ -332,19 +808,31 @@ const Caja = () => {
                         .map((s) => s.id_servicio);
 
                     setServiciosSeleccionados(seleccionInicialServicios);
-                    recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residente, servicios);
+                    recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residenteActualizado, servicios, null, engancheInicial);
                 } catch (serviciosError) {
                     console.error('Error al obtener servicios del contrato:', serviciosError);
                     setServiciosContrato([]);
                     setServiciosSeleccionados([]);
                     // Mantener meses pendientes aunque servicios falle, para no bloquear el cobro de terreno.
-                    recalcularTotalesCobro(mesesASeleccionar, [], residente, []);
+                    recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado, [], null, engancheInicial);
                 }
             } else {
-                recalcularTotalesCobro(mesesASeleccionar, [], residente);
+                recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado, undefined, null, engancheInicial);
             }
 
-            const saldoPendienteResidente = parseFloat(residente?.saldo_pendiente || 0);
+            try {
+                const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${residente.id_contrato}`);
+                const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
+                setMorasPendientes(moras);
+                setMorasSeleccionadas([]);
+            } catch (moraError) {
+                console.error('Error al consultar moras pendientes:', moraError);
+                setMorasPendientes([]);
+                setMorasSeleccionadas([]);
+                setMontoMora('0');
+            }
+
+            const saldoPendienteResidente = parseFloat(residenteActualizado?.saldo_pendiente || 0);
             if (saldoPendienteResidente <= 0) {
                 mostrarToast('Contrato de terreno solvente. Solo se mostrarán servicios pendientes de cobro.', 'info');
             }
@@ -359,6 +847,56 @@ const Caja = () => {
             setOpcionesCuota([{ value: '0', label: 'Sin cuotas pendientes' }]);
             recalcularTotalesCobro([], [], residente);
         }
+    };
+
+    const agregarAbonoCapital = () => {
+        const valor = Math.max(parseFloat(montoEngancheSeleccionado || 0), 0);
+        if (valor <= 0) {
+            mostrarToast('Ingresa un monto de abono a capital mayor a cero.', 'warning');
+            return;
+        }
+
+        let mesesAUsar = Array.isArray(mesesSeleccionados) ? [...mesesSeleccionados] : [];
+        if (Array.isArray(mesesPendientes) && mesesPendientes.length > 0) {
+            const primerMes = mesesPendientes[0];
+            if (!mesesAUsar.includes(primerMes)) {
+                mesesAUsar = [primerMes, ...mesesAUsar];
+            }
+            setMesesSeleccionados(mesesAUsar);
+            setMesPagado(primerMes);
+            setNumCuota('1');
+        }
+
+        recalcularTotalesCobro(mesesAUsar, serviciosSeleccionados, datosDeuda, serviciosContrato, valor);
+    };
+
+    const abrirModalCobroConDatosActualizados = async () => {
+        if (!datosDeuda) return;
+
+        const actualizado = await obtenerDatosContratoActualizados(datosDeuda);
+        const seleccionBase = Array.isArray(mesesSeleccionados) && mesesSeleccionados.length
+            ? mesesSeleccionados
+            : ((Array.isArray(mesesPendientes) && mesesPendientes.length)
+                ? [mesesPendientes[0]]
+                : []);
+        const engancheActualizado = Math.max(Number(actualizado?.enganche_pendiente || 0), 0);
+
+        setDatosDeuda(actualizado);
+        setMontoEngancheContratoSeleccionado(engancheActualizado);
+        if (seleccionBase.length) {
+            setMesesSeleccionados(seleccionBase);
+            setMesPagado(seleccionBase[0]);
+            setNumCuota(String((mesesPendientes || []).indexOf(seleccionBase[0]) + 1 || 1));
+        }
+        recalcularTotalesCobro(
+            seleccionBase,
+            serviciosSeleccionados,
+            actualizado,
+            serviciosContrato,
+            parseFloat(montoEngancheSeleccionado || 0),
+            engancheActualizado
+        );
+        setShowModalCobro(true);
     };
 
     const actualizarMontoParaSeleccion = (seleccionados) => {
@@ -383,6 +921,22 @@ const Caja = () => {
         });
     };
 
+    useEffect(() => {
+        if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
+            setMorasSeleccionadas([]);
+            setMontoMora('0');
+            return;
+        }
+
+        const morasAplicables = obtenerMorasAplicables(mesesSeleccionados);
+        setMorasSeleccionadas(morasAplicables.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
+
+        const totalSeleccionado = morasAplicables
+            .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
+
+        setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
+    }, [morasPendientes, mesesSeleccionados]);
+
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
         e.preventDefault();
@@ -390,13 +944,41 @@ const Caja = () => {
         const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
         const montoSolicitado = parseFloat(montoAPagar || 0);
         const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
+        const mesesParaPago = (Array.isArray(mesesSeleccionados) && mesesSeleccionados.length)
+            ? mesesSeleccionados
+            : ((Array.isArray(mesesPendientes) && mesesPendientes.length)
+                ? [mesesPendientes[0]]
+                : (mesPagado ? [mesPagado] : []));
+        const mesesFinanciadosParaPago = mesesParaPago.filter((mes) => !esMesEngancheVisual(mes));
+        const morasSeleccionadasPayload = obtenerMorasAplicables(mesesFinanciadosParaPago)
+            .map((mora) => ({
+                id_morosidad: Number(mora.id_morosidad || 0),
+                mes_atrasado: String(mora.mes_atrasado || ''),
+                monto_mora: Number(mora.monto_mora || 0)
+            }));
+        const montoMoraPayload = parseFloat(morasSeleccionadasPayload.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0).toFixed(2));
+
+        if (!contratoTieneAsignacionValida(datosDeuda)) {
+            mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
+            return;
+        }
+
+        if (!usuarioTienePermisoCobro(datosDeuda)) {
+            mostrarToast('No se puede generar cobro: este contrato no pertenece a tus correlativos asignados.', 'warning');
+            return;
+        }
 
         if (!Number.isFinite(montoSolicitado) || montoSolicitado <= 0) {
             mostrarToast('El monto a cobrar debe ser mayor a cero.', 'warning');
             return;
         }
 
-        if (!mesesSeleccionados.length) {
+        const esSoloAbonoCapital = (parseFloat(montoEngancheContratoAplicado || 0) > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0)
+            && montoTerreno <= 0
+            && parseFloat(montoServiciosSeleccionado || 0) <= 0
+            && parseFloat(montoMora || 0) <= 0;
+
+        if (!mesesParaPago.length && !esSoloAbonoCapital) {
             mostrarToast('Debe seleccionar al menos un mes pendiente para generar el cobro.', 'warning');
             return;
         }
@@ -414,7 +996,9 @@ const Caja = () => {
         const serviciosPayload = (serviciosContrato || [])
             .filter((servicio) => serviciosSeleccionados.includes(servicio.id_servicio))
             .map((servicio) => ({
-                id_servicio: servicio.id_servicio,
+                id_servicio: servicio.es_extraordinario ? null : servicio.id_servicio,
+                id_pago_extra: servicio.id_pago_extra || null,
+                es_extraordinario: Boolean(servicio.es_extraordinario),
                 nombre_servicio: servicio.nombre_servicio,
                 subtotal: parseFloat(servicio.costo_servicio || 0),
                 periodicidad: servicio.periodicidad || 'mensual',
@@ -428,14 +1012,21 @@ const Caja = () => {
             id_usuario: obtenerUsuarioActivo(), 
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
-            monto_mora: parseFloat(montoMora),
+            monto_interes: parseFloat(montoInteresSeleccionado || 0),
+            monto_mora: montoMoraPayload,
+            monto_enganche_pagar: parseFloat(montoEngancheContratoAplicado || 0),
+            monto_abono_capital: parseFloat(montoEngancheSeleccionado || 0),
             metodo_pago: metodoPago,
+            banco_pago: metodoPago === 'Efectivo' ? '' : bancoPago,
+            fecha_operacion: metodoPago === 'Efectivo' ? '' : fechaOperacion,
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
-            observaciones: `Pago de cuota de terreno mes de ${mesesSeleccionados.join(', ') || mesPagado}`,
-            mes_pagado: mesesSeleccionados[0] || mesPagado,
-            meses_pagados: mesesSeleccionados.length ? mesesSeleccionados : [mesPagado],
+            boleta_referencia: metodoPago === 'Efectivo' ? '' : referencia,
+            observaciones: `Pago de cuota de terreno mes de ${mesesParaPago.join(', ') || mesPagado}`,
+            mes_pagado: mesesParaPago[0] || mesPagado,
+            meses_pagados: mesesParaPago,
             numero_cuota: parseInt(numCuota),
-            servicios_pagados: serviciosPayload
+            servicios_pagados: serviciosPayload,
+            moras_aplicadas: morasSeleccionadasPayload
         };
 
         try {
@@ -443,6 +1034,16 @@ const Caja = () => {
             
             if (response?.data?.success) {
                 mostrarToast("¡Cobro realizado con éxito! Generando recibo...", "success");
+                const empresaPdf = {
+                    ...(response.data?.empresa || {}),
+                    logo_empresa: datosDeuda?.logo_empresa_pdf || response.data?.empresa?.logo_empresa || response.data?.empresa?.logo || null,
+                    logo_proyecto: datosDeuda?.logo_proyecto || response.data?.empresa?.logo_proyecto || response.data?.empresa?.logo || null,
+                    logo: datosDeuda?.logo_empresa_pdf || response.data?.empresa?.logo_empresa || response.data?.empresa?.logo || null,
+                    nombre_empresa: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre_empresa || response.data?.empresa?.nombre || null,
+                    nombre_proyecto: datosDeuda?.nombre_proyecto_pdf || datosDeuda?.nombre_proyecto || response.data?.empresa?.nombre_proyecto || null,
+                    nombre: datosDeuda?.nombre_marca_pdf || response.data?.empresa?.nombre || response.data?.empresa?.nombre_empresa || null
+                };
+
                 generarPDF(response.data, {
                     ...datosDeuda,
                     nombre: datosDeuda?.nombre || 'Residente',
@@ -450,11 +1051,12 @@ const Caja = () => {
                     codigo_contrato: datosDeuda?.codigo_contrato || 'N/A',
                     nombre_contrato: datosDeuda?.nombre_contrato || 'Contrato',
                     saldo_pendiente: datosDeuda?.saldo_pendiente || 0
-                }, response.data?.empresa);
+                }, empresaPdf);
                 
                 setDatosDeuda(prev => ({
                     ...prev,
-                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno, 0)
+                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheSeleccionado || 0), 0),
+                    enganche_pendiente: Math.max(parseFloat(prev?.enganche_pendiente || 0) - parseFloat(montoEngancheContratoAplicado || 0), 0)
                 }));
 
                 if (Number(response?.data?.monto_servicios_mes_inicial || 0) > 0) {
@@ -481,9 +1083,34 @@ const Caja = () => {
                 try {
                     const resMeses = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${datosDeuda.id_contrato}`);
                     const mesesActualizados = resMeses?.data?.meses || [];
+                    const mesesDetalleActualizados = Array.isArray(resMeses?.data?.meses_detalle) ? resMeses.data.meses_detalle : [];
+                    const mapaMesesActualizados = {};
+                    mesesDetalleActualizados.forEach((item) => {
+                        const mes = String(item?.mes || '').trim();
+                        const numero = Number(item?.numero_cuota || 0);
+                        if (mes && Number.isInteger(numero) && numero > 0) {
+                            mapaMesesActualizados[mes] = numero;
+                        }
+                    });
                     setMesesPendientes(mesesActualizados);
+                    setMesesDetalleMap(mapaMesesActualizados);
                     setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
                     setNumCuota(mesesActualizados.length ? '1' : '0');
+                    const engancheRefrescado = Number(datosDeuda?.id_convenio_activo || 0) > 0
+                        ? 0
+                        : Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
+                    setMontoEngancheContratoSeleccionado(engancheRefrescado);
+                    setOpcionesCuota(
+                        mesesActualizados.length
+                            ? mesesActualizados.map((mes, index) => {
+                                const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
+                                return {
+                                    value: String(index + 1),
+                                    label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados)
+                                };
+                            })
+                            : [{ value: '0', label: 'Sin cuotas pendientes' }]
+                    );
                     if (mesesActualizados.length) {
                         setMesPagado(mesesActualizados[0]);
                     }
@@ -495,191 +1122,288 @@ const Caja = () => {
                     setServiciosSeleccionados(serviciosActivos);
                     recalcularTotalesCobro(mesesActualizados.length ? [mesesActualizados[0]] : [], serviciosActivos, {
                         ...datosDeuda,
-                        saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno, 0)
-                    }, servicios);
+                        saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheSeleccionado || 0), 0),
+                        enganche_pendiente: engancheRefrescado
+                    }, servicios, null, engancheRefrescado);
                 } catch (errMeses) {
                     console.error('Error al recargar meses pendientes:', errMeses);
                 }
+
+                try {
+                    const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${datosDeuda.id_contrato}`);
+                    const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
+                    setMorasPendientes(moras);
+                    setMorasSeleccionadas(moras.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
+                } catch (moraError) {
+                    console.error('Error al recargar moras pendientes:', moraError);
+                }
                 
                 setReferencia(''); 
+                setBancoPago('');
+                setFechaOperacion('');
+                setMontoEngancheContratoSeleccionado(0);
+                setMontoEngancheContratoAplicado(0);
+                setMontoEngancheSeleccionado(0);
                 setShowModalCobro(false);
                 await consultarSiguienteCorrelativo(datosDeuda.id_contrato);
             } else {
                 mostrarToast("El cobro no se completó correctamente.", "error");
             }
         } catch (error) {
-            mostrarToast("Error al procesar el cobro: " + (error?.response?.data || error?.message || "Error desconocido"), "error");
+            const status = Number(error?.response?.status || 0);
+            const mensajeBackend = error?.response?.data;
+            const esFallaComunicacion = !error?.response || status === 502 || status === 503 || status === 504;
+            const mensaje = esFallaComunicacion
+                ? 'No hay comunicacion con el servidor de Caja. Verifica que el backend este en linea e intenta de nuevo en unos segundos.'
+                : `Error al procesar el cobro: ${mensajeBackend || error?.message || 'Error desconocido'}`;
+            mostrarToast(mensaje, "error");
         }
     };
 
-    // Generador Estructurado del PDF
+    // Generador de recibo estilo formato institucional
     const generarPDF = (recibo, residente, empresa) => {
         try {
-            const doc = new jsPDF();
-            const margenX = 14;
-            const fechaHora = new Date().toLocaleString();
-            const logoEmpresa = normalizeImageDataUrl(empresa?.logo || '');
-            const modoMarcaPdf = logoEmpresa
-                ? 'logo_y_nombre'
-                : (empresa?.nombre ? 'solo_nombre' : 'sin_marca');
-            const shouldShowLogo = ['solo_logo', 'logo_y_nombre', 'logo_centrado'].includes(modoMarcaPdf);
-            const shouldShowName = ['logo_y_nombre', 'solo_nombre'].includes(modoMarcaPdf);
-
-            // Encabezado con logo
-            if (shouldShowLogo && logoEmpresa) {
-                try {
-                    const logoFormat = getImageFormatFromDataUrl(logoEmpresa);
-                    const logoAlias = `caja-logo-${recibo?.numero_recibo || 'tmp'}-${Date.now()}`;
-                    if (modoMarcaPdf === 'logo_centrado') {
-                        doc.addImage(logoEmpresa, logoFormat, 88, 8, 35, 22, logoAlias, 'FAST');
-                    } else {
-                        doc.addImage(logoEmpresa, logoFormat, margenX, 10, 35, 25, logoAlias, 'FAST');
-                    }
-                } catch (e) {
-                    console.warn('No se pudo cargar el logo:', e);
-                }
-            }
-
-            doc.setFont("Helvetica", "bold");
-            doc.setFontSize(12);
-            const headerRightX = 132;
-            let leftMetaStartY = 24;
-            if (shouldShowName) {
-                if (modoMarcaPdf === 'solo_nombre') {
-                    const companyLines = doc.splitTextToSize(empresa?.nombre || "INMOBILIARIA ALFA S.A.", 180);
-                    doc.text(companyLines, 105, 18, { align: 'center' });
-                    leftMetaStartY = 24 + ((companyLines.length - 1) * 5);
-                } else {
-                    const companyLines = doc.splitTextToSize(empresa?.nombre || "INMOBILIARIA ALFA S.A.", 64);
-                    doc.text(companyLines, 55, 18);
-                    leftMetaStartY = 24 + ((companyLines.length - 1) * 5);
-                }
-            }
-
-            doc.setFont("Helvetica", "normal");
-            doc.setFontSize(10);
-            if (shouldShowName) {
-                if (modoMarcaPdf === 'solo_nombre') {
-                    doc.text(`NIT: ${empresa?.nit || 'N/A'}`, 14, leftMetaStartY);
-                    doc.text(`País: ${empresa?.pais || 'Guatemala'}`, 14, leftMetaStartY + 5);
-                    doc.text(`Moneda: ${empresa?.moneda || 'GTQ'}`, 14, leftMetaStartY + 10);
-                } else {
-                    doc.text(`NIT: ${empresa?.nit || 'N/A'}`, 55, leftMetaStartY);
-                    doc.text(`País: ${empresa?.pais || 'Guatemala'}`, 55, leftMetaStartY + 5);
-                    doc.text(`Moneda: ${empresa?.moneda || 'GTQ'}`, 55, leftMetaStartY + 10);
-                }
-            }
-
-            doc.setFont("Helvetica", "bold");
-            doc.setFontSize(10.5);
-            const titleLines = doc.splitTextToSize('FACTURA / COMPROBANTE DE COBRO', 56);
-            doc.text(titleLines, headerRightX, 16);
-            doc.setFont("Helvetica", "normal");
-            doc.setFontSize(10);
-            const rightMetaStartY = 23 + ((titleLines.length - 1) * 5);
-            doc.text(`Documento No: ${recibo?.numero_recibo || 'N/A'}`, headerRightX, rightMetaStartY);
-            doc.text(`Fecha emisión: ${recibo?.fecha || new Date().toLocaleDateString()}`, headerRightX, rightMetaStartY + 6);
-            doc.text(`Fecha/Hora impresión: ${fechaHora}`, headerRightX, rightMetaStartY + 12);
-
-            const headerBottomY = Math.max(leftMetaStartY + 10, rightMetaStartY + 12) + 5;
-            doc.line(14, headerBottomY, 196, headerBottomY);
-
-            // Datos del cliente
-            doc.setFont("Helvetica", "bold");
-            doc.setFontSize(11);
-            const clienteStartY = headerBottomY + 10;
-            doc.text("DATOS DEL CLIENTE / RESIDENTE", 14, clienteStartY);
-            doc.setFont("Helvetica", "normal");
-            doc.setFontSize(10);
-            doc.text(`Nombre: ${residente?.nombre || 'N/A'}`, 14, clienteStartY + 7);
-            doc.text(`Identificación: ${residente?.numero_identificacion || 'N/A'}`, 14, clienteStartY + 13);
-            doc.text(`DPI: ${residente?.dpi || 'N/A'}`, 14, clienteStartY + 19);
-            doc.text(`NIT: ${getNitDisplay(residente?.nit)}`, 14, clienteStartY + 25);
-            const direccionLines = doc.splitTextToSize(`Dirección: ${residente?.direccion_notificacion || 'N/A'}`, 88);
-            const contratoLines = doc.splitTextToSize(`Contrato: ${residente?.codigo_contrato || 'N/A'} (${residente?.nombre_contrato || 'N/A'})`, 88);
-            doc.text(direccionLines, 105, clienteStartY + 7);
-            const contratoStartY = clienteStartY + 7 + (direccionLines.length * 5) + 1;
-            doc.text(contratoLines, 105, contratoStartY);
-
-            const leftBottomY = clienteStartY + 25;
-            const rightBottomY = contratoStartY + ((contratoLines.length - 1) * 5);
-            const clienteBottomY = Math.max(leftBottomY, rightBottomY);
-
-            // Datos de pago
-            doc.setFont("Helvetica", "bold");
-            const pagoStartY = clienteBottomY + 10;
-            doc.text("DATOS DE PAGO", 14, pagoStartY);
-            doc.setFont("Helvetica", "normal");
-            doc.text(`Método de pago: ${recibo?.metodo_pago || metodoPago || 'N/A'}`, 14, pagoStartY + 6);
-            doc.text(`Referencia: ${recibo?.no_referencia || referencia || 'N/A'}`, 105, pagoStartY + 6);
-            doc.text(`Origen correlativo: ${recibo?.origen_correlativo || 'N/A'}`, 14, pagoStartY + 12);
-            if (recibo?.id_asignacion_correlativo) {
-                doc.text(`Lote asignado No: ${recibo.id_asignacion_correlativo}`, 105, pagoStartY + 12);
-            }
-
+            // Carta completa (landscape) para evitar salto a segunda hoja
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+            const logoEmpresa = normalizeImageDataUrl(empresa?.logo_empresa || residente?.logo_empresa_pdf || empresa?.logo || '');
+            const logoProyecto = normalizeImageDataUrl(empresa?.logo_proyecto || residente?.logo_proyecto || '');
             const detalleCobro = Array.isArray(recibo?.detalle_cobro) ? recibo.detalle_cobro : [];
-            const rows = detalleCobro
-                .filter((item) => item && Number(item.total || 0) > 0)
-                .map((item) => ([
-                    String(item?.concepto || 'Concepto cobrado'),
-                    String(item?.mes || 'N/A'),
-                    `Q${parseFloat(item?.monto_base || 0).toFixed(2)}`,
-                    `Q${parseFloat(item?.iva || 0).toFixed(2)}`,
-                    `Q${parseFloat(item?.total || 0).toFixed(2)}`
-                ]));
+            const montoTotal = parseFloat(recibo?.total_cobrado || recibo?.monto_pagado || 0);
+            const abonoExtra = parseFloat(recibo?.monto_servicios_pagado || 0) + parseFloat(recibo?.monto_mora || 0);
+            const interesAplicado = parseFloat(recibo?.monto_interes_pagado || 0);
+            const referencia = String(recibo?.no_referencia || '').trim();
+            const bancoPago = String(recibo?.banco_pago || '').trim();
+            const fechaOperacion = String(recibo?.fecha_operacion || '').trim();
+            const boletaReferencia = String(recibo?.boleta_referencia || referencia || '').trim();
+            const matchRef = referencia.match(/^([A-Za-z]+)-([0-9]+)$/);
+            const serie = matchRef ? matchRef[1].toUpperCase() : 'B';
+            const numero = matchRef ? matchRef[2].slice(-5) : String(Date.now()).slice(-5);
+            const fecha = recibo?.fecha ? new Date(recibo.fecha) : new Date();
+            const mesesPagadosRecibo = Array.isArray(recibo?.meses_pagados)
+                ? recibo.meses_pagados.map((mes) => String(mes || '').trim()).filter(Boolean)
+                : [];
+            const cuotaInicio = Number(recibo?.numero_cuota_inicio || recibo?.numero_cuota || 0);
+            const cuotaFin = Number(recibo?.numero_cuota_fin || cuotaInicio || 0);
+            const cantidadCuotasPagadas = Number(recibo?.cantidad_cuotas_pagadas || 0);
+            const saldoRestante = Number(recibo?.saldo_pendiente_restante || residente?.saldo_pendiente || 0);
+            const cuotaDisplay = Number.isInteger(cuotaInicio) && cuotaInicio > 0
+                ? ((Number.isInteger(cuotaFin) && cuotaFin > cuotaInicio)
+                    ? `${cuotaInicio}-${cuotaFin}`
+                    : String(cuotaInicio))
+                : 'N/A';
+            const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
+            const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
+            const usuarioActivo = getUsuarioSesion();
+            const usarFormatoJuridico = USAR_FORMATO_RECIBO_JURIDICO && esRolJuridico(usuarioActivo);
 
-            if (!rows.length) {
-                const mesesPagados = Array.isArray(recibo?.meses_pagados) && recibo.meses_pagados.length
-                    ? recibo.meses_pagados
-                    : [recibo?.mes_pagado || 'N/A'];
-                const montoPrincipalFallback = parseFloat(recibo?.monto_pagado || 0);
-                const ivaFallback = parseFloat(recibo?.iva_total || (montoPrincipalFallback * 0.12));
-                const subtotalFallback = parseFloat((montoPrincipalFallback - ivaFallback).toFixed(2));
-                rows.push([
-                    'Pago aplicado',
-                    mesesPagados.join(', '),
-                    `Q${subtotalFallback.toFixed(2)}`,
-                    `Q${ivaFallback.toFixed(2)}`,
-                    `Q${montoPrincipalFallback.toFixed(2)}`
-                ]);
+            if (usarFormatoJuridico) {
+                const pageW = doc.internal.pageSize.getWidth();
+                const pageH = doc.internal.pageSize.getHeight();
+                const margenX = 8;
+                const ancho = pageW - (margenX * 2);
+                const contenidoY = 36;
+                const contenidoH = 145;
+                const nombreEmpresa = String(empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase();
+                const nombreProyecto = String(empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || 'Proyecto');
+                const fechaDoc = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
+                const d = String(fechaDoc.getDate()).padStart(2, '0');
+                const m = String(fechaDoc.getMonth() + 1).padStart(2, '0');
+                const yFull = String(fechaDoc.getFullYear());
+
+                doc.setDrawColor(188, 177, 117);
+                doc.setLineWidth(0.35);
+                if (typeof doc.roundedRect === 'function') {
+                    doc.roundedRect(margenX, contenidoY, ancho, contenidoH, 3, 3, 'S');
+                } else {
+                    doc.rect(margenX, contenidoY, ancho, contenidoH);
+                }
+
+                if (logoEmpresa) {
+                    try {
+                        doc.addImage(logoEmpresa, getImageFormatFromDataUrl(logoEmpresa), margenX + 3, 8.5, 31, 18, `jur-logo-${Date.now()}`, 'FAST');
+                    } catch {
+                        // no-op
+                    }
+                }
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(10.8);
+                doc.text(nombreEmpresa, pageW / 2, 14.5, { align: 'center' });
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(7.8);
+                doc.text('15 Avenida "A" 24-22, Zona 13, Oficina #5', pageW / 2, 20, { align: 'center' });
+                doc.text('PBX: 2220-6406  Telefono: 5825-5903', pageW / 2, 24.2, { align: 'center' });
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.8);
+                doc.text('Recibo Juridico', pageW - 42.5, 14.2);
+                doc.rect(pageW - 42.5, 15.9, 37.5, 11.8);
+                doc.setTextColor(166, 35, 35);
+                doc.setFontSize(11.8);
+                doc.text(`NO. ${String(numero).padStart(5, '0')}`, pageW - 23.8, 23.9, { align: 'center' });
+                doc.setTextColor(0, 0, 0);
+
+                doc.setTextColor(195, 195, 195);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(28);
+                doc.text('CORPORACION DE', pageW / 2, 102, { align: 'center' });
+                doc.text('INVERSION INMOBILIARIA', pageW / 2, 116, { align: 'center' });
+                doc.setTextColor(0, 0, 0);
+
+                let rY = contenidoY + 8;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(11.5);
+                doc.text('DATOS DEL CLIENTE', margenX + 4, rY);
+                doc.setDrawColor(210, 190, 92);
+                doc.setLineWidth(0.45);
+                doc.line(margenX + 4, rY + 1.8, margenX + 34, rY + 1.8);
+
+                rY += 11;
+                doc.setDrawColor(60, 60, 60);
+                doc.setLineWidth(0.2);
+                doc.setFontSize(8.3);
+                doc.text('Fecha:', margenX + 4, rY);
+                const fechaX = margenX + 18;
+                const boxW = 8;
+                const boxH = 8;
+                [d[0], d[1], m[0], m[1], yFull[0], yFull[1], yFull[2], yFull[3]].forEach((char, idx) => {
+                    const offsetX = idx < 2 ? idx * (boxW + 1) : idx < 4 ? (2 * (boxW + 1)) + 4 + ((idx - 2) * (boxW + 1)) : (4 * (boxW + 1)) + 8 + ((idx - 4) * (boxW + 1));
+                    doc.rect(fechaX + offsetX, rY - 5.8, boxW, boxH);
+                    doc.text(char, fechaX + offsetX + (boxW / 2), rY - 0.4, { align: 'center' });
+                });
+                doc.text('/', fechaX + (2 * (boxW + 1)) + 1.4, rY - 0.8);
+                doc.text('/', fechaX + (4 * (boxW + 1)) + 5.2, rY - 0.8);
+
+                const amountBoxX = pageW - 47;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(11.3);
+                doc.text('Por: Q', amountBoxX - 22, rY + 0.1);
+                doc.rect(amountBoxX, rY - 5.8, 42, 8.2);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.4);
+                doc.text(montoTotal.toFixed(2), amountBoxX + 2, rY - 0.2);
+
+                const filaAncho = ancho - 4;
+                const filaX = margenX + 2;
+                const filaH = 10.5;
+                rY += 6;
+                doc.rect(filaX, rY, filaAncho, filaH);
+                doc.rect(filaX, rY + filaH, filaAncho, filaH);
+                doc.rect(filaX, rY + (filaH * 2), filaAncho, filaH);
+                doc.rect(filaX, rY + (filaH * 3), filaAncho, filaH);
+
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.3);
+                doc.text('Recibimos de:', filaX + 2, rY + 6.8);
+                doc.text('Cantidad de:', filaX + 2, rY + 17.3);
+                doc.text('Por cancelacion de:', filaX + 2, rY + 27.8);
+                doc.text('Proyecto:', filaX + 2, rY + 38.3);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.3);
+                doc.text(doc.splitTextToSize(String(residente?.nombre || 'N/A'), filaAncho - 34).slice(0, 1), filaX + 30, rY + 6.8);
+                doc.text(doc.splitTextToSize(montoALetrasRecibo(montoTotal), filaAncho - 34).slice(0, 1), filaX + 30, rY + 17.3);
+                doc.text(doc.splitTextToSize(String(conceptos), filaAncho - 40).slice(0, 1), filaX + 40, rY + 27.8);
+                doc.text(doc.splitTextToSize(nombreProyecto, filaAncho - 34).slice(0, 1), filaX + 23, rY + 38.3);
+
+                const mesesJuridicoTexto = mesesPagadosRecibo.length ? mesesPagadosRecibo.join(', ') : (String(recibo?.mes_pagado || '').trim() || 'N/A');
+                const resumenCuotasInteres = `Cuota(s): ${cuotaDisplay} | Mes(es): ${mesesJuridicoTexto} | Interes aplicado: Q${Math.max(interesAplicado, 0).toFixed(2)} | Saldo restante: Q${Math.max(saldoRestante, 0).toFixed(2)}`;
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(7.7);
+                doc.text(doc.splitTextToSize(resumenCuotasInteres, filaAncho - 4).slice(0, 1), filaX + 2, rY + (filaH * 4) - 1.2);
+
+                const pagosY = rY + (filaH * 4);
+                doc.rect(filaX, pagosY, filaAncho, 24);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.2);
+                doc.text('Boleta:', filaX + 2, pagosY + 5.6);
+                doc.text('Transferencia:', filaX + 52, pagosY + 5.6);
+                doc.text('Cheque:', filaX + 114, pagosY + 5.6);
+                doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
+
+                const referenciaBase = String(recibo?.no_referencia || '').trim();
+                const boletaValor = metodo.includes('deposit') ? referenciaBase : '';
+                const transferenciaValor = metodo.includes('transfer') ? referenciaBase : '';
+                const chequeValor = metodo.includes('cheque') ? referenciaBase : '';
+                const efectivoValor = metodo.includes('efectivo') ? 'X' : '';
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(10.1);
+                doc.text(doc.splitTextToSize(boletaValor || '', 44).slice(0, 1), filaX + 2, pagosY + 16);
+                doc.text(doc.splitTextToSize(transferenciaValor || '', 56).slice(0, 1), filaX + 52, pagosY + 16);
+                doc.text(doc.splitTextToSize(chequeValor || '', 40).slice(0, 1), filaX + 114, pagosY + 16);
+                doc.text(efectivoValor, filaX + 160, pagosY + 16);
+
+                if (metodo.includes('deposit') || metodo.includes('transfer')) {
+                    doc.setFont('Helvetica', 'bold');
+                    doc.setFontSize(7.6);
+                    doc.text(`Banco: ${bancoPago || 'N/A'}`, filaX + 2, pagosY + 22.4);
+                    doc.text(`Fecha op.: ${fechaOperacion || 'N/A'}`, filaX + 82, pagosY + 22.4);
+                    doc.text(`Ref.: ${boletaReferencia || 'N/A'}`, filaX + 132, pagosY + 22.4);
+                }
+
+                const firmaY = pagosY + 24;
+                doc.rect(filaX, firmaY, filaAncho, 22);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.text('Firma:', filaX + 2, firmaY + 6.2);
+                if (logoProyecto) {
+                    try {
+                        doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), filaX + 62, firmaY + 1.8, 32, 13.2, `jur-proy-${Date.now()}`, 'FAST');
+                    } catch {
+                        // no-op
+                    }
+                }
+
+                doc.setFont('Helvetica', 'italic');
+                doc.setFontSize(6.7);
+                doc.text(
+                    doc.splitTextToSize('Los pagos mediante cheque estan regulados por las disposiciones contenidas en el Articulo 494 al 543 del Codigo de Comercio. Es importante tener en cuenta que todo cheque recibido se acepta bajo reserva de cobro; en caso de presentarse un cheque sin fondos disponibles, se aplicara un recargo de Q75.00 y se debitara en el proximo pago. Este recibo se extiende previo a la confirmacion de la transaccion bancaria.', ancho - 4).slice(0, 2),
+                    margenX + 2,
+                    pageH - 7.5
+                );
+
+                const juridicoFileName = `Recibo_Juridico_${String(recibo?.no_referencia || recibo?.numero_recibo || 'sin_numero').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
+                doc.save(juridicoFileName);
+                return;
             }
 
-            const tableStartY = pagoStartY + 19;
-            autoTable(doc, {
-                startY: tableStartY,
-                head: [['Concepto / Cuota', 'Mes Afectado', 'Monto Base', 'IVA 12%', 'Total por Mes']],
-                body: rows,
-                theme: 'striped',
-                headStyles: { fillColor: [36, 125, 188] },
-                styles: { fontSize: 10 }
+            renderFacturaComprobante(doc, {
+                logo: logoEmpresa,
+                empresa: {
+                    nombre: empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || "CORPORACION DE INVERSION INMOBILIARIA",
+                    nit: empresa?.nit,
+                    pais: empresa?.pais,
+                    moneda: empresa?.moneda
+                },
+                documentoNo: referencia || recibo?.numero_recibo,
+                fechaEmision: fecha,
+                cliente: {
+                    nombre: residente?.nombre,
+                    direccion: residente?.direccion_notificacion || residente?.direccion,
+                    identificacion: residente?.numero_identificacion,
+                    dpi: residente?.dpi,
+                    nit: residente?.nit
+                },
+                contrato: residente?.codigo_contrato,
+                pago: {
+                    metodo: recibo?.metodo_pago || metodoPago,
+                    referencia,
+                    banco: bancoPago,
+                    fechaOperacion,
+                    boletaReferencia
+                },
+                filas: detalleCobro.length
+                    ? buildConsolidatedInvoiceRows(detalleCobro, {
+                        usarCuotaCeroEnganche: Math.max(parseFloat(residente?.enganche || 0), 0) > 0
+                    })
+                    : [[conceptos, mesesPagadosRecibo.join(", ") || "N/A", `Q ${montoTotal.toFixed(2)}`]],
+                resumen: [
+                    { label: "Subtotal deuda pagada", valor: montoTotal },
+                    { label: "Total Cobrado Hoy", valor: montoTotal, bold: true }
+                ],
+                anulada: false
             });
 
-            let finalY = doc.lastAutoTable.finalY + 15;
-            doc.setFont("Helvetica", "bold");
-            
-            const saldoAnterior = parseFloat(residente?.saldo_pendiente || 0);
-            const montoPrincipalHoy = parseFloat(recibo?.monto_pagado || 0);
-            const ivaTotal = parseFloat(recibo?.iva_total || (montoPrincipalHoy * 0.12));
-            const subtotalHoy = parseFloat((montoPrincipalHoy - ivaTotal).toFixed(2));
-            const montoPagadoHoy = parseFloat(recibo?.total_cobrado || (montoPrincipalHoy + parseFloat(recibo?.monto_mora || 0)));
-            const nuevoSaldoDeber = saldoAnterior - montoPrincipalHoy;
-            
-            doc.text(`Saldo Anterior: Q${saldoAnterior.toFixed(2)}`, 130, finalY);
-            doc.text(`Subtotal deuda pagada: Q${subtotalHoy.toFixed(2)}`, 130, finalY + 7);
-            doc.setFont("Helvetica", "bold");
-            doc.text(`IVA 12%: Q${ivaTotal.toFixed(2)}`, 130, finalY + 14);
-            doc.text(`Mora Aplicada: Q${parseFloat(recibo?.monto_mora || 0).toFixed(2)}`, 130, finalY + 21);
-            doc.text(`Total Cobrado Hoy: Q${montoPagadoHoy.toFixed(2)}`, 130, finalY + 28);
-            doc.setFont("Helvetica", "bold");
-            doc.setTextColor(200, 0, 0); // Rojo para el saldo final
-            doc.text(`SALDO A DEBER: Q${nuevoSaldoDeber.toFixed(2)}`, 130, finalY + 35);
-            doc.setTextColor(0, 0, 0); // Volver al negro
-
-            doc.setFontSize(9);
-            doc.setFont("Helvetica", "italic");
-            doc.text("Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.", 14, finalY + 48);
-
-            const fileName = `Recibo_${recibo?.numero_recibo || 'sin_numero'}.pdf`;
+            const fileName = `Factura_${String(recibo?.no_referencia || recibo?.numero_recibo || "sin_numero").replace(/[^A-Za-z0-9_-]/g, "_")}.pdf`;
             doc.save(fileName);
         } catch (error) {
             console.error('Error al generar PDF:', error);
@@ -688,10 +1412,13 @@ const Caja = () => {
 
     };
 
-    const listaFiltrada = listaResidentesPendientes.filter(r => 
-      r.nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
-      r.dpi?.toLowerCase().includes(busqueda.toLowerCase())
-    );
+        const criterioBusqueda = normalizeSearchValue(busqueda);
+        const listaFiltrada = listaResidentesPendientes.filter((r) => {
+            if (!criterioBusqueda) return true;
+
+            return [r.nombre, r.dpi, r.numero_identificacion, r.codigo_contrato]
+                .some((valor) => normalizeSearchValue(valor).includes(criterioBusqueda));
+        });
 
     const handleBusquedaChange = (e) => {
       setBusqueda(e.target.value);
@@ -699,11 +1426,121 @@ const Caja = () => {
     };
 
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
-    const saldoTerrenoPendiente = parseFloat(datosDeuda?.saldo_pendiente || 0);
+    const planFinancieroContrato = calcularPlanFinancieroContrato(datosDeuda || {});
+    const saldoTerrenoPendiente = planFinancieroContrato.saldoPendiente;
+    const enganchePendienteContrato = Number(datosDeuda?.id_convenio_activo || 0) > 0
+        ? 0
+        : Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
+    const enganchePendiente = Math.max(
+        enganchePendienteContrato,
+        Math.max(parseFloat(montoEngancheContratoSeleccionado || 0), 0),
+        Math.max(parseFloat(montoEngancheContratoAplicado || 0), 0)
+    );
+    const porcentajeInteresContrato = planFinancieroContrato.interesPorcentaje;
+    const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
+    const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
+    const cuotaInicioFinanciadaVista = 1;
+    const capitalPorCuotaRegular = redondear2(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
+    const interesPorCuotaRegular = redondear2(Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0) / Math.max(Number(planFinancieroContrato?.cuotasPactadas || 1), 1), 0));
+    const cuotaRegularSinDecimales = capitalPorCuotaRegular + interesPorCuotaRegular;
+    const obtenerInteresPorNumeroCuotaVista = (numeroCuota) => {
+        const totalInteres = Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0), 0);
+        const cuotasPactadas = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
+
+        if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
+            return 0;
+        }
+        const interesBase = redondear2(totalInteres / cuotasPactadas);
+        const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
+        const esUltimaCuota = numeroCuota === cuotasPactadas;
+
+        return esUltimaCuota
+            ? residuoFinal
+            : interesBase;
+    };
+
+    const obtenerNumeroCuotaMesVista = (mesEtiqueta = '') => {
+        const numeroMap = Number(mesesDetalleMap?.[mesEtiqueta] || 0);
+        if (Number.isInteger(numeroMap) && numeroMap > 0) {
+            return numeroMap;
+        }
+        const idx = (mesesPendientes || []).indexOf(mesEtiqueta);
+        return idx >= 0 ? idx + 1 : null;
+    };
+
+    const primerMesSeleccionado = mesesSeleccionados.length ? mesesSeleccionados[0] : '';
+    const numeroCuotaPrimerMes = obtenerNumeroCuotaMesVista(primerMesSeleccionado);
+    const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
+    const mesAplicacionAbonoCapital = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
+    const mesAplicacionCobroUnico = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
+    const capitalBaseInteresVista = Math.max(Number(planFinancieroContrato?.capitalBaseInteres || 0), 0);
+    const cuotasPactadasVista = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
+    const capitalPorCuotaExactaVista = redondear2(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
+    const obtenerCapitalPorNumeroCuotaVista = (numeroCuota) => {
+        if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadasVista <= 0 || capitalBaseInteresVista <= 0) {
+            return 0;
+        }
+        const esUltimaCuota = numeroCuota === cuotasPactadasVista;
+        if (!esUltimaCuota) return capitalPorCuotaExactaVista;
+        return redondear2(capitalBaseInteresVista - (capitalPorCuotaExactaVista * (cuotasPactadasVista - 1)));
+    };
+    const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
+        const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
+        const aplicarCobroUnicoMes = Boolean(mesEtiqueta) && mesEtiqueta === mesAplicacionCobroUnico;
+        const serviciosMensualesMes = serviciosSeleccionadosDetalleVista
+            .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
+            .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
+        const serviciosUnicosMes = aplicarCobroUnicoMes
+            ? serviciosSeleccionadosDetalleVista
+                .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
+                .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
+            : 0;
+        const cargosExtraMes = aplicarCobroUnicoMes ? montoCargosExtraSeleccionado : 0;
+        const moraMes = esCuotaEnganche
+            ? 0
+            : parseFloat(obtenerMorasAplicables([mesEtiqueta]).reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0).toFixed(2));
+        if (esCuotaEnganche) {
+            const engancheBaseVista = Math.max(
+                Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),
+                0
+            );
+            const abonoManual = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
+                ? parseFloat(montoEngancheSeleccionado || 0)
+                : 0;
+            return parseFloat((engancheBaseVista + abonoManual + serviciosMensualesMes + serviciosUnicosMes + cargosExtraMes + moraMes).toFixed(2));
+        }
+
+        const capital = obtenerCapitalPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
+        const interes = obtenerInteresPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
+        const abono = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
+            ? parseFloat(montoEngancheSeleccionado || 0)
+            : 0;
+        return parseFloat((capital + interes + abono + serviciosMensualesMes + serviciosUnicosMes + cargosExtraMes + moraMes).toFixed(2));
+    };
+
+    const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
+    const engancheSeleccionado = parseFloat(montoEngancheContratoAplicado || 0);
+    const abonoCapitalSeleccionado = parseFloat(montoEngancheSeleccionado || 0);
+    const interesCalculadoSeleccion = parseFloat(montoInteresSeleccionado || 0);
+    const totalSeleccionCapitalInteres = parseFloat((capitalSeleccionado + engancheSeleccionado + abonoCapitalSeleccionado + interesCalculadoSeleccion).toFixed(2));
+    const serviciosSeleccionadosDetalleVista = (serviciosContrato || [])
+        .filter((servicio) => serviciosSeleccionados.includes(servicio.id_servicio));
+    const serviciosMensualesVista = serviciosSeleccionadosDetalleVista
+        .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
+        .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
+    const serviciosUnicosVista = serviciosSeleccionadosDetalleVista
+        .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
+        .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
     const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
-    const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
+    const moraTotalDistribuidaVista = parseFloat((mesesSeleccionados || [])
+        .filter((mes) => !esMesEngancheVisual(mes))
+        .reduce((sum, mes) => sum + Number(obtenerMorasAplicables([mes]).reduce((acc, mora) => acc + Number(mora?.monto_mora || 0), 0)), 0)
+        .toFixed(2));
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
-    const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes);
+    const tieneEnganchePendiente = enganchePendiente > 0;
+    const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
+    const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
+    const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes || tieneEnganchePendiente) && tienePermisoCobroSeleccion;
     const posibleCobroServiciosIniciales =
         !!datosDeuda
         && mesesSeleccionados.includes(mesesPendientes[0] || '')
@@ -712,6 +1549,17 @@ const Caja = () => {
 
     return (
         <div className="container mt-4">
+            {estadoCorrelativoUsuario && estadoCorrelativoUsuario.disponible && (
+                <div className="alert alert-info text-center fw-bold mb-3">
+                    <div>{estadoCorrelativoUsuario.mensaje || 'Tienes correlativos asignados.'}</div>
+                    <div className="small mt-1">
+                        <strong>Inicio:</strong> {estadoCorrelativoUsuario.correlativo_inicio || estadoCorrelativoUsuario.correlativo || 'N/A'}
+                        {' | '}
+                        <strong>Fin:</strong> {estadoCorrelativoUsuario.correlativo_fin || 'N/A'}
+                    </div>
+                </div>
+            )}
+
             {estadoCorrelativoUsuario && !estadoCorrelativoUsuario.disponible && (
                 <div className="alert alert-warning text-center fw-bold mb-4">
                     {estadoCorrelativoUsuario.mensaje || 'No tienes correlativos asignados.'}
@@ -752,79 +1600,123 @@ const Caja = () => {
                     </div>
                     <ul className="list-group list-group-flush" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         {listaResidentesPaginada.map((r) => (
-                            <li key={r.id_contrato} className="list-group-item list-group-item-action py-3" style={{ cursor: 'pointer' }} onClick={() => seleccionarResidente(r)}>
-                                <div className="d-flex justify-content-between align-items-start">
-                                    <div>
-                                        <strong className="fs-4">📦 {r.nombre}</strong>
-                                        <span className={`badge ms-2 ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-danger'}`}>
-                                            {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
-                                        </span>
-                                        <br/>
-                                        <span className="text-muted fs-5">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
-                                    </div>
-                                    <div className="text-end">
-                                        <span className={`badge fs-6 ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-danger'}`}>
-                                            {parseFloat(r.saldo_pendiente || 0) <= 0
-                                                ? `Solvente: Q${getSaldoDisplay(r.saldo_pendiente).toFixed(2)}`
-                                                : `Pendiente: Q${getSaldoDisplay(r.saldo_pendiente).toFixed(2)}`}
-                                        </span>
-                                        <br/>
-                                        <span className="text-success fw-bold fs-5">Cuota: Q{parseFloat(r.monto_cuota || 0).toFixed(2)}</span>
-                                    </div>
+                            (() => {
+                                const tieneAsignacion = contratoTieneAsignacionValida(r);
+                                return (
+                            <li
+                                key={r.id_residente}
+                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                onClick={() => seleccionarResidente(r)}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                <div>
+                                    <strong className="fs-6">📦 {r.nombre}</strong>
+                                    <br />
+                                    <span className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
+                                    <br />
+                                    <span className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</span>
+                                    {!tieneAsignacion && (
+                                        <>
+                                            <br />
+                                            <span className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</span>
+                                        </>
+                                    )}
+                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
+                                        <>
+                                            <br />
+                                            <span className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</span>
+                                        </>
+                                    )}
                                 </div>
-                            </li>
-                        ))}
-                    </ul>
-                    <PaginationControls
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        onPageChange={setCurrentPage}
-                        startIndex={startIndex}
-                        endIndex={endIndex}
-                        itemsCount={listaFiltrada.length}
-                    />
-                </div>
-            )}
-
-            {/* Lista de residentes cuando hay múltiples resultados */}
-            {listaResidentes.length > 1 && (
-                <div className="card mb-4 shadow-sm border-primary">
-                    <div className="card-header bg-primary text-white fw-bold">
-                        Seleccione el residente correcto
-                    </div>
-                    <ul className="list-group list-group-flush">
-                        {listaResidentes.map((r) => (
-                            <li key={r.id_contrato} className="list-group-item list-group-item-action" style={{ cursor: 'pointer' }} onClick={() => seleccionarResidente(r)}>
-                                <strong>ID: {r.id_residente}</strong> — {r.nombre} &nbsp;|&nbsp;
-                                Identificación: <span className="text-primary fw-bold">{r.numero_identificacion || 'Sin asignar'}</span> &nbsp;|&nbsp;
-                                DPI: {r.dpi} &nbsp;|&nbsp;
-                                Contrato: {r.codigo_contrato} &nbsp;|&nbsp;
-                                <span className={`badge ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-danger'}`}>
+                                <span className={`badge ${parseFloat(r.saldo_pendiente || 0) <= 0 ? 'bg-success' : 'bg-warning text-dark'}`}>
                                     {parseFloat(r.saldo_pendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE'}
                                 </span>
                             </li>
+                                );
+                            })()
+                        ))}
+                    </ul>
+                    <div className="card-footer bg-white">
+                        <PaginationControls
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={setCurrentPage}
+                            startIndex={startIndex}
+                            endIndex={endIndex}
+                            totalItems={listaFiltrada.length}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Resultados de búsqueda */}
+            {!datosDeuda && listaResidentes.length > 0 && (
+                <div className="card mb-4 shadow-sm border-primary">
+                    <div className="card-header bg-primary text-white fw-bold">
+                        🔎 Resultados de búsqueda
+                    </div>
+                    <ul className="list-group list-group-flush">
+                        {listaResidentes.map((r) => (
+                            (() => {
+                                const tieneAsignacion = contratoTieneAsignacionValida(r);
+                                return (
+                            <li
+                                key={r.id_residente}
+                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                onClick={() => seleccionarResidente(r)}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                <div>
+                                    <strong>{r.nombre}</strong>
+                                    <br />
+                                    <small className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</small>
+                                    <br />
+                                    <small className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</small>
+                                    {!tieneAsignacion && (
+                                        <>
+                                            <br />
+                                            <small className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</small>
+                                        </>
+                                    )}
+                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
+                                        <>
+                                            <br />
+                                            <small className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</small>
+                                        </>
+                                    )}
+                                </div>
+                                <span className={`badge ${!tieneAsignacion ? 'bg-danger' : usuarioTienePermisoCobro(r) ? 'bg-secondary' : 'bg-warning text-dark'}`}>
+                                    {!tieneAsignacion ? 'Solo consulta' : usuarioTienePermisoCobro(r) ? 'Seleccionar' : 'Ver sin cobro'}
+                                </span>
+                            </li>
+                                );
+                            })()
                         ))}
                     </ul>
                 </div>
             )}
 
-            {/* Tarjeta de estado del residente seleccionado */}
+            {/* Resumen del residente seleccionado */}
             {datosDeuda && (
-                <div className="card shadow-sm border-success mb-4">
-                    <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                        <span className="fw-bold fs-5">👤 {datosDeuda.nombre}</span>
-                        <span className="badge bg-light text-success fs-6">ID: {idResidenteActivo}</span>
-                    </div>
+                <div className="card mb-4 shadow-sm border-success">
+                    <div className="card-header bg-success text-white fw-bold">✅ Residente seleccionado</div>
                     <div className="card-body">
                         <div className="row">
-                            <div className="col-md-6">
-                                <p className="mb-1"><strong>Contrato:</strong> {datosDeuda.codigo_contrato} — {datosDeuda.nombre_contrato}</p>
-                                <p className="mb-1"><strong>N° Identificación:</strong> <span className="text-primary fw-bold">{datosDeuda.numero_identificacion || 'Sin asignar'}</span></p>
-                                <p className="mb-1"><strong>NIT:</strong> <span className="text-primary fw-bold">{getNitDisplay(datosDeuda.nit)}</span></p>
+                            <div className="col-md-8">
+                                <h5 className="mb-1">{datosDeuda.nombre}</h5>
+                                <div><strong>Contrato:</strong> {datosDeuda.codigo_contrato}</div>
+                                <div><strong>DPI:</strong> {datosDeuda.dpi || 'N/A'}</div>
+                                <div><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</div>
                             </div>
-                            <div className="col-md-6">
-                                <p className="mb-1"><strong>Saldo pendiente:</strong> <span className="text-danger fw-bold">Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</span></p>
-                                <p className="mb-1"><strong>Monto cuota pactada:</strong> <span className="text-success fw-bold">Q{parseFloat(datosDeuda.monto_cuota).toFixed(2)}</span></p>
+                            <div className="col-md-4 text-md-end mt-3 mt-md-0">
+                                <div><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
+                                <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
+                                <div><strong>Capital financiado:</strong> Q{planFinancieroContrato.capitalBaseInteres.toFixed(2)}</div>
+                                <div><strong>Cuota 0:</strong> Enganche Q{planFinancieroContrato.enganche.toFixed(2)}</div>
+                                <div><strong>Capital por cuota:</strong> Q{capitalPorCuotaRegular.toFixed(2)}</div>
+                                <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
+                                <div><strong>Interés por cuota:</strong> Q{interesPorCuotaRegular.toFixed(2)}</div>
+                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{cuotaRegularSinDecimales.toFixed(2)}</div>
                             </div>
                         </div>
                         <hr />
@@ -838,19 +1730,29 @@ const Caja = () => {
                                 ℹ️ Terreno solvente. Puede cobrar únicamente servicios (agua/drenaje u otros asignados).
                             </div>
                         )}
-                        <div className="text-center">
+                        {!contratoTieneAsignacionValida(datosDeuda) && (
+                            <div className="alert alert-warning text-center fw-bold mb-3">
+                                ⚠️ Este contrato no tiene empresa y/o proyecto asignado. Puede consultarse, pero no se permite generar cobro.
+                            </div>
+                        )}
+                        {contratoTieneAsignacionValida(datosDeuda) && !tienePermisoCobroSeleccion && (
+                            <div className="alert alert-warning text-center fw-bold mb-3">
+                                ⚠️ Este contrato no está dentro de tus correlativos asignados. Puedes verlo en Caja, pero no generar cobro.
+                            </div>
+                        )}
+                        <div className="d-flex justify-content-end">
                             <button
-                                className="btn btn-success btn-lg fw-bold px-5"
-                                onClick={() => setShowModalCobro(true)}
+                                className="btn btn-success fw-bold"
+                                onClick={abrirModalCobroConDatosActualizados}
+                                disabled={!puedeGenerarCobro || !contratoTieneAsignacionValida(datosDeuda) || !tienePermisoCobroSeleccion}
                             >
-                                {!puedeGenerarCobro ? '✅ CUENTA SOLVENTE' : '💳 GENERAR COBRO'}
+                                💳 Generar Cobro
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* MODAL DE COBRO */}
             {showModalCobro && datosDeuda && (
                 <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
                     <div className="modal-dialog modal-lg modal-dialog-scrollable">
@@ -870,8 +1772,11 @@ const Caja = () => {
                                             <br /><small><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</small>
                                         </div>
                                         <div className="col-md-6 text-end">
-                                            <small><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
-                                            <small><strong>Cuota fija:</strong> Q{parseFloat(datosDeuda.monto_cuota).toFixed(2)}</small><br />
+                                            <small><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
+                                            <small><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
+                                            <small><strong>Cuota fija:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</small><br />
+                                            <small><strong>Interés por cuota:</strong> Q{interesMensualSeleccionado.toFixed(2)}</small><br />
+                                            <small><strong>Cuota con interés:</strong> Q{planFinancieroContrato.cuotaTotalConInteres.toFixed(2)}</small><br />
                                             <small><strong>Mora aplicada:</strong> Q{montoMoraActual.toFixed(2)}</small>
                                         </div>
                                     </div>
@@ -929,23 +1834,15 @@ const Caja = () => {
                                                     return;
                                                 }
                                                 
-                                                // Obtener índice de la cuota seleccionada (0-based)
-                                                const indexCuota = parseInt(nuevaCuota) - 1;
-                                                
-                                                // Seleccionar el mes actual y el siguiente (si existe)
-                                                const mesesASeleccionar = [];
-                                                if (indexCuota < mesesPendientes.length) {
-                                                    mesesASeleccionar.push(mesesPendientes[indexCuota]); // Mes actual
-                                                }
-                                                if (indexCuota + 1 < mesesPendientes.length) {
-                                                    mesesASeleccionar.push(mesesPendientes[indexCuota + 1]); // Mes siguiente
-                                                }
+                                                const indexCuota = parseInt(nuevaCuota, 10) - 1;
+                                                const mesesASeleccionar = (indexCuota >= 0 && indexCuota < mesesPendientes.length)
+                                                    ? [mesesPendientes[indexCuota]]
+                                                    : [];
                                                 
                                                 // Actualizar meses seleccionados
                                                 setMesesSeleccionados(mesesASeleccionar);
                                                 recalcularTotalesCobro(mesesASeleccionar, serviciosSeleccionados, datosDeuda);
                                                 
-                                                // Actualizar mes pagado al primer mes seleccionado
                                                 if (mesesASeleccionar.length > 0) {
                                                     setMesPagado(mesesASeleccionar[0]);
                                                 }
@@ -962,19 +1859,92 @@ const Caja = () => {
                                     {/* Monto fijo y total a pagar */}
                                     <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Terreno por mes:</strong> Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}
+                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{capitalPorCuotaRegular.toFixed(2)}
                                             <br />
-                                            <strong>Servicios seleccionados:</strong> Q{(mesesSeleccionados.length ? (montoServiciosSeleccionado / Math.max(mesesSeleccionados.length, 1)) : 0).toFixed(2)} / mes
+                                            <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{interesMensualSeleccionado.toFixed(2)} / cuota
+                                            <br />
+                                            <strong>Cuota 0 (enganche):</strong> Q{planFinancieroContrato.enganche.toFixed(2)}
+                                            <br />
+                                            <strong>Enganche pendiente:</strong> Q{enganchePendiente.toFixed(2)}
+                                            <br />
+                                            <strong>Servicios mensuales seleccionados:</strong> Q{serviciosMensualesVista.toFixed(2)} / mes
+                                            <br />
+                                            <strong>Servicios únicos seleccionados:</strong> Q{serviciosUnicosVista.toFixed(2)}
+                                            <br />
+                                            <strong>Cargos extraordinarios:</strong> Q{montoCargosExtraSeleccionado.toFixed(2)}
+                                            <br />
+                                            <strong>Total financiado seleccionado ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{capitalSeleccionado.toFixed(2)} + Q{engancheSeleccionado.toFixed(2)} + Q{abonoCapitalSeleccionado.toFixed(2)} + Q{interesCalculadoSeleccion.toFixed(2)}
                                         </span>
                                         <span className="fw-bold text-success">
                                             Total ({mesesSeleccionados.length} mes(es)): Q{montoTotalSeleccionado.toFixed(2)}
-                                            {montoMoraActual > 0 && (
+                                            <br />
+                                            Total financiado: Q{totalSeleccionCapitalInteres.toFixed(2)}
+                                            <br />
+                                            Servicios: Q{montoServiciosSeleccionado.toFixed(2)}
+                                            {moraTotalDistribuidaVista > 0 && (
                                                 <>
                                                     <br />
-                                                    Total con mora: Q{(montoTotalSeleccionado + montoMoraActual).toFixed(2)}
+                                                    Total con mora: Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
                                                 </>
                                             )}
                                         </span>
+                                    </div>
+
+                                    <div className="mb-3 border rounded p-3 bg-light">
+                                        <label className="form-label fw-bold">Enganche del contrato:</label>
+                                        <div className="input-group">
+                                            <span className="input-group-text">Q</span>
+                                            <input
+                                                className="form-control"
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                max={enganchePendiente}
+                                                value={montoEngancheContratoSeleccionado}
+                                                onChange={(e) => {
+                                                    const valor = Math.max(parseFloat(e.target.value || 0), 0);
+                                                    setMontoEngancheContratoSeleccionado(valor);
+                                                    recalcularTotalesCobro(mesesSeleccionados, serviciosSeleccionados, datosDeuda, serviciosContrato, null, valor);
+                                                }}
+                                            />
+                                        </div>
+                                        <small className="text-muted">Este valor viene del contrato y se aplica a la cuota 0 mientras el enganche siga pendiente.</small>
+                                    </div>
+
+                                    <div className="mb-3 border rounded p-3 bg-light">
+                                        <label className="form-label fw-bold">Abono a capital (sin interés):</label>
+                                        <div className="input-group">
+                                            <span className="input-group-text">Q</span>
+                                            <input
+                                                className="form-control"
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={montoEngancheSeleccionado}
+                                                onChange={(e) => {
+                                                    const valor = Math.max(parseFloat(e.target.value || 0), 0);
+                                                    setMontoEngancheSeleccionado(valor);
+                                                }}
+                                            />
+                                            <button
+                                                type="button"
+                                                className="btn btn-outline-primary"
+                                                onClick={agregarAbonoCapital}
+                                            >
+                                                Agregar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn btn-outline-secondary"
+                                                onClick={() => {
+                                                    setMontoEngancheSeleccionado(0);
+                                                    recalcularTotalesCobro(mesesSeleccionados, serviciosSeleccionados, datosDeuda, serviciosContrato, 0);
+                                                }}
+                                            >
+                                                Limpiar
+                                            </button>
+                                        </div>
+                                        <small className="text-muted">El abono a capital es adicional al enganche: reduce saldo y no genera interés.</small>
                                     </div>
 
                                     {/* Servicios asignados al contrato */}
@@ -985,7 +1955,7 @@ const Caja = () => {
                                                 <div className="d-flex flex-column gap-2">
                                                     {serviciosContrato.map((servicio) => (
                                                         (() => {
-                                                            const esUnico = esServicioCobroUnico(servicio.periodicidad, servicio.nombre_servicio);
+                                                            const esUnico = esCobroUnicoServicio(servicio);
                                                             return (
                                                         <div
                                                             key={servicio.id_servicio}
@@ -1046,9 +2016,13 @@ const Caja = () => {
                                                                 style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                                                             />
                                                             <div className="flex-grow-1">
-                                                                <span className="fw-bold fs-5 text-dark">{mes}</span>
+                                                                <span className="fw-bold fs-5 text-dark">
+                                                                    {getEtiquetaCuotaMes(mes, obtenerNumeroCuotaMesVista(mes))}
+                                                                </span>
                                                             </div>
-                                                            <span className="badge bg-primary">Q{parseFloat(datosDeuda?.monto_cuota || 0).toFixed(2)}</span>
+                                                            <span className="badge bg-primary">
+                                                                Q{obtenerTotalCuotaMesVista(mes).toFixed(2)}
+                                                            </span>
                                                             {mesesSeleccionados.includes(mes) && (
                                                                 <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
                                                             )}
@@ -1063,7 +2037,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} = Q{montoTotalSeleccionado.toFixed(2)}
+                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoAplicado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} + Mora Q{moraTotalDistribuidaVista.toFixed(2)} = Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
                                             </div>
                                         )}
                                     </div>
@@ -1104,15 +2078,32 @@ const Caja = () => {
                                     </div>
 
                                     <div className="row mb-3">
-                                        {/* Mora */}
                                         <div className="col-md-6">
-                                            <label className="form-label fw-bold">Recargo por mora (Q):</label>
-                                            <input className="form-control" type="number" step="0.01" value={montoMora} onChange={(e) => setMontoMora(e.target.value)} />
+                                            {montoMoraActual > 0 ? (
+                                                <div className="alert alert-warning py-2 mb-0">
+                                                    <strong>Mora automática aplicada:</strong> Q{montoMoraActual.toFixed(2)}
+                                                </div>
+                                            ) : (
+                                                <div className="alert alert-light border py-2 mb-0 text-muted">
+                                                    La mora se aplica automáticamente solo cuando el mes financiado seleccionado tiene recargo pendiente.
+                                                </div>
+                                            )}
                                         </div>
-                                        {/* Método de pago */}
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">Método de pago:</label>
-                                            <select className="form-select" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
+                                            <select
+                                                className="form-select"
+                                                value={metodoPago}
+                                                onChange={(e) => {
+                                                    const siguienteMetodo = e.target.value;
+                                                    setMetodoPago(siguienteMetodo);
+                                                    if (siguienteMetodo === 'Efectivo') {
+                                                        setBancoPago('');
+                                                        setFechaOperacion('');
+                                                        setReferencia('');
+                                                    }
+                                                }}
+                                            >
                                                 <option value="Efectivo">Efectivo</option>
                                                 <option value="Depósito">Depósito Bancario</option>
                                                 <option value="Transferencia">Transferencia</option>
@@ -1121,16 +2112,42 @@ const Caja = () => {
                                     </div>
 
                                     {metodoPago !== 'Efectivo' && (
-                                        <div className="mb-3">
-                                            <label className="form-label fw-bold">No. de Referencia / Boleta:</label>
-                                            <input
-                                                className="form-control"
-                                                type="text"
-                                                required
-                                                placeholder="Ej. # Boleta o Transferencia"
-                                                value={referencia}
-                                                onChange={(e) => setReferencia(e.target.value)}
-                                            />
+                                        <div className="row mb-3 g-3">
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-bold">Banco:</label>
+                                                <select
+                                                    className="form-select"
+                                                    required
+                                                    value={bancoPago}
+                                                    onChange={(e) => setBancoPago(e.target.value)}
+                                                >
+                                                    <option value="">Seleccione un banco</option>
+                                                    {BANCOS_GUATEMALA.map((banco) => (
+                                                        <option key={banco} value={banco}>{banco}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <label className="form-label fw-bold">Fecha de depósito / transferencia:</label>
+                                                <input
+                                                    className="form-control"
+                                                    type="date"
+                                                    required
+                                                    value={fechaOperacion}
+                                                    onChange={(e) => setFechaOperacion(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="col-12">
+                                                <label className="form-label fw-bold">No. de Referencia / Boleta:</label>
+                                                <input
+                                                    className="form-control"
+                                                    type="text"
+                                                    required
+                                                    placeholder="Ej. # Boleta o Transferencia"
+                                                    value={referencia}
+                                                    onChange={(e) => setReferencia(e.target.value)}
+                                                />
+                                            </div>
                                         </div>
                                     )}
 

@@ -2,14 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="%PUBLIC_URL%/images/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
     <meta
       name="description"
-      content="Web site created using create-react-app"
+      content="Sistema Inmobiliario - Grupo de Inversion"
     />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/images/logo.svg" />
     <!--
       manifest.json provides metadata used when your web app is installed on a
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
@@ -24,7 +24,71 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>React App</title>
+    <title>Grupo de Inversion</title>
+    <script>
+      (function () {
+        var activeToast = null;
+
+        function removeToast() {
+          if (!activeToast) {
+            return;
+          }
+
+          activeToast.style.opacity = '0';
+          activeToast.style.transform = 'translateY(-10px)';
+          window.setTimeout(function () {
+            if (activeToast && activeToast.parentNode) {
+              activeToast.parentNode.removeChild(activeToast);
+            }
+            activeToast = null;
+          }, 220);
+        }
+
+        function showToast(message) {
+          removeToast();
+
+          var toast = document.createElement('div');
+          toast.textContent = String(message || 'Notificacion del sistema');
+          toast.setAttribute('role', 'status');
+          toast.style.position = 'fixed';
+          toast.style.top = '16px';
+          toast.style.right = '16px';
+          toast.style.zIndex = '99999';
+          toast.style.maxWidth = '360px';
+          toast.style.padding = '12px 14px';
+          toast.style.borderRadius = '12px';
+          toast.style.background = '#b42318';
+          toast.style.color = '#ffffff';
+          toast.style.boxShadow = '0 10px 24px rgba(0,0,0,0.18)';
+          toast.style.fontFamily = 'Segoe UI, Arial, sans-serif';
+          toast.style.fontSize = '14px';
+          toast.style.lineHeight = '1.4';
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateY(-10px)';
+          toast.style.transition = 'opacity 0.22s ease, transform 0.22s ease';
+
+          document.addEventListener('click', removeToast, { once: true });
+          document.body.appendChild(toast);
+          activeToast = toast;
+
+          window.requestAnimationFrame(function () {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateY(0)';
+          });
+
+          window.setTimeout(removeToast, 3200);
+        }
+
+        window.alert = function (message) {
+          var text = String(message || '');
+          if (/sesion cerrada por inactividad|inactividad \(3 minutos\)/i.test(text)) {
+            console.warn('Alerta de inactividad bloqueada:', text);
+            return;
+          }
+          showToast(text);
+        };
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

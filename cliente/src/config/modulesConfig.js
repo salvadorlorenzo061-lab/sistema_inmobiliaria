@@ -20,6 +20,7 @@ import PagosDetalle from '../componentes/Pagos_detalle';
 import EstadoCuenta from '../componentes/Estado_Cuenta';
 import MenuGeneral from '../componentes/MenuGeneral';
 import AsignarCorrelativo from '../componentes/Asignar_correlativo';
+import Convenio from '../componentes/Convenio';
 
 // Configuración de módulos - Aquí es donde agregas o quitas módulos
 export const modulesConfig = [
@@ -109,6 +110,14 @@ export const modulesConfig = [
     icon: '🚨',
     path: '/morosidad',
     component: Morosidad,
+    category: 'Caja'
+  },
+  {
+    id: 'convenio',
+    label: 'Convenio de Pagos',
+    icon: '🤝',
+    path: '/convenio',
+    component: Convenio,
     category: 'Caja'
   },
   {

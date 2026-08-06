@@ -3,6 +3,14 @@ const cors = require('cors');
 const app = express();
 const { auditRequestMiddleware } = require('./auditingMiddleware');
 
+process.on('uncaughtException', (error) => {
+    console.error('Excepcion no controlada en servidor:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Promesa rechazada sin manejo en servidor:', reason);
+});
+
 // 1. Mover CORS arriba para que proteja/permita todas las rutas y formatos de datos
 app.use(cors());
 
@@ -40,6 +48,7 @@ const servicioRouter = require('./router/Servicio/ServicioRouter');
 const rolesRouter = require('./router/RolesRouter');
 const pagosExtraordinariosRouter = require('./router/Pagos_ExtraordinariosRouter');
 const estadoCuentaRouter = require('./router/Estado_CuentaRouter');
+const convenioRouter = require('./router/ConvenioRouter');
 
 
 // 2. Declarar los prefijos de la API global existentes
@@ -66,9 +75,12 @@ app.use('/api/servicio', servicioRouter);
 app.use('/api/roles', rolesRouter);
 app.use('/api/pagos_extraordinarios', pagosExtraordinariosRouter);
 app.use('/api/estado_cuenta', estadoCuentaRouter);
+app.use('/api/convenio', convenioRouter);
 
 
 // 3. Inicialización del servidor central
-app.listen(3001, () => {
-    console.log("Servidor central corriendo perfectamente en el puerto 3001");
+const PORT = Number(process.env.PORT || 3001);
+
+app.listen(PORT, () => {
+    console.log(`Servidor central corriendo perfectamente en el puerto ${PORT}`);
 });

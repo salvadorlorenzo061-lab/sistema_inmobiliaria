@@ -31,11 +31,18 @@ body::-webkit-scrollbar {
 .container-fluid {
   display: flex;
   min-height: 100vh;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .row {
   width: 100%;
   display: flex;
+}
+
+.app-shell-row {
+  min-height: 100vh;
+  margin: 0;
 }
 
 /* === SIDEBAR FIJO === */
@@ -100,6 +107,21 @@ body::-webkit-scrollbar {
 .col-md-9.col-lg-10,
 .col-12 {
   margin-left: auto !important;
+}
+
+.app-main-content {
+  min-width: 0;
+}
+
+.app-mobile-topbar {
+  display: none;
+  margin-bottom: 12px;
+}
+
+.app-mobile-menu-btn {
+  width: 100%;
+  border-radius: 10px;
+  font-weight: 700;
 }
 
 /* === ENCABEZADO DE MÓDULO FIJO === */
@@ -637,6 +659,50 @@ body::-webkit-scrollbar {
   width: 100%;
 }
 
+.estado-cuenta-view .card-body {
+  overflow-x: hidden;
+}
+
+.estado-cuenta-view .list-group-item {
+  overflow-wrap: anywhere;
+}
+
+.estado-cuenta-view .table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.estado-cuenta-view .table {
+  min-width: 640px;
+}
+
+.estado-cuenta-view .badge {
+  white-space: normal;
+}
+
+.estado-cuenta-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.estado-cuenta-summary-card {
+  height: 100%;
+}
+
+.estado-cuenta-modal .modal-content {
+  border-radius: 14px;
+}
+
+.estado-cuenta-modal .modal-footer {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.estado-cuenta-modal .modal-footer .btn {
+  flex: 1 1 160px;
+}
+
 /* === RESIDENTES: AJUSTE A PANTALLA === */
 .residentes-view {
   width: 100%;
@@ -789,6 +855,179 @@ body::-webkit-scrollbar {
     align-items: flex-start !important;
     gap: 0.5rem;
   }
+
+  .bg-light.p-3.shadow-sm.min-vh-100.sidebar-shell.app-sidebar {
+    position: relative !important;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: auto !important;
+    border-right: 0;
+    border-bottom: 1px solid #d6dee8;
+  }
+
+  .app-shell-row {
+    flex-direction: column;
+  }
+
+  .app-sidebar.is-collapsed {
+    display: none !important;
+  }
+
+  .app-sidebar.is-open {
+    display: block !important;
+  }
+
+  .app-main-content {
+    width: 100%;
+    padding: 1rem !important;
+  }
+
+  .app-mobile-topbar {
+    display: block;
+  }
+
+  .perfil-activo-top-right {
+    justify-content: stretch;
+  }
+
+  .perfil-activo-card {
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+  .module-header {
+    padding: 12px 0;
+  }
+
+  .module-header h1,
+  .module-header h2,
+  .module-header h3,
+  .module-header h5,
+  .module-header h6 {
+    padding: 0 12px;
+  }
+
+  .datos {
+    padding: 12px;
+  }
+
+  .datos input,
+  .datos button {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .estado-cuenta-view {
+    padding: 0 !important;
+  }
+
+  .estado-cuenta-view .row {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .estado-cuenta-view .col-md-4,
+  .estado-cuenta-view .col-md-6,
+  .estado-cuenta-view .col-md-8 {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .estado-cuenta-actions {
+    width: 100%;
+  }
+
+  .estado-cuenta-actions .btn {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .container-fluid,
+  .row {
+    overflow-x: hidden;
+  }
+
+  .app-main-content {
+    padding: 0.75rem !important;
+  }
+
+  .menu-principal-tiles {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+
+  .tabla-contratos,
+  .tabla-residentes {
+    font-size: 0.78rem;
+  }
+
+  .estado-cuenta-view .table {
+    min-width: 560px;
+  }
+
+  .estado-cuenta-view .card-header,
+  .estado-cuenta-view .card-body {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .module-header {
+    position: static;
+  }
+
+  .perfil-activo-header {
+    align-items: flex-start;
+  }
+
+  .perfil-activo-titulo,
+  .perfil-activo-rol {
+    line-height: 1.3;
+  }
+
+  .menu-principal-tiles {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .estado-cuenta-view .table {
+    min-width: 520px;
+  }
+
+  .estado-cuenta-view .badge {
+    font-size: 0.74rem;
+  }
+}
+
+@keyframes swal-toast-fade-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes swal-toast-fade-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+.swal-toast-fade-in {
+  animation: swal-toast-fade-in 0.22s ease-out;
+}
+
+.swal-toast-fade-out {
+  animation: swal-toast-fade-out 0.2s ease-in forwards;
 }
 
 

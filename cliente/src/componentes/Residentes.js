@@ -12,7 +12,6 @@ function Residentes() {
   const [id_residente, setId_residente] = useState("");
   const [id_empresa, setId_empresa] = useState("");
   const [nombre, setNombre] = useState("");
-  const [numero_identificacion, setNumero_identificacion] = useState("");
   const [dpi, setDpi] = useState("");
   const [nit, setNit] = useState("");
   const [telefono, setTelefono] = useState("");

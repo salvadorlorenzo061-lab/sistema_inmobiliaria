@@ -340,11 +340,19 @@ router.get('/catalogo-proyectos', (_req, res) => {
 router.get('/catalogo-contratos', (_req, res) => {
     db.query(
         `
-            SELECT c.id_contrato, c.codigo_contrato, r.nombre AS nombre_residente
+            SELECT c.id_contrato,
+                   c.codigo_contrato,
+                   c.id_proyecto,
+                   p.nombre AS nombre_proyecto,
+                   r.id_residente,
+                   r.numero_identificacion,
+                   r.dpi,
+                   r.nombre AS nombre_residente
             FROM contratos_residentes c
             INNER JOIN residentes r ON r.id_residente = c.id_residente
+            LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
             WHERE c.estado = 'activo'
-            ORDER BY c.codigo_contrato ASC
+            ORDER BY r.nombre ASC, c.codigo_contrato ASC
         `,
         (err, rows) => {
             if (err) {
@@ -383,6 +391,32 @@ router.get('/proyectos/:id_servicio', (req, res) => {
     );
 });
 
+router.get('/contratos/:id_servicio', (req, res) => {
+    const idServicio = Number(req.params.id_servicio);
+    if (!Number.isInteger(idServicio) || idServicio <= 0) {
+        return res.status(400).send({ message: 'ID de servicio invalido.' });
+    }
+
+    db.query(
+        `
+            SELECT id_contrato
+            FROM contratos_servicios
+            WHERE id_servicio = ?
+              AND estado = 'activo'
+        `,
+        [idServicio],
+        (err, rows) => {
+            if (err) {
+                console.error('Error obteniendo contratos del servicio:', err);
+                return res.status(500).send({ message: 'No se pudo obtener relacion del servicio con residentes.' });
+            }
+
+            const contratos = (rows || []).map((row) => Number(row.id_contrato)).filter((id) => Number.isInteger(id) && id > 0);
+            return res.send({ id_servicio: idServicio, contratos });
+        }
+    );
+});
+
 const resolverColumnaCosto = (callback) => {
     db.query("SHOW COLUMNS FROM servicios LIKE 'costo_servicio'", (errCostoServicio, rowsCostoServicio) => {
         if (errCostoServicio) {
@@ -410,6 +444,62 @@ const resolverColumnaCosto = (callback) => {
             });
         });
     });
+};
+
+const resolverColumnaProyecto = (callback) => {
+    db.query("SHOW COLUMNS FROM servicios LIKE 'id_proyecto'", (err, rows) => {
+        if (err) {
+            return callback(err);
+        }
+
+        if (!rows || rows.length === 0) {
+            return callback(null, { exists: false, nullable: true });
+        }
+
+        const col = rows[0] || {};
+        const nullable = String(col.Null || '').toUpperCase() === 'YES';
+        return callback(null, { exists: true, nullable });
+    });
+};
+
+const normalizarPrimerProyecto = (proyectosAsignados = []) => {
+    const primerProyecto = (Array.isArray(proyectosAsignados) ? proyectosAsignados : [])
+        .map((id) => Number(id))
+        .find((id) => Number.isInteger(id) && id > 0);
+
+    return primerProyecto || null;
+};
+
+const normalizarPrimerContrato = (contratosAsignados = []) => {
+    const primerContrato = (Array.isArray(contratosAsignados) ? contratosAsignados : [])
+        .map((id) => Number(id))
+        .find((id) => Number.isInteger(id) && id > 0);
+
+    return primerContrato || null;
+};
+
+const resolverProyectoDesdeContratos = (contratosAsignados = [], callback) => {
+    const idContratoPrincipal = normalizarPrimerContrato(contratosAsignados);
+    if (!idContratoPrincipal) {
+        return callback(null, null);
+    }
+
+    db.query(
+        'SELECT id_proyecto FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+        [idContratoPrincipal],
+        (err, rows) => {
+            if (err) {
+                return callback(err);
+            }
+
+            const idProyectoContrato = Number(rows?.[0]?.id_proyecto || 0);
+            if (!Number.isInteger(idProyectoContrato) || idProyectoContrato <= 0) {
+                return callback(null, null);
+            }
+
+            return callback(null, idProyectoContrato);
+        }
+    );
 };
 
 router.get("/", (req, res) => {
@@ -453,16 +543,44 @@ router.post("/crear", (req, res) => {
         return res.status(400).send({ message: 'La periodicidad del servicio es invalida.' });
     }
 
+    const idProyectoPrincipalDirecto = normalizarPrimerProyecto(proyectosAsignados);
+
     resolverColumnaCosto((colErr, columnaCosto) => {
         if (colErr) {
             console.error('Error resolviendo columna de costo en servicios:', colErr.message);
             return res.status(500).send({ message: `Error al insertar: ${colErr.sqlMessage || colErr.message}` });
         }
 
-        db.query(
-            `INSERT INTO servicios (nombre_servicio, ${columnaCosto}, estado, periodicidad) VALUES (?, ?, ?, ?)`,
-            [nombreServicio, costoServicio, estadoServicio, periodicidadServicio],
-            (err, insertResult) => {
+        resolverColumnaProyecto((colProyectoErr, colProyectoInfo) => {
+            if (colProyectoErr) {
+                console.error('Error resolviendo columna id_proyecto en servicios:', colProyectoErr.message);
+                return res.status(500).send({ message: `Error al insertar: ${colProyectoErr.sqlMessage || colProyectoErr.message}` });
+            }
+
+            resolverProyectoDesdeContratos(contratosAsignados, (proyectoContratoErr, idProyectoDesdeContrato) => {
+                if (proyectoContratoErr) {
+                    console.error('Error resolviendo proyecto desde contrato:', proyectoContratoErr.message);
+                    return res.status(500).send({ message: `Error al insertar: ${proyectoContratoErr.sqlMessage || proyectoContratoErr.message}` });
+                }
+
+                const idProyectoPrincipal = idProyectoPrincipalDirecto || idProyectoDesdeContrato;
+
+                if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
+                    return res.status(400).send({ message: 'Debe seleccionar un residente con contrato activo para crear esta amenidad.' });
+                }
+
+                const insertSql = colProyectoInfo.exists
+                    ? `INSERT INTO servicios (nombre_servicio, ${columnaCosto}, estado, periodicidad, id_proyecto) VALUES (?, ?, ?, ?, ?)`
+                    : `INSERT INTO servicios (nombre_servicio, ${columnaCosto}, estado, periodicidad) VALUES (?, ?, ?, ?)`;
+
+                const insertParams = colProyectoInfo.exists
+                    ? [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, idProyectoPrincipal]
+                    : [nombreServicio, costoServicio, estadoServicio, periodicidadServicio];
+
+                db.query(
+                    insertSql,
+                    insertParams,
+                    (err, insertResult) => {
                 if (err) {
                     console.error('Error al insertar servicio:', err);
                     return res.status(500).send({ message: `Error al insertar: ${err.sqlMessage || err.message}` });
@@ -505,8 +623,10 @@ router.post("/crear", (req, res) => {
                         });
                     });
                 });
-            }
-        );
+                    }
+                );
+            });
+        });
     });
 });
 
@@ -539,35 +659,65 @@ router.put("/actualizar", (req, res) => {
         return res.status(400).send({ message: 'La periodicidad del servicio es invalida.' });
     }
 
+    const idProyectoPrincipalDirecto = normalizarPrimerProyecto(proyectosAsignados);
+
     resolverColumnaCosto((colErr, columnaCosto) => {
         if (colErr) {
             console.error('Error resolviendo columna de costo en servicios:', colErr.message);
             return res.status(500).send({ message: `Error al actualizar: ${colErr.sqlMessage || colErr.message}` });
         }
 
-        db.query(`UPDATE servicios SET nombre_servicio=?, ${columnaCosto}=?, estado=?, periodicidad=? WHERE id_servicio=?`, [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, id_servicio], (err) => {
-            if (err) {
-                console.error('Error al actualizar servicio:', err);
-                return res.status(500).send({ message: `Error al actualizar: ${err.sqlMessage || err.message}` });
+        resolverColumnaProyecto((colProyectoErr, colProyectoInfo) => {
+            if (colProyectoErr) {
+                console.error('Error resolviendo columna id_proyecto en servicios:', colProyectoErr.message);
+                return res.status(500).send({ message: `Error al actualizar: ${colProyectoErr.sqlMessage || colProyectoErr.message}` });
             }
 
-            syncServicioProyecto(id_servicio, proyectosAsignados, costoServicio, (syncProyectoErr) => {
-                if (syncProyectoErr) {
-                    console.error('Servicio actualizado pero sin sincronizar proyectos:', syncProyectoErr.message);
+            resolverProyectoDesdeContratos(contratosAsignados, (proyectoContratoErr, idProyectoDesdeContrato) => {
+                if (proyectoContratoErr) {
+                    console.error('Error resolviendo proyecto desde contrato:', proyectoContratoErr.message);
+                    return res.status(500).send({ message: `Error al actualizar: ${proyectoContratoErr.sqlMessage || proyectoContratoErr.message}` });
                 }
 
-                syncServicioContrato(id_servicio, contratosAsignados, costoServicio, (syncContratoErr) => {
-                    if (syncContratoErr) {
-                        console.error('Servicio actualizado pero sin sincronizar contratos:', syncContratoErr.message);
+                const idProyectoPrincipal = idProyectoPrincipalDirecto || idProyectoDesdeContrato;
+
+                if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
+                    return res.status(400).send({ message: 'Debe seleccionar un residente con contrato activo para actualizar esta amenidad.' });
+                }
+
+                const updateSql = colProyectoInfo.exists
+                    ? `UPDATE servicios SET nombre_servicio=?, ${columnaCosto}=?, estado=?, periodicidad=?, id_proyecto=? WHERE id_servicio=?`
+                    : `UPDATE servicios SET nombre_servicio=?, ${columnaCosto}=?, estado=?, periodicidad=? WHERE id_servicio=?`;
+
+                const updateParams = colProyectoInfo.exists
+                    ? [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, idProyectoPrincipal, id_servicio]
+                    : [nombreServicio, costoServicio, estadoServicio, periodicidadServicio, id_servicio];
+
+                db.query(updateSql, updateParams, (err) => {
+                if (err) {
+                    console.error('Error al actualizar servicio:', err);
+                    return res.status(500).send({ message: `Error al actualizar: ${err.sqlMessage || err.message}` });
+                }
+
+                syncServicioProyecto(id_servicio, proyectosAsignados, costoServicio, (syncProyectoErr) => {
+                    if (syncProyectoErr) {
+                        console.error('Servicio actualizado pero sin sincronizar proyectos:', syncProyectoErr.message);
                     }
 
-                    if (syncProyectoErr || syncContratoErr) {
-                        return res.status(200).send({
-                            message: 'Servicio actualizado, pero no se pudo sincronizar por completo su asignacion.'
-                        });
-                    }
+                    syncServicioContrato(id_servicio, contratosAsignados, costoServicio, (syncContratoErr) => {
+                        if (syncContratoErr) {
+                            console.error('Servicio actualizado pero sin sincronizar contratos:', syncContratoErr.message);
+                        }
 
-                    return res.status(200).send("Servicio actualizado");
+                        if (syncProyectoErr || syncContratoErr) {
+                            return res.status(200).send({
+                                message: 'Servicio actualizado, pero no se pudo sincronizar por completo su asignacion.'
+                            });
+                        }
+
+                        return res.status(200).send("Servicio actualizado");
+                    });
+                });
                 });
             });
         });
