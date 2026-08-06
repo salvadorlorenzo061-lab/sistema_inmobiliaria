@@ -378,6 +378,13 @@ function Contratos_Residentes() {
     return partes[0] || '';
   };
 
+  const truncarTexto = (texto = '', limite = 28) => {
+    const limpio = String(texto || '').trim();
+    if (!limpio) return '';
+    if (limpio.length <= limite) return limpio;
+    return `${limpio.slice(0, limite - 1)}…`;
+  };
+
   const extensionDesdeMime = (mime = '') => {
     const mimeBase = String(mime || '').toLowerCase().split(';')[0].trim();
     const mapa = {
@@ -619,9 +626,8 @@ function Contratos_Residentes() {
       </div>
       </div>
 
-      {/* TABLA CON SCROLL HORIZONTAL */}
-      <div style={{ overflowX: 'auto', marginBottom: '20px' }}>
-      <table className="table table-striped table-bordered shadow-sm align-middle" style={{ minWidth: '100%', marginBottom: '0' }}>
+      <div style={{ marginBottom: '20px' }}>
+      <table className="table table-striped table-bordered shadow-sm align-middle" style={{ width: '100%', tableLayout: 'fixed', marginBottom: '0' }}>
         <thead className="table-dark">
           <tr>
             <th>CÓDIGO</th>
@@ -636,7 +642,7 @@ function Contratos_Residentes() {
             <th>FECHA COMPRA</th>
             <th>FECHA FIN</th>
             <th>ESTADO</th>
-            <th>ACCIONES</th>
+            <th style={{ width: '220px' }}>ACCIONES</th>
           </tr>
         </thead>
         <tbody>
@@ -659,10 +665,14 @@ function Contratos_Residentes() {
                     {val.estado.toUpperCase()}
                   </span>
                 </td>
-                <td style={{ minWidth: '220px' }}>
+                <td style={{ width: '220px' }}>
                   {!!val.documento_contrato && (
-                    <div className="small text-success fw-semibold mb-1" title={obtenerNombreDocumentoContrato(val.documento_contrato)}>
-                      📎 {obtenerNombreDocumentoContrato(val.documento_contrato)}
+                    <div
+                      className="small text-success fw-semibold mb-1"
+                      title={obtenerNombreDocumentoContrato(val.documento_contrato)}
+                      style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    >
+                      📎 {truncarTexto(obtenerNombreDocumentoContrato(val.documento_contrato), 28)}
                     </div>
                   )}
                   <select
