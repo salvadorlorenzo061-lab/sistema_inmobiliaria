@@ -29,6 +29,7 @@ const CuentaEstado = () => {
   const [cuotasTotales, setCuotasTotales] = useState('');
   const [cuotasPagadas, setCuotasPagadas] = useState('');
   const [cuotaObjetivo, setCuotaObjetivo] = useState('');
+  const [engancheRegistrado, setEngancheRegistrado] = useState('');
   const [enganchePagado, setEnganchePagado] = useState('');
   const [precioTotal, setPrecioTotal] = useState('');
 
@@ -54,6 +55,7 @@ const CuentaEstado = () => {
     setCuotasTotales('');
     setCuotasPagadas('');
     setCuotaObjetivo('');
+    setEngancheRegistrado('');
     setEnganchePagado('');
     setPrecioTotal('');
   };
@@ -100,6 +102,7 @@ const CuentaEstado = () => {
       setInteresAnual(String(toNumber(contratoApi.interes_anual, 0)));
       setCuotasTotales(String(toNumber(contratoApi.cuotas_totales, 0)));
       setCuotasPagadas(String(toNumber(contratoApi.cuotas_pagadas, 0)));
+      setEngancheRegistrado(String(toNumber(contratoApi.enganche_registrado, 0)));
       setEnganchePagado(String(toNumber(contratoApi.enganche_pagado, 0)));
       setPrecioTotal(String(toNumber(contratoApi.precio_total_terreno, 0)));
       setCuotaObjetivo('');
@@ -142,10 +145,10 @@ const CuentaEstado = () => {
 
   const resumenEjemplo = useMemo(() => {
     const precio = toNumber(precioTotal, 0);
-    const enganche = toNumber(enganchePagado, 0);
+    const enganche = toNumber(engancheRegistrado, 0);
     const capital = Math.max(precio - enganche, 0);
     return { precio, enganche, capital };
-  }, [precioTotal, enganchePagado]);
+  }, [precioTotal, engancheRegistrado]);
 
   const irACajaConPrefill = (payload) => {
     if (!contrato?.id_contrato || !contrato?.codigo_contrato) {
@@ -399,7 +402,15 @@ const CuentaEstado = () => {
                       <p className="mb-1"><strong>Residente:</strong> {contrato.nombre_residente}</p>
                       <p className="mb-1"><strong>Contrato:</strong> {contrato.codigo_contrato}</p>
                       <p className="mb-1"><strong>Precio total terreno:</strong> {formatoMoneda(contrato.precio_total_terreno)}</p>
+                      <p className="mb-1"><strong>Enganche establecido:</strong> {formatoMoneda(contrato.enganche_registrado)}</p>
                       <p className="mb-1"><strong>Enganche pagado:</strong> {formatoMoneda(contrato.enganche_pagado)}</p>
+                      <p className="mb-1"><strong>Enganche pendiente:</strong> {formatoMoneda(contrato.enganche_pendiente)}</p>
+                      <p className="mb-1">
+                        <strong>Estado del enganche:</strong>{' '}
+                        <span className={`badge ${contrato.estado_enganche === 'PAGADO' ? 'bg-success' : 'bg-warning text-dark'}`}>
+                          {contrato.estado_enganche || 'PENDIENTE DE PAGO'}
+                        </span>
+                      </p>
                       <p className="mb-1"><strong>Capital inicial financiado:</strong> {formatoMoneda(contrato.capital_inicial_financiado)}</p>
                       <p className="mb-1"><strong>Cuotas pagadas (historico):</strong> {contrato.cuotas_pagadas}</p>
                       <p className="mb-1"><strong>Cuota siguiente:</strong> {contrato.cuota_siguiente}</p>
@@ -413,7 +424,9 @@ const CuentaEstado = () => {
                     <div className="card-header bg-info text-dark">Ejemplo rapido de capital</div>
                     <div className="card-body">
                       <p className="mb-1">Precio terreno: <strong>{formatoMoneda(resumenEjemplo.precio)}</strong></p>
-                      <p className="mb-1">Enganche pagado: <strong>{formatoMoneda(resumenEjemplo.enganche)}</strong></p>
+                      <p className="mb-1">Enganche establecido: <strong>{formatoMoneda(resumenEjemplo.enganche)}</strong></p>
+                      <p className="mb-1">Pagado: <strong>{formatoMoneda(contrato.enganche_pagado)}</strong></p>
+                      <p className="mb-1">Pendiente: <strong>{formatoMoneda(contrato.enganche_pendiente)}</strong></p>
                       <p className="mb-0">Capital inicial: <strong>{formatoMoneda(contrato.capital_inicial_financiado || resumenEjemplo.capital)}</strong></p>
                     </div>
                   </div>
@@ -429,8 +442,12 @@ const CuentaEstado = () => {
                       <input type="number" className="form-control" value={precioTotal} onChange={(e) => setPrecioTotal(e.target.value)} />
                     </div>
                     <div className="col-md-3">
-                      <label className="form-label fw-bold">Enganche pagado (Q)</label>
-                      <input type="number" className="form-control" value={enganchePagado} onChange={(e) => setEnganchePagado(e.target.value)} />
+                      <label className="form-label fw-bold">Enganche establecido (Q)</label>
+                      <input type="number" className="form-control" value={engancheRegistrado} onChange={(e) => setEngancheRegistrado(e.target.value)} />
+                    </div>
+                    <div className="col-md-3">
+                      <label className="form-label fw-bold">Enganche pagado real (Q)</label>
+                      <input type="number" className="form-control bg-light" value={enganchePagado} readOnly />
                     </div>
                     <div className="col-md-3">
                       <label className="form-label fw-bold">Capital restante (Q)</label>

@@ -181,12 +181,12 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
 
     const sqlPagos = `
         SELECT
-            COALESCE(COUNT(DISTINCT CASE WHEN fh.numero_cuota_afectada > 0 THEN fh.numero_cuota_afectada END), 0) AS cuotas_pagadas,
-            COALESCE(SUM(CASE WHEN fh.tipo_concepto IN ('cuota_terreno', 'abono_capital') THEN fh.subtotal ELSE 0 END), 0) AS capital_pagado,
-            COALESCE(SUM(CASE WHEN fh.tipo_concepto = 'enganche' THEN fh.subtotal ELSE 0 END), 0) AS enganche_pagado
-        FROM facturas_historial fh
-        WHERE fh.id_contrato = ?
-          AND fh.estado_factura = 'EMITIDA'
+            COALESCE(COUNT(DISTINCT CASE WHEN pd.numero_cuota_afectada > 0 AND pd.tipo_concepto = 'cuota_terreno' THEN pd.numero_cuota_afectada END), 0) AS cuotas_pagadas,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS capital_pagado,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS enganche_pagado
+        FROM pagos p
+        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+        WHERE p.id_contrato = ?
     `;
 
     const sqlMesesPendientes = `
@@ -235,18 +235,19 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
                 0
             );
 
-            const capitalRestante = Math.max(
-                toNumber(contrato.convenio_saldo_actual, -1) >= 0
-                    ? toNumber(contrato.convenio_saldo_actual, 0)
-                    : toNumber(contrato.saldo_pendiente, 0),
-                0
-            );
-
-            const enganchePagado = Math.max(toNumber(pagos.enganche_pagado, 0), 0);
+            const enganchePagadoRaw = Math.max(toNumber(pagos.enganche_pagado, 0), 0);
             const capitalPagado = Math.max(toNumber(pagos.capital_pagado, 0), 0);
             const precioTerreno = round2(Math.max(toNumber(contrato.monto_total_original, 0), 0));
             const engancheContrato = round2(Math.max(toNumber(contrato.enganche, 0), 0));
+            const enganchePagado = round2(Math.min(enganchePagadoRaw, engancheContrato));
+            const enganchePendiente = round2(Math.max(engancheContrato - enganchePagado, 0));
             const capitalInicialFinanciado = round2(Math.max(precioTerreno - engancheContrato, 0));
+            const capitalRestante = round2(Math.max(
+                Number(contrato.id_convenio_activo || 0) > 0
+                    ? toNumber(contrato.convenio_saldo_actual, capitalInicialFinanciado - capitalPagado)
+                    : capitalInicialFinanciado - capitalPagado,
+                0
+            ));
             const cuotasPagadasReales = Math.max(parseInt(pagos.cuotas_pagadas || 0, 10), 0);
             const cuotaSiguiente = cuotasTotales > 0
                 ? Math.min(cuotasPagadasReales + 1, cuotasTotales)
@@ -263,7 +264,9 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
                 capital_inicial_financiado: capitalInicialFinanciado,
                 capital_restante: round2(capitalRestante),
                 enganche_registrado: engancheContrato,
-                enganche_pagado: round2(enganchePagado),
+                enganche_pagado: enganchePagado,
+                enganche_pendiente: enganchePendiente,
+                estado_enganche: engancheContrato <= 0 || enganchePendiente <= 0.01 ? 'PAGADO' : 'PENDIENTE DE PAGO',
                 capital_pagado: round2(capitalPagado),
                 interes_anual: round2(toNumber(contrato.interes_porcentaje, 14)),
                 cuotas_totales: cuotasTotales,
