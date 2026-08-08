@@ -340,6 +340,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     });
 
     const hoy = new Date();
+    const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     const inserts = [];
 
     contratos.forEach((contrato) => {
@@ -369,6 +370,8 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
 
         while (numeroCuota <= totalCuotas) {
             const fechaVencimiento = crearFechaLocal(primerVencimiento, numeroCuota - 1);
+            const mesVencimiento = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), 1);
+            if (mesVencimiento >= mesActual) break;
             const fechaInicioMora = obtenerFechaInicioMora(fechaVencimiento, diasGracia);
             if (hoy < fechaInicioMora) break;
 

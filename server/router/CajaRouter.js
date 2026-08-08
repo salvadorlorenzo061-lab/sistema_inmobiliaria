@@ -167,6 +167,9 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
     const primerMesCuota = new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
     const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
     if (mesEvaluado < primerMesCuota) return false;
+    const hoy = new Date();
+    const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    if (mesEvaluado >= mesActual) return false;
 
     const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
     const fechaVencimiento = new Date(
@@ -182,7 +185,7 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
     );
     fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia + 2);
 
-    return new Date() >= fechaInicioMora;
+    return hoy >= fechaInicioMora;
 };
 
 const obtenerNumeroCuotaDesdeFechas = (fechaInicioContrato, fechaMes) => {

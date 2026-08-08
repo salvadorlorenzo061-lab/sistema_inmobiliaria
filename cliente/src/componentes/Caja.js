@@ -438,7 +438,7 @@ const Caja = () => {
             const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
             if (indiceMes >= 0) {
                 const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
-                return fechaMes <= hoyMes;
+                return fechaMes < hoyMes;
             }
         }
 
@@ -447,7 +447,7 @@ const Caja = () => {
             const indiceMes = obtenerIndiceMesLocal(soloMes[1]);
             if (indiceMes >= 0) {
                 const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
-                return fechaMes <= hoyMes;
+                return fechaMes < hoyMes;
             }
         }
 
