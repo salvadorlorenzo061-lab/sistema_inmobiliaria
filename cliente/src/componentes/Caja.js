@@ -659,7 +659,7 @@ const Caja = () => {
             if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
                 return 0;
             }
-            const interesBase = redondear2(totalInteres / cuotasPactadas);
+            const interesBase = Math.floor(totalInteres / cuotasPactadas);
             const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
             const esUltimaCuota = numeroCuota === cuotasPactadas;
 
@@ -700,16 +700,16 @@ const Caja = () => {
             : 0;
         const capitalBaseInteres = Math.max(Number(planContrato?.capitalBaseInteres || 0), 0);
         const cuotasPactadas = Math.max(Number(planContrato?.cuotasPactadas || 0), 0);
-        const capitalPorCuotaExacta = redondear2(Math.max(Number(planContrato?.capitalPorCuota || 0), 0));
+        const capitalPorCuotaEntera = Math.floor(Math.max(Number(planContrato?.capitalPorCuota || 0), 0));
         const obtenerCapitalPorNumeroCuota = (numeroCuota) => {
             if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadas <= 0 || capitalBaseInteres <= 0) {
                 return 0;
             }
             const esUltimaCuota = numeroCuota === cuotasPactadas;
             if (!esUltimaCuota) {
-                return capitalPorCuotaExacta;
+                return capitalPorCuotaEntera;
             }
-            return redondear2(capitalBaseInteres - (capitalPorCuotaExacta * (cuotasPactadas - 1)));
+            return redondear2(capitalBaseInteres - (capitalPorCuotaEntera * (cuotasPactadas - 1)));
         };
         const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
             if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
@@ -1058,7 +1058,8 @@ const Caja = () => {
             .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
 
         setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
-    }, [morasPendientes, mesesSeleccionados]);
+        setMontoAPagar(String((Number(montoTotalSeleccionado || 0) + Number(totalSeleccionado || 0)).toFixed(2)));
+    }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado]);
 
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
@@ -1560,8 +1561,8 @@ const Caja = () => {
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
     const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
     const cuotaInicioFinanciadaVista = 1;
-    const capitalPorCuotaRegular = redondear2(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
-    const interesPorCuotaRegular = redondear2(Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0) / Math.max(Number(planFinancieroContrato?.cuotasPactadas || 1), 1), 0));
+    const capitalPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
+    const interesPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0) / Math.max(Number(planFinancieroContrato?.cuotasPactadas || 1), 1), 0));
     const cuotaRegularSinDecimales = capitalPorCuotaRegular + interesPorCuotaRegular;
     const obtenerInteresPorNumeroCuotaVista = (numeroCuota) => {
         const totalInteres = Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0), 0);
@@ -1570,7 +1571,7 @@ const Caja = () => {
         if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
             return 0;
         }
-        const interesBase = redondear2(totalInteres / cuotasPactadas);
+        const interesBase = Math.floor(totalInteres / cuotasPactadas);
         const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
         const esUltimaCuota = numeroCuota === cuotasPactadas;
 
@@ -1595,14 +1596,48 @@ const Caja = () => {
     const mesAplicacionCobroUnico = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
     const capitalBaseInteresVista = Math.max(Number(planFinancieroContrato?.capitalBaseInteres || 0), 0);
     const cuotasPactadasVista = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
-    const capitalPorCuotaExactaVista = redondear2(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
+    const capitalPorCuotaEnteraVista = Math.floor(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
     const obtenerCapitalPorNumeroCuotaVista = (numeroCuota) => {
         if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadasVista <= 0 || capitalBaseInteresVista <= 0) {
             return 0;
         }
         const esUltimaCuota = numeroCuota === cuotasPactadasVista;
-        if (!esUltimaCuota) return capitalPorCuotaExactaVista;
-        return redondear2(capitalBaseInteresVista - (capitalPorCuotaExactaVista * (cuotasPactadasVista - 1)));
+        if (!esUltimaCuota) return capitalPorCuotaEnteraVista;
+        return redondear2(capitalBaseInteresVista - (capitalPorCuotaEnteraVista * (cuotasPactadasVista - 1)));
+    };
+    const obtenerDesgloseCuotaMesVista = (mesEtiqueta = '') => {
+        const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
+        const aplicarCobroUnicoMes = Boolean(mesEtiqueta) && mesEtiqueta === mesAplicacionCobroUnico;
+        const serviciosMensuales = serviciosSeleccionadosDetalleVista
+            .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
+            .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
+        const serviciosUnicos = aplicarCobroUnicoMes
+            ? serviciosSeleccionadosDetalleVista
+                .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
+                .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
+            : 0;
+        const cargosExtra = aplicarCobroUnicoMes ? montoCargosExtraSeleccionado : 0;
+        const mora = esCuotaEnganche
+            ? 0
+            : obtenerMorasAplicables([mesEtiqueta]).reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
+        const abonoCapital = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
+            ? parseFloat(montoEngancheSeleccionado || 0)
+            : 0;
+        const capital = esCuotaEnganche
+            ? Math.max(Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente), 0)
+            : obtenerCapitalPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
+        const interes = esCuotaEnganche
+            ? 0
+            : obtenerInteresPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
+        const servicios = serviciosMensuales + serviciosUnicos + cargosExtra;
+
+        return {
+            cuota: redondear2(capital + abonoCapital),
+            interes: redondear2(interes),
+            mora: redondear2(mora),
+            servicios: redondear2(servicios),
+            total: redondear2(capital + abonoCapital + interes + mora + servicios)
+        };
     };
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
         const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
@@ -2140,9 +2175,17 @@ const Caja = () => {
                                                                     {getEtiquetaCuotaMes(mes, obtenerNumeroCuotaMesVista(mes))}
                                                                 </span>
                                                             </div>
-                                                            <span className="badge bg-primary">
-                                                                Q{obtenerTotalCuotaMesVista(mes).toFixed(2)}
-                                                            </span>
+                                                            {(() => {
+                                                                const desglose = obtenerDesgloseCuotaMesVista(mes);
+                                                                return (
+                                                                    <div className="text-end">
+                                                                        <span className="badge bg-primary fs-6">Q{desglose.total.toFixed(2)}</span>
+                                                                        <div className="small text-muted mt-1">
+                                                                            Cuota Q{desglose.cuota.toFixed(2)} + Mora Q{desglose.mora.toFixed(2)} + Interés Q{desglose.interes.toFixed(2)} + Servicio Q{desglose.servicios.toFixed(2)} = Total Q{desglose.total.toFixed(2)}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                             {mesesSeleccionados.includes(mes) && (
                                                                 <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
                                                             )}

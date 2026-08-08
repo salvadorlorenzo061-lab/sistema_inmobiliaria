@@ -123,6 +123,9 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
         orden: base.orden ?? filas.length,
         concepto: base.concepto || 'Pago aplicado',
         mes: base.mes || 'N/A',
+        cuota: 0,
+        interes: 0,
+        mora: 0,
         total: 0
       };
       filasPorClave.set(clave, fila);
@@ -150,6 +153,7 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
         concepto: obtenerEtiquetaCuota(item.cuotaReal, false),
         mes: item.mes || 'N/A'
       });
+      fila.cuota = Number((fila.cuota + item.monto).toFixed(2));
       fila.total = Number((fila.total + item.monto).toFixed(2));
       if (item.mes) {
         ultimaCuotaPorMes.set(item.mes, clave);
@@ -178,9 +182,23 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
 
       if (claveDestino && filasPorClave.has(claveDestino)) {
         const fila = filasPorClave.get(claveDestino);
+        fila[item.tipo] = Number((fila[item.tipo] + item.monto).toFixed(2));
         fila.total = Number((fila.total + item.monto).toFixed(2));
         return;
       }
+    }
+
+    if (item.tipo === 'servicio') {
+      const fila = asegurarFila('servicios', {
+        orden: item.orden,
+        concepto: 'Total servicios',
+        mes: item.mes || 'N/A'
+      });
+      fila.total = Number((fila.total + item.monto).toFixed(2));
+      if (item.mes && fila.mes !== item.mes) {
+        fila.mes = 'Varios';
+      }
+      return;
     }
 
     const clave = `${item.tipo}:${item.mes || 'sin-mes'}:${item.conceptoOriginal}:${item.orden}`;
@@ -195,7 +213,12 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   return filas
     .filter((fila) => fila.total > 0)
     .sort((a, b) => a.orden - b.orden)
-    .map((fila) => [fila.concepto, texto(fila.mes), `Q ${fila.total.toFixed(2)}`]);
+    .map((fila) => {
+      const concepto = fila.clave.startsWith('cuota:')
+        ? `${fila.concepto}: Cuota Q${fila.cuota.toFixed(2)} + Mora Q${fila.mora.toFixed(2)} + Interés Q${fila.interes.toFixed(2)}`
+        : fila.concepto;
+      return [concepto, texto(fila.mes), `Q ${fila.total.toFixed(2)}`];
+    });
 };
 
 /**
