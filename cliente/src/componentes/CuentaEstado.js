@@ -21,6 +21,7 @@ const CuentaEstado = () => {
   const [busqueda, setBusqueda] = useState('');
   const [resultados, setResultados] = useState([]);
   const [cargando, setCargando] = useState(false);
+  const [generandoPlan, setGenerandoPlan] = useState(false);
   const [contrato, setContrato] = useState(null);
   const [simulacion, setSimulacion] = useState(null);
 
@@ -172,6 +173,11 @@ const CuentaEstado = () => {
   const enviarCuotaACaja = (row) => {
     if (!row) return;
 
+    if (toNumber(contrato?.enganche_pendiente, 0) > 0.01) {
+      showToast('Debe pagar primero la cuota inicial 0 antes de cobrar cuotas del plan.', 'warning');
+      return;
+    }
+
     irACajaConPrefill({
       tipo: 'cuota',
       cuota_objetivo: Number(row.numero_cuota || 0),
@@ -235,6 +241,48 @@ const CuentaEstado = () => {
 
     return rows;
   }, [simulacion]);
+
+  const generarCuotasPactadasEnCaja = async () => {
+    if (!contrato?.id_contrato || !simulacion || !tablaAmortizacionPendiente.length) {
+      showToast('Calcula primero la tabla de cuotas pendientes.', 'warning');
+      return;
+    }
+
+    const totalCuotasPlan = tablaAmortizacionPendiente.length;
+    const confirmacion = await Swal.fire({
+      icon: 'question',
+      title: 'Generar cuotas pactadas en Caja',
+      html: `Se creara un plan persistente de <strong>${totalCuotasPlan} cuotas</strong>, nombradas desde <strong>Cuota 1</strong> hasta <strong>Cuota ${totalCuotasPlan}</strong>, cada una con su mes y año contractual.<br><br>La <strong>Cuota 0</strong> continuara reservada exclusivamente para el enganche.<br><br>Capital del plan: <strong>${formatoMoneda(simulacion.capital_restante)}</strong>. El interes proyectado de ${formatoMoneda(simulacion.interes_total_pendiente)} seguira visible en esta simulacion y no se sumara al saldo de capital en Caja.`,
+      showCancelButton: true,
+      confirmButtonText: 'Generar plan',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (!confirmacion.isConfirmed) return;
+
+    setGenerandoPlan(true);
+    try {
+      const { data } = await axios.post(`${API_BASE_URL}/api/cuenta_estado/generar-plan-caja`, {
+        id_contrato: contrato.id_contrato,
+        capital_restante: toNumber(simulacion.capital_restante, 0),
+        cuotas_pactadas: totalCuotasPlan
+      });
+
+      irACajaConPrefill({
+        tipo: 'cuota',
+        id_convenio: Number(data?.id_convenio || 0),
+        cuota_objetivo: 1,
+        monto_capital: toNumber(data?.monto_cuota, tablaAmortizacionPendiente[0]?.capital_cuota),
+        monto_interes: 0,
+        monto_total: toNumber(data?.monto_cuota, tablaAmortizacionPendiente[0]?.capital_cuota)
+      });
+    } catch (error) {
+      const message = error?.response?.data?.message || error?.response?.data || 'No se pudo generar el plan de cuotas en Caja.';
+      await Swal.fire({ icon: 'error', title: 'Plan no generado', text: String(message) });
+    } finally {
+      setGenerandoPlan(false);
+    }
+  };
 
   const exportarTablaPDF = () => {
     if (!simulacion || !tablaAmortizacionPendiente.length) {
@@ -503,6 +551,14 @@ const CuentaEstado = () => {
                   <button type="button" className="btn btn-primary btn-sm" onClick={enviarLiquidacionACaja}>
                     Cobrar Cuota/Liquidacion en Caja
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-warning btn-sm"
+                    onClick={generarCuotasPactadasEnCaja}
+                    disabled={generandoPlan || tablaAmortizacionPendiente.length === 0}
+                  >
+                    {generandoPlan ? 'Generando...' : 'Generar cuotas pactadas en Caja'}
+                  </button>
                 </div>
 
                 <div className="row g-3">
@@ -564,7 +620,7 @@ const CuentaEstado = () => {
                 )}
 
                 <div className="alert alert-info mt-3 mb-0">
-                  <strong>Enlace con Caja:</strong> ahora puedes enviar cuota o liquidacion a Caja con prellenado (opcion B: redireccion con estado). El operador solo confirma y procesa en el modal de cobro.
+                  <strong>Enlace con Caja:</strong> puedes generar el plan persistente de Cuota 1 en adelante aunque el enganche siga pendiente. Para cobrar una cuota del plan, primero debe estar pagada la Cuota 0.
                 </div>
               </div>
             </div>

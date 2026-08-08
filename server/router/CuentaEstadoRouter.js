@@ -14,6 +14,13 @@ const toNumber = (value, fallback = 0) => {
 
 const round2 = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
 
+const queryAsync = (sql, params = []) => new Promise((resolve, reject) => {
+    db.query(sql, params, (err, rows) => {
+        if (err) return reject(err);
+        return resolve(rows || []);
+    });
+});
+
 const calcularLiquidacionCapital = ({
     capital_restante,
     interes_anual,
@@ -296,6 +303,91 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             });
         });
     });
+});
+
+router.post('/generar-plan-caja', async (req, res) => {
+    try {
+        const idContrato = Number(req.body?.id_contrato || 0);
+        const capitalRestante = round2(Math.max(toNumber(req.body?.capital_restante, 0), 0));
+        const cuotasPactadas = Math.max(parseInt(req.body?.cuotas_pactadas || 0, 10), 0);
+        const fechaInicio = String(req.body?.fecha_inicio || '').trim() || new Date().toISOString().slice(0, 10);
+
+        if (!Number.isInteger(idContrato) || idContrato <= 0) {
+            return res.status(400).json({ message: 'Contrato invalido.' });
+        }
+
+        if (capitalRestante <= 0 || cuotasPactadas <= 0) {
+            return res.status(400).json({ message: 'El capital restante y las cuotas pactadas deben ser mayores a cero.' });
+        }
+
+        const contratoRows = await queryAsync(`
+            SELECT id_contrato, codigo_contrato, enganche, fecha_compra, fecha_firma
+            FROM contratos_residentes
+            WHERE id_contrato = ?
+              AND estado = 'activo'
+            LIMIT 1
+        `, [idContrato]);
+
+        if (!contratoRows.length) {
+            return res.status(404).json({ message: 'Contrato activo no encontrado.' });
+        }
+
+        await queryAsync(`
+            CREATE TABLE IF NOT EXISTS convenio_pagos (
+                id_convenio INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                id_contrato INT NOT NULL,
+                fecha_convenio DATE NOT NULL,
+                monto_original DECIMAL(12,2) NOT NULL DEFAULT 0,
+                saldo_actual DECIMAL(12,2) NOT NULL DEFAULT 0,
+                cuotas_pactadas INT NOT NULL DEFAULT 1,
+                monto_cuota DECIMAL(12,2) NOT NULL DEFAULT 0,
+                fecha_inicio DATE NULL,
+                observaciones TEXT NULL,
+                estado VARCHAR(20) NOT NULL DEFAULT 'activo',
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_convenio_contrato (id_contrato),
+                INDEX idx_convenio_estado (estado)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        const planesActivos = await queryAsync(`
+            SELECT id_convenio
+            FROM convenio_pagos
+            WHERE id_contrato = ?
+              AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido')
+            ORDER BY id_convenio DESC
+            LIMIT 1
+        `, [idContrato]);
+
+        if (planesActivos.length) {
+            return res.status(409).json({
+                message: `El contrato ya tiene un plan de pagos activo (#${planesActivos[0].id_convenio}). Revise Convenio de Pagos antes de generar otro.`
+            });
+        }
+
+        const montoCuota = round2(capitalRestante / cuotasPactadas);
+        const fechaInicioContrato = contratoRows[0].fecha_compra || contratoRows[0].fecha_firma || fechaInicio;
+        const observaciones = `Plan generado desde Cuenta Estado Capital. Se conservan los nombres Cuota 1 a Cuota ${cuotasPactadas} y los meses/años desde la fecha contractual. Capital Q${capitalRestante.toFixed(2)} en ${cuotasPactadas} cuotas. El interes proyectado permanece informativo y no se capitaliza en el saldo.`;
+        const insertResult = await queryAsync(`
+            INSERT INTO convenio_pagos
+                (id_contrato, fecha_convenio, monto_original, saldo_actual, cuotas_pactadas, monto_cuota, fecha_inicio, observaciones, estado)
+            VALUES (?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, 'activo')
+        `, [idContrato, capitalRestante, capitalRestante, cuotasPactadas, montoCuota, fechaInicioContrato, observaciones]);
+
+        return res.status(200).json({
+            message: 'Plan de cuotas generado correctamente en Caja.',
+            id_convenio: Number(insertResult?.insertId || 0),
+            id_contrato: idContrato,
+            cuotas_pactadas: cuotasPactadas,
+            monto_cuota: montoCuota,
+            saldo_actual: capitalRestante,
+            fecha_inicio: fechaInicioContrato
+        });
+    } catch (error) {
+        console.error('Error generando plan de Caja desde Cuenta Estado:', error.message);
+        return res.status(500).json({ message: 'No se pudo generar el plan de cuotas en Caja.' });
+    }
 });
 
 router.post('/simular-liquidacion', (req, res) => {
