@@ -25,6 +25,7 @@ const PERMISOS_MODULOS = [
   'Cobros Extra',
   'Pagos',
   'Detalle Pagos',
+  'Reporte de Facturas',
   'Cuenta Estado Capital',
   'Asignar Correlativos',
   'Resoluciones Facturas',

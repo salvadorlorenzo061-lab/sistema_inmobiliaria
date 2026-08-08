@@ -22,6 +22,7 @@ import CuentaEstado from '../componentes/CuentaEstado';
 import MenuGeneral from '../componentes/MenuGeneral';
 import AsignarCorrelativo from '../componentes/Asignar_correlativo';
 import Convenio from '../componentes/Convenio';
+import ReporteFacturas from '../componentes/ReporteFacturas';
 
 // Configuración de módulos - Aquí es donde agregas o quitas módulos
 export const modulesConfig = [
@@ -152,6 +153,14 @@ export const modulesConfig = [
     path: '/pagos_detalle',
     component: PagosDetalle,
     category: 'Caja'
+  },
+  {
+    id: 'reporte_facturas',
+    label: 'Reporte de Facturas',
+    icon: '📊',
+    path: '/reporte_facturas',
+    component: ReporteFacturas,
+    category: 'Reportes'
   },
   {
     id: 'asignar_correlativo',

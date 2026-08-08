@@ -61,6 +61,9 @@ ensureFacturasHistorialRolColumn();
 
 router.get('/reporte-facturas', (req, res) => {
     const criterio = String(req.query?.criterio || '').trim();
+    const fechaInicio = String(req.query?.fecha_inicio || '').trim();
+    const fechaFin = String(req.query?.fecha_fin || '').trim();
+    const estado = String(req.query?.estado || 'TODAS').trim().toUpperCase();
     const filtro = `%${criterio}%`;
     const query = `
         SELECT
@@ -82,6 +85,9 @@ router.get('/reporte-facturas', (req, res) => {
         LEFT JOIN residentes r ON r.id_residente = fh.id_residente
         LEFT JOIN contratos_residentes c ON c.id_contrato = fh.id_contrato
         WHERE fh.id_pago IS NOT NULL
+                    AND (? = '' OR DATE(fh.fecha_evento) >= ?)
+                    AND (? = '' OR DATE(fh.fecha_evento) <= ?)
+                    AND (? = 'TODAS' OR UPPER(fh.estado_factura) = ?)
           AND (
                 ? = ''
                 OR CAST(fh.id_pago AS CHAR) LIKE ?
@@ -102,7 +108,12 @@ router.get('/reporte-facturas', (req, res) => {
         LIMIT 500
     `;
 
-    db.query(query, [criterio, filtro, filtro, filtro, filtro, filtro, filtro, filtro, filtro], (err, rows) => {
+    db.query(query, [
+        fechaInicio, fechaInicio,
+        fechaFin, fechaFin,
+        estado, estado,
+        criterio, filtro, filtro, filtro, filtro, filtro, filtro, filtro, filtro
+    ], (err, rows) => {
         if (err) {
             console.error('Error al obtener reportería de facturas:', err.message);
             return res.status(500).send({ message: 'No se pudo obtener la reportería de facturas.' });
