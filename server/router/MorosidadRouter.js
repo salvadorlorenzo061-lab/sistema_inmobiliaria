@@ -319,7 +319,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     }
 
     const moraExistenteRows = await queryAsync(`
-        SELECT id_contrato, mes_atrasado
+        SELECT id_contrato, mes_atrasado, estado
         FROM morosidad
     `);
 
@@ -334,7 +334,9 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     moraExistenteRows.forEach((r) => {
         const key = String(r.id_contrato);
         if (!morasExistentesPorContrato.has(key)) morasExistentesPorContrato.set(key, new Set());
-        morasExistentesPorContrato.get(key).add(String(r.mes_atrasado || '').trim());
+        if (String(r.estado || '').trim().toLowerCase() === 'pagado') {
+            morasExistentesPorContrato.get(key).add(String(r.mes_atrasado || '').trim());
+        }
     });
 
     const hoy = new Date();
@@ -400,10 +402,16 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         return { generated: 0, examinedContracts: contratos.length };
     }
 
-    await queryAsync(
-        'INSERT IGNORE INTO morosidad (id_contrato, mes_atrasado, monto_deuda_original, monto_mora, dias_retraso, estado) VALUES ?',
-        [inserts]
-    );
+    await queryAsync(`
+        INSERT INTO morosidad
+            (id_contrato, mes_atrasado, monto_deuda_original, monto_mora, dias_retraso, estado)
+        VALUES ?
+        ON DUPLICATE KEY UPDATE
+            monto_deuda_original = VALUES(monto_deuda_original),
+            monto_mora = VALUES(monto_mora),
+            dias_retraso = VALUES(dias_retraso),
+            estado = 'pendiente'
+    `, [inserts]);
 
     return { generated: inserts.length, examinedContracts: contratos.length };
 };
