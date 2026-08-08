@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
@@ -74,8 +74,10 @@ const fechaLargaGT = (valor) => {
 
 function PagosDetalle() {
   const [detallesList, setDetalles] = useState([]);
-  const [busqueda, setBusqueda] = useState("");
-  const [filtroEstado, setFiltroEstado] = useState('TODAS');
+  const parametrosIniciales = new URLSearchParams(window.location.search);
+  const [busqueda, setBusqueda] = useState(parametrosIniciales.get('buscar') || "");
+  const [filtroEstado, setFiltroEstado] = useState(parametrosIniciales.get('estado') || 'TODAS');
+  const facturaSolicitadaRef = useRef(parametrosIniciales.get('buscar') || '');
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -371,6 +373,22 @@ function PagosDetalle() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [getDetalles]);
+
+  useEffect(() => {
+    const idPagoSolicitado = String(facturaSolicitadaRef.current || '').trim();
+    if (!idPagoSolicitado || !detallesList.length) return;
+
+    const estadoSolicitado = String(parametrosIniciales.get('estado') || '').toUpperCase();
+    const detalle = detallesList.find((item) => (
+      String(item?.id_pago || '') === idPagoSolicitado
+      && (!estadoSolicitado || String(item?.estado_factura || 'EMITIDA').toUpperCase() === estadoSolicitado)
+    ));
+
+    if (detalle) {
+      facturaSolicitadaRef.current = '';
+      generarFacturaDesdeDetalle(detalle);
+    }
+  }, [detallesList]);
 
   // Filtrado y paginación
   const detallesFiltrados = detallesList.filter((d) => {

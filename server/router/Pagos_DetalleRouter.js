@@ -59,6 +59,58 @@ const ensureFacturasHistorialRolColumn = () => {
 ensureFacturasHistorialTable();
 ensureFacturasHistorialRolColumn();
 
+router.get('/reporte-facturas', (req, res) => {
+    const criterio = String(req.query?.criterio || '').trim();
+    const filtro = `%${criterio}%`;
+    const query = `
+        SELECT
+            fh.id_pago,
+            fh.estado_factura,
+            MAX(fh.correlativo) AS correlativo,
+            MIN(fh.fecha_evento) AS fecha_evento,
+            fh.id_residente,
+            fh.id_contrato,
+            r.nombre AS nombre_residente,
+            r.numero_identificacion,
+            r.dpi,
+            c.codigo_contrato,
+            GROUP_CONCAT(DISTINCT NULLIF(TRIM(fh.mes_pagado), '') ORDER BY fh.numero_cuota_afectada ASC SEPARATOR ', ') AS meses_pagados,
+            MIN(CASE WHEN fh.numero_cuota_afectada > 0 THEN fh.numero_cuota_afectada END) AS cuota_inicio,
+            MAX(CASE WHEN fh.numero_cuota_afectada > 0 THEN fh.numero_cuota_afectada END) AS cuota_fin,
+            SUM(fh.subtotal) AS total_documento
+        FROM facturas_historial fh
+        LEFT JOIN residentes r ON r.id_residente = fh.id_residente
+        LEFT JOIN contratos_residentes c ON c.id_contrato = fh.id_contrato
+        WHERE fh.id_pago IS NOT NULL
+          AND (
+                ? = ''
+                OR CAST(fh.id_pago AS CHAR) LIKE ?
+                OR CAST(fh.id_residente AS CHAR) LIKE ?
+                OR CAST(fh.id_contrato AS CHAR) LIKE ?
+                OR COALESCE(fh.correlativo, '') LIKE ?
+                OR COALESCE(r.nombre, '') LIKE ?
+                OR COALESCE(r.numero_identificacion, '') LIKE ?
+                OR COALESCE(r.dpi, '') LIKE ?
+                OR COALESCE(c.codigo_contrato, '') LIKE ?
+          )
+        GROUP BY
+            fh.id_pago, fh.estado_factura, fh.id_residente, fh.id_contrato,
+            r.nombre, r.numero_identificacion, r.dpi, c.codigo_contrato
+        ORDER BY COALESCE(MIN(CASE WHEN fh.numero_cuota_afectada >= 0 THEN fh.numero_cuota_afectada END), 0) ASC,
+            MIN(fh.fecha_evento) ASC, fh.id_pago ASC,
+            CASE WHEN fh.estado_factura = 'EMITIDA' THEN 0 ELSE 1 END ASC
+        LIMIT 500
+    `;
+
+    db.query(query, [criterio, filtro, filtro, filtro, filtro, filtro, filtro, filtro, filtro], (err, rows) => {
+        if (err) {
+            console.error('Error al obtener reportería de facturas:', err.message);
+            return res.status(500).send({ message: 'No se pudo obtener la reportería de facturas.' });
+        }
+        return res.status(200).json(rows || []);
+    });
+});
+
 router.get("/", (req, res) => {
     const query = `
         SELECT

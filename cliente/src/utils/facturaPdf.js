@@ -82,6 +82,7 @@ const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '
 
 export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   const usarCuotaCeroEnganche = Boolean(options?.usarCuotaCeroEnganche);
+  const numeroCuotaInicio = Math.max(Number(options?.numeroCuotaInicio || 0), 0);
   const normalizados = (Array.isArray(detalles) ? detalles : [])
     .map((item, index) => ({
       orden: index,
@@ -100,13 +101,16 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   const filas = [];
   const filasPorClave = new Map();
   const ultimaCuotaPorMes = new Map();
+  let cuotasSinNumero = 0;
 
   const obtenerEtiquetaCuota = (cuotaReal, esEnganche = false) => {
     if (esEnganche) return 'Cuota 0 Enganche';
 
     let cuotaVisual = Number(cuotaReal || 0);
     if (!Number.isInteger(cuotaVisual) || cuotaVisual <= 0) {
-      return 'Cuota';
+      cuotaVisual = numeroCuotaInicio > 0 ? numeroCuotaInicio + cuotasSinNumero : 0;
+      cuotasSinNumero += 1;
+      return cuotaVisual > 0 ? `Cuota ${cuotaVisual}` : 'Cuota';
     }
 
     if (usarCuotaCeroEnganche) {
@@ -215,7 +219,7 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
     .sort((a, b) => a.orden - b.orden)
     .map((fila) => {
       const concepto = fila.clave.startsWith('cuota:')
-        ? `${fila.concepto}: Cuota Q${fila.cuota.toFixed(2)} + Mora Q${fila.mora.toFixed(2)} + Interés Q${fila.interes.toFixed(2)}`
+        ? `${fila.concepto} ${texto(fila.mes, '')}`.trim()
         : fila.concepto;
       return [concepto, texto(fila.mes), `Q ${fila.total.toFixed(2)}`];
     });

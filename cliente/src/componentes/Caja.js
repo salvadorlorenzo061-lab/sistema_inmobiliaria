@@ -310,6 +310,9 @@ const Caja = () => {
     const [estadoCorrelativoUsuario, setEstadoCorrelativoUsuario] = useState(null);
     const [estadoCorrelativo, setEstadoCorrelativo] = useState(null);
     const [resumenServiciosIniciales, setResumenServiciosIniciales] = useState(null);
+    const [criterioReporteFacturas, setCriterioReporteFacturas] = useState('');
+    const [facturasReporte, setFacturasReporte] = useState([]);
+    const [cargandoReporteFacturas, setCargandoReporteFacturas] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
 
@@ -335,6 +338,35 @@ const Caja = () => {
         } catch {
             return null;
         }
+    };
+
+    const buscarFacturasHistoricas = async () => {
+        const criterio = String(criterioReporteFacturas || '').trim();
+        if (!criterio) {
+            mostrarToast('Ingresa nombre, apellido, identificación, DPI, factura o código de contrato.', 'warning');
+            return;
+        }
+
+        setCargandoReporteFacturas(true);
+        try {
+            const { data } = await axios.get(`${API_BASE_URL}/api/pagos_detalle/reporte-facturas`, {
+                params: { criterio }
+            });
+            setFacturasReporte(Array.isArray(data) ? data : []);
+        } catch (error) {
+            setFacturasReporte([]);
+            mostrarToast(error?.response?.data?.message || 'No se pudo consultar el historial de facturas.', 'error');
+        } finally {
+            setCargandoReporteFacturas(false);
+        }
+    };
+
+    const abrirFacturaHistorica = (factura) => {
+        const params = new URLSearchParams({
+            buscar: String(factura?.id_pago || ''),
+            estado: String(factura?.estado_factura || 'EMITIDA').toUpperCase()
+        });
+        window.location.href = `/pagos_detalle?${params.toString()}`;
     };
 
     const obtenerPrefillCaja = () => {
@@ -1521,7 +1553,8 @@ const Caja = () => {
                 },
                 filas: detalleCobro.length
                     ? buildConsolidatedInvoiceRows(detalleCobro, {
-                        usarCuotaCeroEnganche: Math.max(parseFloat(residente?.enganche || 0), 0) > 0
+                        usarCuotaCeroEnganche: Math.max(parseFloat(residente?.enganche || 0), 0) > 0,
+                        numeroCuotaInicio: cuotaInicio
                     })
                     : [[conceptos, mesesPagadosRecibo.join(", ") || "N/A", `Q ${montoTotal.toFixed(2)}`]],
                 resumen: [
@@ -1709,6 +1742,87 @@ const Caja = () => {
 
     return (
         <div className="container mt-4">
+            <section className="mb-4 border rounded shadow-sm bg-white">
+                <div className="bg-dark text-white px-3 py-2 fw-bold">FACTURAS EMITIDAS Y ANULADAS</div>
+                <div className="p-3">
+                    <div className="row g-2 align-items-center">
+                        <div className="col-lg-9">
+                            <input
+                                type="search"
+                                className="form-control"
+                                placeholder="Buscar por nombre, apellido, identificación, DPI, factura o código de contrato..."
+                                value={criterioReporteFacturas}
+                                onChange={(e) => setCriterioReporteFacturas(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && buscarFacturasHistoricas()}
+                            />
+                        </div>
+                        <div className="col-lg-3 d-flex gap-2">
+                            <button type="button" className="btn btn-primary flex-grow-1" onClick={buscarFacturasHistoricas} disabled={cargandoReporteFacturas}>
+                                {cargandoReporteFacturas ? 'Buscando...' : 'Buscar'}
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-outline-secondary"
+                                onClick={() => {
+                                    setCriterioReporteFacturas('');
+                                    setFacturasReporte([]);
+                                }}
+                            >
+                                Limpiar
+                            </button>
+                        </div>
+                    </div>
+
+                    {facturasReporte.length > 0 && (
+                        <div className="table-responsive mt-3" style={{ maxHeight: '360px' }}>
+                            <table className="table table-sm table-striped table-bordered align-middle mb-0">
+                                <thead className="table-dark position-sticky top-0">
+                                    <tr>
+                                        <th>Cuota / Mes</th>
+                                        <th>Factura</th>
+                                        <th>Residente</th>
+                                        <th>Identificación</th>
+                                        <th>Contrato</th>
+                                        <th>Estado</th>
+                                        <th className="text-end">Total</th>
+                                        <th>Documento</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {facturasReporte.map((factura) => (
+                                        <tr key={`${factura.id_pago}-${factura.estado_factura}`}>
+                                            <td>
+                                                {factura.cuota_inicio != null ? `Cuota ${factura.cuota_inicio}` : 'Cuota 0'}
+                                                <div className="small text-muted">{factura.meses_pagados || 'Sin mes registrado'}</div>
+                                            </td>
+                                            <td>{factura.correlativo || `Pago #${factura.id_pago}`}</td>
+                                            <td>{factura.nombre_residente || 'N/A'}</td>
+                                            <td>{factura.numero_identificacion || factura.dpi || 'N/A'}</td>
+                                            <td>{factura.codigo_contrato || 'N/A'}</td>
+                                            <td>
+                                                <span className={`badge ${String(factura.estado_factura).toUpperCase() === 'ANULADA' ? 'bg-danger' : 'bg-success'}`}>
+                                                    {factura.estado_factura}
+                                                </span>
+                                            </td>
+                                            <td className="text-end fw-bold">Q{Number(factura.total_documento || 0).toFixed(2)}</td>
+                                            <td>
+                                                <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => abrirFacturaHistorica(factura)}>
+                                                    Ver PDF
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {!cargandoReporteFacturas && criterioReporteFacturas.trim() && facturasReporte.length === 0 && (
+                        <div className="text-muted text-center mt-3">No hay facturas para el criterio consultado.</div>
+                    )}
+                </div>
+            </section>
+
             {estadoCorrelativoUsuario && estadoCorrelativoUsuario.disponible && (
                 <div className="alert alert-info text-center fw-bold mb-3">
                     <div>{estadoCorrelativoUsuario.mensaje || 'Tienes correlativos asignados.'}</div>
