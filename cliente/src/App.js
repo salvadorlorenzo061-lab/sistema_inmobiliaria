@@ -22,9 +22,6 @@ const MODULE_PERMISSION_ALIASES = {
   empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa']
 };
 
-// Ocultar temporalmente del menu (sin eliminar rutas ni codigo fuente).
-const TEMP_HIDDEN_MENU_MODULE_IDS = new Set(['convenio', 'cuenta_estado_capital']);
-
 const getFallbackPermisosByRole = (rolNormalizado = '') => {
   if (rolNormalizado.includes('cobro') || rolNormalizado.includes('caja')) {
     return new Set([
@@ -314,13 +311,9 @@ function App() {
     });
   }, [isAuthenticated, usuarioActivo]);
 
-  const modulesVisiblesMenu = useMemo(() => {
-    return modulesPermitidos.filter((module) => !TEMP_HIDDEN_MENU_MODULE_IDS.has(module.id));
-  }, [modulesPermitidos]);
-
   const categories = useMemo(() => {
-    return [...new Set(modulesVisiblesMenu.map((module) => module.category))];
-  }, [modulesVisiblesMenu]);
+    return [...new Set(modulesPermitidos.map((module) => module.category))];
+  }, [modulesPermitidos]);
 
   // Toggle para expandir/contraer categorías
   const toggleCategory = (category) => {
@@ -419,7 +412,7 @@ function App() {
                   {finalExpandedState[category] && (
                     <>
                       {modulesConfig
-                        .filter(module => modulesVisiblesMenu.some((permitido) => permitido.id === module.id))
+                        .filter(module => modulesPermitidos.some((permitido) => permitido.id === module.id))
                         .filter(module => module.category === category)
                         .map((module) => (
                           <NavLink
