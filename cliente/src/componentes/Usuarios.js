@@ -253,6 +253,9 @@ function Usuarios() {
           ...usuarioActual,
           nombre_usuario: nombre,
           correo,
+          id_rol,
+          estado,
+          permisos: [...permisos],
           foto_perfil
         };
         localStorage.setItem('usuario', JSON.stringify(actualizado));

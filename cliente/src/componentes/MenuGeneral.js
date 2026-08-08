@@ -104,7 +104,8 @@ function MenuGeneral() {
     const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
     const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
     const fallbackPermisos = getFallbackPermisosByRole(rolNormalizado);
-    const perfilCaja = detectarPerfilCaja(rolNormalizado, permisosNormalizados);
+    const perfilCaja = permisosNormalizados.size === 0
+      && detectarPerfilCaja(rolNormalizado, permisosNormalizados);
     const permisosEfectivos = new Set([
       ...permisosNormalizados,
       ...(perfilCaja ? Array.from(fallbackPermisos) : [])
