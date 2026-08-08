@@ -899,6 +899,9 @@ const Caja = () => {
             }
 
             try {
+                await axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`, {
+                    id_contrato: residente.id_contrato
+                });
                 const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${residente.id_contrato}`);
                 const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
                 setMorasPendientes(moras);
@@ -1246,6 +1249,9 @@ const Caja = () => {
                 }
 
                 try {
+                    await axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`, {
+                        id_contrato: datosDeuda.id_contrato
+                    });
                     const morasRes = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${datosDeuda.id_contrato}`);
                     const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
                     setMorasPendientes(moras);

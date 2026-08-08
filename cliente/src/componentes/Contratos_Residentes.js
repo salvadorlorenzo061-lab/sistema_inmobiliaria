@@ -10,16 +10,20 @@ import PdfPreview from './PdfPreview';
 function Contratos_Residentes() {
   const obtenerInicioPagosAutomatico = (fechaCompraValue, fechaFirmaValue) => {
     const base = fechaCompraValue || fechaFirmaValue;
-    const parsed = base ? new Date(base) : new Date();
+    const partesFecha = String(base || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const parsed = partesFecha
+      ? new Date(Number(partesFecha[1]), Number(partesFecha[2]) - 1, Number(partesFecha[3]))
+      : new Date();
 
     if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) {
       const hoy = new Date();
       return { mes: String(hoy.getMonth() + 1), anio: String(hoy.getFullYear()) };
     }
 
+    const primerPago = new Date(parsed.getFullYear(), parsed.getMonth() + 1, 1);
     return {
-      mes: String(parsed.getMonth() + 1),
-      anio: String(parsed.getFullYear())
+      mes: String(primerPago.getMonth() + 1),
+      anio: String(primerPago.getFullYear())
     };
   };
 
@@ -33,7 +37,7 @@ function Contratos_Residentes() {
   const [monto_total, setMonto_total] = useState("120000");
   const [cuotas_pactadas, setCuotas_pactadas] = useState("60");
   const [monto_cuota, setMonto_cuota] = useState("");
-  const [dia_pago_limite, setDia_pago_limite] = useState("");
+  const [dia_pago_limite, setDia_pago_limite] = useState("5");
   const [fecha_firma, setFecha_firma] = useState("");
   const [fecha_compra, setFecha_compra] = useState("");
   const [fecha_fin, setFecha_fin] = useState("");
@@ -223,7 +227,7 @@ function Contratos_Residentes() {
   };
 
   const addContrato = () => {
-    if (!codigo_contrato.trim() || !id_residente || !id_tipo_contrato || !monto_total || !cuotas_pactadas || !dia_pago_limite || !fecha_firma || !fecha_compra || !estado) {
+    if (!codigo_contrato.trim() || !id_residente || !id_tipo_contrato || !monto_total || !cuotas_pactadas || dia_pago_limite === '' || !fecha_firma || !fecha_compra || !estado) {
       Swal.fire({ icon: "warning", title: "CAMPOS INCOMPLETOS", text: "Por favor llene todos los parámetros financieros" });
       return;
     }
@@ -304,7 +308,7 @@ function Contratos_Residentes() {
   };
 
   const actualizarContrato = () => {
-    if (!codigo_contrato.trim() || !id_residente || !id_tipo_contrato || !monto_total || !cuotas_pactadas || !dia_pago_limite || !fecha_firma || !fecha_compra || !estado) {
+    if (!codigo_contrato.trim() || !id_residente || !id_tipo_contrato || !monto_total || !cuotas_pactadas || dia_pago_limite === '' || !fecha_firma || !fecha_compra || !estado) {
       Swal.fire({ icon: "warning", title: "CAMPOS INCOMPLETOS" });
       return;
     }
@@ -661,7 +665,7 @@ function Contratos_Residentes() {
   const limpiarCampos = () => {
     setId_contrato(""); setCodigo_contrato(""); setId_residente("");
     setId_empresa_marca(""); setId_proyecto(""); setId_tipo_contrato("");
-    setMonto_total(""); setCuotas_pactadas(""); setMonto_cuota(""); setDia_pago_limite("");
+    setMonto_total(""); setCuotas_pactadas(""); setMonto_cuota(""); setDia_pago_limite("5");
     setFecha_firma(""); setFecha_compra(""); setFecha_fin(""); setEstado(""); setDocumento_contrato("");
     // Restablecer valores del vendedor/empresa a los valores por defecto
     setNombre_vendedor("DULCE MARIA OSORIO SABAN DE PEREZ");
@@ -756,7 +760,7 @@ function Contratos_Residentes() {
                 <td className="fw-bold" style={tdCompacto}>Q {parseFloat(val.monto_total).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                 <td className="text-center" style={tdCompacto}>{val.cuotas_pactadas}</td>
                 <td className="text-success fw-bold" style={tdCompacto}>Q {parseFloat(val.monto_cuota).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                <td className="text-center fw-bold text-danger" style={tdCompacto}>Día {val.dia_pago_limite}</td>
+                <td className="text-center fw-bold text-danger" style={tdCompacto}>{val.dia_pago_limite} días de gracia</td>
                 <td className="text-center text-muted" style={tdCompacto}>{val.fecha_firma ? new Date(val.fecha_firma).toLocaleDateString('es-GT') : '-'}</td>
                 <td className="text-center text-muted" style={tdCompacto}>{val.fecha_compra ? new Date(val.fecha_compra).toLocaleDateString('es-GT') : <span className="text-info fw-bold">-</span>}</td>
                 <td className="text-center text-muted" style={tdCompacto}>{val.fecha_fin ? new Date(val.fecha_fin).toLocaleDateString('es-GT') : <span className="text-warning fw-bold">Indefinida</span>}</td>
@@ -935,8 +939,8 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={mora} onChange={e => setMora(e.target.value)} placeholder="600" />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Día Límite de Pago mensual:</label>
-                  <input type="number" min="1" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} placeholder="Ej: 5" />
+                  <label className="form-label fw-bold">Días de gracia después del vencimiento:</label>
+                  <input type="number" min="0" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} placeholder="5" />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Plazo Total (meses):</label>
@@ -1174,8 +1178,8 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={mora} onChange={e => setMora(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Día Pago:</label>
-                  <input type="number" min="1" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} />
+                  <label className="form-label fw-bold">Días de gracia:</label>
+                  <input type="number" min="0" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Plazo (meses):</label>

@@ -85,11 +85,31 @@ const asegurarTablaMorosidad = async () => {
 };
 
 const parseFecha = (value) => {
-    const d = value ? new Date(value) : null;
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const d = match
+        ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+        : (value ? new Date(value) : null);
     return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
 };
 
 const labelMes = (date) => `${NOMBRES_MESES[date.getMonth()]} ${date.getFullYear()}`;
+
+const crearFechaLocal = (fechaBase, mesesAdicionales = 0) => {
+    const anio = fechaBase.getFullYear();
+    const mes = fechaBase.getMonth() + mesesAdicionales;
+    const ultimoDiaMes = new Date(anio, mes + 1, 0).getDate();
+    return new Date(anio, mes, Math.min(fechaBase.getDate(), ultimoDiaMes));
+};
+
+const obtenerFechaInicioMora = (fechaVencimiento, diasGracia) => {
+    const inicioMora = new Date(
+        fechaVencimiento.getFullYear(),
+        fechaVencimiento.getMonth(),
+        fechaVencimiento.getDate()
+    );
+    inicioMora.setDate(inicioMora.getDate() + diasGracia + 2);
+    return inicioMora;
+};
 
 const parsearMesAtrasado = (label) => {
     const texto = String(label || '').trim().toLowerCase();
@@ -156,8 +176,8 @@ router.get('/meses-pendientes', async (req, res) => {
         const fechaCompra = parseFechaValida(contrato.fecha_compra);
         const fechaFin = parseFechaValida(contrato.fecha_fin);
         const fechaFirma = parseFechaValida(contrato.fecha_firma);
-        const fechaInicioBase = fechaCompra || fechaFirma || new Date();
-        const fechaInicio = new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1);
+        const fechaContratoBase = fechaCompra || fechaFirma || new Date();
+        const fechaInicio = new Date(fechaContratoBase.getFullYear(), fechaContratoBase.getMonth() + 1, 1);
         const fechaLimite = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
         const cuotasPactadas = Number(contrato.cuotas_pactadas || 0);
         const saldoPendiente = Number(contrato.monto_total || 0);
@@ -256,7 +276,7 @@ router.get('/meses-pendientes', async (req, res) => {
     }
 });
 
-const calcularMorasAutomaticas = async () => {
+const calcularMorasAutomaticas = async (idContrato = null) => {
     await asegurarTablaMorosidad();
 
     const contratos = await queryAsync(`
@@ -268,11 +288,14 @@ const calcularMorasAutomaticas = async () => {
             c.dia_pago_limite,
             c.monto_cuota,
             c.monto_total,
+                        c.cuotas_pactadas,
+                        c.plazo_meses,
             c.estado,
             COALESCE(c.mora, 0) AS mora_contrato
         FROM contratos_residentes c
         WHERE c.estado = 'activo'
-    `);
+                    AND (? IS NULL OR c.id_contrato = ?)
+        `, [idContrato, idContrato]);
 
     if (!contratos.length) {
         return { generated: 0, examinedContracts: 0 };
@@ -321,8 +344,12 @@ const calcularMorasAutomaticas = async () => {
         const saldoPendiente = Number(contrato.monto_total || 0);
         const montoCuota = Number(contrato.monto_cuota || 0);
         const moraContrato = Number(contrato.mora_contrato || 0);
+        const totalCuotas = Math.max(
+            Number(contrato.plazo_meses || 0),
+            Number(contrato.cuotas_pactadas || 0)
+        );
 
-        if (saldoPendiente <= 0 || montoCuota <= 0) {
+        if (saldoPendiente <= 0 || montoCuota <= 0 || totalCuotas <= 0) {
             return;
         }
 
@@ -331,24 +358,24 @@ const calcularMorasAutomaticas = async () => {
             return;
         }
 
-        const diaPagoLimite = Math.max(1, Math.min(28, Number(contrato.dia_pago_limite || 5)));
-        const inicio = new Date(inicioRaw.getFullYear(), inicioRaw.getMonth(), 1);
-        const cursor = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
+        const diasGracia = Math.max(0, Math.min(31, Number(contrato.dia_pago_limite ?? 5)));
+        const primerVencimiento = crearFechaLocal(inicioRaw, 1);
+        let numeroCuota = 1;
 
         const pagadosSet = pagosPorContrato.get(String(contrato.id_contrato)) || new Set();
         const morasSet = morasExistentesPorContrato.get(String(contrato.id_contrato)) || new Set();
 
-        while (cursor <= hoy) {
-            const etiquetaMes = labelMes(cursor);
+        while (numeroCuota <= totalCuotas) {
+            const fechaVencimiento = crearFechaLocal(primerVencimiento, numeroCuota - 1);
+            const fechaInicioMora = obtenerFechaInicioMora(fechaVencimiento, diasGracia);
+            if (hoy < fechaInicioMora) break;
 
-            const fechaVencimiento = new Date(cursor.getFullYear(), cursor.getMonth(), diaPagoLimite);
-            const DIAS_GRACIA = 5;
-            const fechaLimiteConGracia = new Date(fechaVencimiento.getTime() + (DIAS_GRACIA * 24 * 60 * 60 * 1000));
-            const vencido = hoy > fechaLimiteConGracia;
+            const etiquetaMes = labelMes(fechaVencimiento);
+            const vencido = hoy >= fechaInicioMora;
 
             if (vencido && !pagadosSet.has(etiquetaMes) && !morasSet.has(etiquetaMes)) {
                 const msPorDia = 1000 * 60 * 60 * 24;
-                const diasRetraso = Math.max(Math.floor((hoy - fechaLimiteConGracia) / msPorDia), 1);
+                const diasRetraso = Math.max(Math.floor((hoy - fechaVencimiento) / msPorDia), 1);
                 const moraCalculada = moraContrato > 0
                     ? Number(moraContrato.toFixed(2))
                     : 0;
@@ -365,7 +392,7 @@ const calcularMorasAutomaticas = async () => {
                 morasSet.add(etiquetaMes);
             }
 
-            cursor.setMonth(cursor.getMonth() + 1);
+            numeroCuota += 1;
         }
     });
 
@@ -402,7 +429,11 @@ router.get("/", (req, res) => {
 
 router.post('/generar-automatico', async (req, res) => {
     try {
-        const data = await calcularMorasAutomaticas();
+        const idContratoSolicitado = Number(req.body?.id_contrato || 0);
+        const idContrato = Number.isInteger(idContratoSolicitado) && idContratoSolicitado > 0
+            ? idContratoSolicitado
+            : null;
+        const data = await calcularMorasAutomaticas(idContrato);
         return res.status(200).json({
             success: true,
             message: 'Generación automática de mora finalizada',

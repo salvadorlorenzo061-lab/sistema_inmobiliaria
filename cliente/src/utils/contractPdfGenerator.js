@@ -96,7 +96,14 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   };
 
   /* ═══ Datos del contrato ═══ */
-  const fechaFirmaObj = datosContrato.fecha_firma ? new Date(datosContrato.fecha_firma) : new Date();
+  const parseFechaLocal = (value, fallback) => {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : fallback;
+  };
+  const fechaFirmaObj = parseFechaLocal(datosContrato.fecha_firma, new Date());
+  const fechaCompraObj = parseFechaLocal(datosContrato.fecha_compra, fechaFirmaObj);
   const diaFirma  = datosContrato.dia_firma  || fechaFirmaObj.getDate();
   const mesFirma  = datosContrato.mes_firma  || (fechaFirmaObj.getMonth()+1);
   const anioFirma = datosContrato.anio_firma || fechaFirmaObj.getFullYear();
@@ -149,7 +156,8 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   const vCuota    = parseFloat(datosContrato.monto_cuota)        || parseFloat((capRest/nCuotas).toFixed(2));
   const ultCuota  = parseFloat((totalCInt - vCuota*(nCuotas-1)).toFixed(2));
   const mora      = parseFloat(datosContrato.mora)               || 600;
-  const diaPago   = datosContrato.dia_pago_limite                || '5';
+  const diasGracia = Number(datosContrato.dia_pago_limite ?? 5);
+  const diaVencimiento = fechaCompraObj.getDate();
   const plazo     = parseInt(datosContrato.plazo_meses)          || 60;
   const pctDominio= parseInt(datosContrato.porcentaje_dominio)   || 80;
   const mesInicio = datosContrato.mes_inicio_pagos               || '7';
@@ -227,9 +235,10 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
     `El capital restante con intereses es de ${monedaLetras(totalCInt).toUpperCase()} (Q. ${fmt(totalCInt)}). E) DE LA FORMA DE PAGO. ` +
     `"LA PARTE COMPRADORA" cancelara en ${numeroALetras(nCuotas-1).toUpperCase()} CUOTAS de ${monedaLetras(vCuota).toUpperCase()} (Q. ${fmt(vCuota)}) ` +
     `cada una y UNA ULTIMA cuota de ${monedaLetras(ultCuota).toUpperCase()} (Q ${fmt(ultCuota)}), sin necesidad de cobro ni requerimiento alguno. ` +
-    `F) EL LUGAR DE PAGO. El pago se realizará el día ${numeroALetras(parseInt(diaPago)).toUpperCase()} de cada mes a partir del mes de ` +
+    `F) EL LUGAR DE PAGO. El pago vencerá el día ${numeroALetras(diaVencimiento).toUpperCase()} de cada mes a partir del mes de ` +
     `${mesLetras(mesInicio)} del año ${anioLetras(anioIni)}, sin necesidad de cobro ni requerimiento alguno hasta solventar completamente la obligación ` +
-    `contraída; y en caso de incumplimiento de uno o más abonos consecutivos da derecho a "LA PARTE VENDEDORA" a cobrar una MORA de ` +
+    `contraída. "LA PARTE COMPRADORA" tendrá ${numeroALetras(diasGracia).toUpperCase()} días adicionales de gracia después de cada vencimiento; ` +
+    `transcurrido ese plazo, el incumplimiento de uno o más abonos consecutivos da derecho a "LA PARTE VENDEDORA" a cobrar una MORA de ` +
     `${monedaLetras(mora).toUpperCase()} (Q.${fmt(mora)}) POR CADA MES VENCIDO HASTA PONERSE AL DÍA. G) EL PLAZO. El plazo del presente contrato ` +
     `es de ${numeroALetras(plazo).toUpperCase()} MESES, a partir de la fecha de inicio de los pagos como fecha límite para cumplir con lo establecido ` +
     `y que puede ser prorrogado según convenga a los intereses de "LA PARTE VENDEDORA". H) "LA PARTE COMPRADORA" podrá hacer abonos a capital. ` +

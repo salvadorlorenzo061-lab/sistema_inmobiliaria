@@ -155,6 +155,36 @@ const esMesVencidoParaMora = (mesTexto = '') => {
     return false;
 };
 
+const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => {
+    const matchFecha = String(fechaContratoRaw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const fechaContrato = matchFecha
+        ? new Date(Number(matchFecha[1]), Number(matchFecha[2]) - 1, Number(matchFecha[3]))
+        : (fechaContratoRaw ? new Date(fechaContratoRaw) : null);
+    const mesCuota = parsearEtiquetaMes(mesTexto);
+    if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return false;
+    if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return false;
+
+    const primerMesCuota = new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
+    const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
+    if (mesEvaluado < primerMesCuota) return false;
+
+    const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
+    const fechaVencimiento = new Date(
+        mesCuota.getFullYear(),
+        mesCuota.getMonth(),
+        Math.min(fechaContrato.getDate(), ultimoDiaMes)
+    );
+    const diasGracia = Math.max(0, Math.min(31, Number(diasGraciaRaw ?? 5)));
+    const fechaInicioMora = new Date(
+        fechaVencimiento.getFullYear(),
+        fechaVencimiento.getMonth(),
+        fechaVencimiento.getDate()
+    );
+    fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia + 2);
+
+    return new Date() >= fechaInicioMora;
+};
+
 const obtenerNumeroCuotaDesdeFechas = (fechaInicioContrato, fechaMes) => {
     if (!(fechaInicioContrato instanceof Date) || Number.isNaN(fechaInicioContrato.getTime())) return null;
     if (!(fechaMes instanceof Date) || Number.isNaN(fechaMes.getTime())) return null;
@@ -1004,7 +1034,10 @@ router.get("/meses-pendientes", (req, res) => {
         const fechaFirmaRaw = contratoResult[0].fecha_firma;
 
         const parseFechaValida = (value) => {
-            const parsed = value ? new Date(value) : null;
+            const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+            const parsed = match
+                ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+                : (value ? new Date(value) : null);
             return parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : null;
         };
 
@@ -1430,7 +1463,9 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
                                      WHEN COALESCE(c.mora, 0) > 0 THEN COALESCE(c.mora, 0)
                                      ELSE m.monto_mora
                              END AS monto_mora,
-                             m.estado
+                                 m.estado,
+                                 COALESCE(c.fecha_compra, c.fecha_firma) AS fecha_contrato,
+                                 COALESCE(c.dia_pago_limite, 5) AS dias_gracia
                 FROM morosidad m
                 INNER JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
                 WHERE m.id_contrato = ?
@@ -1447,7 +1482,9 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
             return res.status(500).send({ message: 'No se pudieron obtener las moras pendientes.' });
         }
 
-        const moras = (rows || []).map((row) => ({
+        const moras = (rows || [])
+        .filter((row) => esMoraContractualVencida(row.mes_atrasado, row.fecha_contrato, row.dias_gracia))
+        .map((row) => ({
             id_morosidad: Number(row.id_morosidad || 0),
             id_contrato: Number(row.id_contrato || 0),
             mes_atrasado: String(row.mes_atrasado || ''),
