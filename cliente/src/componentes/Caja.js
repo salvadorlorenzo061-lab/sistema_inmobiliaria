@@ -499,14 +499,19 @@ const Caja = () => {
             return [];
         }
 
-        return morasPendientes.filter((mora) => {
-            const mesMora = String(mora?.mes_atrasado || '').trim();
-            if (!mesMora || !esMesVencidoParaMoraLocal(mesMora)) {
-                return false;
-            }
+        return mesesFinanciados.reduce((morasAplicables, mesSeleccionado) => {
+            const moraMes = morasPendientes.find((mora) => {
+                const mesMora = String(mora?.mes_atrasado || '').trim();
+                return mesMora
+                    && esMesVencidoParaMoraLocal(mesMora)
+                    && compararMesesMoraLocal(mesSeleccionado, mesMora);
+            });
 
-            return mesesFinanciados.some((mesSeleccionado) => compararMesesMoraLocal(mesSeleccionado, mesMora));
-        });
+            if (moraMes) {
+                morasAplicables.push(moraMes);
+            }
+            return morasAplicables;
+        }, []);
     };
 
     const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
