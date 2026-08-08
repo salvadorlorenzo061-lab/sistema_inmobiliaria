@@ -2185,9 +2185,6 @@ const Caja = () => {
                                                                 return (
                                                                     <div className="text-end">
                                                                         <span className="badge bg-primary fs-6">Q{desglose.total.toFixed(2)}</span>
-                                                                        <div className="small text-muted mt-1">
-                                                                            Cuota Q{desglose.cuota.toFixed(2)} + Mora Q{desglose.mora.toFixed(2)} + Interés Q{desglose.interes.toFixed(2)} + Servicio Q{desglose.servicios.toFixed(2)} = Total Q{desglose.total.toFixed(2)}
-                                                                        </div>
                                                                     </div>
                                                                 );
                                                             })()}
