@@ -249,9 +249,9 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
                 0
             ));
             const cuotasPagadasReales = Math.max(parseInt(pagos.cuotas_pagadas || 0, 10), 0);
-            const cuotaSiguiente = cuotasTotales > 0
-                ? Math.min(cuotasPagadasReales + 1, cuotasTotales)
-                : 1;
+            const cuotaSiguiente = enganchePendiente > 0.01
+                ? 0
+                : (cuotasTotales > 0 ? Math.min(cuotasPagadasReales + 1, cuotasTotales) : 1);
 
             const payload = {
                 id_contrato: contrato.id_contrato,
@@ -267,6 +267,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
                 enganche_pagado: enganchePagado,
                 enganche_pendiente: enganchePendiente,
                 estado_enganche: engancheContrato <= 0 || enganchePendiente <= 0.01 ? 'PAGADO' : 'PENDIENTE DE PAGO',
+                numero_cuota_enganche: 0,
                 capital_pagado: round2(capitalPagado),
                 interes_anual: round2(toNumber(contrato.interes_porcentaje, 14)),
                 cuotas_totales: cuotasTotales,

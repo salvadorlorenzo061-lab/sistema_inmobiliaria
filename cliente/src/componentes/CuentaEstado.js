@@ -402,15 +402,17 @@ const CuentaEstado = () => {
                       <p className="mb-1"><strong>Residente:</strong> {contrato.nombre_residente}</p>
                       <p className="mb-1"><strong>Contrato:</strong> {contrato.codigo_contrato}</p>
                       <p className="mb-1"><strong>Precio total terreno:</strong> {formatoMoneda(contrato.precio_total_terreno)}</p>
-                      <p className="mb-1"><strong>Enganche establecido:</strong> {formatoMoneda(contrato.enganche_registrado)}</p>
-                      <p className="mb-1"><strong>Enganche pagado:</strong> {formatoMoneda(contrato.enganche_pagado)}</p>
-                      <p className="mb-1"><strong>Enganche pendiente:</strong> {formatoMoneda(contrato.enganche_pendiente)}</p>
-                      <p className="mb-1">
-                        <strong>Estado del enganche:</strong>{' '}
-                        <span className={`badge ${contrato.estado_enganche === 'PAGADO' ? 'bg-success' : 'bg-warning text-dark'}`}>
-                          {contrato.estado_enganche || 'PENDIENTE DE PAGO'}
-                        </span>
-                      </p>
+                      <div className={`alert ${contrato.estado_enganche === 'PAGADO' ? 'alert-success' : 'alert-warning'} py-2 px-3 my-2`}>
+                        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                          <strong>Cuota inicial 0 - Enganche: {formatoMoneda(contrato.enganche_registrado)}</strong>
+                          <span className={`badge ${contrato.estado_enganche === 'PAGADO' ? 'bg-success' : 'bg-warning text-dark'}`}>
+                            {contrato.estado_enganche || 'PENDIENTE DE PAGO'}
+                          </span>
+                        </div>
+                        <div className="small mt-1">
+                          Pagado real: {formatoMoneda(contrato.enganche_pagado)} | Pendiente: {formatoMoneda(contrato.enganche_pendiente)}
+                        </div>
+                      </div>
                       <p className="mb-1"><strong>Capital inicial financiado:</strong> {formatoMoneda(contrato.capital_inicial_financiado)}</p>
                       <p className="mb-1"><strong>Cuotas pagadas (historico):</strong> {contrato.cuotas_pagadas}</p>
                       <p className="mb-1"><strong>Cuota siguiente:</strong> {contrato.cuota_siguiente}</p>
@@ -424,9 +426,9 @@ const CuentaEstado = () => {
                     <div className="card-header bg-info text-dark">Ejemplo rapido de capital</div>
                     <div className="card-body">
                       <p className="mb-1">Precio terreno: <strong>{formatoMoneda(resumenEjemplo.precio)}</strong></p>
-                      <p className="mb-1">Enganche establecido: <strong>{formatoMoneda(resumenEjemplo.enganche)}</strong></p>
-                      <p className="mb-1">Pagado: <strong>{formatoMoneda(contrato.enganche_pagado)}</strong></p>
-                      <p className="mb-1">Pendiente: <strong>{formatoMoneda(contrato.enganche_pendiente)}</strong></p>
+                      <p className="mb-1">Cuota inicial 0 - Enganche: <strong>{formatoMoneda(resumenEjemplo.enganche)}</strong></p>
+                      <p className="mb-1">Estado: <strong className={contrato.estado_enganche === 'PAGADO' ? 'text-success' : 'text-warning'}>{contrato.estado_enganche || 'PENDIENTE DE PAGO'}</strong></p>
+                      <p className="mb-1">Pendiente de cuota 0: <strong>{formatoMoneda(contrato.enganche_pendiente)}</strong></p>
                       <p className="mb-0">Capital inicial: <strong>{formatoMoneda(contrato.capital_inicial_financiado || resumenEjemplo.capital)}</strong></p>
                     </div>
                   </div>
