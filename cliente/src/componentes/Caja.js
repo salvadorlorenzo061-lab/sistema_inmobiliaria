@@ -1566,6 +1566,15 @@ const Caja = () => {
         return idx >= 0 ? idx + 1 : null;
     };
 
+    const obtenerNumeroCuotaRealMesVista = (mesEtiqueta = '') => {
+        const numeroMap = Number(mesesDetalleMap?.[mesEtiqueta] || 0);
+        if (Number.isInteger(numeroMap) && numeroMap > 0) {
+            return numeroMap;
+        }
+        const idx = (mesesPendientes || []).indexOf(mesEtiqueta);
+        return idx >= 0 ? idx + 1 : null;
+    };
+
     const primerMesSeleccionado = mesesSeleccionados.length ? mesesSeleccionados[0] : '';
     const numeroCuotaPrimerMes = obtenerNumeroCuotaMesVista(primerMesSeleccionado);
     const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
@@ -2141,7 +2150,7 @@ const Caja = () => {
                                                             />
                                                             <div className="flex-grow-1">
                                                                 <span className="fw-bold fs-5 text-dark">
-                                                                    {getEtiquetaCuotaMes(mes, obtenerNumeroCuotaMesVista(mes))}
+                                                                    {getEtiquetaCuotaMes(mes, obtenerNumeroCuotaRealMesVista(mes))}
                                                                 </span>
                                                             </div>
                                                             {(() => {

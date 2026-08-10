@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfGenerator';
+import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 import PdfPreview from './PdfPreview';
 
 function Contratos_Residentes() {
@@ -603,6 +604,101 @@ function Contratos_Residentes() {
     }
   };
 
+  const generarFiniquito = async (contrato) => {
+    const confirmacion = await Swal.fire({
+      icon: 'warning',
+      title: 'Confirmar solvencia total',
+      html: `El finiquito declara que el contrato <strong>${contrato.codigo_contrato}</strong> esta totalmente pagado. Confirma esta informacion con Caja y Estado de Cuenta antes de generarlo.`,
+      showCancelButton: true,
+      confirmButtonText: 'Confirmar y generar',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (!confirmacion.isConfirmed) return;
+
+    try {
+      descargarPdfFiniquito(contrato);
+      Swal.fire({ icon: 'success', title: 'Finiquito generado', text: 'El PDF quedo listo para revision y firma.' });
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'No se pudo generar', text: 'Ocurrio un error al preparar el finiquito.' });
+    }
+  };
+
+  const subirFiniquito = async (contrato, forzarReemplazo = false) => {
+    const inputResultado = await Swal.fire({
+      title: forzarReemplazo ? 'Reemplazar finiquito firmado' : 'Subir finiquito firmado',
+      text: 'Adjunta el finiquito revisado y firmado. El archivo del contrato no sera modificado.',
+      input: 'file',
+      inputAttributes: { 'aria-label': 'Seleccionar finiquito firmado' },
+      showCancelButton: true,
+      confirmButtonText: forzarReemplazo ? 'Reemplazar finiquito' : 'Subir finiquito',
+      cancelButtonText: 'Cancelar'
+    });
+
+    const archivo = inputResultado.value;
+    if (!archivo) return;
+    if (archivo.size > 15 * 1024 * 1024) {
+      Swal.fire({ icon: 'warning', title: 'Archivo muy grande', text: 'El finiquito no puede superar 15 MB.' });
+      return;
+    }
+
+    const guardarArchivo = async (reemplazar) => {
+      const formData = new FormData();
+      formData.append('archivo', archivo);
+      if (reemplazar) formData.append('replace_existing', '1');
+      return Axios.post(`${API_URL}/subir-finiquito/${contrato.id_contrato}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    };
+
+    try {
+      await guardarArchivo(forzarReemplazo);
+      await cargarCatalogos();
+      Swal.fire({ icon: 'success', title: 'Finiquito guardado', text: `${archivo.name} quedo asociado al contrato.` });
+    } catch (error) {
+      if (Number(error?.response?.status || 0) === 409 && !forzarReemplazo) {
+        const reemplazo = await Swal.fire({
+          icon: 'question',
+          title: 'Ya existe un finiquito',
+          text: 'Deseas reemplazar el finiquito firmado existente?',
+          showCancelButton: true,
+          confirmButtonText: 'Si, reemplazar',
+          cancelButtonText: 'Cancelar'
+        });
+        if (!reemplazo.isConfirmed) return;
+        try {
+          await guardarArchivo(true);
+          await cargarCatalogos();
+          Swal.fire({ icon: 'success', title: 'Finiquito reemplazado' });
+        } catch (replaceError) {
+          Swal.fire({ icon: 'error', title: 'No se pudo reemplazar', text: replaceError?.response?.data?.message || 'Error al guardar el finiquito.' });
+        }
+        return;
+      }
+      Swal.fire({ icon: 'error', title: 'No se pudo guardar', text: error?.response?.data?.message || 'Error al subir el finiquito.' });
+    }
+  };
+
+  const descargarFiniquito = async (contrato) => {
+    try {
+      const response = await Axios.get(`${API_URL}/descargar-finiquito/${contrato.id_contrato}`, { responseType: 'blob' });
+      const disposition = String(response.headers?.['content-disposition'] || '');
+      const matchUtf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      const matchSimple = disposition.match(/filename="?([^";]+)"?/i);
+      const nombre = decodeURIComponent(matchUtf8?.[1] || matchSimple?.[1] || `Finiquito_${contrato.codigo_contrato}.pdf`);
+      const url = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = nombre;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      Swal.fire({ icon: 'warning', title: 'No se pudo descargar', text: error?.response?.data?.message || 'Este contrato no tiene finiquito firmado.' });
+    }
+  };
+
   const abrirEditarModal = (val) => {
     const proyectoResuelto = resolverProyectoContrato(val);
 
@@ -659,6 +755,22 @@ function Contratos_Residentes() {
     }
     if (accion === 'descargar_archivo') {
       descargarArchivoContrato(contrato);
+      return;
+    }
+    if (accion === 'generar_finiquito') {
+      generarFiniquito(contrato);
+      return;
+    }
+    if (accion === 'subir_finiquito') {
+      subirFiniquito(contrato, false);
+      return;
+    }
+    if (accion === 'reemplazar_finiquito') {
+      subirFiniquito(contrato, true);
+      return;
+    }
+    if (accion === 'descargar_finiquito') {
+      descargarFiniquito(contrato);
     }
   };
 
@@ -779,6 +891,15 @@ function Contratos_Residentes() {
                       📎 {truncarTexto(obtenerNombreDocumentoContrato(val.documento_contrato), 22)}
                     </div>
                   )}
+                  {!!val.nombre_finiquito && (
+                    <div
+                      className="small text-primary fw-semibold mb-1"
+                      title={val.nombre_finiquito}
+                      style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    >
+                      Finiquito: {truncarTexto(val.nombre_finiquito, 18)}
+                    </div>
+                  )}
                   <select
                     className="form-select form-select-sm"
                     defaultValue=""
@@ -795,6 +916,10 @@ function Contratos_Residentes() {
                     <option value="subir_archivo">Subir archivo</option>
                     <option value="reemplazar_archivo">Reemplazar archivo</option>
                     <option value="descargar_archivo">Descargar archivo</option>
+                    <option value="generar_finiquito">Generar finiquito PDF</option>
+                    <option value="subir_finiquito">Subir finiquito firmado</option>
+                    <option value="reemplazar_finiquito">Reemplazar finiquito</option>
+                    <option value="descargar_finiquito">Descargar finiquito</option>
                     <option value="borrar">Borrar</option>
                   </select>
                 </td>
