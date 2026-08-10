@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { jsPDF } from 'jspdf';
 import { API_BASE_URL } from '../config';
+import {
+  buildConsolidatedInvoiceRows,
+  normalizeImageDataUrl,
+  renderFacturaComprobante
+} from '../utils/facturaPdf';
 
 const ReporteFacturas = () => {
   const [criterio, setCriterio] = useState('');
@@ -10,6 +16,7 @@ const ReporteFacturas = () => {
   const [estado, setEstado] = useState('TODAS');
   const [facturas, setFacturas] = useState([]);
   const [cargando, setCargando] = useState(false);
+  const [documentoDescargando, setDocumentoDescargando] = useState('');
   const [busquedaRealizada, setBusquedaRealizada] = useState(false);
 
   const mostrarToast = (mensaje, icon = 'info') => Swal.fire({
@@ -56,12 +63,72 @@ const ReporteFacturas = () => {
     setBusquedaRealizada(false);
   };
 
-  const abrirFactura = (factura) => {
-    const params = new URLSearchParams({
-      buscar: String(factura?.id_pago || ''),
-      estado: String(factura?.estado_factura || 'EMITIDA').toUpperCase()
-    });
-    window.location.href = `/pagos_detalle?${params.toString()}`;
+  const descargarFactura = async (factura) => {
+    const idPago = Number(factura?.id_pago || 0);
+    const estadoFactura = String(factura?.estado_factura || 'EMITIDA').toUpperCase();
+    const claveDocumento = `${idPago}-${estadoFactura}`;
+
+    if (!idPago) {
+      mostrarToast('No se encontró el identificador del documento.', 'warning');
+      return;
+    }
+
+    setDocumentoDescargando(claveDocumento);
+    try {
+      const { data: documento } = await axios.get(`${API_BASE_URL}/api/pagos_detalle/documento/${idPago}`, {
+        params: { estado_factura: estadoFactura }
+      });
+      const detalles = Array.isArray(documento?.detalles) ? documento.detalles : [];
+      const filas = buildConsolidatedInvoiceRows(detalles, {
+        usarCuotaCeroEnganche: Number(documento?.contrato?.enganche || 0) > 0
+      });
+      const totalDocumento = detalles.reduce((sum, detalle) => sum + Number(detalle?.subtotal || 0), 0);
+      const correlativo = String(documento?.correlativo || factura?.correlativo || `Pago-${idPago}`);
+      const fechaDocumento = documento?.fecha_evento ? new Date(documento.fecha_evento) : new Date();
+      const logo = normalizeImageDataUrl(documento?.empresa?.logo_empresa || documento?.empresa?.logo_proyecto || '');
+      const doc = new jsPDF();
+
+      renderFacturaComprobante(doc, {
+        logo,
+        empresa: {
+          nombre: documento?.empresa?.nombre_empresa,
+          nit: documento?.empresa?.nit_empresa,
+          pais: documento?.empresa?.pais,
+          moneda: documento?.empresa?.moneda
+        },
+        documentoNo: correlativo,
+        fechaEmision: Number.isNaN(fechaDocumento.getTime()) ? new Date() : fechaDocumento,
+        cliente: {
+          nombre: documento?.cliente?.nombre_residente,
+          direccion: documento?.cliente?.direccion_notificacion,
+          identificacion: documento?.cliente?.numero_identificacion,
+          dpi: documento?.cliente?.dpi,
+          nit: documento?.cliente?.nit
+        },
+        contrato: documento?.contrato?.codigo_contrato,
+        pago: {
+          metodo: documento?.metodo_pago,
+          referencia: correlativo,
+          banco: documento?.banco_pago,
+          fechaOperacion: documento?.fecha_operacion,
+          boletaReferencia: documento?.boleta_referencia
+        },
+        filas,
+        resumen: [
+          { label: 'Subtotal deuda pagada', valor: totalDocumento },
+          { label: 'Total Cobrado', valor: totalDocumento, bold: true }
+        ],
+        anulada: estadoFactura === 'ANULADA'
+      });
+
+      const nombreSeguro = correlativo.replace(/[^A-Za-z0-9_-]/g, '_');
+      doc.save(`Factura_${estadoFactura}_${nombreSeguro}.pdf`);
+      mostrarToast(`Factura ${estadoFactura.toLowerCase()} descargada.`, 'success');
+    } catch (error) {
+      mostrarToast(error?.response?.data?.message || 'No se pudo descargar la factura histórica.', 'error');
+    } finally {
+      setDocumentoDescargando('');
+    }
   };
 
   return (
@@ -132,8 +199,11 @@ const ReporteFacturas = () => {
               </tr>
             </thead>
             <tbody>
-              {facturas.map((factura) => (
-                <tr key={`${factura.id_pago}-${factura.estado_factura}`}>
+              {facturas.map((factura, index) => {
+                const claveDocumento = `${factura.id_pago}-${String(factura.estado_factura || 'EMITIDA').toUpperCase()}`;
+                const descargando = documentoDescargando === claveDocumento;
+                return (
+                <tr key={`${claveDocumento}-${factura.fecha_evento || index}`}>
                   <td>
                     {factura.cuota_inicio != null ? `Cuota ${factura.cuota_inicio}` : 'Cuota 0'}
                     <div className="small text-muted">{factura.meses_pagados || 'Sin mes registrado'}</div>
@@ -150,12 +220,17 @@ const ReporteFacturas = () => {
                   </td>
                   <td className="text-end fw-bold">Q{Number(factura.total_documento || 0).toFixed(2)}</td>
                   <td>
-                    <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => abrirFactura(factura)}>
-                      Ver PDF
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      onClick={() => descargarFactura(factura)}
+                      disabled={Boolean(documentoDescargando)}
+                    >
+                      {descargando ? 'Descargando...' : 'Descargar PDF'}
                     </button>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
