@@ -64,7 +64,7 @@ function Convenio() {
     const montoOriginalNum = Number(monto_original || 0);
     const cuotasNum = Number(cuotas_pactadas || 0);
     if (montoOriginalNum > 0 && cuotasNum > 0) {
-      setMontoCuota((montoOriginalNum / cuotasNum).toFixed(2));
+      setMontoCuota(String(Math.round(montoOriginalNum / cuotasNum)));
     } else {
       setMontoCuota('');
     }
@@ -266,10 +266,10 @@ function Convenio() {
         body: [
           ['Fecha convenio', item?.fecha_convenio ? new Date(item.fecha_convenio).toLocaleDateString('es-GT') : 'N/A'],
           ['Fecha inicio pagos', item?.fecha_inicio ? new Date(item.fecha_inicio).toLocaleDateString('es-GT') : 'N/A'],
-          ['Monto original', `Q${montoOriginalNum.toFixed(2)}`],
-          ['Saldo actual', `Q${saldoActualNum.toFixed(2)}`],
+          ['Monto original', `Q${Math.round(montoOriginalNum)}`],
+          ['Saldo actual', `Q${Math.round(saldoActualNum)}`],
           ['Cuotas pactadas', String(cuotasNum || 0)],
-          ['Monto por cuota', `Q${cuotaNum.toFixed(2)}`],
+          ['Monto por cuota', `Q${Math.round(cuotaNum)}`],
           ['Observaciones', String(item?.observaciones || 'Sin observaciones')]
         ],
         theme: 'grid',
@@ -281,12 +281,14 @@ function Convenio() {
         const planRows = [];
         let saldoProyectado = montoOriginalNum;
         for (let i = 1; i <= cuotasNum; i += 1) {
-          const pagoCuota = Math.min(cuotaNum, Math.max(saldoProyectado, 0));
-          saldoProyectado = Math.max(saldoProyectado - pagoCuota, 0);
+          const pagoCuota = i === cuotasNum
+            ? Math.max(saldoProyectado, 0)
+            : Math.min(Math.round(cuotaNum), Math.max(saldoProyectado, 0));
+          saldoProyectado = Math.round(Math.max(saldoProyectado - pagoCuota, 0));
           planRows.push([
             String(i),
-            `Q${pagoCuota.toFixed(2)}`,
-            `Q${saldoProyectado.toFixed(2)}`
+            `Q${Math.round(pagoCuota)}`,
+            `Q${saldoProyectado}`
           ]);
         }
 
@@ -389,10 +391,10 @@ function Convenio() {
                 <small className="text-muted">{item.numero_identificacion || 'Sin clave'}</small>
               </td>
               <td>{item.fecha_convenio ? new Date(item.fecha_convenio).toLocaleDateString('es-GT') : '-'}</td>
-              <td className="fw-bold text-primary">Q{Number(item.monto_original || 0).toFixed(2)}</td>
-              <td className="fw-bold text-danger">Q{Number(item.saldo_actual || 0).toFixed(2)}</td>
+              <td className="fw-bold text-primary">Q{Math.round(Number(item.monto_original || 0))}</td>
+              <td className="fw-bold text-danger">Q{Math.round(Number(item.saldo_actual || 0))}</td>
               <td>{item.cuotas_pactadas}</td>
-              <td>Q{Number(item.monto_cuota || 0).toFixed(2)}</td>
+              <td>Q{Math.round(Number(item.monto_cuota || 0))}</td>
               <td>
                 <span className={`badge bg-${getBadgeEstadoConvenio(resolverEstadoVisualConvenio(item))}`}>
                   {resolverEstadoVisualConvenio(item).toUpperCase()}

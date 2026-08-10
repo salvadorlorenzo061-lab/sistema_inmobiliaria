@@ -1833,14 +1833,14 @@ const Caja = () => {
                                 <div><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</div>
                             </div>
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
-                                <div><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</div>
-                                <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
-                                <div><strong>Capital financiado:</strong> Q{planFinancieroContrato.capitalBaseInteres.toFixed(2)}</div>
-                                <div><strong>Cuota 0:</strong> Enganche Q{enganchePendienteContrato.toFixed(2)}</div>
-                                <div><strong>Capital por cuota:</strong> Q{capitalPorCuotaRegular.toFixed(2)}</div>
+                                <div><strong>Saldo pendiente:</strong> Q{Math.round(totalContratoConInteres)}</div>
+                                <div><strong>Capital pendiente:</strong> Q{Math.round(getSaldoDisplay(datosDeuda?.saldo_pendiente))}</div>
+                                <div><strong>Capital financiado:</strong> Q{Math.round(planFinancieroContrato.capitalBaseInteres)}</div>
+                                <div><strong>Cuota 0:</strong> Enganche Q{Math.round(enganchePendienteContrato)}</div>
+                                <div><strong>Capital por cuota:</strong> Q{Math.round(capitalPorCuotaRegular)}</div>
                                 <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
-                                <div><strong>Interés por cuota:</strong> Q{interesPorCuotaRegular.toFixed(2)}</div>
-                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{cuotaRegularSinDecimales.toFixed(2)}</div>
+                                <div><strong>Interés por cuota:</strong> Q{Math.round(interesPorCuotaRegular)}</div>
+                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{Math.round(cuotaRegularSinDecimales)}</div>
                             </div>
                         </div>
                         <hr />
@@ -1898,9 +1898,9 @@ const Caja = () => {
                                         <div className="col-md-6 text-end">
                                             <small><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
                                             <small><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
-                                            <small><strong>Cuota fija:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</small><br />
-                                            <small><strong>Interés por cuota:</strong> Q{interesMensualSeleccionado.toFixed(2)}</small><br />
-                                            <small><strong>Cuota con interés:</strong> Q{planFinancieroContrato.cuotaTotalConInteres.toFixed(2)}</small><br />
+                                            <small><strong>Cuota fija:</strong> Q{Math.round(planFinancieroContrato.capitalPorCuota)}</small><br />
+                                            <small><strong>Interés por cuota:</strong> Q{Math.round(interesMensualSeleccionado)}</small><br />
+                                            <small><strong>Cuota con interés:</strong> Q{Math.round(planFinancieroContrato.cuotaTotalConInteres)}</small><br />
                                             <small><strong>Mora aplicada:</strong> Q{montoMoraActual.toFixed(2)}</small>
                                         </div>
                                     </div>
@@ -1983,9 +1983,9 @@ const Caja = () => {
                                     {/* Monto fijo y total a pagar */}
                                     <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{capitalPorCuotaRegular.toFixed(2)}
+                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{Math.round(capitalPorCuotaRegular)}
                                             <br />
-                                            <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{interesMensualSeleccionado.toFixed(2)} / cuota
+                                            <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{Math.round(interesMensualSeleccionado)} / cuota
                                             <br />
                                             <strong>Cuota 0 (enganche):</strong> Q{enganchePendienteContrato.toFixed(2)}
                                             <br />
@@ -2148,7 +2148,7 @@ const Caja = () => {
                                                                 const desglose = obtenerDesgloseCuotaMesVista(mes);
                                                                 return (
                                                                     <div className="text-end">
-                                                                        <span className="badge bg-primary fs-6">Q{desglose.total.toFixed(2)}</span>
+                                                                        <span className="badge bg-primary fs-6">Q{Math.round(desglose.total)}</span>
                                                                     </div>
                                                                 );
                                                             })()}
@@ -2166,7 +2166,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Resumen:</strong> Terreno Q{montoTerrenoSeleccionado.toFixed(2)} + Enganche Q{montoEngancheContratoAplicado.toFixed(2)} + Abono capital Q{montoEngancheSeleccionado.toFixed(2)} + Interés Q{montoInteresSeleccionado.toFixed(2)} + Servicios Q{montoServiciosSeleccionado.toFixed(2)} + Mora Q{moraTotalDistribuidaVista.toFixed(2)} = Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
+                                                <strong>Resumen:</strong> Terreno Q{Math.round(montoTerrenoSeleccionado)} + Enganche Q{Math.round(montoEngancheContratoAplicado)} + Abono capital Q{Math.round(montoEngancheSeleccionado)} + Interés Q{Math.round(montoInteresSeleccionado)} + Servicios Q{Math.round(montoServiciosSeleccionado)} + Mora Q{Math.round(moraTotalDistribuidaVista)} = Q{Math.round(montoTotalSeleccionado + moraTotalDistribuidaVista)}
                                             </div>
                                         )}
                                     </div>
