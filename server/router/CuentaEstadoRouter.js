@@ -28,7 +28,7 @@ const calcularLiquidacionCapital = ({
     cuotas_pagadas,
     cuota_objetivo
 }) => {
-    const capitalRestante = Math.max(toNumber(capital_restante, 0), 0);
+    const capitalRestante = Math.round(Math.max(toNumber(capital_restante, 0), 0));
     const interesAnual = Math.max(toNumber(interes_anual, 0), 0);
     const cuotasTotales = Math.max(parseInt(cuotas_totales || 0, 10), 0);
 
@@ -53,23 +53,23 @@ const calcularLiquidacionCapital = ({
         return principal * ((tasa * factor) / denominador);
     };
 
-    const cuotaMensual = round2(calcularCuotaFija(capitalRestante, tasaMensual, mesesPendientes));
+    const cuotaMensual = Math.round(calcularCuotaFija(capitalRestante, tasaMensual, mesesPendientes));
     const tablaAmortizacion = [];
-    let saldo = round2(capitalRestante);
+    let saldo = capitalRestante;
     let interesAcumulado = 0;
     let totalPagos = 0;
 
     for (let indice = 1; indice <= mesesPendientes; indice += 1) {
         const esUltima = indice === mesesPendientes;
-        const interesMes = round2(saldo * tasaMensual);
+        const interesMes = Math.round(saldo * tasaMensual);
         const capitalCuota = esUltima
             ? saldo
-            : round2(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
-        const pagoMes = round2(capitalCuota + interesMes);
-        const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
+            : Math.round(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
+        const pagoMes = Math.round(capitalCuota + interesMes);
+        const saldoFinal = Math.round(Math.max(saldo - capitalCuota, 0));
 
-        interesAcumulado = round2(interesAcumulado + interesMes);
-        totalPagos = round2(totalPagos + pagoMes);
+        interesAcumulado = Math.round(interesAcumulado + interesMes);
+        totalPagos = Math.round(totalPagos + pagoMes);
         tablaAmortizacion.push({
             indice,
             numero_cuota: cuotasPagadasBase + indice,
@@ -409,7 +409,7 @@ router.post('/generar-plan-caja', async (req, res) => {
             });
         }
 
-        const montoCuota = round2(capitalRestante / cuotasPactadas);
+        const montoCuota = Math.round(capitalRestante / cuotasPactadas);
         const fechaInicioContrato = contratoRows[0].fecha_compra || contratoRows[0].fecha_firma || fechaInicio;
         const observaciones = `Plan generado desde Cuenta Estado Capital. Se conservan los nombres Cuota 1 a Cuota ${cuotasPactadas} y los meses/años desde la fecha contractual. Capital Q${capitalRestante.toFixed(2)} en ${cuotasPactadas} cuotas. El interes proyectado permanece informativo y no se capitaliza en el saldo.`;
         const insertResult = await queryAsync(`

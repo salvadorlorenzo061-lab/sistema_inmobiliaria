@@ -13,7 +13,7 @@ const toNumber = (value, fallback = 0) => {
 
 const formatoMoneda = (value) => {
   const numero = toNumber(value, 0);
-  return `Q ${numero.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `Q ${Math.round(numero).toLocaleString('es-GT', { maximumFractionDigits: 0 })}`;
 };
 
 const round2 = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
@@ -25,7 +25,7 @@ const construirSimulacionLocal = ({
   cuotas_pagadas,
   cuota_objetivo
 }) => {
-  const capitalRestante = round2(Math.max(toNumber(capital_restante, 0), 0));
+  const capitalRestante = Math.round(Math.max(toNumber(capital_restante, 0), 0));
   const interes = Math.max(toNumber(interes_anual, 0), 0);
   const cuotasTotalesNumero = Math.max(parseInt(cuotas_totales || 0, 10), 0);
   const objetivo = Math.max(parseInt(cuota_objetivo || 0, 10), 0);

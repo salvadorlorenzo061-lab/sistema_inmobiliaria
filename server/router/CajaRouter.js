@@ -1859,21 +1859,21 @@ router.post("/procesar-pago", (req, res) => {
                 return p * ((tasaMensual * factor) / denominador);
             };
             const cuotaMensualAmortizadaContrato = calcularCuotaAmortizada(capitalBaseInteresContrato, tasaMensualContrato, cuotasPendientesContrato);
-            const cuotaMensualConInteresContrato = redondear2(cuotaMensualAmortizadaContrato);
+            const cuotaMensualConInteresContrato = Math.round(cuotaMensualAmortizadaContrato);
             const tablaAmortizacionContrato = [];
-            let saldoAmortizacion = capitalBaseInteresContrato;
+            let saldoAmortizacion = Math.round(capitalBaseInteresContrato);
             for (let indicePendiente = 1; indicePendiente <= cuotasPendientesContrato; indicePendiente += 1) {
                 const indiceCuota = cuotasPagadasContrato + indicePendiente;
-                const interesCuota = redondear2(saldoAmortizacion * tasaMensualContrato);
+                const interesCuota = Math.round(saldoAmortizacion * tasaMensualContrato);
                 const capitalCuota = indicePendiente === cuotasPendientesContrato
                     ? saldoAmortizacion
-                    : redondear2(Math.min(Math.max(cuotaMensualConInteresContrato - interesCuota, 0), saldoAmortizacion));
-                const saldoFinalCuota = redondear2(Math.max(saldoAmortizacion - capitalCuota, 0));
+                    : Math.round(Math.min(Math.max(cuotaMensualConInteresContrato - interesCuota, 0), saldoAmortizacion));
+                const saldoFinalCuota = Math.round(Math.max(saldoAmortizacion - capitalCuota, 0));
                 tablaAmortizacionContrato.push({
                     numero_cuota: indiceCuota,
                     capital_cuota: capitalCuota,
                     interes_mes: interesCuota,
-                    cuota_estimada: redondear2(capitalCuota + interesCuota)
+                    cuota_estimada: Math.round(capitalCuota + interesCuota)
                 });
                 saldoAmortizacion = saldoFinalCuota;
             }
