@@ -1685,6 +1685,14 @@ router.post("/procesar-pago", (req, res) => {
                         WHERE p_enganche.id_contrato = c.id_contrato
                           AND pd_enganche.tipo_concepto = 'enganche'
                     ), 0) AS enganche_pagado,
+                                        COALESCE((
+                                                SELECT COUNT(DISTINCT pd_cuota.numero_cuota_afectada)
+                                                FROM pagos_detalle pd_cuota
+                                                INNER JOIN pagos p_cuota ON p_cuota.id_pago = pd_cuota.id_pago
+                                                WHERE p_cuota.id_contrato = c.id_contrato
+                                                    AND pd_cuota.tipo_concepto = 'cuota_terreno'
+                                                    AND pd_cuota.numero_cuota_afectada > 0
+                                        ), 0) AS cuotas_pagadas,
                     COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
                     c.fecha_firma,
                     COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
@@ -1811,10 +1819,9 @@ router.post("/procesar-pago", (req, res) => {
             const cuotasBaseInteres = Number.isInteger(cuotasContratoBase) && cuotasContratoBase > 0
                 ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
-            const capitalPagadoContrato = redondear2(Math.max(Number(saldoRows[0]?.capital_pagado_total || 0), 0));
-            const capitalTotalContrato = redondear2(Math.max(saldoActual + capitalPagadoContrato, 0));
-            const capitalBaseContrato = redondear2(Math.max(capitalTotalContrato - engancheContrato, 0));
-            const capitalBaseInteresContrato = redondear2(Math.max(capitalBaseContrato, 0));
+            const cuotasPagadasContrato = Math.max(Number(saldoRows[0]?.cuotas_pagadas || 0), 0);
+            const cuotasPendientesContrato = Math.max(cuotasBaseInteres - cuotasPagadasContrato, 0);
+            const capitalBaseInteresContrato = redondear2(Math.max(saldoActual - enganchePendienteContrato, 0));
             const cuotaCapitalTeoricaContrato = (capitalBaseInteresContrato > 0 && cuotasBaseInteres > 0)
                 ? redondear2(capitalBaseInteresContrato / cuotasBaseInteres)
                 : 0;
@@ -1829,7 +1836,6 @@ router.post("/procesar-pago", (req, res) => {
             const montoCuotaCapitalNormalizadaContrato = usarCuotaCapitalTeoricaContrato
                 ? cuotaCapitalTeoricaContrato
                 : referenciaCuotaCapitalContrato;
-            const montoCuotaBaseEnteraContrato = Math.floor(Math.max(montoCuotaCapitalNormalizadaContrato, 0));
             const cuotaBaseParaSaldo = montoCuotaCapitalNormalizadaContrato > 0
                 ? montoCuotaCapitalNormalizadaContrato
                 : montoCuotaContratoRaw;
@@ -1837,9 +1843,8 @@ router.post("/procesar-pago", (req, res) => {
             const cuotasRestantesContrato = (cuotaBaseParaSaldo > 0 && saldoActual > 0)
                 ? Math.max(Math.ceil(saldoActual / cuotaBaseParaSaldo), 1)
                 : Math.max(mesesAProcesar.length, 1);
-            const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
             const tasaMensualContrato = interesPorcentajeContrato > 0
-                ? ((interesPorcentajeContrato / 100 / 12) * FACTOR_AJUSTE_TASA_MENSUAL)
+                ? (interesPorcentajeContrato / 100 / 12)
                 : 0;
             const calcularCuotaAmortizada = (principal = 0, tasaMensual = 0, cuotas = 0) => {
                 const p = Math.max(Number(principal || 0), 0);
@@ -1853,23 +1858,28 @@ router.post("/procesar-pago", (req, res) => {
                 }
                 return p * ((tasaMensual * factor) / denominador);
             };
-            const cuotaMensualAmortizadaContrato = calcularCuotaAmortizada(capitalBaseInteresContrato, tasaMensualContrato, cuotasBaseInteres);
+            const cuotaMensualAmortizadaContrato = calcularCuotaAmortizada(capitalBaseInteresContrato, tasaMensualContrato, cuotasPendientesContrato);
             const cuotaMensualConInteresContrato = redondear2(cuotaMensualAmortizadaContrato);
-            const interesTotalContrato = redondear2(Math.max((cuotaMensualConInteresContrato * cuotasBaseInteres) - capitalBaseInteresContrato, 0));
-            const interesPorMesContrato = cuotasBaseInteres > 0
-                ? redondear2(interesTotalContrato / cuotasBaseInteres)
-                : 0;
-            const obtenerInteresPorNumeroCuota = (numeroCuota) => {
+            const tablaAmortizacionContrato = [];
+            let saldoAmortizacion = capitalBaseInteresContrato;
+            for (let indicePendiente = 1; indicePendiente <= cuotasPendientesContrato; indicePendiente += 1) {
+                const indiceCuota = cuotasPagadasContrato + indicePendiente;
+                const interesCuota = redondear2(saldoAmortizacion * tasaMensualContrato);
+                const capitalCuota = indicePendiente === cuotasPendientesContrato
+                    ? saldoAmortizacion
+                    : redondear2(Math.min(Math.max(cuotaMensualConInteresContrato - interesCuota, 0), saldoAmortizacion));
+                const saldoFinalCuota = redondear2(Math.max(saldoAmortizacion - capitalCuota, 0));
+                tablaAmortizacionContrato.push({
+                    numero_cuota: indiceCuota,
+                    capital_cuota: capitalCuota,
+                    interes_mes: interesCuota,
+                    cuota_estimada: redondear2(capitalCuota + interesCuota)
+                });
+                saldoAmortizacion = saldoFinalCuota;
+            }
+            const obtenerFilaAmortizacion = (numeroCuota) => {
                 const cuotaNumero = Number(numeroCuota || 0);
-                if (!Number.isInteger(cuotaNumero) || cuotaNumero <= 0 || cuotasBaseInteres <= 0 || interesTotalContrato <= 0) {
-                    return 0;
-                }
-                const interesBaseEntero = Math.floor(interesTotalContrato / cuotasBaseInteres);
-                const residuoInteresFinal = redondear2(interesTotalContrato - (interesBaseEntero * cuotasBaseInteres));
-                const esUltimaCuotaContrato = cuotaNumero >= cuotasBaseInteres;
-                return esUltimaCuotaContrato
-                    ? redondear2(interesBaseEntero + residuoInteresFinal)
-                    : interesBaseEntero;
+                return tablaAmortizacionContrato.find((fila) => fila.numero_cuota === cuotaNumero) || null;
             };
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
@@ -1877,7 +1887,9 @@ router.post("/procesar-pago", (req, res) => {
                 if (parsed instanceof Date && fechaInicioContrato) {
                     const cuotaCalculada = obtenerNumeroCuotaDesdeFechas(fechaInicioContrato, parsed);
                     if (Number.isInteger(cuotaCalculada) && cuotaCalculada > 0) {
-                        return cuotaCalculada;
+                        return engancheContrato > 0
+                            ? Math.max(cuotaCalculada - 1, 0)
+                            : cuotaCalculada;
                     }
                 }
 
@@ -1901,7 +1913,7 @@ router.post("/procesar-pago", (req, res) => {
                     .map((mes, idx) => obtenerNumeroCuotaParaMes(mes, idx))
                 : [];
             const interesCalculadoContrato = redondear2(
-                cuotasInteresSolicitadas.reduce((sum, cuotaNumero) => sum + obtenerInteresPorNumeroCuota(cuotaNumero), 0)
+                cuotasInteresSolicitadas.reduce((sum, cuotaNumero) => sum + Number(obtenerFilaAmortizacion(cuotaNumero)?.interes_mes || 0), 0)
             );
 
             if (montoTerrenoTotal > 0 && cuotasInteresSolicitadas.length > 0) {
@@ -1934,8 +1946,9 @@ router.post("/procesar-pago", (req, res) => {
                         montoAsignado = redondear2(restante);
                         restante = 0;
                     } else {
-                        const sugerido = montoCuotaBaseEnteraContrato > 0
-                            ? montoCuotaBaseEnteraContrato
+                        const capitalAmortizado = Number(obtenerFilaAmortizacion(cuotaNumero)?.capital_cuota || 0);
+                        const sugerido = capitalAmortizado > 0
+                            ? capitalAmortizado
                             : redondear2(Number(montoTerreno || 0) / Math.max(mesesLista.length, 1));
                         montoAsignado = redondear2(Math.min(sugerido, restante));
                         restante = redondear2(restante - montoAsignado);
@@ -1953,7 +1966,7 @@ router.post("/procesar-pago", (req, res) => {
 
             const distribuirInteresPorMes = (cuotasLista = []) => {
                 if (!Array.isArray(cuotasLista) || !cuotasLista.length) return [];
-                return cuotasLista.map((cuotaNumero) => redondear2(obtenerInteresPorNumeroCuota(cuotaNumero)));
+                return cuotasLista.map((cuotaNumero) => redondear2(obtenerFilaAmortizacion(cuotaNumero)?.interes_mes || 0));
             };
 
             if (montoTerrenoTotal > 0) {

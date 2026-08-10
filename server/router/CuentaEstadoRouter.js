@@ -42,9 +42,50 @@ const calcularLiquidacionCapital = ({
     const mesesPendientes = Math.max(cuotasTotales - cuotasPagadasBase, 0);
     const tasaMensual = interesAnual / 100 / 12;
 
-    const interesPorMes = round2(capitalRestante * tasaMensual);
-    const interesTotalPendiente = round2(capitalRestante * tasaMensual * mesesPendientes);
-    const totalLiquidacion = round2(capitalRestante + interesTotalPendiente);
+    const calcularCuotaFija = (principal, tasa, cuotas) => {
+        if (principal <= 0 || cuotas <= 0) return 0;
+        if (tasa <= 0) return principal / cuotas;
+        const factor = Math.pow(1 + tasa, cuotas);
+        const denominador = factor - 1;
+        if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+            return principal / cuotas;
+        }
+        return principal * ((tasa * factor) / denominador);
+    };
+
+    const cuotaMensual = round2(calcularCuotaFija(capitalRestante, tasaMensual, mesesPendientes));
+    const tablaAmortizacion = [];
+    let saldo = round2(capitalRestante);
+    let interesAcumulado = 0;
+    let totalPagos = 0;
+
+    for (let indice = 1; indice <= mesesPendientes; indice += 1) {
+        const esUltima = indice === mesesPendientes;
+        const interesMes = round2(saldo * tasaMensual);
+        const capitalCuota = esUltima
+            ? saldo
+            : round2(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
+        const pagoMes = round2(capitalCuota + interesMes);
+        const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
+
+        interesAcumulado = round2(interesAcumulado + interesMes);
+        totalPagos = round2(totalPagos + pagoMes);
+        tablaAmortizacion.push({
+            indice,
+            numero_cuota: cuotasPagadasBase + indice,
+            saldo_inicial: saldo,
+            capital_cuota: capitalCuota,
+            interes_mes: interesMes,
+            cuota_estimada: pagoMes,
+            saldo_final: saldoFinal,
+            interes_acumulado: interesAcumulado
+        });
+        saldo = saldoFinal;
+    }
+
+    const interesPorMes = tablaAmortizacion[0]?.interes_mes || 0;
+    const interesTotalPendiente = interesAcumulado;
+    const totalLiquidacion = totalPagos;
 
     return {
         cuota_objetivo: cuotaObjetivo || null,
@@ -54,9 +95,11 @@ const calcularLiquidacionCapital = ({
         capital_restante: round2(capitalRestante),
         interes_anual: round2(interesAnual),
         tasa_mensual: round2(tasaMensual * 100),
+        cuota_mensual: cuotaMensual,
         interes_por_mes: interesPorMes,
         interes_total_pendiente: interesTotalPendiente,
-        total_liquidacion: totalLiquidacion
+        total_liquidacion: totalLiquidacion,
+        tabla_amortizacion: tablaAmortizacion
     };
 };
 

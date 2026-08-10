@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
+import { generarTablaAmortizacion } from '../utils/amortizacion';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
@@ -151,22 +152,12 @@ const Caja = () => {
         const enganche = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche || 0), 0);
         const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
+        const cuotasPagadas = Math.max(parseInt(contrato?.cuotas_pagadas || 0, 10), 0);
+        const cuotasPendientes = Math.max(cuotasPactadas - cuotasPagadas, 0);
+        const enganchePendiente = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche_pendiente || 0), 0);
         const interesPorcentaje = tieneConvenioActivo
             ? 0
             : Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
-        const FACTOR_AJUSTE_TASA_MENSUAL = 0.9975;
-        const tasaMensual = interesPorcentaje > 0 ? ((interesPorcentaje / 100 / 12) * FACTOR_AJUSTE_TASA_MENSUAL) : 0;
-
-        const calcularCuotaAmortizada = (principal, tasa, cuotas) => {
-            if (principal <= 0 || cuotas <= 0) return 0;
-            if (tasa <= 0) return principal / cuotas;
-            const factor = Math.pow(1 + tasa, cuotas);
-            const denominador = factor - 1;
-            if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
-                return principal / cuotas;
-            }
-            return principal * ((tasa * factor) / denominador);
-        };
 
         const capitalTotalContrato = montoTotalContrato > 0
             ? parseFloat(Math.max(tieneConvenioActivo ? montoTotalContrato : (montoTotalContrato - enganche), 0).toFixed(2))
@@ -186,35 +177,37 @@ const Caja = () => {
         const capitalPorCuota = tieneConvenioActivo
             ? (capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica)
             : (usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital);
-        const cuotaMensualAmortizada = calcularCuotaAmortizada(capitalBaseInteres, tasaMensual, cuotasPactadas);
-        const cuotaMensualConInteres = tieneConvenioActivo
-            ? parseFloat((capitalPorCuota || 0).toFixed(2))
-            : parseFloat(cuotaMensualAmortizada.toFixed(2));
-        const interesTotalContrato = tieneConvenioActivo
-            ? 0
-            : (capitalBaseInteres > 0 && cuotasPactadas > 0)
-            ? parseFloat(Math.max((cuotaMensualConInteres * cuotasPactadas) - capitalBaseInteres, 0).toFixed(2))
+        const tablaAmortizacion = generarTablaAmortizacion(
+            Math.max(saldoPendiente - enganchePendiente, 0),
+            tieneConvenioActivo ? 0 : interesPorcentaje,
+            cuotasPendientes,
+            cuotasPagadas
+        );
+        const cuotaMensualConInteres = tablaAmortizacion[0]?.cuota_estimada || 0;
+        const interesTotalContrato = parseFloat(
+            tablaAmortizacion.reduce((sum, fila) => sum + Number(fila.interes_mes || 0), 0).toFixed(2)
+        );
+        const interesPorCuota = tablaAmortizacion.length > 0
+            ? parseFloat((interesTotalContrato / tablaAmortizacion.length).toFixed(2))
             : 0;
-        const interesPorCuota = cuotasPactadas > 0
-            ? parseFloat((interesTotalContrato / cuotasPactadas).toFixed(2))
-            : 0;
-        const cuotaTotalConInteres = cuotasPactadas > 0 ? cuotaMensualConInteres : 0;
-        const cuotasRestantes = (saldoPendiente > 0 && capitalPorCuota > 0)
-            ? Math.max(Math.ceil(saldoPendiente / capitalPorCuota), 0)
-            : 0;
-        const totalContratoConInteres = parseFloat((capitalTotalContrato + interesTotalContrato).toFixed(2));
+        const cuotaTotalConInteres = tablaAmortizacion.length > 0 ? cuotaMensualConInteres : 0;
+        const cuotasRestantes = tablaAmortizacion.length;
+        const totalContratoConInteres = parseFloat((saldoPendiente + interesTotalContrato).toFixed(2));
 
         return {
             saldoPendiente,
             enganche,
             capitalPorCuota,
             cuotasPactadas,
+            cuotasPagadas,
+            cuotasPendientes,
             interesPorcentaje,
             capitalTotalContrato,
             capitalBaseInteres,
             interesTotalContrato,
             interesPorCuota,
             cuotaTotalConInteres,
+            tablaAmortizacion,
             cuotasRestantes,
             totalContratoConInteres
         };
@@ -645,33 +638,23 @@ const Caja = () => {
         const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
         const tieneConvenioActivo = Number(residenteActual?.id_convenio_activo || 0) > 0;
         const saldoPendiente = planContrato.saldoPendiente;
-        const capitalPorCuota = planContrato.capitalPorCuota;
+        const tablaAmortizacion = planContrato.tablaAmortizacion || [];
 
         const obtenerNumeroCuotaMes = (mesEtiqueta = '') => {
             const mapNumero = Number(mesesDetalleMap?.[mesEtiqueta] || 0);
             if (Number.isInteger(mapNumero) && mapNumero > 0) {
-                return mapNumero;
+                return (!tieneConvenioActivo && Math.max(Number(residenteActual?.enganche || 0), 0) > 0)
+                    ? Math.max(mapNumero - 1, 0)
+                    : mapNumero;
             }
 
             const idx = (mesesPendientes || []).indexOf(mesEtiqueta);
             return idx >= 0 ? idx + 1 : null;
         };
 
-        const obtenerInteresPorNumeroCuota = (numeroCuota) => {
-            const totalInteres = Math.max(Number(planContrato?.interesTotalContrato || 0), 0);
-            const cuotasPactadas = Math.max(Number(planContrato?.cuotasPactadas || 0), 0);
-
-            if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
-                return 0;
-            }
-            const interesBase = Math.floor(totalInteres / cuotasPactadas);
-            const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
-            const esUltimaCuota = numeroCuota === cuotasPactadas;
-
-            return esUltimaCuota
-                ? residuoFinal
-                : interesBase;
-        };
+        const obtenerFilaAmortizacion = (numeroCuota) => (
+            tablaAmortizacion.find((fila) => fila.numero_cuota === numeroCuota) || null
+        );
 
         // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
         const cuotasRestantes = planContrato.cuotasRestantes;
@@ -703,18 +686,8 @@ const Caja = () => {
         const engancheContratoAplicado = (enganchePendienteContrato > 0 && (soloEngancheSeleccionado || (primerMesConEnganche && mesesOrdenados.includes(primerMesConEnganche))))
             ? Math.max(Math.min(engancheContratoBase, enganchePendienteContrato), 0)
             : 0;
-        const capitalBaseInteres = Math.max(Number(planContrato?.capitalBaseInteres || 0), 0);
-        const cuotasPactadas = Math.max(Number(planContrato?.cuotasPactadas || 0), 0);
-        const capitalPorCuotaEntera = Math.floor(Math.max(Number(planContrato?.capitalPorCuota || 0), 0));
         const obtenerCapitalPorNumeroCuota = (numeroCuota) => {
-            if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadas <= 0 || capitalBaseInteres <= 0) {
-                return 0;
-            }
-            const esUltimaCuota = numeroCuota === cuotasPactadas;
-            if (!esUltimaCuota) {
-                return capitalPorCuotaEntera;
-            }
-            return redondear2(capitalBaseInteres - (capitalPorCuotaEntera * (cuotasPactadas - 1)));
+            return redondear2(obtenerFilaAmortizacion(numeroCuota)?.capital_cuota || 0);
         };
         const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
             if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
@@ -731,7 +704,7 @@ const Caja = () => {
             mesesConTerreno
                 .reduce((acc, mes) => {
                     const numeroCuotaMes = obtenerNumeroCuotaMes(mes);
-                    return acc + obtenerInteresPorNumeroCuota(numeroCuotaMes);
+                    return acc + redondear2(obtenerFilaAmortizacion(numeroCuotaMes)?.interes_mes || 0);
                 }, 0)
                 .toFixed(2)
         );
@@ -857,6 +830,11 @@ const Caja = () => {
             });
             setMesesPendientes(meses);
             setMesesDetalleMap(mapaMeses);
+            setDatosDeuda((prev) => ({
+                ...(prev || residenteActualizado),
+                cuotas_pagadas: Number(res?.data?.cuotas_pagadas || 0),
+                cuotas_pendientes: Number(res?.data?.cuotas_pendientes || 0)
+            }));
             
             const mesesASeleccionar = meses.length > 0 ? [meses[0]] : [];
             setMesesSeleccionados(mesesASeleccionar);
@@ -1567,29 +1545,22 @@ const Caja = () => {
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
     const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
     const cuotaInicioFinanciadaVista = 1;
-    const capitalPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
-    const interesPorCuotaRegular = Math.floor(Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0) / Math.max(Number(planFinancieroContrato?.cuotasPactadas || 1), 1), 0));
-    const cuotaRegularSinDecimales = capitalPorCuotaRegular + interesPorCuotaRegular;
-    const obtenerInteresPorNumeroCuotaVista = (numeroCuota) => {
-        const totalInteres = Math.max(Number(planFinancieroContrato?.interesTotalContrato || 0), 0);
-        const cuotasPactadas = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
-
-        if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || totalInteres <= 0 || cuotasPactadas <= 0) {
-            return 0;
-        }
-        const interesBase = Math.floor(totalInteres / cuotasPactadas);
-        const residuoFinal = redondear2(totalInteres - (interesBase * (cuotasPactadas - 1)));
-        const esUltimaCuota = numeroCuota === cuotasPactadas;
-
-        return esUltimaCuota
-            ? residuoFinal
-            : interesBase;
-    };
+    const tablaAmortizacionVista = planFinancieroContrato?.tablaAmortizacion || [];
+    const primeraCuotaFinanciada = tablaAmortizacionVista[0] || {};
+    const capitalPorCuotaRegular = Number(primeraCuotaFinanciada.capital_cuota || 0);
+    const interesPorCuotaRegular = Number(primeraCuotaFinanciada.interes_mes || 0);
+    const cuotaRegularSinDecimales = Number(primeraCuotaFinanciada.cuota_estimada || 0);
+    const obtenerFilaAmortizacionVista = (numeroCuota) => (
+        tablaAmortizacionVista.find((fila) => fila.numero_cuota === numeroCuota) || null
+    );
+    const obtenerInteresPorNumeroCuotaVista = (numeroCuota) => (
+        redondear2(obtenerFilaAmortizacionVista(numeroCuota)?.interes_mes || 0)
+    );
 
     const obtenerNumeroCuotaMesVista = (mesEtiqueta = '') => {
         const numeroMap = Number(mesesDetalleMap?.[mesEtiqueta] || 0);
         if (Number.isInteger(numeroMap) && numeroMap > 0) {
-            return numeroMap;
+            return obtenerNumeroCuotaVisual(numeroMap);
         }
         const idx = (mesesPendientes || []).indexOf(mesEtiqueta);
         return idx >= 0 ? idx + 1 : null;
@@ -1600,16 +1571,8 @@ const Caja = () => {
     const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
     const mesAplicacionAbonoCapital = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
     const mesAplicacionCobroUnico = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
-    const capitalBaseInteresVista = Math.max(Number(planFinancieroContrato?.capitalBaseInteres || 0), 0);
-    const cuotasPactadasVista = Math.max(Number(planFinancieroContrato?.cuotasPactadas || 0), 0);
-    const capitalPorCuotaEnteraVista = Math.floor(Math.max(Number(planFinancieroContrato?.capitalPorCuota || 0), 0));
     const obtenerCapitalPorNumeroCuotaVista = (numeroCuota) => {
-        if (!Number.isInteger(numeroCuota) || numeroCuota <= 0 || cuotasPactadasVista <= 0 || capitalBaseInteresVista <= 0) {
-            return 0;
-        }
-        const esUltimaCuota = numeroCuota === cuotasPactadasVista;
-        if (!esUltimaCuota) return capitalPorCuotaEnteraVista;
-        return redondear2(capitalBaseInteresVista - (capitalPorCuotaEnteraVista * (cuotasPactadasVista - 1)));
+        return redondear2(obtenerFilaAmortizacionVista(numeroCuota)?.capital_cuota || 0);
     };
     const obtenerDesgloseCuotaMesVista = (mesEtiqueta = '') => {
         const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);

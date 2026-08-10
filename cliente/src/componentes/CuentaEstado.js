@@ -61,6 +61,21 @@ const CuentaEstado = () => {
     setPrecioTotal('');
   };
 
+  const nuevaSimulacion = () => {
+    setBusqueda('');
+    setResultados([]);
+    setContrato(null);
+    setSimulacion(null);
+    setPrecioTotal('100000');
+    setEngancheRegistrado('0');
+    setEnganchePagado('0');
+    setCapitalRestante('100000');
+    setInteresAnual('15');
+    setCuotasTotales('96');
+    setCuotasPagadas('0');
+    setCuotaObjetivo('');
+  };
+
   const buscarResidente = async () => {
     if (!busqueda.trim()) {
       showToast('Ingresa nombre, DPI, clave o contrato para buscar.', 'warning');
@@ -203,43 +218,9 @@ const CuentaEstado = () => {
   };
 
   const tablaAmortizacionPendiente = useMemo(() => {
-    if (!simulacion) return [];
-
-    const mesesPendientes = Math.max(parseInt(simulacion.meses_pendientes || 0, 10), 0);
-    const capitalRestanteCalc = Math.max(toNumber(simulacion.capital_restante, 0), 0);
-    const tasaMensual = Math.max(toNumber(simulacion.tasa_mensual, 0) / 100, 0);
-    const cuotaBaseNumero = Math.max(parseInt(simulacion.cuotas_pagadas || 0, 10), 0);
-
-    if (!mesesPendientes || !capitalRestanteCalc) return [];
-
-    const rows = [];
-    let saldo = capitalRestanteCalc;
-    let interesAcumulado = 0;
-
-    for (let i = 1; i <= mesesPendientes; i += 1) {
-      const esUltima = i === mesesPendientes;
-      const capitalCuota = esUltima ? saldo : round2(capitalRestanteCalc / mesesPendientes);
-      const interesMes = round2(saldo * tasaMensual);
-      const cuotaEstimada = round2(capitalCuota + interesMes);
-      const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
-
-      interesAcumulado = round2(interesAcumulado + interesMes);
-
-      rows.push({
-        indice: i,
-        numero_cuota: cuotaBaseNumero + i,
-        saldo_inicial: round2(saldo),
-        capital_cuota: round2(capitalCuota),
-        interes_mes: interesMes,
-        cuota_estimada: cuotaEstimada,
-        saldo_final: saldoFinal,
-        interes_acumulado: interesAcumulado
-      });
-
-      saldo = saldoFinal;
-    }
-
-    return rows;
+    return Array.isArray(simulacion?.tabla_amortizacion)
+      ? simulacion.tabla_amortizacion
+      : [];
   }, [simulacion]);
 
   const generarCuotasPactadasEnCaja = async () => {
@@ -414,10 +395,14 @@ const CuentaEstado = () => {
               </button>
             </div>
             <div className="col-md-2 d-grid">
-              <button type="button" className="btn btn-outline-secondary" onClick={limpiar}>
-                Limpiar
+              <button type="button" className="btn btn-outline-success" onClick={nuevaSimulacion}>
+                Nueva simulacion
               </button>
             </div>
+          </div>
+
+          <div className="d-flex justify-content-end mb-3">
+            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={limpiar}>Limpiar todo</button>
           </div>
 
           {resultados.length > 0 && (
@@ -440,9 +425,9 @@ const CuentaEstado = () => {
             </div>
           )}
 
-          {contrato && (
+          {(contrato || precioTotal || capitalRestante) && (
             <>
-              <div className="row g-3">
+              {contrato && <div className="row g-3">
                 <div className="col-md-6">
                   <div className="card border-primary h-100">
                     <div className="card-header bg-primary text-white">Datos base del contrato</div>
@@ -481,19 +466,29 @@ const CuentaEstado = () => {
                     </div>
                   </div>
                 </div>
-              </div>
+              </div>}
 
               <div className="card mt-3 border-secondary">
-                <div className="card-header bg-secondary text-white">Parametros de calculo (editables)</div>
+                <div className="card-header bg-secondary text-white">
+                  {contrato ? 'Parametros del contrato (editables para simulacion)' : 'Calculadora de financiamiento inmobiliario'}
+                </div>
                 <div className="card-body">
                   <div className="row g-3">
                     <div className="col-md-3">
                       <label className="form-label fw-bold">Precio total terreno (Q)</label>
-                      <input type="number" className="form-control" value={precioTotal} onChange={(e) => setPrecioTotal(e.target.value)} />
+                      <input type="number" className="form-control" value={precioTotal} onChange={(e) => {
+                        const nuevoPrecio = e.target.value;
+                        setPrecioTotal(nuevoPrecio);
+                        setCapitalRestante(String(round2(Math.max(toNumber(nuevoPrecio, 0) - toNumber(engancheRegistrado, 0), 0))));
+                      }} />
                     </div>
                     <div className="col-md-3">
                       <label className="form-label fw-bold">Enganche establecido (Q)</label>
-                      <input type="number" className="form-control" value={engancheRegistrado} onChange={(e) => setEngancheRegistrado(e.target.value)} />
+                      <input type="number" className="form-control" value={engancheRegistrado} onChange={(e) => {
+                        const nuevoEnganche = e.target.value;
+                        setEngancheRegistrado(nuevoEnganche);
+                        setCapitalRestante(String(round2(Math.max(toNumber(precioTotal, 0) - toNumber(nuevoEnganche, 0), 0))));
+                      }} />
                     </div>
                     <div className="col-md-3">
                       <label className="form-label fw-bold">Enganche pagado real (Q)</label>
@@ -548,17 +543,12 @@ const CuentaEstado = () => {
                   <button type="button" className="btn btn-outline-success btn-sm" onClick={exportarTablaExcel}>
                     Exportar Excel
                   </button>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={enviarLiquidacionACaja}>
+                  {contrato && <button type="button" className="btn btn-primary btn-sm" onClick={enviarLiquidacionACaja}>
                     Cobrar Cuota/Liquidacion en Caja
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-warning btn-sm"
-                    onClick={generarCuotasPactadasEnCaja}
-                    disabled={generandoPlan || tablaAmortizacionPendiente.length === 0}
-                  >
+                  </button>}
+                  {contrato && <button type="button" className="btn btn-warning btn-sm" onClick={generarCuotasPactadasEnCaja} disabled={generandoPlan || tablaAmortizacionPendiente.length === 0}>
                     {generandoPlan ? 'Generando...' : 'Generar cuotas pactadas en Caja'}
-                  </button>
+                  </button>}
                 </div>
 
                 <div className="row g-3">
@@ -567,6 +557,7 @@ const CuentaEstado = () => {
                   <div className="col-md-4"><strong>Tasa mensual:</strong> {toNumber(simulacion.tasa_mensual, 0).toFixed(4)}%</div>
                   <div className="col-md-4"><strong>Cuotas pagadas:</strong> {simulacion.cuotas_pagadas}</div>
                   <div className="col-md-4"><strong>Meses pendientes:</strong> {simulacion.meses_pendientes}</div>
+                  <div className="col-md-4"><strong>Cuota mensual fija:</strong> <span className="text-primary fw-bold">{formatoMoneda(simulacion.cuota_mensual)}</span></div>
                   <div className="col-md-4"><strong>Interes por mes:</strong> {formatoMoneda(simulacion.interes_por_mes)}</div>
                   <div className="col-md-6"><strong>Interes total meses pendientes:</strong> <span className="text-danger fw-bold">{formatoMoneda(simulacion.interes_total_pendiente)}</span></div>
                   <div className="col-md-6"><strong>Total liquidacion (capital + interes):</strong> <span className="text-success fw-bold">{formatoMoneda(simulacion.total_liquidacion)}</span></div>
@@ -575,8 +566,8 @@ const CuentaEstado = () => {
                 <hr />
 
                 <p className="mb-1"><strong>Formula aplicada:</strong></p>
-                <p className="mb-1">Interes pendiente = Capital restante x (Interes anual / 12) x Meses pendientes</p>
-                <p className="mb-0">Total a liquidar = Capital restante + Interes pendiente</p>
+                <p className="mb-1">Cuota fija = Capital x [tasa mensual x (1 + tasa mensual)^plazo] / [(1 + tasa mensual)^plazo - 1]</p>
+                <p className="mb-0">Cada cuota separa interes sobre saldo y abono a capital; la ultima cuota ajusta cualquier diferencia de redondeo.</p>
 
                 {tablaAmortizacionPendiente.length > 0 && (
                   <>
@@ -593,7 +584,7 @@ const CuentaEstado = () => {
                             <th>Cuota Estimada</th>
                             <th>Saldo Final</th>
                             <th>Interes Acumulado</th>
-                            <th>Accion</th>
+                            {contrato && <th>Accion</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -606,11 +597,11 @@ const CuentaEstado = () => {
                               <td>{formatoMoneda(row.cuota_estimada)}</td>
                               <td>{formatoMoneda(row.saldo_final)}</td>
                               <td>{formatoMoneda(row.interes_acumulado)}</td>
-                              <td>
+                              {contrato && <td>
                                 <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
                                   Cobrar en Caja
                                 </button>
-                              </td>
+                              </td>}
                             </tr>
                           ))}
                         </tbody>
@@ -619,9 +610,9 @@ const CuentaEstado = () => {
                   </>
                 )}
 
-                <div className="alert alert-info mt-3 mb-0">
+                {contrato && <div className="alert alert-info mt-3 mb-0">
                   <strong>Enlace con Caja:</strong> puedes generar el plan persistente de Cuota 1 en adelante aunque el enganche siga pendiente. Para cobrar una cuota del plan, primero debe estar pagada la Cuota 0.
-                </div>
+                </div>}
               </div>
             </div>
           )}
