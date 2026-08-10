@@ -4,6 +4,7 @@ import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { API_BASE_URL } from '../config';
+import { generarTablaAmortizacion } from '../utils/amortizacion';
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -16,6 +17,46 @@ const formatoMoneda = (value) => {
 };
 
 const round2 = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
+
+const construirSimulacionLocal = ({
+  capital_restante,
+  interes_anual,
+  cuotas_totales,
+  cuotas_pagadas,
+  cuota_objetivo
+}) => {
+  const capitalRestante = round2(Math.max(toNumber(capital_restante, 0), 0));
+  const interes = Math.max(toNumber(interes_anual, 0), 0);
+  const cuotasTotalesNumero = Math.max(parseInt(cuotas_totales || 0, 10), 0);
+  const objetivo = Math.max(parseInt(cuota_objetivo || 0, 10), 0);
+  const cuotasPagadasNumero = objetivo > 0
+    ? Math.max(objetivo - 1, 0)
+    : Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
+  const mesesPendientes = Math.max(cuotasTotalesNumero - cuotasPagadasNumero, 0);
+  const tabla = generarTablaAmortizacion(
+    capitalRestante,
+    interes,
+    mesesPendientes,
+    cuotasPagadasNumero
+  );
+  const interesTotal = round2(tabla.reduce((sum, fila) => sum + toNumber(fila.interes_mes, 0), 0));
+  const totalPagos = round2(tabla.reduce((sum, fila) => sum + toNumber(fila.cuota_estimada, 0), 0));
+
+  return {
+    cuota_objetivo: objetivo || null,
+    cuotas_totales: cuotasTotalesNumero,
+    cuotas_pagadas: cuotasPagadasNumero,
+    meses_pendientes: mesesPendientes,
+    capital_restante: capitalRestante,
+    interes_anual: round2(interes),
+    tasa_mensual: round2(interes / 12),
+    cuota_mensual: tabla[0]?.cuota_estimada || 0,
+    interes_por_mes: tabla[0]?.interes_mes || 0,
+    interes_total_pendiente: interesTotal,
+    total_liquidacion: totalPagos,
+    tabla_amortizacion: tabla
+  };
+};
 
 const CuentaEstado = () => {
   const [busqueda, setBusqueda] = useState('');
@@ -103,7 +144,6 @@ const CuentaEstado = () => {
     try {
       const { data } = await axios.get(`${API_BASE_URL}/api/cuenta_estado/detalle-contrato/${idContrato}`);
       const contratoApi = data?.contrato || null;
-      const simulacionBase = data?.simulacion_base || null;
 
       if (!contratoApi) {
         showToast('No se pudo obtener el contrato seleccionado.', 'error');
@@ -111,7 +151,13 @@ const CuentaEstado = () => {
       }
 
       setContrato(contratoApi);
-      setSimulacion(simulacionBase);
+      setSimulacion(construirSimulacionLocal({
+        capital_restante: contratoApi.capital_restante,
+        interes_anual: contratoApi.interes_anual,
+        cuotas_totales: contratoApi.cuotas_totales,
+        cuotas_pagadas: contratoApi.cuotas_pagadas,
+        cuota_objetivo: null
+      }));
       setResultados([]);
 
       setCapitalRestante(String(toNumber(contratoApi.capital_restante, 0)));
@@ -148,15 +194,7 @@ const CuentaEstado = () => {
       return;
     }
 
-    setCargando(true);
-    try {
-      const { data } = await axios.post(`${API_BASE_URL}/api/cuenta_estado/simular-liquidacion`, payload);
-      setSimulacion(data || null);
-    } catch (error) {
-      showToast(String(error?.response?.data || 'No se pudo calcular la liquidacion.'), 'error');
-    } finally {
-      setCargando(false);
-    }
+    setSimulacion(construirSimulacionLocal(payload));
   };
 
   const resumenEjemplo = useMemo(() => {
