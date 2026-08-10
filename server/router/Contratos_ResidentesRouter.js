@@ -85,6 +85,11 @@ const uploadArchivoContrato = multer({
     limits: { fileSize: 15 * 1024 * 1024 }
 });
 
+const uploadFiniquito = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024 }
+});
+
 const ensureContratosServiciosTable = () => {
     const createTableQuery = `
         CREATE TABLE IF NOT EXISTS contratos_servicios (
@@ -128,6 +133,29 @@ const ensureContratosDocumentosTable = () => {
         if (err) {
             console.error('Error asegurando tabla contratos_documentos:', err.message);
         }
+    });
+};
+
+const ensureContratosFiniquitosTable = (callback = () => {}) => {
+    const createTableQuery = `
+        CREATE TABLE IF NOT EXISTS contratos_finiquitos (
+            id_finiquito BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_contrato INT NOT NULL,
+            nombre_original VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(120) NULL,
+            contenido LONGBLOB NOT NULL,
+            fecha_actualizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_contrato_finiquito (id_contrato),
+            INDEX idx_cf_contrato (id_contrato),
+            CONSTRAINT fk_cf_contrato FOREIGN KEY (id_contrato) REFERENCES contratos_residentes(id_contrato) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `;
+
+    db.query(createTableQuery, (err) => {
+        if (err) {
+            console.error('Error asegurando tabla contratos_finiquitos:', err.message);
+        }
+        callback(err || null);
     });
 };
 
@@ -479,10 +507,16 @@ ensureInteresPorcentajeColumn();
 ensureFinancialContractColumns();
 ensureContratosServiciosTable();
 ensureContratosDocumentosTable();
+ensureContratosFiniquitosTable();
 
 // === 1. LISTAR CONTRATOS (CON JOINS) ===
 router.get("/", (req, res) => {
-    const query = `
+    ensureContratosFiniquitosTable((ensureErr) => {
+        if (ensureErr) {
+            return res.status(500).send('No se pudo preparar el almacenamiento de finiquitos.');
+        }
+
+        const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
                    c.monto_total, c.enganche, c.cuotas_pactadas, c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
@@ -490,6 +524,8 @@ router.get("/", (req, res) => {
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
                    r.nombre AS nombre_residente,
+                   COALESCE(r.numero_identificacion, r.dpi) AS numero_identificacion,
+                   r.estado_civil, r.profesion, r.nacionalidad,
                    tc.nombre_tipo_contrato,
                    e.nombre_empresa AS nombre_empresa_marca,
                    p.nombre AS nombre_proyecto,
@@ -497,6 +533,8 @@ router.get("/", (req, res) => {
                    COALESCE(em.logo, e.logo, er.logo) AS logo_proyecto,
                    COALESCE(e.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
                    COALESCE(p.nombre, em.nombre_empresa, e.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf,
+                   f.nombre_original AS nombre_finiquito,
+                   f.fecha_actualizacion AS fecha_finiquito,
                    (
                        SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
                        FROM contratos_servicios cs
@@ -517,15 +555,17 @@ router.get("/", (req, res) => {
             LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
                 LEFT JOIN empresas em ON em.id_empresa = p.id_empresa
                 LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
+            LEFT JOIN contratos_finiquitos f ON f.id_contrato = c.id_contrato
             ORDER BY c.id_contrato DESC
     `;
 
-    db.query(query, (err, result) => {
-        if (err) {
-            console.error('Error al listar contratos:', err);
-            return res.status(500).send('Error de servidor');
-        }
-        res.send(result);
+        db.query(query, (err, result) => {
+            if (err) {
+                console.error('Error al listar contratos:', err);
+                return res.status(500).send('Error de servidor');
+            }
+            return res.send(result);
+        });
     });
 });
 
@@ -934,6 +974,73 @@ router.get('/descargar-word/:id_contrato', (req, res) => {
 router.get('/descargar-archivo/:id_contrato', (req, res) => {
     req.url = `/descargar-word/${req.params.id_contrato}`;
     return router.handle(req, res);
+});
+
+router.post('/subir-finiquito/:id_contrato', uploadFiniquito.single('archivo'), (req, res) => {
+    const idContrato = Number(req.params.id_contrato || 0);
+    if (!Number.isInteger(idContrato) || idContrato <= 0) {
+        return res.status(400).send({ message: 'Contrato invalido.' });
+    }
+    if (!req.file?.buffer) {
+        return res.status(400).send({ message: 'Debe adjuntar el finiquito.' });
+    }
+
+    const replaceExisting = String(req.body?.replace_existing || '').trim() === '1';
+    const nombreOriginal = sanitizeFilename(String(req.file.originalname || 'finiquito.pdf').replace(/[|]/g, ' '));
+    const mimeType = normalizeMimeType(nombreOriginal, req.file.mimetype);
+
+    db.query('SELECT id_finiquito FROM contratos_finiquitos WHERE id_contrato = ? LIMIT 1', [idContrato], (lookupErr, rows) => {
+        if (lookupErr) {
+            return res.status(500).send({ message: 'No se pudo validar el finiquito existente.' });
+        }
+        if (rows?.length && !replaceExisting) {
+            return res.status(409).send({ message: 'Este contrato ya tiene un finiquito. Confirma si deseas reemplazarlo.' });
+        }
+
+        db.query(
+            `INSERT INTO contratos_finiquitos (id_contrato, nombre_original, mime_type, contenido)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE nombre_original = VALUES(nombre_original), mime_type = VALUES(mime_type),
+                 contenido = VALUES(contenido), fecha_actualizacion = CURRENT_TIMESTAMP`,
+            [idContrato, nombreOriginal, mimeType, req.file.buffer],
+            (saveErr) => {
+                if (saveErr) {
+                    return res.status(500).send({ message: 'No se pudo guardar el finiquito en la base de datos.' });
+                }
+                return res.status(200).send({ message: rows?.length ? 'Finiquito reemplazado.' : 'Finiquito guardado.' });
+            }
+        );
+    });
+});
+
+router.get('/descargar-finiquito/:id_contrato', (req, res) => {
+    const idContrato = Number(req.params.id_contrato || 0);
+    if (!Number.isInteger(idContrato) || idContrato <= 0) {
+        return res.status(400).send({ message: 'Contrato invalido.' });
+    }
+
+    db.query(
+        `SELECT c.codigo_contrato, f.nombre_original, f.mime_type, f.contenido
+         FROM contratos_residentes c
+         LEFT JOIN contratos_finiquitos f ON f.id_contrato = c.id_contrato
+         WHERE c.id_contrato = ? LIMIT 1`,
+        [idContrato],
+        (err, rows) => {
+            if (err) return res.status(500).send({ message: 'No se pudo consultar el finiquito.' });
+            const row = rows?.[0];
+            if (!row) return res.status(404).send({ message: 'Contrato no encontrado.' });
+            if (!row.contenido) return res.status(404).send({ message: 'Este contrato no tiene finiquito cargado.' });
+
+            const safeCodigo = String(row.codigo_contrato || `CONTRATO-${idContrato}`).replace(/[^A-Za-z0-9_-]/g, '_');
+            const mimeType = normalizeMimeType(row.nombre_original, row.mime_type);
+            const downloadName = ensureFileExtension(row.nombre_original, mimeType, `Finiquito_${safeCodigo}`);
+            const asciiName = downloadName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '_');
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
+            return res.status(200).send(row.contenido);
+        }
+    );
 });
 
 module.exports = router;
