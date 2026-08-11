@@ -1661,11 +1661,25 @@ const Caja = () => {
         const servicios = serviciosMensuales + serviciosUnicos + cargosExtra;
 
         return {
+            capital: redondear2(capital),
+            abono_capital: redondear2(abonoCapital),
             cuota: redondear2(capital + abonoCapital),
             interes: redondear2(interes),
             mora: redondear2(mora),
             servicios: redondear2(servicios),
             total: redondear2(capital + abonoCapital + interes + mora + servicios)
+        };
+    };
+    const obtenerResumenVisualCuota = (mesEtiqueta = '') => {
+        const desglose = obtenerDesgloseCuotaMesVista(mesEtiqueta);
+        const cuotaPactada = redondear2(
+            Number(desglose.capital || 0) + Number(desglose.interes || 0)
+        );
+        const extras = redondear2(Number(desglose.servicios || 0) + Number(desglose.mora || 0));
+        return {
+            ...desglose,
+            cuotaPactada,
+            extras
         };
     };
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
@@ -1894,15 +1908,15 @@ const Caja = () => {
                             </div>
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
                                 <div><strong>Precio total:</strong> Q{Math.round(precioTotalContrato)}</div>
-                                <div><strong>Saldo pendiente:</strong> Q{Math.round(totalContratoConInteres)}</div>
+                                <div><strong>Saldo total con interés:</strong> Q{Math.round(totalContratoConInteres)}</div>
                                 <div><strong>Capital pendiente:</strong> Q{Math.round(capitalPendienteFinanciado + enganchePendienteContrato)}</div>
                                 <div><strong>Capital financiado:</strong> Q{Math.round(planFinancieroContrato.capitalBaseInteres)}</div>
-                                <div><strong>Capital abonado:</strong> Q{Math.round(capitalPagadoFinanciado)}</div>
+                                <div><strong>Abonos a capital aplicados:</strong> Q{Math.round(capitalPagadoFinanciado)}</div>
                                 <div><strong>Cuota 0:</strong> Enganche Q{Math.round(enganchePendienteContrato)}</div>
                                 <div><strong>Capital por cuota:</strong> Q{Math.round(capitalPorCuotaRegular)}</div>
                                 <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
                                 <div><strong>Interés por cuota:</strong> Q{Math.round(interesPorCuotaRegular)}</div>
-                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{Math.round(cuotaRegularSinDecimales)}</div>
+                                <div><strong>Cuota pactada {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{Math.round(cuotaRegularSinDecimales)}</div>
                             </div>
                         </div>
                         <hr />
@@ -1959,9 +1973,10 @@ const Caja = () => {
                                         </div>
                                         <div className="col-md-6 text-end">
                                             <small><strong>Precio total:</strong> Q{precioTotalContrato.toFixed(2)}</small><br />
-                                            <small><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
+                                            <small><strong>Saldo total con interés:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
                                             <small><strong>Capital pendiente:</strong> Q{(capitalPendienteFinanciado + enganchePendienteContrato).toFixed(2)}</small><br />
-                                            <small><strong>Cuota fija:</strong> Q{Math.round(planFinancieroContrato.capitalPorCuota)}</small><br />
+                                            <small><strong>Cuota pactada:</strong> Q{Math.round(cuotaRegularSinDecimales)}</small><br />
+                                            <small><strong>Capital por cuota:</strong> Q{Math.round(planFinancieroContrato.capitalPorCuota)}</small><br />
                                             <small><strong>Interés por cuota:</strong> Q{Math.round(interesMensualSeleccionado)}</small><br />
                                             <small><strong>Cuota con interés:</strong> Q{Math.round(planFinancieroContrato.cuotaTotalConInteres)}</small><br />
                                             <small><strong>Mora aplicada:</strong> Q{montoMoraActual.toFixed(2)}</small>
@@ -2208,10 +2223,20 @@ const Caja = () => {
                                                                 </span>
                                                             </div>
                                                             {(() => {
-                                                                const desglose = obtenerDesgloseCuotaMesVista(mes);
+                                                                const resumenCuota = obtenerResumenVisualCuota(mes);
                                                                 return (
                                                                     <div className="text-end">
-                                                                        <span className="badge bg-primary fs-6">Q{Math.round(desglose.total)}</span>
+                                                                        <div className="badge bg-primary fs-6">Q{Math.round(resumenCuota.cuotaPactada)}</div>
+                                                                        {resumenCuota.extras > 0 && (
+                                                                            <div className="small text-muted mt-1">
+                                                                                Extras: Q{Math.round(resumenCuota.extras)}
+                                                                            </div>
+                                                                        )}
+                                                                        {Math.round(resumenCuota.total) !== Math.round(resumenCuota.cuotaPactada) && (
+                                                                            <div className="small fw-bold text-success">
+                                                                                Total: Q{Math.round(resumenCuota.total)}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })()}
