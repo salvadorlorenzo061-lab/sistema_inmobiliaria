@@ -93,7 +93,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
         SELECT 
             r.nombre, r.dpi, r.telefono, r.direccion_notificacion,
             c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.monto_cuota,
-            c.cuotas_pactadas, c.formato_contrato, c.id_proyecto,
+            c.enganche, c.interes_porcentaje, c.plazo_meses, c.cuotas_pactadas, c.formato_contrato, c.id_proyecto,
             tc.nombre_tipo_contrato,
             p.nombre AS nombre_proyecto
         FROM residentes r

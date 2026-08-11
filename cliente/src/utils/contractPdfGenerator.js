@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { calcularCuotaFija, generarTablaAmortizacion } from './amortizacion';
 
 /* ─────────────── Utilidades de conversión ─────────────── */
 const UNIDADES = ['','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve',
@@ -150,11 +151,13 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   const enganche  = parseFloat(datosContrato.enganche)           || 20000;
   const capRest   = mTotal - enganche;
   const intPct    = parseFloat(datosContrato.interes_porcentaje) || 14;
-  const intMonto  = capRest * (intPct/100);
-  const totalCInt = capRest + intMonto;
-  const nCuotas   = parseInt(datosContrato.cuotas_pactadas)      || 60;
-  const vCuota    = parseFloat(datosContrato.monto_cuota)        || parseFloat((capRest/nCuotas).toFixed(2));
-  const ultCuota  = parseFloat((totalCInt - vCuota*(nCuotas-1)).toFixed(2));
+  const nCuotas   = parseInt(datosContrato.plazo_meses || datosContrato.cuotas_pactadas) || 60;
+  const tablaAmortizacion = generarTablaAmortizacion(capRest, intPct, nCuotas);
+  const vCuota    = parseFloat(datosContrato.monto_cuota) || calcularCuotaFija(capRest, intPct, nCuotas);
+  const ultCuota  = Number(tablaAmortizacion[tablaAmortizacion.length - 1]?.cuota_estimada || vCuota || 0);
+  const totalCInt = tablaAmortizacion.length
+    ? tablaAmortizacion.reduce((sum, fila) => sum + Number(fila.cuota_estimada || 0), 0)
+    : (vCuota * nCuotas);
   const mora      = parseFloat(datosContrato.mora)               || 600;
   const diasGracia = Number(datosContrato.dia_pago_limite ?? 5);
   const diaVencimiento = fechaCompraObj.getDate();
