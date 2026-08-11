@@ -4,20 +4,22 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { calcularCuotaFija } from '../utils/amortizacion';
 import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfGenerator';
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 import PdfPreview from './PdfPreview';
 
 function Contratos_Residentes() {
-  const calcularMontoCuotaContrato = (montoTotalValue, engancheValue, cuotasValue, plazoValue) => {
+  const calcularMontoCuotaContrato = (montoTotalValue, engancheValue, interesValue, cuotasValue, plazoValue) => {
     const montoTotalNumero = Number(montoTotalValue || 0);
     const engancheNumero = Number(engancheValue || 0);
+    const interesNumero = Number(interesValue || 0);
     const plazoNumero = Number(plazoValue || cuotasValue || 0);
     const cuotasNumero = Number.isFinite(plazoNumero) && plazoNumero > 0
       ? plazoNumero
       : Number(cuotasValue || 0);
 
-    if (!Number.isFinite(montoTotalNumero) || !Number.isFinite(engancheNumero) || !Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
+    if (!Number.isFinite(montoTotalNumero) || !Number.isFinite(engancheNumero) || !Number.isFinite(interesNumero) || !Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
       return "";
     }
 
@@ -26,7 +28,7 @@ function Contratos_Residentes() {
       return "0.00";
     }
 
-    return (capitalFinanciado / cuotasNumero).toFixed(2);
+    return Number(calcularCuotaFija(capitalFinanciado, interesNumero, cuotasNumero) || 0).toFixed(2);
   };
 
   const obtenerInicioPagosAutomatico = (fechaCompraValue, fechaFirmaValue) => {
@@ -219,8 +221,8 @@ function Contratos_Residentes() {
 
   // La cuota automática debe calcularse sobre el capital financiado: precio total menos enganche.
   useEffect(() => {
-    setMonto_cuota(calcularMontoCuotaContrato(monto_total, enganche, cuotas_pactadas, plazo_meses));
-  }, [monto_total, enganche, cuotas_pactadas, plazo_meses]);
+    setMonto_cuota(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses));
+  }, [monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses]);
 
   // Mes y anio de inicio se calculan automaticamente desde la fecha del contrato.
   useEffect(() => {

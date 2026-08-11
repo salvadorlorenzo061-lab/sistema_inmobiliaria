@@ -63,6 +63,23 @@ const ensureFileExtension = (filename = '', mimeType = '', fallbackBase = 'archi
     return `${baseName || fallbackBase}${inferredExt}`;
 };
 
+const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
+    const principal = Math.round(Math.max(Number(capital || 0), 0));
+    const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+    const tasaMensual = Math.max(Number(tasaAnual || 0), 0) / 100 / 12;
+
+    if (principal <= 0 || plazo <= 0) return 0;
+    if (tasaMensual <= 0) return Math.round(principal / plazo);
+
+    const factor = Math.pow(1 + tasaMensual, plazo);
+    const denominador = factor - 1;
+    if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+        return Math.round(principal / plazo);
+    }
+
+    return Math.round(principal * ((tasaMensual * factor) / denominador));
+};
+
 router.use(cors());
 router.use(express.json());
 
@@ -594,9 +611,10 @@ router.post("/crear", (req, res) => {
             : Number(cuotas_pactadas || 0);
         const montoTotalNumerico = Number(monto_total || 0);
         const engancheNumerico = Number(enganche || 0);
+        const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
         const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
         const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
-            ? Number((capitalFinanciado / cuotasNormalizadas).toFixed(2))
+            ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
             : Number(monto_cuota || 0);
 
         const queryInsert = `
@@ -617,7 +635,7 @@ router.post("/crear", (req, res) => {
                 engancheNumerico,
                 cuotasNormalizadas,
                 montoCuotaNormalizado,
-                Number(interes_porcentaje || 0),
+                interesPorcentajeNumerico,
                 Number(mora || 0),
                 cuotasNormalizadas,
                 Number(mes_inicio_pagos || 1),
@@ -672,9 +690,10 @@ router.put("/actualizar", (req, res) => {
         : Number(cuotas_pactadas || 0);
     const montoTotalNumerico = Number(monto_total || 0);
     const engancheNumerico = Number(enganche || 0);
+    const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
     const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
     const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
-        ? Number((capitalFinanciado / cuotasNormalizadas).toFixed(2))
+        ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
         : Number(monto_cuota || 0);
 
     const queryUpdate = `
@@ -697,7 +716,7 @@ router.put("/actualizar", (req, res) => {
             engancheNumerico,
             cuotasNormalizadas,
             montoCuotaNormalizado,
-            Number(interes_porcentaje || 0),
+            interesPorcentajeNumerico,
             Number(mora || 0),
             cuotasNormalizadas,
             Number(mes_inicio_pagos || 1),

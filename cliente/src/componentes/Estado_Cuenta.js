@@ -7,6 +7,7 @@ import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { CONTRACT_VISUAL_ASSETS } from '../utils/contractVisualAssets';
 import { resolveContractTemplateId } from '../utils/contractTemplates';
+import { calcularCuotaFija, generarTablaAmortizacion } from '../utils/amortizacion';
 
 const EstadoCuenta = () => {
   const [busqueda, setBusqueda] = useState('');
@@ -178,6 +179,23 @@ const EstadoCuenta = () => {
     return nueva;
   };
 
+  const construirPlanContrato = (contrato = {}) => {
+    const cuotasPactadas = Math.max(Number(contrato.plazo_meses || contrato.cuotas_pactadas || 0), 0);
+    const montoTotalContrato = Math.max(Number(contrato.monto_total || 0), 0);
+    const engancheContrato = Math.max(Number(contrato.enganche || 0), 0);
+    const interesAnualContrato = Math.max(Number(contrato.interes_porcentaje || 0), 0);
+    const capitalFinanciado = Math.max(montoTotalContrato - engancheContrato, 0);
+    const tablaAmortizacion = generarTablaAmortizacion(capitalFinanciado, interesAnualContrato, cuotasPactadas);
+    const montoCuota = Number(contrato.monto_cuota || 0) || calcularCuotaFija(capitalFinanciado, interesAnualContrato, cuotasPactadas);
+    const ultimaCuota = Number(tablaAmortizacion[tablaAmortizacion.length - 1]?.cuota_estimada || montoCuota || 0);
+
+    return {
+      cuotasPactadas,
+      montoCuota,
+      ultimaCuota
+    };
+  };
+
   const obtenerMarcaTipoServicio = (serviciosNombres = '', formaPago = '') => {
     const normalizadoServicios = String(serviciosNombres || '')
       .normalize('NFD')
@@ -204,6 +222,8 @@ const EstadoCuenta = () => {
       c: normalizadoPago.includes('cheque') ? '*' : ''
     };
   };
+
+  const planContratoActual = estadoCuenta?.contrato ? construirPlanContrato(estadoCuenta.contrato) : null;
 
   const exportarEstadoCuentaPDF = async () => {
     if (!estadoCuenta) {
@@ -241,12 +261,7 @@ const EstadoCuenta = () => {
       const formatoContrato = resolveContractTemplateId(
         contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
       );
-      const cuotasPactadas = Number(contrato.cuotas_pactadas || 0);
-      const montoTotalContrato = Number(contrato.monto_total || 0);
-      const montoCuota = Number(contrato.monto_cuota || 0);
-      const ultimaCuota = cuotasPactadas > 1
-        ? Math.max(0, montoTotalContrato - (montoCuota * (cuotasPactadas - 1)))
-        : montoTotalContrato;
+      const { cuotasPactadas, montoCuota, ultimaCuota } = construirPlanContrato(contrato);
 
       const detallesPorCuota = new Map();
       const detalleRaw = Array.isArray(estadoCuenta.cuotasDetalle) ? estadoCuenta.cuotasDetalle : [];
@@ -743,7 +758,7 @@ const EstadoCuenta = () => {
                       </p>
                       <p className="mb-2">
                         <strong>Monto por Cuota:</strong> Q
-                        {parseFloat(estadoCuenta.contrato.monto_cuota).toFixed(2)}
+                        {Number(planContratoActual?.montoCuota || 0).toFixed(2)}
                       </p>
                       <p className="mb-2">
                         <strong>Total Pagado:</strong>{' '}
