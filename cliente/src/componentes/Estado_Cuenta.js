@@ -191,6 +191,7 @@ const EstadoCuenta = () => {
 
     return {
       cuotasPactadas,
+      montoTotalContrato,
       montoCuota,
       ultimaCuota
     };
@@ -261,7 +262,7 @@ const EstadoCuenta = () => {
       const formatoContrato = resolveContractTemplateId(
         contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
       );
-      const { cuotasPactadas, montoCuota, ultimaCuota } = construirPlanContrato(contrato);
+      const { cuotasPactadas, montoTotalContrato, montoCuota, ultimaCuota } = construirPlanContrato(contrato);
 
       const detallesPorCuota = new Map();
       const detalleRaw = Array.isArray(estadoCuenta.cuotasDetalle) ? estadoCuenta.cuotasDetalle : [];
