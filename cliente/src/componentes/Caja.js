@@ -155,6 +155,8 @@ const Caja = () => {
         const cuotasPagadas = Math.max(parseInt(contrato?.cuotas_pagadas || 0, 10), 0);
         const cuotasPendientes = Math.max(cuotasPactadas - cuotasPagadas, 0);
         const enganchePendiente = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche_pendiente || 0), 0);
+        const cuotaEnganchePagada = !tieneConvenioActivo && enganche > 0 && enganchePagado >= (enganche - 0.01) ? 1 : 0;
+        const cuotasFinanciadasPagadas = Math.max(cuotasPagadas - cuotaEnganchePagada, 0);
         const interesPorcentaje = tieneConvenioActivo
             ? 0
             : Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
@@ -177,12 +179,15 @@ const Caja = () => {
         const capitalPorCuota = tieneConvenioActivo
             ? (capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica)
             : (usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital);
-        const tablaAmortizacion = generarTablaAmortizacion(
-            Math.max(saldoPendiente - enganchePendiente, 0),
+        const tablaContratoCompleta = generarTablaAmortizacion(
+            tieneConvenioActivo ? Math.max(capitalPendienteFinanciado, 0) : capitalBaseInteres,
             tieneConvenioActivo ? 0 : interesPorcentaje,
-            cuotasPendientes,
-            cuotasPagadas
+            tieneConvenioActivo ? cuotasPendientes : cuotasPactadas,
+            tieneConvenioActivo ? cuotasPagadas : 0
         );
+        const tablaAmortizacion = tieneConvenioActivo
+            ? tablaContratoCompleta
+            : tablaContratoCompleta.filter((fila) => Number(fila?.numero_cuota || 0) > cuotasFinanciadasPagadas);
         const cuotaMensualConInteres = tablaAmortizacion[0]?.cuota_estimada || 0;
         const interesTotalContrato = parseFloat(
             tablaAmortizacion.reduce((sum, fila) => sum + Number(fila.interes_mes || 0), 0).toFixed(2)
@@ -783,7 +788,7 @@ const Caja = () => {
 
             const lista = Array.isArray(res?.data) ? res.data : [];
             const actualizado = lista.find((item) => Number(item?.id_contrato) === Number(residenteBase?.id_contrato));
-            return actualizado || residenteBase;
+            return actualizado ? { ...residenteBase, ...actualizado } : residenteBase;
         } catch (error) {
             console.error('No se pudo refrescar el contrato en Caja, se usara la version actual en memoria:', error);
             return residenteBase;
@@ -1849,7 +1854,7 @@ const Caja = () => {
                                 <div><strong>Capital financiado:</strong> Q{Math.round(planFinancieroContrato.capitalBaseInteres)}</div>
                                 <div><strong>Cuota 0:</strong> Enganche Q{Math.round(enganchePendienteContrato)}</div>
                                 <div><strong>Capital por cuota:</strong> Q{Math.round(capitalPorCuotaRegular)}</div>
-                                <div><strong>Interés total ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
+                                <div><strong>Interés pendiente ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
                                 <div><strong>Interés por cuota:</strong> Q{Math.round(interesPorCuotaRegular)}</div>
                                 <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{Math.round(cuotaRegularSinDecimales)}</div>
                             </div>
