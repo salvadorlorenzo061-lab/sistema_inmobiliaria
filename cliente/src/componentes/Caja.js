@@ -8,7 +8,7 @@ import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils
 import { generarTablaAmortizacion } from '../utils/amortizacion';
 import { API_BASE_URL } from '../config';
 
-// El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
+// El sistema emite un unico formato de documento (RECIBO DE CAJA O COMPROBANTE DE PAGO).
 // Los layouts de Recibo Juridico y Recibo de Caja se conservan mas abajo, desactivados.
 const USAR_FORMATO_RECIBO_JURIDICO = false;
 

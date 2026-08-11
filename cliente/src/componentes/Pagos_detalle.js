@@ -7,7 +7,7 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
-// El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
+// El sistema emite un unico formato de documento (RECIBO DE CAJA O COMPROBANTE DE PAGO).
 // El layout de Recibo Juridico se conserva mas abajo, desactivado, por si se requiere volver a el.
 const USAR_FORMATO_RECIBO_JURIDICO = false;
 

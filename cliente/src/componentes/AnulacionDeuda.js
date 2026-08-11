@@ -7,7 +7,7 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
-// La anulacion usa el mismo formato que la factura emitida (FACTURA / COMPROBANTE DE COBRO),
+// La anulacion usa el mismo formato que la factura emitida (RECIBO DE CAJA O COMPROBANTE DE PAGO),
 // solo que con el sello ANULADA. El layout de Recibo Juridico queda abajo, desactivado.
 const USAR_FORMATO_RECIBO_JURIDICO = false;
 

@@ -1,6 +1,6 @@
 import autoTable from 'jspdf-autotable';
 
-// Formato unico de documento para todo el sistema: FACTURA / COMPROBANTE DE COBRO.
+// Formato unico de documento para todo el sistema: RECIBO DE CAJA O COMPROBANTE DE PAGO.
 // Lo usan Caja (emision), Detalle de Pagos (reimpresion) y Anulacion de Deuda (anulada),
 // para que la factura emitida y la anulada se vean identicas salvo el sello ANULADA.
 
@@ -226,12 +226,12 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
 };
 
 /**
- * Dibuja el formato FACTURA / COMPROBANTE DE COBRO sobre un documento jsPDF ya creado.
+ * Dibuja el formato RECIBO DE CAJA O COMPROBANTE DE PAGO sobre un documento jsPDF ya creado.
  * No guarda el archivo: el llamador decide el nombre con doc.save().
  */
 export const renderFacturaComprobante = (doc, datos = {}) => {
   const {
-    titulo = ['FACTURA / COMPROBANTE', 'DE COBRO'],
+    titulo = ['RECIBO DE CAJA O', 'COMPROBANTE DE PAGO'],
     logo = '',
     empresa = {},
     documentoNo = 'N/A',
