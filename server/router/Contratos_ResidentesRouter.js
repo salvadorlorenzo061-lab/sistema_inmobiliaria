@@ -64,59 +64,21 @@ const ensureFileExtension = (filename = '', mimeType = '', fallbackBase = 'archi
 };
 
 const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
-    const principal = Number(Math.max(Number(capital || 0), 0).toFixed(2));
+    const principal = Math.round(Math.max(Number(capital || 0), 0));
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
-    const tasa = Math.max(Number(tasaAnual || 0), 0) / 100;
-    const plazoAnios = plazo / 12;
-    const interesTotal = Number((principal * tasa * plazoAnios).toFixed(2));
-    const totalFinanciado = Number((principal + interesTotal).toFixed(2));
+    const tasaMensual = Math.max(Number(tasaAnual || 0), 0) / 100 / 12;
 
     if (principal <= 0 || plazo <= 0) return 0;
-    return Math.round(totalFinanciado / plazo);
-};
+    if (tasaMensual <= 0) return Math.round(principal / plazo);
 
-const estimarCapitalDesdeCuota = (cuota = 0, tasaAnual = 0, cuotas = 0) => {
-    const montoCuota = Math.max(Number(cuota || 0), 0);
-    const totalCuotas = Math.max(Number(cuotas || 0), 0);
-    const tasa = Math.max(Number(tasaAnual || 0), 0) / 100;
-    const plazoAnios = totalCuotas / 12;
-
-    if (montoCuota <= 0 || totalCuotas <= 0) return 0;
-    const divisor = 1 + (tasa * plazoAnios);
-    if (divisor <= 0) return montoCuota * totalCuotas;
-    return (montoCuota * totalCuotas) / divisor;
-};
-
-const resolverMontoTotalOriginalContrato = (contrato = {}) => {
-    const montoTotalRaw = Math.max(Number(contrato?.monto_total || 0), 0);
-    const capitalPagado = Math.max(Number(contrato?.capital_pagado_total || 0), 0);
-    const montoReconstruido = montoTotalRaw + capitalPagado;
-    const enganche = Math.max(Number(contrato?.enganche || 0), 0);
-    const cuotas = Math.max(Number(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0), 0);
-    const montoCuota = Math.max(Number(contrato?.monto_cuota || 0), 0);
-    const interes = Math.max(Number(contrato?.interes_porcentaje || 0), 0);
-    const montoEstimado = enganche + estimarCapitalDesdeCuota(montoCuota, interes, cuotas);
-
-    if (montoEstimado > 0) {
-        const diffRaw = Math.abs(montoTotalRaw - montoEstimado);
-        const diffReconstruido = Math.abs(montoReconstruido - montoEstimado);
-        return Number((diffRaw <= diffReconstruido ? montoTotalRaw : montoReconstruido).toFixed(2));
+    const factor = Math.pow(1 + tasaMensual, plazo);
+    const denominador = factor - 1;
+    if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+        return Math.round(principal / plazo);
     }
 
-    return Number((Math.max(montoTotalRaw, montoReconstruido)).toFixed(2));
+    return Math.round(principal * ((tasaMensual * factor) / denominador));
 };
-
-const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
-    SELECT
-        p.id_contrato,
-        COALESCE(SUM(CASE
-            WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal
-            ELSE 0
-        END), 0) AS capital_pagado_total
-    FROM pagos p
-    INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-    GROUP BY p.id_contrato
-`;
 
 router.use(cors());
 router.use(express.json());
@@ -574,9 +536,7 @@ router.get("/", (req, res) => {
         const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
-                   c.monto_total,
-                   COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
-                   c.enganche, c.cuotas_pactadas, c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
+                   c.monto_total, c.enganche, c.cuotas_pactadas, c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
                    c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
@@ -612,9 +572,6 @@ router.get("/", (req, res) => {
             LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
                 LEFT JOIN empresas em ON em.id_empresa = p.id_empresa
                 LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
-            LEFT JOIN (
-                ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
-            ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
             LEFT JOIN contratos_finiquitos f ON f.id_contrato = c.id_contrato
             ORDER BY c.id_contrato DESC
     `;
@@ -624,11 +581,7 @@ router.get("/", (req, res) => {
                 console.error('Error al listar contratos:', err);
                 return res.status(500).send('Error de servidor');
             }
-            const contratosNormalizados = (result || []).map((contrato) => ({
-                ...contrato,
-                monto_total_original: resolverMontoTotalOriginalContrato(contrato)
-            }));
-            return res.send(contratosNormalizados);
+            return res.send(result);
         });
     });
 });

@@ -8,7 +8,7 @@ import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils
 import { generarTablaAmortizacion } from '../utils/amortizacion';
 import { API_BASE_URL } from '../config';
 
-// El sistema emite un unico formato de documento (RECIBO DE CAJA O COMPROBANTE DE PAGO).
+// El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
 // Los layouts de Recibo Juridico y Recibo de Caja se conservan mas abajo, desactivados.
 const USAR_FORMATO_RECIBO_JURIDICO = false;
 
@@ -143,14 +143,13 @@ const PREFILL_CAJA_KEY = 'prefill_caja_desde_cuenta_estado';
 
 const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
+    const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
     const redondear2 = (valor) => parseFloat((Number(valor || 0)).toFixed(2));
     const calcularPlanFinancieroContrato = (contrato = {}) => {
         const tieneConvenioActivo = Number(contrato?.id_convenio_activo || 0) > 0;
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
         const montoTotalContrato = Math.max(parseFloat(contrato?.monto_total_original || contrato?.monto_total_contrato || 0), 0);
         const enganche = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche || 0), 0);
-        const enganchePagado = tieneConvenioActivo ? enganche : Math.max(parseFloat(contrato?.enganche_pagado || 0), 0);
-        const capitalPagadoTotal = Math.max(parseFloat(contrato?.capital_pagado_total || 0), 0);
         const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
         const cuotasPagadas = Math.max(parseInt(contrato?.cuotas_pagadas || 0, 10), 0);
@@ -167,12 +166,6 @@ const Caja = () => {
             : ((capitalPorCuotaContrato > 0 && cuotasPactadas > 0)
                 ? parseFloat((capitalPorCuotaContrato * cuotasPactadas).toFixed(2))
                 : parseFloat(saldoPendiente.toFixed(2)));
-        const capitalPagadoFinanciado = tieneConvenioActivo
-            ? 0
-            : Math.max(parseFloat((capitalPagadoTotal - enganchePagado).toFixed(2)), 0);
-        const capitalPendienteFinanciado = tieneConvenioActivo
-            ? saldoPendiente
-            : Math.max(parseFloat((capitalTotalContrato - capitalPagadoFinanciado).toFixed(2)), 0);
         const capitalBaseInteres = Math.max(parseFloat(capitalTotalContrato.toFixed(2)), 0);
         const cuotaCapitalTeorica = (capitalBaseInteres > 0 && cuotasPactadas > 0)
             ? parseFloat((capitalBaseInteres / cuotasPactadas).toFixed(2))
@@ -204,17 +197,12 @@ const Caja = () => {
             : 0;
         const cuotaTotalConInteres = tablaAmortizacion.length > 0 ? cuotaMensualConInteres : 0;
         const cuotasRestantes = tablaAmortizacion.length;
-        const totalContratoConInteres = parseFloat(((capitalPendienteFinanciado + enganchePendiente) + interesTotalContrato).toFixed(2));
+        const totalContratoConInteres = parseFloat((saldoPendiente + interesTotalContrato).toFixed(2));
 
         return {
             saldoPendiente,
-            precioTotalContrato: montoTotalContrato,
             enganche,
-            enganchePagado,
             capitalPorCuota,
-            capitalPagadoTotal,
-            capitalPagadoFinanciado,
-            capitalPendienteFinanciado,
             cuotasPactadas,
             cuotasPagadas,
             cuotasPendientes,
@@ -437,6 +425,33 @@ const Caja = () => {
         };
     };
 
+    const esMesVencidoParaMoraLocal = (mesTexto = '') => {
+        const hoy = new Date();
+        const hoyMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+        if (!limpio) return false;
+
+        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+        if (conAnio) {
+            const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
+            if (indiceMes >= 0) {
+                const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
+                return fechaMes < hoyMes;
+            }
+        }
+
+        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+        if (soloMes) {
+            const indiceMes = obtenerIndiceMesLocal(soloMes[1]);
+            if (indiceMes >= 0) {
+                const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
+                return fechaMes < hoyMes;
+            }
+        }
+
+        return false;
+    };
+
     const compararMesesMoraLocal = (mesA = '', mesB = '') => {
         const keyA = obtenerMesKeyLocal(mesA);
         const keyB = obtenerMesKeyLocal(mesB);
@@ -459,66 +474,6 @@ const Caja = () => {
         if (!objetivo) return -1;
         const nombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         return nombres.findIndex((nombre) => nombre === objetivo);
-    };
-
-    const parsearFechaContratoLocal = (valor) => {
-        const match = String(valor || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-        const parsed = match
-            ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-            : (valor ? new Date(valor) : null);
-        return parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : null;
-    };
-
-    const parsearEtiquetaMesLocal = (mesTexto = '') => {
-        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
-        if (!limpio) return null;
-
-        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
-        if (!conAnio) return null;
-
-        const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
-        const anio = Number(conAnio[2]);
-        if (indiceMes < 0 || !Number.isInteger(anio)) return null;
-
-        return new Date(anio, indiceMes, 1);
-    };
-
-    const esMoraContractualVencidaLocal = (mora = {}) => {
-        const mesTexto = String(mora?.mes_atrasado || mora?.mes || '').trim();
-        const fechaContratoRaw = mora?.fecha_contrato
-            || datosDeuda?.fecha_compra
-            || datosDeuda?.fecha_firma
-            || datosDeuda?.convenio_fecha_inicio
-            || '';
-        const diasGracia = Math.max(0, Math.min(31, Number(mora?.dias_gracia ?? datosDeuda?.dia_pago_limite ?? 5)));
-        const fechaContrato = parsearFechaContratoLocal(fechaContratoRaw);
-        const mesCuota = parsearEtiquetaMesLocal(mesTexto);
-
-        if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return false;
-        if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return false;
-
-        const primerMesCuota = new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
-        const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
-        if (mesEvaluado < primerMesCuota) return false;
-
-        const hoy = new Date();
-        const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        if (mesEvaluado >= mesActual) return false;
-
-        const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
-        const fechaVencimiento = new Date(
-            mesCuota.getFullYear(),
-            mesCuota.getMonth(),
-            Math.min(fechaContrato.getDate(), ultimoDiaMes)
-        );
-        const fechaInicioMora = new Date(
-            fechaVencimiento.getFullYear(),
-            fechaVencimiento.getMonth(),
-            fechaVencimiento.getDate()
-        );
-        fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia + 2);
-
-        return hoy >= fechaInicioMora;
     };
 
     const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null) => {
@@ -546,7 +501,7 @@ const Caja = () => {
             const moraMes = morasPendientes.find((mora) => {
                 const mesMora = String(mora?.mes_atrasado || '').trim();
                 return mesMora
-                    && esMoraContractualVencidaLocal(mora)
+                    && esMesVencidoParaMoraLocal(mesMora)
                     && compararMesesMoraLocal(mesSeleccionado, mesMora);
             });
 
@@ -1584,7 +1539,7 @@ const Caja = () => {
 
     const { paginatedItems: listaResidentesPaginada, totalPages, startIndex, endIndex } = getPaginatedData(listaFiltrada, currentPage, itemsPerPage);
     const planFinancieroContrato = calcularPlanFinancieroContrato(datosDeuda || {});
-    const saldoTerrenoPendiente = planFinancieroContrato.capitalPendienteFinanciado;
+    const saldoTerrenoPendiente = planFinancieroContrato.saldoPendiente;
     const enganchePendienteContrato = Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0);
     const enganchePendiente = Math.max(
         enganchePendienteContrato,
@@ -1594,13 +1549,10 @@ const Caja = () => {
     const porcentajeInteresContrato = planFinancieroContrato.interesPorcentaje;
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
     const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
-    const precioTotalContrato = planFinancieroContrato.precioTotalContrato;
-    const capitalPendienteFinanciado = planFinancieroContrato.capitalPendienteFinanciado;
-    const capitalPagadoFinanciado = planFinancieroContrato.capitalPagadoFinanciado;
     const cuotaInicioFinanciadaVista = 1;
     const tablaAmortizacionVista = planFinancieroContrato?.tablaAmortizacion || [];
     const primeraCuotaFinanciada = tablaAmortizacionVista[0] || {};
-    const capitalPorCuotaRegular = Number(primeraCuotaFinanciada.capital_cuota || planFinancieroContrato.capitalPorCuota || 0);
+    const capitalPorCuotaRegular = Number(primeraCuotaFinanciada.capital_cuota || 0);
     const interesPorCuotaRegular = Number(primeraCuotaFinanciada.interes_mes || 0);
     const cuotaRegularSinDecimales = Number(primeraCuotaFinanciada.cuota_estimada || 0);
     const obtenerFilaAmortizacionVista = (numeroCuota) => (
@@ -1664,25 +1616,11 @@ const Caja = () => {
         const servicios = serviciosMensuales + serviciosUnicos + cargosExtra;
 
         return {
-            capital: redondear2(capital),
-            abono_capital: redondear2(abonoCapital),
             cuota: redondear2(capital + abonoCapital),
             interes: redondear2(interes),
             mora: redondear2(mora),
             servicios: redondear2(servicios),
             total: redondear2(capital + abonoCapital + interes + mora + servicios)
-        };
-    };
-    const obtenerResumenVisualCuota = (mesEtiqueta = '') => {
-        const desglose = obtenerDesgloseCuotaMesVista(mesEtiqueta);
-        const cuotaPactada = redondear2(
-            Number(desglose.capital || 0) + Number(desglose.interes || 0)
-        );
-        const extras = redondear2(Number(desglose.servicios || 0) + Number(desglose.mora || 0));
-        return {
-            ...desglose,
-            cuotaPactada,
-            extras
         };
     };
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
@@ -1911,16 +1849,14 @@ const Caja = () => {
                                 <div><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</div>
                             </div>
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
-                                <div><strong>Precio total:</strong> Q{Math.round(precioTotalContrato)}</div>
-                                <div><strong>Saldo total con interés:</strong> Q{Math.round(totalContratoConInteres)}</div>
-                                <div><strong>Capital pendiente:</strong> Q{Math.round(capitalPendienteFinanciado + enganchePendienteContrato)}</div>
+                                <div><strong>Saldo pendiente:</strong> Q{Math.round(totalContratoConInteres)}</div>
+                                <div><strong>Capital pendiente:</strong> Q{Math.round(getSaldoDisplay(datosDeuda?.saldo_pendiente))}</div>
                                 <div><strong>Capital financiado:</strong> Q{Math.round(planFinancieroContrato.capitalBaseInteres)}</div>
-                                <div><strong>Abonos a capital aplicados:</strong> Q{Math.round(capitalPagadoFinanciado)}</div>
                                 <div><strong>Cuota 0:</strong> Enganche Q{Math.round(enganchePendienteContrato)}</div>
                                 <div><strong>Capital por cuota:</strong> Q{Math.round(capitalPorCuotaRegular)}</div>
                                 <div><strong>Interés pendiente ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
                                 <div><strong>Interés por cuota:</strong> Q{Math.round(interesPorCuotaRegular)}</div>
-                                <div><strong>Cuota pactada {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{Math.round(cuotaRegularSinDecimales)}</div>
+                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{Math.round(cuotaRegularSinDecimales)}</div>
                             </div>
                         </div>
                         <hr />
@@ -1976,11 +1912,9 @@ const Caja = () => {
                                             <br /><small><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</small>
                                         </div>
                                         <div className="col-md-6 text-end">
-                                            <small><strong>Precio total:</strong> Q{precioTotalContrato.toFixed(2)}</small><br />
-                                            <small><strong>Saldo total con interés:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
-                                            <small><strong>Capital pendiente:</strong> Q{(capitalPendienteFinanciado + enganchePendienteContrato).toFixed(2)}</small><br />
-                                            <small><strong>Cuota pactada:</strong> Q{Math.round(cuotaRegularSinDecimales)}</small><br />
-                                            <small><strong>Capital por cuota:</strong> Q{Math.round(planFinancieroContrato.capitalPorCuota)}</small><br />
+                                            <small><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
+                                            <small><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
+                                            <small><strong>Cuota fija:</strong> Q{Math.round(planFinancieroContrato.capitalPorCuota)}</small><br />
                                             <small><strong>Interés por cuota:</strong> Q{Math.round(interesMensualSeleccionado)}</small><br />
                                             <small><strong>Cuota con interés:</strong> Q{Math.round(planFinancieroContrato.cuotaTotalConInteres)}</small><br />
                                             <small><strong>Mora aplicada:</strong> Q{montoMoraActual.toFixed(2)}</small>
@@ -2227,20 +2161,10 @@ const Caja = () => {
                                                                 </span>
                                                             </div>
                                                             {(() => {
-                                                                const resumenCuota = obtenerResumenVisualCuota(mes);
+                                                                const desglose = obtenerDesgloseCuotaMesVista(mes);
                                                                 return (
                                                                     <div className="text-end">
-                                                                        <div className="badge bg-primary fs-6">Q{Math.round(resumenCuota.cuotaPactada)}</div>
-                                                                        {resumenCuota.extras > 0 && (
-                                                                            <div className="small text-muted mt-1">
-                                                                                Extras: Q{Math.round(resumenCuota.extras)}
-                                                                            </div>
-                                                                        )}
-                                                                        {Math.round(resumenCuota.total) !== Math.round(resumenCuota.cuotaPactada) && (
-                                                                            <div className="small fw-bold text-success">
-                                                                                Total: Q{Math.round(resumenCuota.total)}
-                                                                            </div>
-                                                                        )}
+                                                                        <span className="badge bg-primary fs-6">Q{Math.round(desglose.total)}</span>
                                                                     </div>
                                                                 );
                                                             })()}

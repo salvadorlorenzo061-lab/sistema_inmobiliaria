@@ -169,7 +169,7 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
     if (mesEvaluado < primerMesCuota) return false;
     const hoy = new Date();
     const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    if (mesEvaluado >= mesActual) return false;
+    if (mesEvaluado > mesActual) return false;
 
     const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
     const fechaVencimiento = new Date(
@@ -223,72 +223,6 @@ const calcularComponentesFiscalmente = (total = 0) => {
         iva,
         total: montoTotal
     };
-};
-
-const estimarCapitalDesdeCuota = (cuota = 0, tasaAnual = 0, cuotas = 0) => {
-    const montoCuota = Math.max(Number(cuota || 0), 0);
-    const totalCuotas = Math.max(Number(cuotas || 0), 0);
-    const tasa = Math.max(Number(tasaAnual || 0), 0) / 100;
-    const plazoAnios = totalCuotas / 12;
-
-    if (montoCuota <= 0 || totalCuotas <= 0) return 0;
-    const divisor = 1 + (tasa * plazoAnios);
-    if (divisor <= 0) return montoCuota * totalCuotas;
-    return (montoCuota * totalCuotas) / divisor;
-};
-
-const resolverMontoTotalOriginalContrato = (contrato = {}) => {
-    const montoConvenio = Math.max(Number(contrato?.convenio_monto_original || 0), 0);
-    if (montoConvenio > 0) {
-        return Number(montoConvenio.toFixed(2));
-    }
-
-    const montoTotalBase = contrato?.saldo_pendiente ?? contrato?.monto_total ?? 0;
-    const montoTotalRaw = Math.max(Number(montoTotalBase), 0);
-    const capitalPagado = Math.max(Number(contrato?.capital_pagado_total || 0), 0);
-    const montoReconstruido = montoTotalRaw + capitalPagado;
-    const enganche = Math.max(Number(contrato?.enganche || 0), 0);
-    const cuotas = Math.max(Number(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0), 0);
-    const montoCuota = Math.max(Number(contrato?.monto_cuota || 0), 0);
-    const interes = Math.max(Number(contrato?.interes_porcentaje || 0), 0);
-    const montoEstimado = enganche + estimarCapitalDesdeCuota(montoCuota, interes, cuotas);
-
-    if (montoEstimado > 0) {
-        const diffRaw = Math.abs(montoTotalRaw - montoEstimado);
-        const diffReconstruido = Math.abs(montoReconstruido - montoEstimado);
-        return Number((diffRaw <= diffReconstruido ? montoTotalRaw : montoReconstruido).toFixed(2));
-    }
-
-    return Number((Math.max(montoTotalRaw, montoReconstruido)).toFixed(2));
-};
-
-const resolverSaldoPendienteContrato = (contrato = {}) => {
-    const saldoConvenio = Math.max(Number(contrato?.convenio_saldo_actual || 0), 0);
-    if (saldoConvenio > 0) {
-        return Number(saldoConvenio.toFixed(2));
-    }
-
-    const precioTotal = resolverMontoTotalOriginalContrato(contrato);
-    const enganche = Math.max(Number(contrato?.enganche || 0), 0);
-    const enganchePagado = Math.max(Number(contrato?.enganche_pagado || 0), 0);
-    const capitalPagadoTotal = Math.max(Number(contrato?.capital_pagado_total || 0), 0);
-    const enganchePendiente = Math.max(enganche - enganchePagado, 0);
-    const capitalFinanciadoInicial = Math.max(precioTotal - enganche, 0);
-    const capitalPagadoFinanciado = Math.max(capitalPagadoTotal - enganchePagado, 0);
-    const capitalPendienteFinanciado = Math.max(capitalFinanciadoInicial - capitalPagadoFinanciado, 0);
-    const saldoEstimado = capitalPendienteFinanciado + enganchePendiente;
-    const saldoBase = contrato?.saldo_pendiente ?? contrato?.monto_total ?? 0;
-    const saldoRaw = Math.max(Number(saldoBase), 0);
-
-    if (saldoRaw > 0 && capitalPagadoTotal <= 0) {
-        return Number(saldoRaw.toFixed(2));
-    }
-
-    if (saldoEstimado > 0) {
-        return Number(saldoEstimado.toFixed(2));
-    }
-
-    return Number(saldoRaw.toFixed(2));
 };
 
 const ULTIMO_CONVENIO_ACTIVO_SUBQUERY = `
@@ -835,13 +769,10 @@ router.get("/residentes-pendientes", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
-            COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
-            c.fecha_firma,
-            COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            conv.saldo_actual AS convenio_saldo_actual,
-            conv.monto_original AS convenio_monto_original,
-            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
+            COALESCE(conv.monto_original,
+                        c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
+            ) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
@@ -895,12 +826,7 @@ router.get("/residentes-pendientes", (req, res) => {
                 return res.status(500).send("Error al obtener residentes: " + err.message);
             }
 
-            const contratosNormalizados = (result || []).map((contrato) => ({
-                ...contrato,
-                monto_total_original: resolverMontoTotalOriginalContrato(contrato),
-                saldo_pendiente: resolverSaldoPendienteContrato(contrato)
-            }));
-            return res.status(200).json(contratosNormalizados);
+            return res.status(200).json(result || []);
         });
     });
 });
@@ -971,13 +897,10 @@ router.get("/buscar-residente", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
-            COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
-            c.fecha_firma,
-            COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            conv.saldo_actual AS convenio_saldo_actual,
-            conv.monto_original AS convenio_monto_original,
-            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
+            COALESCE(conv.monto_original,
+                        c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
+            ) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
@@ -1039,14 +962,8 @@ router.get("/buscar-residente", (req, res) => {
                 return res.status(500).send("Error al consultar el residente: " + err.message);
             }
             if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
-
-            const contratosNormalizados = (result || []).map((contrato) => ({
-                ...contrato,
-                monto_total_original: resolverMontoTotalOriginalContrato(contrato),
-                saldo_pendiente: resolverSaldoPendienteContrato(contrato)
-            }));
             
-            return res.status(200).json(contratosNormalizados);
+            return res.status(200).json(result);
         });
     });
 });
@@ -1570,9 +1487,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
             mes_atrasado: String(row.mes_atrasado || ''),
             dias_retraso: Number(row.dias_retraso || 0),
             monto_mora: Number(row.monto_mora || 0),
-            estado: String(row.estado || 'pendiente'),
-            fecha_contrato: row.fecha_contrato || null,
-            dias_gracia: Number(row.dias_gracia ?? 5)
+            estado: String(row.estado || 'pendiente')
         }));
 
         const totalMoraPendiente = moras.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
@@ -1658,7 +1573,7 @@ router.post("/procesar-pago", (req, res) => {
             })
         : [];
 
-    let morasAplicadas = Array.isArray(moras_aplicadas)
+    const morasAplicadas = Array.isArray(moras_aplicadas)
         ? moras_aplicadas
             .map((item) => ({
                 id_morosidad: Number(item?.id_morosidad || 0),
@@ -1666,9 +1581,14 @@ router.post("/procesar-pago", (req, res) => {
                 monto_mora: Number(item?.monto_mora || 0)
             }))
             .filter((item) => Number.isFinite(item.monto_mora) && item.monto_mora > 0)
+            .filter((item) => {
+                const mes = String(item?.mes_atrasado || '').trim();
+                // Solo valida que el mes sea vencido; no exige coincidencia con meses del pago
+                return !mes || esMesVencidoParaMora(mes);
+            })
         : [];
 
-    let moraTotalSeleccionada = parseFloat(
+    const moraTotalSeleccionada = parseFloat(
         morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
     );
 
@@ -1773,7 +1693,6 @@ router.post("/procesar-pago", (req, res) => {
                     COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
                     COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
                     c.interes_porcentaje,
-                    COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
                     conv.id_convenio AS id_convenio_activo,
                     c.id_proyecto,
                     COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
@@ -1875,8 +1794,6 @@ router.post("/procesar-pago", (req, res) => {
                         const enganchePendienteContrato = Math.max(engancheContrato - enganchePagadoContrato, 0);
             const fechaCompraContrato = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
             const fechaFirmaContrato = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
-            const fechaContratoMora = saldoRows[0]?.fecha_compra || saldoRows[0]?.fecha_firma || null;
-            const diasGraciaContrato = Math.max(0, Math.min(31, Number(saldoRows[0]?.dia_pago_limite ?? 5)));
             const plazoMesesContrato = Number(saldoRows[0]?.plazo_meses || 0);
             const cuotasPactadasContrato = Number(saldoRows[0]?.cuotas_pactadas || 0);
             const cuotasContratoBase = Number.isInteger(plazoMesesContrato) && plazoMesesContrato > 0
@@ -1958,14 +1875,6 @@ router.post("/procesar-pago", (req, res) => {
                 const cuotaNumero = Number(numeroCuota || 0);
                 return tablaAmortizacionContrato.find((fila) => fila.numero_cuota === cuotaNumero) || null;
             };
-
-            morasAplicadas = morasAplicadas.filter((item) => {
-                const mes = String(item?.mes_atrasado || '').trim();
-                return !mes || esMoraContractualVencida(mes, fechaContratoMora, diasGraciaContrato);
-            });
-            moraTotalSeleccionada = parseFloat(
-                morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
-            );
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
                 const parsed = parsearEtiquetaMes(mesTexto);

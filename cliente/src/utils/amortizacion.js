@@ -7,68 +7,53 @@ export const redondearMoneda = (value) => (
   Math.round((numeroSeguro(value, 0) + Number.EPSILON) * 100) / 100
 );
 
-const obtenerPlazoMeses = (cuotas) => Math.max(parseInt(cuotas || 0, 10), 0);
-
-const obtenerPlazoAnios = (cuotas) => (
-  redondearMoneda(obtenerPlazoMeses(cuotas) / 12)
-);
-
-export const calcularInteresTotalContrato = (capital, tasaAnual, cuotas) => {
-  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
-  const interesAnual = Math.max(numeroSeguro(tasaAnual, 0), 0) / 100;
-  const plazoAnios = obtenerPlazoAnios(cuotas);
-
-  if (principal <= 0 || plazoAnios <= 0 || interesAnual <= 0) return 0;
-  return redondearMoneda(principal * interesAnual * plazoAnios);
-};
-
 export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
-  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
-  const plazo = obtenerPlazoMeses(cuotas);
-  const interesTotal = calcularInteresTotalContrato(principal, tasaAnual, plazo);
-  const totalFinanciado = redondearMoneda(principal + interesTotal);
+  const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
+  const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+  const tasaMensual = Math.max(numeroSeguro(tasaAnual, 0), 0) / 100 / 12;
 
   if (principal <= 0 || plazo <= 0) return 0;
-  return Math.round(totalFinanciado / plazo);
+  if (tasaMensual <= 0) return Math.round(principal / plazo);
+
+  const factor = Math.pow(1 + tasaMensual, plazo);
+  const denominador = factor - 1;
+  if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
+    return Math.round(principal / plazo);
+  }
+
+  return Math.round(principal * ((tasaMensual * factor) / denominador));
 };
 
 export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicial = 0) => {
-  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
-  const plazo = obtenerPlazoMeses(cuotas);
+  const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
+  const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+  const tasaMensual = Math.max(numeroSeguro(tasaAnual, 0), 0) / 100 / 12;
   const cuotaFija = calcularCuotaFija(principal, tasaAnual, plazo);
   const numeroBase = Math.max(parseInt(cuotaInicial || 0, 10), 0);
-  const interesTotal = calcularInteresTotalContrato(principal, tasaAnual, plazo);
   const tabla = [];
-  let saldoCapital = principal;
-  let saldoInteres = interesTotal;
+  let saldo = principal;
   let interesAcumulado = 0;
 
   for (let indice = 1; indice <= plazo; indice += 1) {
-    const esUltimaCuota = indice === plazo;
-    const capitalCuota = esUltimaCuota
-      ? redondearMoneda(saldoCapital)
-      : Math.min(Math.round(principal / plazo), redondearMoneda(saldoCapital));
-    const interes = esUltimaCuota
-      ? redondearMoneda(saldoInteres)
-      : Math.min(Math.round(interesTotal / plazo), redondearMoneda(saldoInteres));
-    const pago = esUltimaCuota
-      ? redondearMoneda(capitalCuota + interes)
-      : cuotaFija;
-    const saldoFinal = redondearMoneda(Math.max(saldoCapital - capitalCuota, 0));
-    interesAcumulado = redondearMoneda(interesAcumulado + interes);
+    const interes = Math.round(saldo * tasaMensual);
+    const capitalCuota = indice === plazo
+      ? saldo
+      : Math.round(Math.min(Math.max(cuotaFija - interes, 0), saldo));
+    const pago = Math.round(capitalCuota + interes);
+    const saldoFinal = Math.round(Math.max(saldo - capitalCuota, 0));
+    interesAcumulado = Math.round(interesAcumulado + interes);
 
     tabla.push({
       indice,
       numero_cuota: numeroBase + indice,
-      saldo_inicial: redondearMoneda(saldoCapital),
+      saldo_inicial: saldo,
       capital_cuota: capitalCuota,
       interes_mes: interes,
       cuota_estimada: pago,
       saldo_final: saldoFinal,
       interes_acumulado: interesAcumulado
     });
-    saldoCapital = saldoFinal;
-    saldoInteres = redondearMoneda(Math.max(saldoInteres - interes, 0));
+    saldo = saldoFinal;
   }
 
   return tabla;

@@ -31,10 +31,6 @@ function Contratos_Residentes() {
     return Number(calcularCuotaFija(capitalFinanciado, interesNumero, cuotasNumero) || 0).toFixed(2);
   };
 
-  const obtenerMontoTotalContrato = (contrato = {}) => (
-    contrato?.monto_total_original ?? contrato?.monto_total ?? ''
-  );
-
   const obtenerInicioPagosAutomatico = (fechaCompraValue, fechaFirmaValue) => {
     const base = fechaCompraValue || fechaFirmaValue;
     const partesFecha = String(base || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -400,7 +396,7 @@ function Contratos_Residentes() {
 
       const datosParaPdf = {
         codigo_contrato: val.codigo_contrato,
-        monto_total: obtenerMontoTotalContrato(val),
+        monto_total: val.monto_total,
         cuotas_pactadas: val.cuotas_pactadas,
         monto_cuota: val.monto_cuota,
         dia_pago_limite: val.dia_pago_limite,
@@ -442,7 +438,7 @@ function Contratos_Residentes() {
 
       const datosParaPdf = {
         codigo_contrato: val.codigo_contrato,
-        monto_total: obtenerMontoTotalContrato(val),
+        monto_total: val.monto_total,
         cuotas_pactadas: val.cuotas_pactadas,
         monto_cuota: val.monto_cuota,
         dia_pago_limite: val.dia_pago_limite,
@@ -730,7 +726,7 @@ function Contratos_Residentes() {
     setId_proyecto(proyectoResuelto.idProyecto);
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
     setId_tipo_contrato(val.id_tipo_contrato);
-    setMonto_total(obtenerMontoTotalContrato(val));
+    setMonto_total(val.monto_total);
     setCuotas_pactadas(val.cuotas_pactadas);
     setMonto_cuota(val.monto_cuota);
     setDia_pago_limite(val.dia_pago_limite);
@@ -890,7 +886,7 @@ function Contratos_Residentes() {
                 <td style={tdCompacto}>{val.nombre_residente?.toUpperCase()}</td>
                 <td style={tdCompacto}><span className="fw-bold text-primary">{val.numero_identificacion || 'Sin asignar'}</span></td>
                 <td style={tdCompacto}><span className="badge bg-info text-dark">{val.nombre_tipo_contrato}</span></td>
-                <td className="fw-bold" style={tdCompacto}>Q {parseFloat(obtenerMontoTotalContrato(val) || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                <td className="fw-bold" style={tdCompacto}>Q {parseFloat(val.monto_total).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                 <td className="text-center" style={tdCompacto}>{val.cuotas_pactadas}</td>
                 <td className="text-success fw-bold" style={tdCompacto}>Q {parseFloat(val.monto_cuota).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                 <td className="text-center fw-bold text-danger" style={tdCompacto}>{val.dia_pago_limite} días de gracia</td>

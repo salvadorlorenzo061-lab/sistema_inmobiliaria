@@ -43,49 +43,6 @@ const ensureFacturasHistorialTable = () => {
 
 ensureFacturasHistorialTable();
 
-const estimarCapitalDesdeCuota = (cuota = 0, tasaAnual = 0, cuotas = 0) => {
-    const montoCuota = Math.max(Number(cuota || 0), 0);
-    const totalCuotas = Math.max(Number(cuotas || 0), 0);
-    const tasa = Math.max(Number(tasaAnual || 0), 0) / 100;
-    const plazoAnios = totalCuotas / 12;
-
-    if (montoCuota <= 0 || totalCuotas <= 0) return 0;
-    const divisor = 1 + (tasa * plazoAnios);
-    if (divisor <= 0) return montoCuota * totalCuotas;
-    return (montoCuota * totalCuotas) / divisor;
-};
-
-const resolverMontoTotalOriginalContrato = (contrato = {}) => {
-    const montoTotalRaw = Math.max(Number(contrato?.monto_total || 0), 0);
-    const capitalPagado = Math.max(Number(contrato?.capital_pagado_total || 0), 0);
-    const montoReconstruido = montoTotalRaw + capitalPagado;
-    const enganche = Math.max(Number(contrato?.enganche || 0), 0);
-    const cuotas = Math.max(Number(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0), 0);
-    const montoCuota = Math.max(Number(contrato?.monto_cuota || 0), 0);
-    const interes = Math.max(Number(contrato?.interes_porcentaje || 0), 0);
-    const montoEstimado = enganche + estimarCapitalDesdeCuota(montoCuota, interes, cuotas);
-
-    if (montoEstimado > 0) {
-        const diffRaw = Math.abs(montoTotalRaw - montoEstimado);
-        const diffReconstruido = Math.abs(montoReconstruido - montoEstimado);
-        return Number((diffRaw <= diffReconstruido ? montoTotalRaw : montoReconstruido).toFixed(2));
-    }
-
-    return Number((Math.max(montoTotalRaw, montoReconstruido)).toFixed(2));
-};
-
-const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
-    SELECT
-        p.id_contrato,
-        COALESCE(SUM(CASE
-            WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal
-            ELSE 0
-        END), 0) AS capital_pagado_total
-    FROM pagos p
-    INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-    GROUP BY p.id_contrato
-`;
-
 // === BUSCAR RESIDENTE PARA ESTADO DE CUENTA ===
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;
@@ -97,16 +54,11 @@ router.get("/buscar-residente", (req, res) => {
     const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.numero_identificacion, r.telefono, r.direccion_notificacion,
-            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total,
-            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
-            c.estado AS estado_contrato,
-            c.monto_cuota, c.cuotas_pactadas, c.plazo_meses, c.enganche, c.interes_porcentaje, tc.nombre_tipo_contrato
+            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.estado AS estado_contrato,
+            c.monto_cuota, c.cuotas_pactadas, tc.nombre_tipo_contrato
         FROM residentes r
         INNER JOIN contratos_residentes c ON r.id_residente = c.id_residente
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
-        LEFT JOIN (
-            ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
-        ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         WHERE (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
@@ -127,11 +79,7 @@ router.get("/buscar-residente", (req, res) => {
         }
         if (result.length === 0) return res.status(404).send("No se encontraron residentes.");
         
-        const contratosNormalizados = (result || []).map((contrato) => ({
-            ...contrato,
-            monto_total_original: resolverMontoTotalOriginalContrato(contrato)
-        }));
-        res.status(200).json(contratosNormalizados);
+        res.status(200).json(result);
     });
 });
 
@@ -144,9 +92,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
     const queryContrato = `
         SELECT 
             r.nombre, r.dpi, r.telefono, r.direccion_notificacion,
-            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total,
-            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
-            c.monto_cuota,
+            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.monto_cuota,
             c.enganche, c.interes_porcentaje, c.plazo_meses, c.cuotas_pactadas, c.formato_contrato, c.id_proyecto,
             tc.nombre_tipo_contrato,
             p.nombre AS nombre_proyecto
@@ -154,9 +100,6 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
         INNER JOIN contratos_residentes c ON r.id_residente = c.id_residente
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
         LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
-        LEFT JOIN (
-            ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
-        ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         WHERE c.id_contrato = ?
     `;
 
@@ -170,10 +113,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             return res.status(404).send("Contrato no encontrado");
         }
 
-        const contract = {
-            ...contractResult[0],
-            monto_total_original: resolverMontoTotalOriginalContrato(contractResult[0])
-        };
+        const contract = contractResult[0];
 
         // Obtener servicios activos del contrato (directos + por proyecto) para marcar D/T/E/C en estado de cuenta.
         const queryServiciosContrato = `
@@ -262,7 +202,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
 
                     const responderEstadoCuenta = (detalleCuotasResult = []) => {
                         const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
-                        const saldoPendiente = parseFloat(contract.monto_total || 0);
+                        const saldoPendiente = parseFloat(contract.monto_total) - totalPagado;
 
                         return res.status(200).json({
                             contrato: contract,

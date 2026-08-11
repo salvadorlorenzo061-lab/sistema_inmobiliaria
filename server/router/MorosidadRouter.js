@@ -371,9 +371,9 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         while (numeroCuota <= totalCuotas) {
             const fechaVencimiento = crearFechaLocal(primerVencimiento, numeroCuota - 1);
             const mesVencimiento = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), 1);
-            if (mesVencimiento >= mesActual) break;
+            if (mesVencimiento > mesActual) break;
             const fechaInicioMora = obtenerFechaInicioMora(fechaVencimiento, diasGracia);
-            if (hoy < fechaInicioMora) break;
+            if (fechaInicioMora > hoy) break;
 
             const etiquetaMes = labelMes(fechaVencimiento);
             const vencido = hoy >= fechaInicioMora;

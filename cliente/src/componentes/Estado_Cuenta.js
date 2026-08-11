@@ -181,7 +181,7 @@ const EstadoCuenta = () => {
 
   const construirPlanContrato = (contrato = {}) => {
     const cuotasPactadas = Math.max(Number(contrato.plazo_meses || contrato.cuotas_pactadas || 0), 0);
-    const montoTotalContrato = Math.max(Number(contrato.monto_total_original || contrato.monto_total || 0), 0);
+    const montoTotalContrato = Math.max(Number(contrato.monto_total || 0), 0);
     const engancheContrato = Math.max(Number(contrato.enganche || 0), 0);
     const interesAnualContrato = Math.max(Number(contrato.interes_porcentaje || 0), 0);
     const capitalFinanciado = Math.max(montoTotalContrato - engancheContrato, 0);
@@ -191,7 +191,6 @@ const EstadoCuenta = () => {
 
     return {
       cuotasPactadas,
-      montoTotalContrato,
       montoCuota,
       ultimaCuota
     };
@@ -262,7 +261,7 @@ const EstadoCuenta = () => {
       const formatoContrato = resolveContractTemplateId(
         contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
       );
-      const { cuotasPactadas, montoTotalContrato, montoCuota, ultimaCuota } = construirPlanContrato(contrato);
+      const { cuotasPactadas, montoCuota, ultimaCuota } = construirPlanContrato(contrato);
 
       const detallesPorCuota = new Map();
       const detalleRaw = Array.isArray(estadoCuenta.cuotasDetalle) ? estadoCuenta.cuotasDetalle : [];

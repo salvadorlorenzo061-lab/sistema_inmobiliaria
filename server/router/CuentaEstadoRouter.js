@@ -134,42 +134,6 @@ const calcularLiquidacionCapital = ({
     };
 };
 
-const estimarCapitalDesdeCuota = (cuota = 0, tasaAnual = 0, cuotas = 0) => {
-    const montoCuota = Math.max(toNumber(cuota, 0), 0);
-    const totalCuotas = Math.max(parseInt(cuotas || 0, 10), 0);
-    const tasa = Math.max(toNumber(tasaAnual, 0), 0) / 100;
-    const plazoAnios = totalCuotas / 12;
-
-    if (montoCuota <= 0 || totalCuotas <= 0) return 0;
-    const divisor = 1 + (tasa * plazoAnios);
-    if (divisor <= 0) return montoCuota * totalCuotas;
-    return (montoCuota * totalCuotas) / divisor;
-};
-
-const resolverMontoTotalOriginalContrato = (contrato = {}) => {
-    const montoConvenio = Math.max(toNumber(contrato.convenio_monto_original, 0), 0);
-    if (montoConvenio > 0) {
-        return round2(montoConvenio);
-    }
-
-    const montoTotalRaw = Math.max(toNumber(contrato.saldo_pendiente ?? contrato.monto_total, 0), 0);
-    const capitalPagado = Math.max(toNumber(contrato.capital_pagado_total, 0), 0);
-    const montoReconstruido = montoTotalRaw + capitalPagado;
-    const enganche = Math.max(toNumber(contrato.enganche, 0), 0);
-    const cuotas = Math.max(parseInt(contrato.plazo_meses || contrato.cuotas_pactadas || 0, 10), 0);
-    const montoCuota = Math.max(toNumber(contrato.monto_cuota, 0), 0);
-    const interes = Math.max(toNumber(contrato.interes_porcentaje, 0), 0);
-    const montoEstimado = enganche + estimarCapitalDesdeCuota(montoCuota, interes, cuotas);
-
-    if (montoEstimado > 0) {
-        const diffRaw = Math.abs(montoTotalRaw - montoEstimado);
-        const diffReconstruido = Math.abs(montoReconstruido - montoEstimado);
-        return round2(diffRaw <= diffReconstruido ? montoTotalRaw : montoReconstruido);
-    }
-
-    return round2(Math.max(montoTotalRaw, montoReconstruido));
-};
-
 router.get('/buscar-residente', (req, res) => {
     const { criterio } = req.query;
 
@@ -190,8 +154,9 @@ router.get('/buscar-residente', (req, res) => {
             c.estado AS estado_contrato,
             c.fecha_firma,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            conv.monto_original AS convenio_monto_original,
-            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
+            COALESCE(conv.monto_original,
+                c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
+            ) AS monto_total_original,
             c.enganche,
             c.monto_cuota,
             c.cuotas_pactadas,
@@ -231,12 +196,7 @@ router.get('/buscar-residente', (req, res) => {
             return res.status(404).send('No se encontraron residentes.');
         }
 
-        const contratosNormalizados = (rows || []).map((contrato) => ({
-            ...contrato,
-            monto_total_original: resolverMontoTotalOriginalContrato(contrato)
-        }));
-
-        return res.status(200).json(contratosNormalizados);
+        return res.status(200).json(rows);
     });
 });
 
@@ -253,7 +213,9 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             c.id_residente,
             c.fecha_firma,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            conv.monto_original AS convenio_monto_original,
+            COALESCE(conv.monto_original,
+                c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
+            ) AS monto_total_original,
             c.enganche,
             c.monto_cuota,
             c.interes_porcentaje,
@@ -311,10 +273,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             return res.status(404).send('Contrato no encontrado.');
         }
 
-        const contrato = {
-            ...contratoRows[0],
-            monto_total_original: resolverMontoTotalOriginalContrato(contratoRows[0])
-        };
+        const contrato = contratoRows[0];
 
         const cuotasTotales = Math.max(
             parseInt(contrato.convenio_cuotas || 0, 10),
