@@ -21,6 +21,37 @@ const queryAsync = (sql, params = []) => new Promise((resolve, reject) => {
     });
 });
 
+const ULTIMO_CONVENIO_ACTIVO_SUBQUERY = `
+    SELECT cp.id_convenio, cp.id_contrato, cp.fecha_inicio, cp.monto_original, cp.saldo_actual, cp.cuotas_pactadas, cp.monto_cuota
+    FROM convenio_pagos cp
+    INNER JOIN (
+        SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
+        FROM convenio_pagos
+        WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
+        GROUP BY id_contrato
+    ) ult ON ult.ultimo_id_convenio = cp.id_convenio
+`;
+
+const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
+    SELECT
+        p.id_contrato,
+        COALESCE(SUM(CASE
+            WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal
+            ELSE 0
+        END), 0) AS capital_pagado_total,
+        COALESCE(SUM(CASE
+            WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal
+            ELSE 0
+        END), 0) AS enganche_pagado,
+        COALESCE(COUNT(DISTINCT CASE
+            WHEN pd.numero_cuota_afectada > 0 AND pd.tipo_concepto = 'cuota_terreno' THEN pd.numero_cuota_afectada
+            ELSE NULL
+        END), 0) AS cuotas_pagadas
+    FROM pagos p
+    INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+    GROUP BY p.id_contrato
+`;
+
 const calcularLiquidacionCapital = ({
     capital_restante,
     interes_anual,
@@ -124,13 +155,7 @@ router.get('/buscar-residente', (req, res) => {
             c.fecha_firma,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
-                c.monto_total + COALESCE((
-                    SELECT SUM(pd_capital.subtotal)
-                    FROM pagos_detalle pd_capital
-                    INNER JOIN pagos p_capital ON p_capital.id_pago = pd_capital.id_pago
-                    WHERE p_capital.id_contrato = c.id_contrato
-                      AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
-                ), 0)
+                c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
             ) AS monto_total_original,
             c.enganche,
             c.monto_cuota,
@@ -143,15 +168,11 @@ router.get('/buscar-residente', (req, res) => {
         INNER JOIN contratos_residentes c ON c.id_residente = r.id_residente
         INNER JOIN tipos_contrato tc ON tc.id_tipo_contrato = c.id_tipo_contrato
         LEFT JOIN (
-            SELECT cp.id_convenio, cp.id_contrato, cp.monto_original, cp.saldo_actual
-            FROM convenio_pagos cp
-            INNER JOIN (
-                SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
-                FROM convenio_pagos
-                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
-                GROUP BY id_contrato
-            ) ult ON ult.ultimo_id_convenio = cp.id_convenio
+            ${ULTIMO_CONVENIO_ACTIVO_SUBQUERY}
         ) conv ON conv.id_contrato = c.id_contrato
+        LEFT JOIN (
+            ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
+        ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         WHERE (
             r.nombre LIKE ?
             OR r.dpi LIKE ?
@@ -193,13 +214,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             c.fecha_firma,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
-                c.monto_total + COALESCE((
-                    SELECT SUM(pd_capital.subtotal)
-                    FROM pagos_detalle pd_capital
-                    INNER JOIN pagos p_capital ON p_capital.id_pago = pd_capital.id_pago
-                    WHERE p_capital.id_contrato = c.id_contrato
-                      AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
-                ), 0)
+                c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
             ) AS monto_total_original,
             c.enganche,
             c.monto_cuota,
@@ -212,31 +227,20 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             conv.saldo_actual AS convenio_saldo_actual,
             conv.monto_original AS convenio_monto_original,
             conv.cuotas_pactadas AS convenio_cuotas,
-            conv.monto_cuota AS convenio_monto_cuota
+            conv.monto_cuota AS convenio_monto_cuota,
+            COALESCE(pagos_resumen.cuotas_pagadas, 0) AS cuotas_pagadas_reales,
+            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
+            COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado_total
         FROM contratos_residentes c
         INNER JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN (
-            SELECT cp.id_convenio, cp.id_contrato, cp.fecha_inicio, cp.monto_original, cp.saldo_actual, cp.cuotas_pactadas, cp.monto_cuota
-            FROM convenio_pagos cp
-            INNER JOIN (
-                SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio
-                FROM convenio_pagos
-                WHERE LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'incumplido', 'pagado')
-                GROUP BY id_contrato
-            ) ult ON ult.ultimo_id_convenio = cp.id_convenio
+            ${ULTIMO_CONVENIO_ACTIVO_SUBQUERY}
         ) conv ON conv.id_contrato = c.id_contrato
+        LEFT JOIN (
+            ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
+        ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         WHERE c.id_contrato = ?
         LIMIT 1
-    `;
-
-    const sqlPagos = `
-        SELECT
-            COALESCE(COUNT(DISTINCT CASE WHEN pd.numero_cuota_afectada > 0 AND pd.tipo_concepto = 'cuota_terreno' THEN pd.numero_cuota_afectada END), 0) AS cuotas_pagadas,
-            COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS capital_pagado,
-            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS enganche_pagado
-        FROM pagos p
-        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-        WHERE p.id_contrato = ?
     `;
 
     const sqlMesesPendientes = `
@@ -271,78 +275,69 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
 
         const contrato = contratoRows[0];
 
-        db.query(sqlPagos, [idContrato], (pagosErr, pagosRows) => {
-            if (pagosErr) {
-                console.error('Error obteniendo pagos para cuenta capital:', pagosErr.message);
-                return res.status(500).send('No se pudo calcular el estado actual del contrato.');
+        const cuotasTotales = Math.max(
+            parseInt(contrato.convenio_cuotas || 0, 10),
+            parseInt(contrato.plazo_meses || contrato.cuotas_pactadas || 0, 10),
+            0
+        );
+
+        const enganchePagadoRaw = Math.max(toNumber(contrato.enganche_pagado_total, 0), 0);
+        const capitalPagado = Math.max(toNumber(contrato.capital_pagado_total, 0), 0);
+        const precioTerreno = round2(Math.max(toNumber(contrato.monto_total_original, 0), 0));
+        const engancheContrato = round2(Math.max(toNumber(contrato.enganche, 0), 0));
+        const enganchePagado = round2(Math.min(enganchePagadoRaw, engancheContrato));
+        const enganchePendiente = round2(Math.max(engancheContrato - enganchePagado, 0));
+        const capitalInicialFinanciado = round2(Math.max(precioTerreno - engancheContrato, 0));
+        const capitalRestante = round2(Math.max(
+            Number(contrato.id_convenio_activo || 0) > 0
+                ? toNumber(contrato.convenio_saldo_actual, capitalInicialFinanciado - capitalPagado)
+                : capitalInicialFinanciado - capitalPagado,
+            0
+        ));
+        const cuotasPagadasReales = Math.max(parseInt(contrato.cuotas_pagadas_reales || 0, 10), 0);
+        const cuotaSiguiente = enganchePendiente > 0.01
+            ? 0
+            : (cuotasTotales > 0 ? Math.min(cuotasPagadasReales + 1, cuotasTotales) : 1);
+
+        const payload = {
+            id_contrato: contrato.id_contrato,
+            id_residente: contrato.id_residente,
+            codigo_contrato: contrato.codigo_contrato,
+            nombre_residente: contrato.nombre_residente,
+            fecha_firma: contrato.fecha_firma,
+            id_convenio_activo: Number(contrato.id_convenio_activo || 0),
+            precio_total_terreno: precioTerreno,
+            capital_inicial_financiado: capitalInicialFinanciado,
+            capital_restante: round2(capitalRestante),
+            enganche_registrado: engancheContrato,
+            enganche_pagado: enganchePagado,
+            enganche_pendiente: enganchePendiente,
+            estado_enganche: engancheContrato <= 0 || enganchePendiente <= 0.01 ? 'PAGADO' : 'PENDIENTE DE PAGO',
+            numero_cuota_enganche: 0,
+            capital_pagado: round2(capitalPagado),
+            interes_anual: round2(toNumber(contrato.interes_porcentaje, 14)),
+            cuotas_totales: cuotasTotales,
+            cuotas_pagadas: cuotasPagadasReales,
+            cuotas_pendientes: Math.max(cuotasTotales - cuotasPagadasReales, 0),
+            cuota_siguiente: cuotaSiguiente
+        };
+
+        const simulacionBase = calcularLiquidacionCapital({
+            capital_restante: payload.capital_restante,
+            interes_anual: payload.interes_anual,
+            cuotas_totales: payload.cuotas_totales,
+            cuotas_pagadas: payload.cuotas_pagadas
+        });
+
+        db.query(sqlMesesPendientes, [idContrato], (mesesErr, mesesRows) => {
+            if (mesesErr) {
+                console.error('Error consultando meses pagados para cuenta capital:', mesesErr.message);
             }
 
-            const pagos = pagosRows?.[0] || {};
-
-            const cuotasTotales = Math.max(
-                parseInt(contrato.convenio_cuotas || 0, 10),
-                parseInt(contrato.plazo_meses || contrato.cuotas_pactadas || 0, 10),
-                0
-            );
-
-            const enganchePagadoRaw = Math.max(toNumber(pagos.enganche_pagado, 0), 0);
-            const capitalPagado = Math.max(toNumber(pagos.capital_pagado, 0), 0);
-            const precioTerreno = round2(Math.max(toNumber(contrato.monto_total_original, 0), 0));
-            const engancheContrato = round2(Math.max(toNumber(contrato.enganche, 0), 0));
-            const enganchePagado = round2(Math.min(enganchePagadoRaw, engancheContrato));
-            const enganchePendiente = round2(Math.max(engancheContrato - enganchePagado, 0));
-            const capitalInicialFinanciado = round2(Math.max(precioTerreno - engancheContrato, 0));
-            const capitalRestante = round2(Math.max(
-                Number(contrato.id_convenio_activo || 0) > 0
-                    ? toNumber(contrato.convenio_saldo_actual, capitalInicialFinanciado - capitalPagado)
-                    : capitalInicialFinanciado - capitalPagado,
-                0
-            ));
-            const cuotasPagadasReales = Math.max(parseInt(pagos.cuotas_pagadas || 0, 10), 0);
-            const cuotaSiguiente = enganchePendiente > 0.01
-                ? 0
-                : (cuotasTotales > 0 ? Math.min(cuotasPagadasReales + 1, cuotasTotales) : 1);
-
-            const payload = {
-                id_contrato: contrato.id_contrato,
-                id_residente: contrato.id_residente,
-                codigo_contrato: contrato.codigo_contrato,
-                nombre_residente: contrato.nombre_residente,
-                fecha_firma: contrato.fecha_firma,
-                id_convenio_activo: Number(contrato.id_convenio_activo || 0),
-                precio_total_terreno: precioTerreno,
-                capital_inicial_financiado: capitalInicialFinanciado,
-                capital_restante: round2(capitalRestante),
-                enganche_registrado: engancheContrato,
-                enganche_pagado: enganchePagado,
-                enganche_pendiente: enganchePendiente,
-                estado_enganche: engancheContrato <= 0 || enganchePendiente <= 0.01 ? 'PAGADO' : 'PENDIENTE DE PAGO',
-                numero_cuota_enganche: 0,
-                capital_pagado: round2(capitalPagado),
-                interes_anual: round2(toNumber(contrato.interes_porcentaje, 14)),
-                cuotas_totales: cuotasTotales,
-                cuotas_pagadas: cuotasPagadasReales,
-                cuotas_pendientes: Math.max(cuotasTotales - cuotasPagadasReales, 0),
-                cuota_siguiente: cuotaSiguiente
-            };
-
-            const simulacionBase = calcularLiquidacionCapital({
-                capital_restante: payload.capital_restante,
-                interes_anual: payload.interes_anual,
-                cuotas_totales: payload.cuotas_totales,
-                cuotas_pagadas: payload.cuotas_pagadas
-            });
-
-            db.query(sqlMesesPendientes, [idContrato], (mesesErr, mesesRows) => {
-                if (mesesErr) {
-                    console.error('Error consultando meses pagados para cuenta capital:', mesesErr.message);
-                }
-
-                return res.status(200).json({
-                    contrato: payload,
-                    meses_pagados_detalle: Array.isArray(mesesRows) ? mesesRows : [],
-                    simulacion_base: simulacionBase
-                });
+            return res.status(200).json({
+                contrato: payload,
+                meses_pagados_detalle: Array.isArray(mesesRows) ? mesesRows : [],
+                simulacion_base: simulacionBase
             });
         });
     });
