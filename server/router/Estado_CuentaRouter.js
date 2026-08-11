@@ -43,6 +43,18 @@ const ensureFacturasHistorialTable = () => {
 
 ensureFacturasHistorialTable();
 
+const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
+    SELECT
+        p.id_contrato,
+        COALESCE(SUM(CASE
+            WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal
+            ELSE 0
+        END), 0) AS capital_pagado_total
+    FROM pagos p
+    INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+    GROUP BY p.id_contrato
+`;
+
 // === BUSCAR RESIDENTE PARA ESTADO DE CUENTA ===
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;
@@ -54,11 +66,16 @@ router.get("/buscar-residente", (req, res) => {
     const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.numero_identificacion, r.telefono, r.direccion_notificacion,
-            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.estado AS estado_contrato,
+            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total,
+            c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0) AS monto_total_original,
+            c.estado AS estado_contrato,
             c.monto_cuota, c.cuotas_pactadas, tc.nombre_tipo_contrato
         FROM residentes r
         INNER JOIN contratos_residentes c ON r.id_residente = c.id_residente
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
+        LEFT JOIN (
+            ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
+        ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         WHERE (
             r.nombre LIKE ? 
             OR r.dpi LIKE ?
@@ -92,7 +109,9 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
     const queryContrato = `
         SELECT 
             r.nombre, r.dpi, r.telefono, r.direccion_notificacion,
-            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total, c.monto_cuota,
+            c.id_contrato, c.codigo_contrato, c.fecha_firma, c.monto_total,
+            c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0) AS monto_total_original,
+            c.monto_cuota,
             c.enganche, c.interes_porcentaje, c.plazo_meses, c.cuotas_pactadas, c.formato_contrato, c.id_proyecto,
             tc.nombre_tipo_contrato,
             p.nombre AS nombre_proyecto
@@ -100,6 +119,9 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
         INNER JOIN contratos_residentes c ON r.id_residente = c.id_residente
         INNER JOIN tipos_contrato tc ON c.id_tipo_contrato = tc.id_tipo_contrato
         LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
+        LEFT JOIN (
+            ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
+        ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         WHERE c.id_contrato = ?
     `;
 
@@ -202,7 +224,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
 
                     const responderEstadoCuenta = (detalleCuotasResult = []) => {
                         const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
-                        const saldoPendiente = parseFloat(contract.monto_total) - totalPagado;
+                        const saldoPendiente = parseFloat(contract.monto_total || 0);
 
                         return res.status(200).json({
                             contrato: contract,
