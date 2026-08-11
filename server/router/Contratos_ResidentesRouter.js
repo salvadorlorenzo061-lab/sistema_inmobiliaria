@@ -80,6 +80,42 @@ const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
     return Math.round(principal * ((tasaMensual * factor) / denominador));
 };
 
+const estimarCapitalDesdeCuota = (cuota = 0, tasaAnual = 0, cuotas = 0) => {
+    const montoCuota = Math.max(Number(cuota || 0), 0);
+    const totalCuotas = Math.max(Number(cuotas || 0), 0);
+    const tasaMensual = Math.max(Number(tasaAnual || 0), 0) / 100 / 12;
+
+    if (montoCuota <= 0 || totalCuotas <= 0) return 0;
+    if (tasaMensual <= 0) return montoCuota * totalCuotas;
+
+    const factor = Math.pow(1 + tasaMensual, totalCuotas);
+    const divisor = tasaMensual * factor;
+    if (!Number.isFinite(factor) || Math.abs(divisor) < 1e-12) {
+        return montoCuota * totalCuotas;
+    }
+
+    return montoCuota * ((factor - 1) / divisor);
+};
+
+const resolverMontoTotalOriginalContrato = (contrato = {}) => {
+    const montoTotalRaw = Math.max(Number(contrato?.monto_total || 0), 0);
+    const capitalPagado = Math.max(Number(contrato?.capital_pagado_total || 0), 0);
+    const montoReconstruido = montoTotalRaw + capitalPagado;
+    const enganche = Math.max(Number(contrato?.enganche || 0), 0);
+    const cuotas = Math.max(Number(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0), 0);
+    const montoCuota = Math.max(Number(contrato?.monto_cuota || 0), 0);
+    const interes = Math.max(Number(contrato?.interes_porcentaje || 0), 0);
+    const montoEstimado = enganche + estimarCapitalDesdeCuota(montoCuota, interes, cuotas);
+
+    if (montoEstimado > 0) {
+        const diffRaw = Math.abs(montoTotalRaw - montoEstimado);
+        const diffReconstruido = Math.abs(montoReconstruido - montoEstimado);
+        return Number((diffRaw <= diffReconstruido ? montoTotalRaw : montoReconstruido).toFixed(2));
+    }
+
+    return Number((Math.max(montoTotalRaw, montoReconstruido)).toFixed(2));
+};
+
 const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
     SELECT
         p.id_contrato,
@@ -549,7 +585,7 @@ router.get("/", (req, res) => {
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
                    c.monto_total,
-                   c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0) AS monto_total_original,
+                   COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
                    c.enganche, c.cuotas_pactadas, c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
                    c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
                    c.estado, c.formato_contrato, c.documento_contrato,
@@ -598,7 +634,11 @@ router.get("/", (req, res) => {
                 console.error('Error al listar contratos:', err);
                 return res.status(500).send('Error de servidor');
             }
-            return res.send(result);
+            const contratosNormalizados = (result || []).map((contrato) => ({
+                ...contrato,
+                monto_total_original: resolverMontoTotalOriginalContrato(contrato)
+            }));
+            return res.send(contratosNormalizados);
         });
     });
 });

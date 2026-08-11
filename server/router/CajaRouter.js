@@ -225,6 +225,77 @@ const calcularComponentesFiscalmente = (total = 0) => {
     };
 };
 
+const estimarCapitalDesdeCuota = (cuota = 0, tasaAnual = 0, cuotas = 0) => {
+    const montoCuota = Math.max(Number(cuota || 0), 0);
+    const totalCuotas = Math.max(Number(cuotas || 0), 0);
+    const tasaMensual = Math.max(Number(tasaAnual || 0), 0) / 100 / 12;
+
+    if (montoCuota <= 0 || totalCuotas <= 0) return 0;
+    if (tasaMensual <= 0) return montoCuota * totalCuotas;
+
+    const factor = Math.pow(1 + tasaMensual, totalCuotas);
+    const divisor = tasaMensual * factor;
+    if (!Number.isFinite(factor) || Math.abs(divisor) < 1e-12) {
+        return montoCuota * totalCuotas;
+    }
+
+    return montoCuota * ((factor - 1) / divisor);
+};
+
+const resolverMontoTotalOriginalContrato = (contrato = {}) => {
+    const montoConvenio = Math.max(Number(contrato?.convenio_monto_original || 0), 0);
+    if (montoConvenio > 0) {
+        return Number(montoConvenio.toFixed(2));
+    }
+
+    const montoTotalBase = contrato?.saldo_pendiente ?? contrato?.monto_total ?? 0;
+    const montoTotalRaw = Math.max(Number(montoTotalBase), 0);
+    const capitalPagado = Math.max(Number(contrato?.capital_pagado_total || 0), 0);
+    const montoReconstruido = montoTotalRaw + capitalPagado;
+    const enganche = Math.max(Number(contrato?.enganche || 0), 0);
+    const cuotas = Math.max(Number(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0), 0);
+    const montoCuota = Math.max(Number(contrato?.monto_cuota || 0), 0);
+    const interes = Math.max(Number(contrato?.interes_porcentaje || 0), 0);
+    const montoEstimado = enganche + estimarCapitalDesdeCuota(montoCuota, interes, cuotas);
+
+    if (montoEstimado > 0) {
+        const diffRaw = Math.abs(montoTotalRaw - montoEstimado);
+        const diffReconstruido = Math.abs(montoReconstruido - montoEstimado);
+        return Number((diffRaw <= diffReconstruido ? montoTotalRaw : montoReconstruido).toFixed(2));
+    }
+
+    return Number((Math.max(montoTotalRaw, montoReconstruido)).toFixed(2));
+};
+
+const resolverSaldoPendienteContrato = (contrato = {}) => {
+    const saldoConvenio = Math.max(Number(contrato?.convenio_saldo_actual || 0), 0);
+    if (saldoConvenio > 0) {
+        return Number(saldoConvenio.toFixed(2));
+    }
+
+    const precioTotal = resolverMontoTotalOriginalContrato(contrato);
+    const enganche = Math.max(Number(contrato?.enganche || 0), 0);
+    const enganchePagado = Math.max(Number(contrato?.enganche_pagado || 0), 0);
+    const capitalPagadoTotal = Math.max(Number(contrato?.capital_pagado_total || 0), 0);
+    const enganchePendiente = Math.max(enganche - enganchePagado, 0);
+    const capitalFinanciadoInicial = Math.max(precioTotal - enganche, 0);
+    const capitalPagadoFinanciado = Math.max(capitalPagadoTotal - enganchePagado, 0);
+    const capitalPendienteFinanciado = Math.max(capitalFinanciadoInicial - capitalPagadoFinanciado, 0);
+    const saldoEstimado = capitalPendienteFinanciado + enganchePendiente;
+    const saldoBase = contrato?.saldo_pendiente ?? contrato?.monto_total ?? 0;
+    const saldoRaw = Math.max(Number(saldoBase), 0);
+
+    if (saldoRaw > 0 && capitalPagadoTotal <= 0) {
+        return Number(saldoRaw.toFixed(2));
+    }
+
+    if (saldoEstimado > 0) {
+        return Number(saldoEstimado.toFixed(2));
+    }
+
+    return Number(saldoRaw.toFixed(2));
+};
+
 const ULTIMO_CONVENIO_ACTIVO_SUBQUERY = `
     SELECT cp.id_convenio, cp.id_contrato, cp.fecha_inicio, cp.monto_original, cp.saldo_actual, cp.cuotas_pactadas, cp.monto_cuota, cp.estado
     FROM convenio_pagos cp
@@ -773,9 +844,9 @@ router.get("/residentes-pendientes", (req, res) => {
             c.fecha_firma,
             COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            COALESCE(conv.monto_original,
-                        c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
-            ) AS monto_total_original,
+            conv.saldo_actual AS convenio_saldo_actual,
+            conv.monto_original AS convenio_monto_original,
+            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
@@ -829,7 +900,12 @@ router.get("/residentes-pendientes", (req, res) => {
                 return res.status(500).send("Error al obtener residentes: " + err.message);
             }
 
-            return res.status(200).json(result || []);
+            const contratosNormalizados = (result || []).map((contrato) => ({
+                ...contrato,
+                monto_total_original: resolverMontoTotalOriginalContrato(contrato),
+                saldo_pendiente: resolverSaldoPendienteContrato(contrato)
+            }));
+            return res.status(200).json(contratosNormalizados);
         });
     });
 });
@@ -904,9 +980,9 @@ router.get("/buscar-residente", (req, res) => {
             c.fecha_firma,
             COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            COALESCE(conv.monto_original,
-                        c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
-            ) AS monto_total_original,
+            conv.saldo_actual AS convenio_saldo_actual,
+            conv.monto_original AS convenio_monto_original,
+            COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
@@ -968,8 +1044,14 @@ router.get("/buscar-residente", (req, res) => {
                 return res.status(500).send("Error al consultar el residente: " + err.message);
             }
             if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
+
+            const contratosNormalizados = (result || []).map((contrato) => ({
+                ...contrato,
+                monto_total_original: resolverMontoTotalOriginalContrato(contrato),
+                saldo_pendiente: resolverSaldoPendienteContrato(contrato)
+            }));
             
-            return res.status(200).json(result);
+            return res.status(200).json(contratosNormalizados);
         });
     });
 });
