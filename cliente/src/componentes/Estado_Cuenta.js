@@ -192,7 +192,8 @@ const EstadoCuenta = () => {
     return {
       cuotasPactadas,
       montoCuota,
-      ultimaCuota
+      ultimaCuota,
+      montoTotalContrato
     };
   };
 

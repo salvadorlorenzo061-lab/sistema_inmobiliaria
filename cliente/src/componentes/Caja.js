@@ -150,6 +150,8 @@ const Caja = () => {
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
         const montoTotalContrato = Math.max(parseFloat(contrato?.monto_total_original || contrato?.monto_total_contrato || 0), 0);
         const enganche = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche || 0), 0);
+        const enganchePagado = tieneConvenioActivo ? enganche : Math.max(parseFloat(contrato?.enganche_pagado || 0), 0);
+        const capitalPagadoTotal = Math.max(parseFloat(contrato?.capital_pagado_total || 0), 0);
         const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
         const cuotasPagadas = Math.max(parseInt(contrato?.cuotas_pagadas || 0, 10), 0);
@@ -166,6 +168,12 @@ const Caja = () => {
             : ((capitalPorCuotaContrato > 0 && cuotasPactadas > 0)
                 ? parseFloat((capitalPorCuotaContrato * cuotasPactadas).toFixed(2))
                 : parseFloat(saldoPendiente.toFixed(2)));
+        const capitalPagadoFinanciado = tieneConvenioActivo
+            ? 0
+            : Math.max(parseFloat((capitalPagadoTotal - enganchePagado).toFixed(2)), 0);
+        const capitalPendienteFinanciado = tieneConvenioActivo
+            ? saldoPendiente
+            : Math.max(parseFloat((capitalTotalContrato - capitalPagadoFinanciado).toFixed(2)), 0);
         const capitalBaseInteres = Math.max(parseFloat(capitalTotalContrato.toFixed(2)), 0);
         const cuotaCapitalTeorica = (capitalBaseInteres > 0 && cuotasPactadas > 0)
             ? parseFloat((capitalBaseInteres / cuotasPactadas).toFixed(2))
@@ -197,12 +205,17 @@ const Caja = () => {
             : 0;
         const cuotaTotalConInteres = tablaAmortizacion.length > 0 ? cuotaMensualConInteres : 0;
         const cuotasRestantes = tablaAmortizacion.length;
-        const totalContratoConInteres = parseFloat((saldoPendiente + interesTotalContrato).toFixed(2));
+        const totalContratoConInteres = parseFloat(((capitalPendienteFinanciado + enganchePendiente) + interesTotalContrato).toFixed(2));
 
         return {
             saldoPendiente,
+            precioTotalContrato: montoTotalContrato,
             enganche,
+            enganchePagado,
             capitalPorCuota,
+            capitalPagadoTotal,
+            capitalPagadoFinanciado,
+            capitalPendienteFinanciado,
             cuotasPactadas,
             cuotasPagadas,
             cuotasPendientes,
