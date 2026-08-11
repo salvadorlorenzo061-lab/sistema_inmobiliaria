@@ -228,18 +228,13 @@ const calcularComponentesFiscalmente = (total = 0) => {
 const estimarCapitalDesdeCuota = (cuota = 0, tasaAnual = 0, cuotas = 0) => {
     const montoCuota = Math.max(Number(cuota || 0), 0);
     const totalCuotas = Math.max(Number(cuotas || 0), 0);
-    const tasaMensual = Math.max(Number(tasaAnual || 0), 0) / 100 / 12;
+    const tasa = Math.max(Number(tasaAnual || 0), 0) / 100;
+    const plazoAnios = totalCuotas / 12;
 
     if (montoCuota <= 0 || totalCuotas <= 0) return 0;
-    if (tasaMensual <= 0) return montoCuota * totalCuotas;
-
-    const factor = Math.pow(1 + tasaMensual, totalCuotas);
-    const divisor = tasaMensual * factor;
-    if (!Number.isFinite(factor) || Math.abs(divisor) < 1e-12) {
-        return montoCuota * totalCuotas;
-    }
-
-    return montoCuota * ((factor - 1) / divisor);
+    const divisor = 1 + (tasa * plazoAnios);
+    if (divisor <= 0) return montoCuota * totalCuotas;
+    return (montoCuota * totalCuotas) / divisor;
 };
 
 const resolverMontoTotalOriginalContrato = (contrato = {}) => {

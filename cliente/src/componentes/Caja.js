@@ -184,12 +184,15 @@ const Caja = () => {
         const capitalPorCuota = tieneConvenioActivo
             ? (capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica)
             : (usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital);
-        const tablaAmortizacion = generarTablaAmortizacion(
-            Math.max(capitalPendienteFinanciado, 0),
+        const tablaContratoCompleta = generarTablaAmortizacion(
+            tieneConvenioActivo ? Math.max(capitalPendienteFinanciado, 0) : capitalBaseInteres,
             tieneConvenioActivo ? 0 : interesPorcentaje,
-            cuotasPendientes,
-            cuotasPagadas
+            tieneConvenioActivo ? cuotasPendientes : cuotasPactadas,
+            tieneConvenioActivo ? cuotasPagadas : 0
         );
+        const tablaAmortizacion = tieneConvenioActivo
+            ? tablaContratoCompleta
+            : tablaContratoCompleta.filter((fila) => Number(fila?.numero_cuota || 0) > cuotasPagadas);
         const cuotaMensualConInteres = tablaAmortizacion[0]?.cuota_estimada || 0;
         const interesTotalContrato = parseFloat(
             tablaAmortizacion.reduce((sum, fila) => sum + Number(fila.interes_mes || 0), 0).toFixed(2)
