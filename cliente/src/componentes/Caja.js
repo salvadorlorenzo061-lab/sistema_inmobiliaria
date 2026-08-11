@@ -1637,16 +1637,17 @@ const Caja = () => {
     const obtenerDesgloseCuotaMesVista = (mesEtiqueta = '') => {
         const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
         const aplicarCobroUnicoMes = Boolean(mesEtiqueta) && mesEtiqueta === mesAplicacionCobroUnico;
+        const mesEstaSeleccionado = (mesesSeleccionados || []).includes(mesEtiqueta);
         const serviciosMensuales = serviciosSeleccionadosDetalleVista
-            .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
+            .filter((servicio) => mesEstaSeleccionado && !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
             .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
-        const serviciosUnicos = aplicarCobroUnicoMes
+        const serviciosUnicos = (mesEstaSeleccionado && aplicarCobroUnicoMes)
             ? serviciosSeleccionadosDetalleVista
                 .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
                 .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
             : 0;
-        const cargosExtra = aplicarCobroUnicoMes ? montoCargosExtraSeleccionado : 0;
-        const mora = esCuotaEnganche
+        const cargosExtra = (mesEstaSeleccionado && aplicarCobroUnicoMes) ? montoCargosExtraSeleccionado : 0;
+        const mora = (!mesEstaSeleccionado || esCuotaEnganche)
             ? 0
             : obtenerMorasAplicables([mesEtiqueta]).reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
         const abonoCapital = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
@@ -1685,16 +1686,17 @@ const Caja = () => {
     const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
         const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
         const aplicarCobroUnicoMes = Boolean(mesEtiqueta) && mesEtiqueta === mesAplicacionCobroUnico;
+        const mesEstaSeleccionado = (mesesSeleccionados || []).includes(mesEtiqueta);
         const serviciosMensualesMes = serviciosSeleccionadosDetalleVista
-            .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
+            .filter((servicio) => mesEstaSeleccionado && !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
             .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
-        const serviciosUnicosMes = aplicarCobroUnicoMes
+        const serviciosUnicosMes = (mesEstaSeleccionado && aplicarCobroUnicoMes)
             ? serviciosSeleccionadosDetalleVista
                 .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
                 .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
             : 0;
-        const cargosExtraMes = aplicarCobroUnicoMes ? montoCargosExtraSeleccionado : 0;
-        const moraMes = esCuotaEnganche
+        const cargosExtraMes = (mesEstaSeleccionado && aplicarCobroUnicoMes) ? montoCargosExtraSeleccionado : 0;
+        const moraMes = (!mesEstaSeleccionado || esCuotaEnganche)
             ? 0
             : parseFloat(obtenerMorasAplicables([mesEtiqueta]).reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0).toFixed(2));
         if (esCuotaEnganche) {
