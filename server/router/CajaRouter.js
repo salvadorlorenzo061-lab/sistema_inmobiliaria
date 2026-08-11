@@ -169,7 +169,7 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
     if (mesEvaluado < primerMesCuota) return false;
     const hoy = new Date();
     const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    if (mesEvaluado >= mesActual) return false;
+    if (mesEvaluado > mesActual) return false;
 
     const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
     const fechaVencimiento = new Date(
