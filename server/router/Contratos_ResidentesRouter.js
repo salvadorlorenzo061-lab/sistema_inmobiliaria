@@ -66,18 +66,15 @@ const ensureFileExtension = (filename = '', mimeType = '', fallbackBase = 'archi
 const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
     const principal = Math.round(Math.max(Number(capital || 0), 0));
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
-    const tasaMensual = Math.max(Number(tasaAnual || 0), 0) / 100 / 12;
+    const tasa = Math.max(Number(tasaAnual || 0), 0);
 
     if (principal <= 0 || plazo <= 0) return 0;
-    if (tasaMensual <= 0) return Math.round(principal / plazo);
+    if (tasa <= 0) return Math.round(principal / plazo);
 
-    const factor = Math.pow(1 + tasaMensual, plazo);
-    const denominador = factor - 1;
-    if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
-        return Math.round(principal / plazo);
-    }
-
-    return Math.round(principal * ((tasaMensual * factor) / denominador));
+    const anios = Math.max(plazo / 12, 1);
+    const interesTotal = principal * (tasa / 100) * anios;
+    const cuotaFija = (principal + interesTotal) / plazo;
+    return Math.round(cuotaFija);
 };
 
 router.use(cors());
