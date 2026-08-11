@@ -420,33 +420,6 @@ const Caja = () => {
         };
     };
 
-    const esMesVencidoParaMoraLocal = (mesTexto = '') => {
-        const hoy = new Date();
-        const hoyMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
-        if (!limpio) return false;
-
-        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
-        if (conAnio) {
-            const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
-            if (indiceMes >= 0) {
-                const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
-                return fechaMes < hoyMes;
-            }
-        }
-
-        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
-        if (soloMes) {
-            const indiceMes = obtenerIndiceMesLocal(soloMes[1]);
-            if (indiceMes >= 0) {
-                const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
-                return fechaMes < hoyMes;
-            }
-        }
-
-        return false;
-    };
-
     const compararMesesMoraLocal = (mesA = '', mesB = '') => {
         const keyA = obtenerMesKeyLocal(mesA);
         const keyB = obtenerMesKeyLocal(mesB);
@@ -469,6 +442,66 @@ const Caja = () => {
         if (!objetivo) return -1;
         const nombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         return nombres.findIndex((nombre) => nombre === objetivo);
+    };
+
+    const parsearFechaContratoLocal = (valor) => {
+        const match = String(valor || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const parsed = match
+            ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+            : (valor ? new Date(valor) : null);
+        return parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : null;
+    };
+
+    const parsearEtiquetaMesLocal = (mesTexto = '') => {
+        const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
+        if (!limpio) return null;
+
+        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+        if (!conAnio) return null;
+
+        const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
+        const anio = Number(conAnio[2]);
+        if (indiceMes < 0 || !Number.isInteger(anio)) return null;
+
+        return new Date(anio, indiceMes, 1);
+    };
+
+    const esMoraContractualVencidaLocal = (mora = {}) => {
+        const mesTexto = String(mora?.mes_atrasado || mora?.mes || '').trim();
+        const fechaContratoRaw = mora?.fecha_contrato
+            || datosDeuda?.fecha_compra
+            || datosDeuda?.fecha_firma
+            || datosDeuda?.convenio_fecha_inicio
+            || '';
+        const diasGracia = Math.max(0, Math.min(31, Number(mora?.dias_gracia ?? datosDeuda?.dia_pago_limite ?? 5)));
+        const fechaContrato = parsearFechaContratoLocal(fechaContratoRaw);
+        const mesCuota = parsearEtiquetaMesLocal(mesTexto);
+
+        if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return false;
+        if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return false;
+
+        const primerMesCuota = new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
+        const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
+        if (mesEvaluado < primerMesCuota) return false;
+
+        const hoy = new Date();
+        const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        if (mesEvaluado >= mesActual) return false;
+
+        const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
+        const fechaVencimiento = new Date(
+            mesCuota.getFullYear(),
+            mesCuota.getMonth(),
+            Math.min(fechaContrato.getDate(), ultimoDiaMes)
+        );
+        const fechaInicioMora = new Date(
+            fechaVencimiento.getFullYear(),
+            fechaVencimiento.getMonth(),
+            fechaVencimiento.getDate()
+        );
+        fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia + 2);
+
+        return hoy >= fechaInicioMora;
     };
 
     const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null) => {
@@ -496,7 +529,7 @@ const Caja = () => {
             const moraMes = morasPendientes.find((mora) => {
                 const mesMora = String(mora?.mes_atrasado || '').trim();
                 return mesMora
-                    && esMesVencidoParaMoraLocal(mesMora)
+                    && esMoraContractualVencidaLocal(mora)
                     && compararMesesMoraLocal(mesSeleccionado, mesMora);
             });
 

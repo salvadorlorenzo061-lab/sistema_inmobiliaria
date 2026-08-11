@@ -769,6 +769,9 @@ router.get("/residentes-pendientes", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
+            COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
+            c.fecha_firma,
+            COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
                         c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
@@ -897,6 +900,9 @@ router.get("/buscar-residente", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
+            COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
+            c.fecha_firma,
+            COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
             COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
                         c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
@@ -1487,7 +1493,9 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
             mes_atrasado: String(row.mes_atrasado || ''),
             dias_retraso: Number(row.dias_retraso || 0),
             monto_mora: Number(row.monto_mora || 0),
-            estado: String(row.estado || 'pendiente')
+            estado: String(row.estado || 'pendiente'),
+            fecha_contrato: row.fecha_contrato || null,
+            dias_gracia: Number(row.dias_gracia ?? 5)
         }));
 
         const totalMoraPendiente = moras.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
@@ -1573,7 +1581,7 @@ router.post("/procesar-pago", (req, res) => {
             })
         : [];
 
-    const morasAplicadas = Array.isArray(moras_aplicadas)
+    let morasAplicadas = Array.isArray(moras_aplicadas)
         ? moras_aplicadas
             .map((item) => ({
                 id_morosidad: Number(item?.id_morosidad || 0),
@@ -1581,14 +1589,9 @@ router.post("/procesar-pago", (req, res) => {
                 monto_mora: Number(item?.monto_mora || 0)
             }))
             .filter((item) => Number.isFinite(item.monto_mora) && item.monto_mora > 0)
-            .filter((item) => {
-                const mes = String(item?.mes_atrasado || '').trim();
-                // Solo valida que el mes sea vencido; no exige coincidencia con meses del pago
-                return !mes || esMesVencidoParaMora(mes);
-            })
         : [];
 
-    const moraTotalSeleccionada = parseFloat(
+    let moraTotalSeleccionada = parseFloat(
         morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
     );
 
@@ -1693,6 +1696,7 @@ router.post("/procesar-pago", (req, res) => {
                     COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
                     COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
                     c.interes_porcentaje,
+                    COALESCE(c.dia_pago_limite, 5) AS dia_pago_limite,
                     conv.id_convenio AS id_convenio_activo,
                     c.id_proyecto,
                     COALESCE(c.id_empresa_marca, r.id_empresa) AS id_empresa_facturacion
@@ -1794,6 +1798,8 @@ router.post("/procesar-pago", (req, res) => {
                         const enganchePendienteContrato = Math.max(engancheContrato - enganchePagadoContrato, 0);
             const fechaCompraContrato = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;
             const fechaFirmaContrato = saldoRows[0]?.fecha_firma ? new Date(saldoRows[0].fecha_firma) : null;
+            const fechaContratoMora = saldoRows[0]?.fecha_compra || saldoRows[0]?.fecha_firma || null;
+            const diasGraciaContrato = Math.max(0, Math.min(31, Number(saldoRows[0]?.dia_pago_limite ?? 5)));
             const plazoMesesContrato = Number(saldoRows[0]?.plazo_meses || 0);
             const cuotasPactadasContrato = Number(saldoRows[0]?.cuotas_pactadas || 0);
             const cuotasContratoBase = Number.isInteger(plazoMesesContrato) && plazoMesesContrato > 0
@@ -1875,6 +1881,14 @@ router.post("/procesar-pago", (req, res) => {
                 const cuotaNumero = Number(numeroCuota || 0);
                 return tablaAmortizacionContrato.find((fila) => fila.numero_cuota === cuotaNumero) || null;
             };
+
+            morasAplicadas = morasAplicadas.filter((item) => {
+                const mes = String(item?.mes_atrasado || '').trim();
+                return !mes || esMoraContractualVencida(mes, fechaContratoMora, diasGraciaContrato);
+            });
+            moraTotalSeleccionada = parseFloat(
+                morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
+            );
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
                 const parsed = parsearEtiquetaMes(mesTexto);
