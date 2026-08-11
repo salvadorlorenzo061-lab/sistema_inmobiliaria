@@ -9,6 +9,26 @@ import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 import PdfPreview from './PdfPreview';
 
 function Contratos_Residentes() {
+  const calcularMontoCuotaContrato = (montoTotalValue, engancheValue, cuotasValue, plazoValue) => {
+    const montoTotalNumero = Number(montoTotalValue || 0);
+    const engancheNumero = Number(engancheValue || 0);
+    const plazoNumero = Number(plazoValue || cuotasValue || 0);
+    const cuotasNumero = Number.isFinite(plazoNumero) && plazoNumero > 0
+      ? plazoNumero
+      : Number(cuotasValue || 0);
+
+    if (!Number.isFinite(montoTotalNumero) || !Number.isFinite(engancheNumero) || !Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
+      return "";
+    }
+
+    const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
+    if (capitalFinanciado <= 0) {
+      return "0.00";
+    }
+
+    return (capitalFinanciado / cuotasNumero).toFixed(2);
+  };
+
   const obtenerInicioPagosAutomatico = (fechaCompraValue, fechaFirmaValue) => {
     const base = fechaCompraValue || fechaFirmaValue;
     const partesFecha = String(base || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -197,15 +217,10 @@ function Contratos_Residentes() {
     }
   }, [showEditModal, id_proyecto, proyecto_propiedad, proyectosList, id_empresa_marca]);
 
-  // Cálculo automático del valor de cuota si cambia el monto total o las cuotas
+  // La cuota automática debe calcularse sobre el capital financiado: precio total menos enganche.
   useEffect(() => {
-    if (monto_total && cuotas_pactadas > 0) {
-      const calculo = (parseFloat(monto_total) / parseInt(cuotas_pactadas)).toFixed(2);
-      setMonto_cuota(calculo);
-    } else {
-      setMonto_cuota("");
-    }
-  }, [monto_total, cuotas_pactadas]);
+    setMonto_cuota(calcularMontoCuotaContrato(monto_total, enganche, cuotas_pactadas, plazo_meses));
+  }, [monto_total, enganche, cuotas_pactadas, plazo_meses]);
 
   // Mes y anio de inicio se calculan automaticamente desde la fecha del contrato.
   useEffect(() => {
