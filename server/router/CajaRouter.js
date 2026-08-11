@@ -183,7 +183,7 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
         fechaVencimiento.getMonth(),
         fechaVencimiento.getDate()
     );
-    fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia + 2);
+    fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia);
 
     return hoy >= fechaInicioMora;
 };

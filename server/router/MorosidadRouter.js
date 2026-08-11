@@ -107,7 +107,7 @@ const obtenerFechaInicioMora = (fechaVencimiento, diasGracia) => {
         fechaVencimiento.getMonth(),
         fechaVencimiento.getDate()
     );
-    inicioMora.setDate(inicioMora.getDate() + diasGracia + 2);
+    inicioMora.setDate(inicioMora.getDate() + diasGracia);
     return inicioMora;
 };
 
