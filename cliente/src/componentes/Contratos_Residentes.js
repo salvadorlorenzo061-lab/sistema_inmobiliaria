@@ -1137,13 +1137,24 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} placeholder="80" />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Mes Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.mes} />
-                </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Año Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.anio} />
-                </div>
+  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
+  <input 
+    type="text" 
+    className="form-control" 
+    value={inicioPagosCalculado.mes} 
+    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, mes: e.target.value })}
+  />
+</div>
+
+<div className="col-md-3 mb-3">
+  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
+  <input 
+    type="text" 
+    className="form-control" 
+    value={inicioPagosCalculado.anio} 
+    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
+  />
+</div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Fecha de Firma Legal:</label>
                   <input type="date" className="form-control" value={fecha_firma} onChange={e => setFecha_firma(e.target.value)} />
