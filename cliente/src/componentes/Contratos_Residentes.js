@@ -53,7 +53,10 @@ function Contratos_Residentes() {
 
     const primerPago = new Date(parsed.getFullYear(), parsed.getMonth() + 1, 1);
     return {
-      mes: String(primerPago.getMonth() + 1),
+      // "Mes Inicio de Pagos" en este formulario representa el inicio del plan de pagos:
+      // la primera cuota financiada siempre arranca en 1. El mes calendario real para el
+      // contrato/PDF se deriva desde fecha_compra/fecha_firma para no afectar Caja.
+      mes: '1',
       anio: String(primerPago.getFullYear())
     };
   };
@@ -333,6 +336,8 @@ function Contratos_Residentes() {
             cuotas_pactadas: payload.cuotas_pactadas,
             monto_cuota: payload.monto_cuota,
             dia_pago_limite,
+            fecha_firma,
+            fecha_compra,
             dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '18',
             mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '7',
             anio_firma: fecha_firma ? new Date(fecha_firma).getFullYear() : '2025',
@@ -432,6 +437,8 @@ function Contratos_Residentes() {
         cuotas_pactadas: val.cuotas_pactadas,
         monto_cuota: val.monto_cuota,
         dia_pago_limite: val.dia_pago_limite,
+        fecha_firma: val.fecha_firma,
+        fecha_compra: val.fecha_compra,
         dia_firma: new Date(val.fecha_firma).getDate(),
         mes_firma: new Date(val.fecha_firma).getMonth() + 1,
         anio_firma: new Date(val.fecha_firma).getFullYear(),
@@ -474,6 +481,8 @@ function Contratos_Residentes() {
         cuotas_pactadas: val.cuotas_pactadas,
         monto_cuota: val.monto_cuota,
         dia_pago_limite: val.dia_pago_limite,
+        fecha_firma: val.fecha_firma,
+        fecha_compra: val.fecha_compra,
         dia_firma: new Date(val.fecha_firma).getDate(),
         mes_firma: new Date(val.fecha_firma).getMonth() + 1,
         anio_firma: new Date(val.fecha_firma).getFullYear(),
@@ -1213,6 +1222,7 @@ function Contratos_Residentes() {
                     <PdfPreview 
                       datosContrato={{
                         codigo_contrato, monto_total, cuotas_pactadas, monto_cuota: montoCuotaCalculado, dia_pago_limite,
+                        fecha_firma, fecha_compra,
                         dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '',
                         mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '',
                         anio_firma: fecha_firma ? new Date(fecha_firma).getFullYear() : '',
@@ -1454,6 +1464,7 @@ function Contratos_Residentes() {
                     <PdfPreview 
                       datosContrato={{
                         codigo_contrato, monto_total, cuotas_pactadas, monto_cuota: montoCuotaCalculado, dia_pago_limite,
+                        fecha_firma, fecha_compra,
                         dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '',
                         mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '',
                         anio_firma: fecha_firma ? new Date(fecha_firma).getFullYear() : '',

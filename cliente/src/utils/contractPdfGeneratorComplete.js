@@ -337,8 +337,25 @@ export const generarPdfContrato = (datosContrato, datosResidente) => {
     const diaWords = numberToWords(parseInt(dia_pago)).toUpperCase();
     const plazoWords = numberToWords(plazo_meses).toUpperCase();
     const porcentajeWords = numberToWords(porcentaje_dominio).toUpperCase();
-    const mesInicio = monthToWords(datosContrato.mes_inicio_pagos || '7');
-    const anioInicio = yearToWords(datosContrato.anio_inicio_pagos || '2026');
+    const obtenerPrimerPagoCalendario = (fechaCompraValue, fechaFirmaValue) => {
+        const parseFechaLocal = (value) => {
+            const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+            return match
+                ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+                : (value ? new Date(value) : null);
+        };
+
+        const base = parseFechaLocal(fechaCompraValue) || parseFechaLocal(fechaFirmaValue);
+        if (!(base instanceof Date) || Number.isNaN(base.getTime())) {
+            return null;
+        }
+
+        return new Date(base.getFullYear(), base.getMonth() + 1, 1);
+    };
+
+    const primerPagoCalendario = obtenerPrimerPagoCalendario(datosContrato.fecha_compra, datosContrato.fecha_firma);
+    const mesInicio = monthToWords(primerPagoCalendario ? String(primerPagoCalendario.getMonth() + 1) : (datosContrato.mes_inicio_pagos || '7'));
+    const anioInicio = yearToWords(primerPagoCalendario ? String(primerPagoCalendario.getFullYear()) : (datosContrato.anio_inicio_pagos || '2026'));
 
     let clausula4 = `CUARTA: El contrato de venta se da bajo las siguientes condiciones: A) DEL PRECIO. El precio del bien inmueble es de ${montoWords} (Q. ${monto_total.toLocaleString('es-GT', {minimumFractionDigits: 2})}), de los cuales "LA PARTE COMPRADORA" el día dieciocho de junio del presente año entrego la cantidad de ${engancheWords} (Q.${enganche.toLocaleString('es-GT', {minimumFractionDigits: 2})}) en calidad de primera y única cuota de enganche. B) DEL CAPITAL RESTANTE SIN INTERESES. El capital restante sin intereses es de ${capitalWords} (Q. ${capital_restante.toLocaleString('es-GT', {minimumFractionDigits: 2})}). C) DE LOS INTERESES. El capital restante devengara un interés del ${interes_porcentaje} por ciento anual variable. D) DEL CAPITAL RESTANTE CON INTERESES. El capital restante con intereses es de ${totalInteresWords} (Q. ${total_con_interes.toLocaleString('es-GT', {minimumFractionDigits: 2})}). E) DE LA FORMA DE PAGO. "LA PARTE COMPRADORA" cancelara en ${cuotasWords} CUOTAS de ${cuotaMontoWords} (Q. ${monto_cuota.toLocaleString('es-GT', {minimumFractionDigits: 2})}) cada una y UNA ULTIMA cuota de ${ultimaCuotaWords} (Q ${ultima_cuota.toLocaleString('es-GT', {minimumFractionDigits: 2})}), sin necesidad de cobro ni requerimiento alguno. F) EL LUGAR DE PAGO. El pago se realizará el día ${diaWords} de cada mes a partir del mes de ${mesInicio} del año ${anioInicio}, sin necesidad de cobro ni requerimiento alguno hasta solventar completamente la obligación contraída; y en caso de incumplimiento de uno o más abonos consecutivos da derecho a "LA PARTE VENDEDORA" a cobrar una MORA de ${moraWords} POR CADA MES VENCIDO HASTA PONERSE AL DÍA. G) EL PLAZO. El plazo del presente contrato es de ${plazoWords} MESES, a partir de la fecha de inicio de los pagos como fecha límite para cumplir con lo establecido y que puede ser prorrogado según convenga a los intereses de "LA PARTE VENDEDORA". H) "LA PARTE COMPRADORA" podrá hacer abonos a capital. I) CESIÓN DEL CRÉDITO: El presente crédito podrá ser cedido, negociado o enajenado de cualquier forma por " LA PARTE VENDEDORA" sin necesidad de previo aviso o posterior notificación a "LA PARTE COMPRADORA", y sin menoscabar los derechos adquiridos por "LA PARTE COMPRADORA". J) La presente compraventa se otorga con PACTO DE RESERVA DE DOMINIO a favor de " LA PARTE VENDEDORA " hasta que "LA PARTE COMPRADORA" haya cancelado el ${porcentajeWords} por ciento (${porcentaje_dominio}%) del precio total del inmueble en mención. Haciendo constar que "LA PARTE COMPRADORA" no podrá hacer ningún tramité o gestión ante las autoridades municipales o cualquier otra empresa pública o privada sin autorización escrita de "LA PARTE VENDEDORA". K) El bien inmueble que hoy se promete en venta será utilizado única y exclusivamente para construir vivienda formal quedando prohibido darle cualquier otro uso.`;
     

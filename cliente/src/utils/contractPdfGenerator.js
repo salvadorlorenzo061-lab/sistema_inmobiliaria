@@ -39,6 +39,22 @@ const mesLetras   = m => MESES_PALABRAS[parseInt(m)] || '';
 const anioLetras  = y =>{ const n=parseInt(y); return n>=2000?'dos mil '+numeroALetras(n-2000):numeroALetras(n); };
 const diaLetras   = d => numeroALetras(parseInt(d));
 
+const obtenerPrimerPagoCalendario = (fechaCompraValue, fechaFirmaValue) => {
+  const parseFechaLocal = (value) => {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : (value ? new Date(value) : null);
+  };
+
+  const base = parseFechaLocal(fechaCompraValue) || parseFechaLocal(fechaFirmaValue);
+  if (!(base instanceof Date) || Number.isNaN(base.getTime())) {
+    return null;
+  }
+
+  return new Date(base.getFullYear(), base.getMonth() + 1, 1);
+};
+
 /* ─────────────── Generador principal ─────────────── */
 export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   const doc = new jsPDF('p','mm','letter');
@@ -163,8 +179,13 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   const diaVencimiento = fechaCompraObj.getDate();
   const plazo     = parseInt(datosContrato.plazo_meses)          || 60;
   const pctDominio= parseInt(datosContrato.porcentaje_dominio)   || 80;
-  const mesInicio = datosContrato.mes_inicio_pagos               || '7';
-  const anioIni   = datosContrato.anio_inicio_pagos              || '2026';
+  const primerPagoCalendario = obtenerPrimerPagoCalendario(datosContrato.fecha_compra, datosContrato.fecha_firma);
+  const mesInicio = primerPagoCalendario
+    ? String(primerPagoCalendario.getMonth() + 1)
+    : (datosContrato.mes_inicio_pagos || '7');
+  const anioIni   = primerPagoCalendario
+    ? String(primerPagoCalendario.getFullYear())
+    : (datosContrato.anio_inicio_pagos || '2026');
 
   // Convertir a palabras
   const fmt = n => parseFloat(n).toLocaleString('es-GT',{minimumFractionDigits:2});
