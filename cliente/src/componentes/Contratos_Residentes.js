@@ -38,6 +38,9 @@ function Contratos_Residentes() {
 
   const obtenerInicioPagosAutomatico = (fechaCompraValue, fechaFirmaValue) => {
     const base = fechaCompraValue || fechaFirmaValue;
+    if (!String(base || '').trim()) {
+      return { mes: '', anio: '' };
+    }
     const partesFecha = String(base || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     const parsed = partesFecha
       ? new Date(Number(partesFecha[1]), Number(partesFecha[2]) - 1, Number(partesFecha[3]))
@@ -63,7 +66,7 @@ function Contratos_Residentes() {
   const [id_proyecto, setId_proyecto] = useState("");
   const [id_tipo_contrato, setId_tipo_contrato] = useState("");
   const [monto_total, setMonto_total] = useState("120000");
-  const [cuotas_pactadas, setCuotas_pactadas] = useState("60");
+  const [cuotas_pactadas, setCuotas_pactadas] = useState("");
   const [dia_pago_limite, setDia_pago_limite] = useState("5");
   const [fecha_firma, setFecha_firma] = useState("");
   const [fecha_compra, setFecha_compra] = useState("");
@@ -104,7 +107,7 @@ function Contratos_Residentes() {
   const [interes_porcentaje, setInteres_porcentaje] = useState("14");
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
-  const [plazo_meses, setPlazo_meses] = useState("60");
+  const [plazo_meses, setPlazo_meses] = useState("");
 
   // Listas de datos
   const [contratosList, setContratosList] = useState([]);
@@ -822,9 +825,9 @@ function Contratos_Residentes() {
   const limpiarCampos = () => {
     setId_contrato(""); setCodigo_contrato(""); setId_residente("");
     setId_empresa_marca(""); setId_proyecto(""); setId_tipo_contrato("");
-    // Cuotas y plazo arrancan con el mismo valor por defecto: si uno queda vacio y el otro
-    // precargado, la cuota automatica se calcula sobre un plazo distinto al pactado.
-    setMonto_total(""); setCuotas_pactadas("60"); setDia_pago_limite("5");
+    // En alta se dejan vacios para no mostrar una cuota "automatica" con 60 meses que el
+    // usuario no ha pactado todavia. Edicion sigue cargando los valores reales del contrato.
+    setMonto_total(""); setCuotas_pactadas(""); setDia_pago_limite("5");
     setFecha_firma(""); setFecha_compra(""); setFecha_fin(""); setEstado(""); setDocumento_contrato("");
     // Restablecer valores del vendedor/empresa a los valores por defecto
     setNombre_vendedor("DULCE MARIA OSORIO SABAN DE PEREZ");
@@ -844,7 +847,7 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
-    setPorcentaje_dominio("80"); setPlazo_meses("60");
+    setPorcentaje_dominio("80"); setPlazo_meses("");
   };
 
   const filtrados = contratosList.filter(c => 
