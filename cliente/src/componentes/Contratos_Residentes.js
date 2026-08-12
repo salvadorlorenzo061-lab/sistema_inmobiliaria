@@ -306,7 +306,6 @@ function Contratos_Residentes() {
   const obtenerUltimaCuotaCalculada = () => {
     const montoTotalNumero = Number(monto_total || 0);
     const engancheNumero = Number(enganche || 0);
-    const interesNumero = Number(interes_porcentaje || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
 
     if (capitalFinanciado <= 0 || cuotasCalculadasNumero <= 0) {
@@ -318,9 +317,10 @@ function Contratos_Residentes() {
       return '';
     }
 
-    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
-    const totalConInteres = redondearMoneda(capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios));
-    const ultimaCuota = redondearMoneda(totalConInteres - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0)));
+    // La cuota fija del contrato ya incorpora el interes distribuido con la regla
+    // de amortizacion actual del sistema. La ultima cuota debe respetar esa misma
+    // cuota fija para no mostrar un remanente artificial por redondeo.
+    const ultimaCuota = redondearMoneda(cuotaRegular);
     if (ultimaCuota <= 0) {
       return '';
     }
