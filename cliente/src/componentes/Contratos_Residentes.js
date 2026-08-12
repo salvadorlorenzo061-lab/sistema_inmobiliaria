@@ -246,7 +246,49 @@ function Contratos_Residentes() {
   const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
   const obtenerPlazoEnvio = () => String(plazo_meses || cuotas_pactadas || '').trim();
   const montoCuotaCalculado = calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses);
-  const inicioPagosCalculado = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
+  const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
+  const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
+
+  const obtenerUltimaCuotaCalculada = () => {
+    const montoTotalNumero = Number(monto_total || 0);
+    const engancheNumero = Number(enganche || 0);
+    const interesNumero = Number(interes_porcentaje || 0);
+    const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
+
+    if (capitalFinanciado <= 0 || cuotasCalculadasNumero <= 0) {
+      return '';
+    }
+
+    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
+    const totalConInteres = redondearMoneda(capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios));
+    const cuotaRegular = Number(montoCuotaCalculado || 0);
+    if (!Number.isFinite(cuotaRegular) || cuotaRegular <= 0) {
+      return '';
+    }
+
+    const ultimaCuota = redondearMoneda(totalConInteres - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0)));
+    if (ultimaCuota <= 0) {
+      return '';
+    }
+
+    return Math.abs(ultimaCuota - cuotaRegular) > 0.009 ? ultimaCuota.toFixed(2) : '';
+  };
+
+  const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
+
+  const normalizarMesInicioPagos = (valor) => {
+    const numero = parseInt(String(valor || '').trim(), 10);
+    const respaldo = parseInt(String(inicioPagosAutomatico.mes || '1').trim(), 10) || 1;
+    if (!Number.isFinite(numero)) return String(respaldo);
+    return String(Math.max(1, Math.min(12, numero)));
+  };
+
+  const normalizarAnioInicioPagos = (valor) => {
+    const numero = parseInt(String(valor || '').trim(), 10);
+    const respaldo = parseInt(String(inicioPagosAutomatico.anio || new Date().getFullYear()).trim(), 10) || new Date().getFullYear();
+    if (!Number.isFinite(numero)) return String(respaldo);
+    return String(Math.max(2000, numero));
+  };
 
   const validarContrato = () => {
     if (!codigo_contrato.trim()) return "Debe generar o escribir el código del contrato.";
