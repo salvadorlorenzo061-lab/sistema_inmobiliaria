@@ -4,13 +4,13 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { calcularCuotaFija } from '../utils/amortizacion';
+import { calcularCuotaFija, redondearMoneda } from '../utils/amortizacion';
 import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfGenerator';
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 import PdfPreview from './PdfPreview';
 
 function Contratos_Residentes() {
- const [fechasEditables, setFechasEditables] = useState({ mes: '', anio: '' });
+ const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '' });
   const calcularMontoCuotaContrato = (montoTotalValue, engancheValue, interesValue, cuotasValue, plazoValue) => {
     const montoTotalNumero = Number(montoTotalValue || 0);
     const engancheNumero = Number(engancheValue || 0);
@@ -252,21 +252,18 @@ function Contratos_Residentes() {
   const obtenerUltimaCuotaCalculada = () => {
     const montoTotalNumero = Number(monto_total || 0);
     const engancheNumero = Number(enganche || 0);
-    const interesNumero = Number(interes_porcentaje || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
 
     if (capitalFinanciado <= 0 || cuotasCalculadasNumero <= 0) {
       return '';
     }
 
-    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
-    const totalConInteres = redondearMoneda(capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios));
     const cuotaRegular = Number(montoCuotaCalculado || 0);
     if (!Number.isFinite(cuotaRegular) || cuotaRegular <= 0) {
       return '';
     }
 
-    const ultimaCuota = redondearMoneda(totalConInteres - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0)));
+    const ultimaCuota = redondearMoneda(cuotaRegular);
     if (ultimaCuota <= 0) {
       return '';
     }
