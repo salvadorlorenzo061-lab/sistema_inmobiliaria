@@ -1019,11 +1019,13 @@ function Contratos_Residentes() {
                   </select>
                 </div>
                 <div className="col-md-6 mb-3">
-                  <label className="form-label fw-bold">Estado Inicial:</label>
+                  <label className="form-label fw-bold">Estado del Contrato:</label>
                   <select className="form-select" value={estado} onChange={e => setEstado(e.target.value)}>
                     <option value="">-- Seleccione --</option>
-                    <option value="activo">Activo (Vigente)</option>
-                    <option value="pendiente">Pendiente de firmas</option>
+                    <option value="activo">Activo</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="finalizado">Finalizado (Pagado)</option>
+                    <option value="rescindido">Rescindido / Cancelado</option>
                   </select>
                 </div>
 
@@ -1110,15 +1112,15 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
                   <input type="number" className="form-control" value={mora} onChange={e => setMora(e.target.value)} placeholder="600" />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Días de gracia después del vencimiento:</label>
                   <input type="number" min="0" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} placeholder="5" />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Plazo Total (meses):</label>
                   <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} placeholder="60" />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} placeholder="80" />
                 </div>
