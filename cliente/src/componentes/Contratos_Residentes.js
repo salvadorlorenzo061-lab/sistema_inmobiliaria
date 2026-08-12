@@ -246,6 +246,60 @@ function Contratos_Residentes() {
   const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
   const obtenerPlazoEnvio = () => String(plazo_meses || cuotas_pactadas || '').trim();
 
+  const validarContrato = () => {
+    if (!codigo_contrato.trim()) return "Debe generar o escribir el código del contrato.";
+    if (!id_residente) return "Debe seleccionar un residente.";
+    if (!id_tipo_contrato) return "Debe seleccionar el tipo de contrato.";
+    if (!String(monto_total || '').trim()) return "Debe ingresar el precio total del contrato.";
+    if (!String(obtenerCuotasEnvio() || '').trim()) return "Debe ingresar la cantidad de cuotas.";
+    if (dia_pago_limite === '') return "Debe indicar los días de gracia.";
+    if (!fecha_firma) return "Debe ingresar la fecha de firma.";
+    if (!fecha_compra) return "Debe ingresar la fecha de compra.";
+    if (!estado) return "Debe seleccionar el estado del contrato.";
+    return '';
+  };
+
+  const construirPayloadContrato = (incluirId = false) => {
+    const cuotasEnvio = obtenerCuotasEnvio();
+    const plazoEnvio = obtenerPlazoEnvio();
+    const montoCuotaCalculado = calcularMontoCuotaContrato(
+      monto_total,
+      enganche,
+      interes_porcentaje,
+      cuotasEnvio,
+      plazoEnvio
+    );
+
+    const payload = {
+      codigo_contrato: String(codigo_contrato || '').trim(),
+      id_residente,
+      id_empresa_marca: id_empresa_marca || null,
+      id_proyecto: id_proyecto || null,
+      id_tipo_contrato,
+      monto_total,
+      enganche,
+      cuotas_pactadas: cuotasEnvio,
+      monto_cuota: montoCuotaCalculado || monto_cuota || "0.00",
+      interes_porcentaje,
+      mora,
+      plazo_meses: plazoEnvio,
+      mes_inicio_pagos,
+      anio_inicio_pagos,
+      dia_pago_limite,
+      fecha_firma,
+      fecha_compra: fecha_compra || null,
+      fecha_fin: fecha_fin || null,
+      estado,
+      documento_contrato: documento_contrato || null
+    };
+
+    if (incluirId) {
+      payload.id_contrato = id_contrato;
+    }
+
+    return payload;
+  };
+
   // Mes y anio de inicio se calculan automaticamente desde la fecha del contrato.
   useEffect(() => {
     const inicio = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
@@ -267,33 +321,16 @@ function Contratos_Residentes() {
   };
 
   const addContrato = () => {
-    if (!codigo_contrato.trim() || !id_residente || !id_tipo_contrato || !monto_total || !cuotas_pactadas || dia_pago_limite === '' || !fecha_firma || !fecha_compra || !estado) {
-      Swal.fire({ icon: "warning", title: "CAMPOS INCOMPLETOS", text: "Por favor llene todos los parámetros financieros" });
+    const mensajeValidacion = validarContrato();
+    if (mensajeValidacion) {
+      Swal.fire({ icon: "warning", title: "CAMPOS INCOMPLETOS", text: mensajeValidacion });
       return;
     }
 
-    Axios.post(`${API_URL}/crear`, {
-      codigo_contrato,
-      id_residente,
-      id_empresa_marca: id_empresa_marca || null,
-      id_proyecto: id_proyecto || null,
-      id_tipo_contrato,
-      monto_total,
-      enganche,
-      cuotas_pactadas: obtenerCuotasEnvio(),
-      monto_cuota,
-      interes_porcentaje,
-      mora,
-      plazo_meses: obtenerPlazoEnvio(),
-      mes_inicio_pagos,
-      anio_inicio_pagos,
-      dia_pago_limite,
-      fecha_firma,
-      fecha_compra: fecha_compra || null,
-      fecha_fin: fecha_fin || null,
-      estado,
-      documento_contrato: documento_contrato || null
-    })
+    const payload = construirPayloadContrato(false);
+    setMonto_cuota(payload.monto_cuota);
+
+    Axios.post(`${API_URL}/crear`, payload)
     .then(async () => {
       // Obtener datos del residente para el PDF
       const residente = residentesList.find(r => String(r.id_residente) === String(id_residente));
@@ -304,8 +341,8 @@ function Contratos_Residentes() {
           const datosParaPdf = {
             codigo_contrato,
             monto_total,
-            cuotas_pactadas,
-            monto_cuota,
+            cuotas_pactadas: payload.cuotas_pactadas,
+            monto_cuota: payload.monto_cuota,
             dia_pago_limite,
             dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '18',
             mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '7',
@@ -348,31 +385,16 @@ function Contratos_Residentes() {
   };
 
   const actualizarContrato = () => {
-    if (!codigo_contrato.trim() || !id_residente || !id_tipo_contrato || !monto_total || !cuotas_pactadas || dia_pago_limite === '' || !fecha_firma || !fecha_compra || !estado) {
-      Swal.fire({ icon: "warning", title: "CAMPOS INCOMPLETOS" });
+    const mensajeValidacion = validarContrato();
+    if (mensajeValidacion) {
+      Swal.fire({ icon: "warning", title: "CAMPOS INCOMPLETOS", text: mensajeValidacion });
       return;
     }
 
-    Axios.put(`${API_URL}/actualizar`, {
-      id_contrato, codigo_contrato, id_residente,
-      id_empresa_marca: id_empresa_marca || null,
-      id_proyecto: id_proyecto || null,
-      id_tipo_contrato, monto_total,
-      enganche,
-      cuotas_pactadas: obtenerCuotasEnvio(),
-      monto_cuota,
-      interes_porcentaje,
-      mora,
-      plazo_meses: obtenerPlazoEnvio(),
-      mes_inicio_pagos,
-      anio_inicio_pagos,
-      dia_pago_limite,
-      fecha_firma,
-      fecha_compra: fecha_compra || null,
-      fecha_fin: fecha_fin || null,
-      estado,
-      documento_contrato: documento_contrato || null
-    })
+    const payload = construirPayloadContrato(true);
+    setMonto_cuota(payload.monto_cuota);
+
+    Axios.put(`${API_URL}/actualizar`, payload)
     .then(async () => {
       try {
         await Axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`);
@@ -1134,6 +1156,10 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">Fecha de Compra:</label>
                   <input type="date" className="form-control" value={fecha_compra} onChange={e => setFecha_compra(e.target.value)} />
                 </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Fecha Fin (Opcional):</label>
+                  <input type="date" className="form-control" value={fecha_fin} onChange={e => setFecha_fin(e.target.value)} />
+                </div>
 
                 {/* SECCIÓN 4: DATOS DEL VENDEDOR */}
                 <div className="col-12 mb-2"><h6 className="fw-bold text-warning border-bottom pb-1">👤 DATOS DEL VENDEDOR / EMPRESA (Parte Vendedora)</h6></div>
@@ -1243,18 +1269,21 @@ function Contratos_Residentes() {
                 <div className="col-md-6 mb-3">
                   <label className="form-label fw-bold">Residente:</label>
                   <select className="form-select" value={id_residente} onChange={e => setId_residente(e.target.value)}>
-                    {residentesList.map(r => <option key={r.id_residente} value={r.id_residente}>{r.nombre}</option>)}
+                    <option value="">-- Seleccione un Residente --</option>
+                    {residentesList.map(r => <option key={r.id_residente} value={r.id_residente}>{r.nombre} {r.numero_identificacion ? `· ${r.numero_identificacion}` : ''}</option>)}
                   </select>
                 </div>
                 <div className="col-md-6 mb-3">
                   <label className="form-label fw-bold">Tipo de Contrato:</label>
                   <select className="form-select" value={id_tipo_contrato} onChange={e => setId_tipo_contrato(e.target.value)}>
+                    <option value="">-- Seleccione Tipo --</option>
                     {tiposContratoList.map(t => <option key={t.id_tipo_contrato} value={t.id_tipo_contrato}>{t.nombre_tipo_contrato}</option>)}
                   </select>
                 </div>
                 <div className="col-md-6 mb-3">
-                  <label className="form-label fw-bold">Estado Legal:</label>
+                  <label className="form-label fw-bold">Estado del Contrato:</label>
                   <select className="form-select" value={estado} onChange={e => setEstado(e.target.value)}>
+                    <option value="">-- Seleccione --</option>
                     <option value="activo">Activo</option>
                     <option value="pendiente">Pendiente</option>
                     <option value="finalizado">Finalizado (Pagado)</option>
@@ -1322,11 +1351,11 @@ function Contratos_Residentes() {
                 {/* SECCIÓN 3: TÉRMINOS FINANCIEROS */}
                 <div className="col-12 mb-2"><h6 className="fw-bold text-danger border-bottom pb-1">💰 TÉRMINOS FINANCIEROS</h6></div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Precio Total (Q):</label>
+                  <label className="form-label fw-bold">Precio Total del Inmueble (Q):</label>
                   <input type="number" className="form-control" value={monto_total} onChange={e => setMonto_total(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Enganche (Q):</label>
+                  <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
                   <input type="number" className="form-control" value={enganche} onChange={e => setEnganche(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
@@ -1334,7 +1363,7 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Cuotas:</label>
+                  <label className="form-label fw-bold">Número de Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
@@ -1342,15 +1371,15 @@ function Contratos_Residentes() {
                   <input type="text" className="form-control bg-light text-success fw-bold" value={monto_cuota} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Mora (Q):</label>
+                  <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
                   <input type="number" className="form-control" value={mora} onChange={e => setMora(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Días de gracia:</label>
+                  <label className="form-label fw-bold">Días de gracia después del vencimiento:</label>
                   <input type="number" min="0" max="31" className="form-control" value={dia_pago_limite} onChange={e => setDia_pago_limite(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Plazo (meses):</label>
+                  <label className="form-label fw-bold">Plazo Total (meses):</label>
                   <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
@@ -1358,19 +1387,19 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Mes Inicio Pagos (Auto):</label>
+                  <label className="form-label fw-bold">Mes Inicio de Pagos (Auto):</label>
                   <input type="text" className="form-control bg-light" value={mes_inicio_pagos} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Año Inicio Pagos (Auto):</label>
+                  <label className="form-label fw-bold">Año Inicio de Pagos (Auto):</label>
                   <input type="text" className="form-control bg-light" value={anio_inicio_pagos} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Fecha Firma:</label>
+                  <label className="form-label fw-bold">Fecha de Firma Legal:</label>
                   <input type="date" className="form-control" value={fecha_firma} onChange={e => setFecha_firma(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Fecha Compra:</label>
+                  <label className="form-label fw-bold">Fecha de Compra:</label>
                   <input type="date" className="form-control" value={fecha_compra} onChange={e => setFecha_compra(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
