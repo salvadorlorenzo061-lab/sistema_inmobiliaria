@@ -14,6 +14,7 @@ function Contratos_Residentes() {
     const montoTotalNumero = Number(montoTotalValue || 0);
     const engancheNumero = Number(engancheValue || 0);
     const interesNumero = Number(interesValue || 0);
+    const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '' });
     // El divisor de la cuota es el "Numero de Cuotas" que escribe el usuario; el
     // "Plazo Total (meses)" solo es respaldo. Antes mandaba el plazo, por eso al aperturar
     // un contrato (cuotas vacio y plazo precargado en 60) la cuota se calculaba sobre 60
