@@ -114,6 +114,7 @@ function Contratos_Residentes() {
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
   const [plazo_meses, setPlazo_meses] = useState("");
   const [anios_financiamiento, setAnios_financiamiento] = useState("");
+  const [cuotas_pagadas_manual, setCuotas_pagadas_manual] = useState("0");
   const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
 
   // Listas de datos
@@ -302,6 +303,8 @@ function Contratos_Residentes() {
   const montoCuotaCalculado = calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses);
   const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
   const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
+  const cuotasPagadasNumero = Math.max(parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0, 0);
+  const cuotasPendientesCalculadas = Math.max(cuotasCalculadasNumero - cuotasPagadasNumero, 0);
 
   const obtenerPrecioTotalConIntereses = () => {
     const montoTotalNumero = Number(monto_total || 0);
@@ -893,6 +896,7 @@ function Contratos_Residentes() {
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
+    setCuotas_pagadas_manual(String(val.cuotas_pagadas ?? '0'));
     const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
     setAnios_financiamiento(
       Number.isFinite(plazoContrato) && plazoContrato > 0
@@ -984,7 +988,7 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
-    setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento("");
+    setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
     setInicioPagosCalculado({ mes: '', anio: '' });
     ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
   };
@@ -1245,6 +1249,25 @@ function Contratos_Residentes() {
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Cuotas pagadas:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    value={cuotas_pagadas_manual}
+                    onChange={e => setCuotas_pagadas_manual(e.target.value)}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Cuotas pendientes:</label>
+                  <input
+                    type="text"
+                    className="form-control bg-light"
+                    value={cuotasPendientesCalculadas}
+                    readOnly
+                  />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Precio Total con Intereses (Q):</label>
@@ -1530,6 +1553,25 @@ function Contratos_Residentes() {
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Cuotas pagadas:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    value={cuotas_pagadas_manual}
+                    onChange={e => setCuotas_pagadas_manual(e.target.value)}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Cuotas pendientes:</label>
+                  <input
+                    type="text"
+                    className="form-control bg-light"
+                    value={cuotasPendientesCalculadas}
+                    readOnly
+                  />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Precio Total con Intereses (Q):</label>
