@@ -77,6 +77,20 @@ const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
     return Math.round(cuotaFija);
 };
 
+const normalizeMesInicioPagos = (value, fallback = 1) => {
+    const numero = parseInt(value, 10);
+    const respaldo = Math.max(1, Math.min(12, parseInt(fallback, 10) || 1));
+    if (!Number.isFinite(numero)) return respaldo;
+    return Math.max(1, Math.min(12, numero));
+};
+
+const normalizeAnioInicioPagos = (value, fallback = new Date().getFullYear()) => {
+    const numero = parseInt(value, 10);
+    const respaldo = Math.max(2000, parseInt(fallback, 10) || new Date().getFullYear());
+    if (!Number.isFinite(numero)) return respaldo;
+    return Math.max(2000, numero);
+};
+
 router.use(cors());
 router.use(express.json());
 
@@ -635,8 +649,8 @@ router.post("/crear", (req, res) => {
                 interesPorcentajeNumerico,
                 Number(mora || 0),
                 cuotasNormalizadas,
-                Number(mes_inicio_pagos || 1),
-                Number(anio_inicio_pagos || new Date().getFullYear()),
+                normalizeMesInicioPagos(mes_inicio_pagos, 1),
+                normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
                 Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
                 fecha_firma,
                 fecha_compra || null,
@@ -716,8 +730,8 @@ router.put("/actualizar", (req, res) => {
             interesPorcentajeNumerico,
             Number(mora || 0),
             cuotasNormalizadas,
-            Number(mes_inicio_pagos || 1),
-            Number(anio_inicio_pagos || new Date().getFullYear()),
+            normalizeMesInicioPagos(mes_inicio_pagos, 1),
+            normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
             Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
             fecha_firma,
             fecha_compra || null,

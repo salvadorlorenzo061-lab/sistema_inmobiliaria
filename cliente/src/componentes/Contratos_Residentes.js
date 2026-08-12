@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
@@ -10,7 +10,6 @@ import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 import PdfPreview from './PdfPreview';
 
 function Contratos_Residentes() {
- const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '' });
   const calcularMontoCuotaContrato = (montoTotalValue, engancheValue, interesValue, cuotasValue, plazoValue) => {
     const montoTotalNumero = Number(montoTotalValue || 0);
     const engancheNumero = Number(engancheValue || 0);
@@ -113,6 +112,9 @@ function Contratos_Residentes() {
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
   const [plazo_meses, setPlazo_meses] = useState("");
+  const [mes_inicio_pagos, setMes_inicio_pagos] = useState("");
+  const [anio_inicio_pagos, setAnio_inicio_pagos] = useState("");
+  const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
 
   // Listas de datos
   const [contratosList, setContratosList] = useState([]);
@@ -229,6 +231,23 @@ function Contratos_Residentes() {
     }
   }, [showEditModal, id_proyecto, proyecto_propiedad, proyectosList, id_empresa_marca]);
 
+  useEffect(() => {
+    const inicioAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
+    const inicioAnterior = ultimoInicioPagosAutoRef.current || { mes: '', anio: '' };
+    const mesActual = String(mes_inicio_pagos || '').trim();
+    const anioActual = String(anio_inicio_pagos || '').trim();
+
+    if (!mesActual || mesActual === inicioAnterior.mes) {
+      setMes_inicio_pagos(inicioAutomatico.mes);
+    }
+
+    if (!anioActual || anioActual === inicioAnterior.anio) {
+      setAnio_inicio_pagos(inicioAutomatico.anio);
+    }
+
+    ultimoInicioPagosAutoRef.current = inicioAutomatico;
+  }, [fecha_compra, fecha_firma, mes_inicio_pagos, anio_inicio_pagos]);
+
   // "Numero de Cuotas" y "Plazo Total (meses)" son el mismo dato para el flujo de cobros:
   // Caja resuelve las cuotas del contrato con COALESCE(plazo_meses, cuotas_pactadas). Si se
   // guardan distintos (p. ej. 36 cuotas con plazo 60), la cuota del contrato no coincide con
@@ -246,7 +265,21 @@ function Contratos_Residentes() {
   const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
   const obtenerPlazoEnvio = () => String(plazo_meses || cuotas_pactadas || '').trim();
   const montoCuotaCalculado = calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses);
-  const inicioPagosCalculado = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
+  const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
+
+  const normalizarMesInicioPagos = (valor) => {
+    const numero = parseInt(String(valor || '').trim(), 10);
+    const respaldo = parseInt(String(inicioPagosAutomatico.mes || '1').trim(), 10) || 1;
+    if (!Number.isFinite(numero)) return String(respaldo);
+    return String(Math.max(1, Math.min(12, numero)));
+  };
+
+  const normalizarAnioInicioPagos = (valor) => {
+    const numero = parseInt(String(valor || '').trim(), 10);
+    const respaldo = parseInt(String(inicioPagosAutomatico.anio || new Date().getFullYear()).trim(), 10) || new Date().getFullYear();
+    if (!Number.isFinite(numero)) return String(respaldo);
+    return String(Math.max(2000, numero));
+  };
 
   const validarContrato = () => {
     if (!codigo_contrato.trim()) return "Debe generar o escribir el código del contrato.";
@@ -271,6 +304,8 @@ function Contratos_Residentes() {
       cuotasEnvio,
       plazoEnvio
     );
+    const mesInicioPagosNormalizado = normalizarMesInicioPagos(mes_inicio_pagos);
+    const anioInicioPagosNormalizado = normalizarAnioInicioPagos(anio_inicio_pagos);
 
     const payload = {
       codigo_contrato: String(codigo_contrato || '').trim(),
@@ -285,8 +320,8 @@ function Contratos_Residentes() {
       interes_porcentaje,
       mora,
       plazo_meses: plazoEnvio,
-      mes_inicio_pagos: inicioPagosCalculado.mes,
-      anio_inicio_pagos: inicioPagosCalculado.anio,
+      mes_inicio_pagos: mesInicioPagosNormalizado,
+      anio_inicio_pagos: anioInicioPagosNormalizado,
       dia_pago_limite,
       fecha_firma,
       fecha_compra: fecha_compra || null,
@@ -781,6 +816,12 @@ function Contratos_Residentes() {
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
+    setMes_inicio_pagos(String(val.mes_inicio_pagos ?? ''));
+    setAnio_inicio_pagos(String(val.anio_inicio_pagos ?? ''));
+    ultimoInicioPagosAutoRef.current = obtenerInicioPagosAutomatico(
+      val.fecha_compra ? val.fecha_compra.split('T')[0] : '',
+      val.fecha_firma ? val.fecha_firma.split('T')[0] : ''
+    );
     setEstado(val.estado);
     setDocumento_contrato(val.documento_contrato || '');
     setShowEditModal(true);
@@ -859,6 +900,8 @@ function Contratos_Residentes() {
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
     setPorcentaje_dominio("80"); setPlazo_meses("");
+    setMes_inicio_pagos(""); setAnio_inicio_pagos("");
+    ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
   };
 
   const filtrados = contratosList.filter(c => 
@@ -1139,24 +1182,26 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} placeholder="80" />
                 </div>
                 <div className="col-md-3 mb-3">
-  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
-  <input 
-    type="text" 
-    className="form-control" 
-    value={inicioPagosCalculado.mes} 
-    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, mes: e.target.value })}
-  />
-</div>
-
-<div className="col-md-3 mb-3">
-  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
-  <input 
-    type="text" 
-    className="form-control" 
-    value={inicioPagosCalculado.anio} 
-    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
-  />
-</div>
+                  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    className="form-control"
+                    value={mes_inicio_pagos}
+                    onChange={e => setMes_inicio_pagos(e.target.value)}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="2000"
+                    className="form-control"
+                    value={anio_inicio_pagos}
+                    onChange={e => setAnio_inicio_pagos(e.target.value)}
+                  />
+                </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Fecha de Firma Legal:</label>
                   <input type="date" className="form-control" value={fecha_firma} onChange={e => setFecha_firma(e.target.value)} />
@@ -1246,7 +1291,7 @@ function Contratos_Residentes() {
                         manzana_propiedad, area_propiedad, proyecto_propiedad,
                         medida_norte, medida_sur, medida_oriente, medida_poniente,
                         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-                        mes_inicio_pagos: inicioPagosCalculado.mes, anio_inicio_pagos: inicioPagosCalculado.anio
+                        mes_inicio_pagos, anio_inicio_pagos
                       }}
                       datosResidente={residentesList.find(r => String(r.id_residente) === String(id_residente)) || {}}
                       mostrar={true}
@@ -1397,12 +1442,25 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Mes Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.mes} readOnly />
+                  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    className="form-control"
+                    value={mes_inicio_pagos}
+                    onChange={e => setMes_inicio_pagos(e.target.value)}
+                  />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Año Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.anio} readOnly />
+                  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="2000"
+                    className="form-control"
+                    value={anio_inicio_pagos}
+                    onChange={e => setAnio_inicio_pagos(e.target.value)}
+                  />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Fecha de Firma Legal:</label>
@@ -1488,7 +1546,7 @@ function Contratos_Residentes() {
                         manzana_propiedad, area_propiedad, proyecto_propiedad,
                         medida_norte, medida_sur, medida_oriente, medida_poniente,
                         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-                        mes_inicio_pagos: inicioPagosCalculado.mes, anio_inicio_pagos: inicioPagosCalculado.anio
+                        mes_inicio_pagos, anio_inicio_pagos
                       }}
                       datosResidente={residentesList.find(r => String(r.id_residente) === String(id_residente)) || {}}
                       mostrar={true}
