@@ -139,7 +139,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
         const indiceMes = obtenerIndiceMes(conAnio[1]);
         if (indiceMes >= 0) {
             const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
-            return fechaMes <= hoyMes;
+            return fechaMes < hoyMes;
         }
     }
 
@@ -148,7 +148,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
         const indiceMes = obtenerIndiceMes(soloMes[1]);
         if (indiceMes >= 0) {
             const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
-            return fechaMes <= hoyMes;
+            return fechaMes < hoyMes;
         }
     }
 
@@ -1091,10 +1091,12 @@ router.get("/meses-pendientes", (req, res) => {
                 cursor.setMonth(cursor.getMonth() + 1);
             }
         } else {
-            const totalMesesObjetivo = Math.max(
-                Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0 ? cuotasBaseContrato : 0,
-                mesesTranscurridos
-            );
+            // Respetar el plazo pactado del contrato. El tiempo transcurrido no puede ampliar
+            // el flujo de cuotas por encima de lo acordado en el contrato, porque eso rompe la
+            // conciliación de cuotas reales vs. cuotas pactadas sin tocar la configuración vigente.
+            const totalMesesObjetivo = Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0
+                ? cuotasBaseContrato
+                : Math.max(mesesTranscurridos, 1);
 
             for (let i = 0; i < totalMesesObjetivo; i += 1) {
                 registrarCandidato(cursor);
