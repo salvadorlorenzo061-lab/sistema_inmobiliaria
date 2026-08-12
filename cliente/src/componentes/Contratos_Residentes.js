@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { calcularCuotaFija } from '../utils/amortizacion';
+import { calcularCuotaFija, redondearMoneda } from '../utils/amortizacion';
 import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfGenerator';
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 import PdfPreview from './PdfPreview';
@@ -112,6 +112,7 @@ function Contratos_Residentes() {
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
   const [plazo_meses, setPlazo_meses] = useState("");
+  const [anios_financiamiento, setAnios_financiamiento] = useState("");
   const [mes_inicio_pagos, setMes_inicio_pagos] = useState("");
   const [anio_inicio_pagos, setAnio_inicio_pagos] = useState("");
   const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
@@ -255,17 +256,72 @@ function Contratos_Residentes() {
   const actualizarCuotasPactadas = (valor) => {
     setCuotas_pactadas(valor);
     setPlazo_meses(valor);
+    const cuotasNumero = parseInt(String(valor || '').trim(), 10);
+    if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
+      setAnios_financiamiento('');
+      return;
+    }
+    setAnios_financiamiento(String(redondearMoneda(cuotasNumero / 12)));
   };
 
   const actualizarPlazoMeses = (valor) => {
     setPlazo_meses(valor);
     setCuotas_pactadas(valor);
+    const plazoNumero = parseInt(String(valor || '').trim(), 10);
+    if (!Number.isFinite(plazoNumero) || plazoNumero <= 0) {
+      setAnios_financiamiento('');
+      return;
+    }
+    setAnios_financiamiento(String(redondearMoneda(plazoNumero / 12)));
+  };
+
+  const actualizarAniosFinanciamiento = (valor) => {
+    setAnios_financiamiento(valor);
+    const aniosNumero = Number(String(valor || '').trim());
+    if (!Number.isFinite(aniosNumero) || aniosNumero <= 0) {
+      setCuotas_pactadas('');
+      setPlazo_meses('');
+      return;
+    }
+
+    const mesesCalculados = Math.max(1, Math.round(aniosNumero * 12));
+    const mesesTexto = String(mesesCalculados);
+    setCuotas_pactadas(mesesTexto);
+    setPlazo_meses(mesesTexto);
   };
 
   const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
   const obtenerPlazoEnvio = () => String(plazo_meses || cuotas_pactadas || '').trim();
   const montoCuotaCalculado = calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses);
   const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
+  const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
+
+  const obtenerUltimaCuotaCalculada = () => {
+    const montoTotalNumero = Number(monto_total || 0);
+    const engancheNumero = Number(enganche || 0);
+    const interesNumero = Number(interes_porcentaje || 0);
+    const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
+
+    if (capitalFinanciado <= 0 || cuotasCalculadasNumero <= 0) {
+      return '';
+    }
+
+    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
+    const totalConInteres = redondearMoneda(capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios));
+    const cuotaRegular = Number(montoCuotaCalculado || 0);
+    if (!Number.isFinite(cuotaRegular) || cuotaRegular <= 0) {
+      return '';
+    }
+
+    const ultimaCuota = redondearMoneda(totalConInteres - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0)));
+    if (ultimaCuota <= 0) {
+      return '';
+    }
+
+    return Math.abs(ultimaCuota - cuotaRegular) > 0.009 ? ultimaCuota.toFixed(2) : '';
+  };
+
+  const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
 
   const normalizarMesInicioPagos = (valor) => {
     const numero = parseInt(String(valor || '').trim(), 10);
@@ -816,6 +872,12 @@ function Contratos_Residentes() {
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
+    const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
+    setAnios_financiamiento(
+      Number.isFinite(plazoContrato) && plazoContrato > 0
+        ? String(redondearMoneda(plazoContrato / 12))
+        : ''
+    );
     setMes_inicio_pagos(String(val.mes_inicio_pagos ?? ''));
     setAnio_inicio_pagos(String(val.anio_inicio_pagos ?? ''));
     ultimoInicioPagosAutoRef.current = obtenerInicioPagosAutomatico(
@@ -899,7 +961,7 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
-    setPorcentaje_dominio("80"); setPlazo_meses("");
+    setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento("");
     setMes_inicio_pagos(""); setAnio_inicio_pagos("");
     ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
   };
@@ -1178,6 +1240,18 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} placeholder="60" />
                 </div>
                 <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Años:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="form-control"
+                    value={anios_financiamiento}
+                    onChange={e => actualizarAniosFinanciamiento(e.target.value)}
+                    placeholder="5"
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} placeholder="80" />
                 </div>
@@ -1200,6 +1274,16 @@ function Contratos_Residentes() {
                     className="form-control"
                     value={anio_inicio_pagos}
                     onChange={e => setAnio_inicio_pagos(e.target.value)}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Ultima Cuota:</label>
+                  <input
+                    type="text"
+                    className="form-control bg-light"
+                    value={ultimaCuotaCalculada}
+                    readOnly
+                    placeholder="Igual a cuota normal"
                   />
                 </div>
                 <div className="col-md-3 mb-3">
@@ -1438,6 +1522,18 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Años:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="form-control"
+                    value={anios_financiamiento}
+                    onChange={e => actualizarAniosFinanciamiento(e.target.value)}
+                    placeholder="5"
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} />
                 </div>
@@ -1460,6 +1556,16 @@ function Contratos_Residentes() {
                     className="form-control"
                     value={anio_inicio_pagos}
                     onChange={e => setAnio_inicio_pagos(e.target.value)}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Ultima Cuota:</label>
+                  <input
+                    type="text"
+                    className="form-control bg-light"
+                    value={ultimaCuotaCalculada}
+                    readOnly
+                    placeholder="Igual a cuota normal"
                   />
                 </div>
                 <div className="col-md-3 mb-3">
