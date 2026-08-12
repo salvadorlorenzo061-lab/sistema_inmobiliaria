@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
@@ -113,6 +113,8 @@ function Contratos_Residentes() {
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
   const [plazo_meses, setPlazo_meses] = useState("");
+  const [anios_financiamiento, setAnios_financiamiento] = useState("");
+  const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
 
   // Listas de datos
   const [contratosList, setContratosList] = useState([]);
@@ -229,6 +231,31 @@ function Contratos_Residentes() {
     }
   }, [showEditModal, id_proyecto, proyecto_propiedad, proyectosList, id_empresa_marca]);
 
+  useEffect(() => {
+    const inicioAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
+    const inicioAnterior = ultimoInicioPagosAutoRef.current || { mes: '', anio: '' };
+    const mesActual = String(inicioPagosCalculado.mes || '').trim();
+    const anioActual = String(inicioPagosCalculado.anio || '').trim();
+    let debeActualizar = false;
+    const siguienteInicio = { ...inicioPagosCalculado };
+
+    if (!mesActual || mesActual === inicioAnterior.mes) {
+      siguienteInicio.mes = inicioAutomatico.mes;
+      debeActualizar = siguienteInicio.mes !== inicioPagosCalculado.mes || debeActualizar;
+    }
+
+    if (!anioActual || anioActual === inicioAnterior.anio) {
+      siguienteInicio.anio = inicioAutomatico.anio;
+      debeActualizar = siguienteInicio.anio !== inicioPagosCalculado.anio || debeActualizar;
+    }
+
+    if (debeActualizar) {
+      setInicioPagosCalculado(siguienteInicio);
+    }
+
+    ultimoInicioPagosAutoRef.current = inicioAutomatico;
+  }, [fecha_compra, fecha_firma, inicioPagosCalculado.mes, inicioPagosCalculado.anio]);
+
   // "Numero de Cuotas" y "Plazo Total (meses)" son el mismo dato para el flujo de cobros:
   // Caja resuelve las cuotas del contrato con COALESCE(plazo_meses, cuotas_pactadas). Si se
   // guardan distintos (p. ej. 36 cuotas con plazo 60), la cuota del contrato no coincide con
@@ -236,11 +263,38 @@ function Contratos_Residentes() {
   const actualizarCuotasPactadas = (valor) => {
     setCuotas_pactadas(valor);
     setPlazo_meses(valor);
+    const cuotasNumero = parseInt(String(valor || '').trim(), 10);
+    if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
+      setAnios_financiamiento('');
+      return;
+    }
+    setAnios_financiamiento(String(redondearMoneda(cuotasNumero / 12)));
   };
 
   const actualizarPlazoMeses = (valor) => {
     setPlazo_meses(valor);
     setCuotas_pactadas(valor);
+    const plazoNumero = parseInt(String(valor || '').trim(), 10);
+    if (!Number.isFinite(plazoNumero) || plazoNumero <= 0) {
+      setAnios_financiamiento('');
+      return;
+    }
+    setAnios_financiamiento(String(redondearMoneda(plazoNumero / 12)));
+  };
+
+  const actualizarAniosFinanciamiento = (valor) => {
+    setAnios_financiamiento(valor);
+    const aniosNumero = Number(String(valor || '').trim());
+    if (!Number.isFinite(aniosNumero) || aniosNumero <= 0) {
+      setCuotas_pactadas('');
+      setPlazo_meses('');
+      return;
+    }
+
+    const mesesCalculados = Math.max(1, Math.round(aniosNumero * 12));
+    const mesesTexto = String(mesesCalculados);
+    setCuotas_pactadas(mesesTexto);
+    setPlazo_meses(mesesTexto);
   };
 
   const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
@@ -252,6 +306,7 @@ function Contratos_Residentes() {
   const obtenerUltimaCuotaCalculada = () => {
     const montoTotalNumero = Number(monto_total || 0);
     const engancheNumero = Number(enganche || 0);
+    const interesNumero = Number(interes_porcentaje || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
 
     if (capitalFinanciado <= 0 || cuotasCalculadasNumero <= 0) {
@@ -263,12 +318,14 @@ function Contratos_Residentes() {
       return '';
     }
 
-    const ultimaCuota = redondearMoneda(cuotaRegular);
+    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
+    const totalConInteres = redondearMoneda(capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios));
+    const ultimaCuota = redondearMoneda(totalConInteres - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0)));
     if (ultimaCuota <= 0) {
       return '';
     }
 
-    return Math.abs(ultimaCuota - cuotaRegular) > 0.009 ? ultimaCuota.toFixed(2) : '';
+    return ultimaCuota.toFixed(2);
   };
 
   const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
@@ -324,8 +381,8 @@ function Contratos_Residentes() {
       interes_porcentaje,
       mora,
       plazo_meses: plazoEnvio,
-      mes_inicio_pagos: inicioPagosCalculado.mes,
-      anio_inicio_pagos: inicioPagosCalculado.anio,
+      mes_inicio_pagos: normalizarMesInicioPagos(inicioPagosCalculado.mes),
+      anio_inicio_pagos: normalizarAnioInicioPagos(inicioPagosCalculado.anio),
       dia_pago_limite,
       fecha_firma,
       fecha_compra: fecha_compra || null,
@@ -820,6 +877,20 @@ function Contratos_Residentes() {
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
+    const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
+    setAnios_financiamiento(
+      Number.isFinite(plazoContrato) && plazoContrato > 0
+        ? String(redondearMoneda(plazoContrato / 12))
+        : ''
+    );
+    setInicioPagosCalculado({
+      mes: String(val.mes_inicio_pagos ?? ''),
+      anio: String(val.anio_inicio_pagos ?? '')
+    });
+    ultimoInicioPagosAutoRef.current = obtenerInicioPagosAutomatico(
+      val.fecha_compra ? val.fecha_compra.split('T')[0] : '',
+      val.fecha_firma ? val.fecha_firma.split('T')[0] : ''
+    );
     setEstado(val.estado);
     setDocumento_contrato(val.documento_contrato || '');
     setShowEditModal(true);
@@ -897,7 +968,9 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
-    setPorcentaje_dominio("80"); setPlazo_meses("");
+    setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento("");
+    setInicioPagosCalculado({ mes: '', anio: '' });
+    ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
   };
 
   const filtrados = contratosList.filter(c => 
@@ -1174,28 +1247,51 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} placeholder="60" />
                 </div>
                 <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Años:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="form-control"
+                    value={anios_financiamiento}
+                    onChange={e => actualizarAniosFinanciamiento(e.target.value)}
+                    placeholder="5"
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} placeholder="80" />
                 </div>
                 <div className="col-md-3 mb-3">
-  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
-  <input 
-    type="text" 
-    className="form-control" 
-    value={inicioPagosCalculado.mes} 
-    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, mes: e.target.value })}
-  />
-</div>
-
-<div className="col-md-3 mb-3">
-  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
-  <input 
-    type="text" 
-    className="form-control" 
-    value={inicioPagosCalculado.anio} 
-    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
-  />
-</div>
+                  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    className="form-control"
+                    value={inicioPagosCalculado.mes}
+                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, mes: e.target.value })}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="2000"
+                    className="form-control"
+                    value={inicioPagosCalculado.anio}
+                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Ultima Cuota:</label>
+                  <input
+                    type="text"
+                    className="form-control bg-light"
+                    value={ultimaCuotaCalculada}
+                    readOnly
+                  />
+                </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Fecha de Firma Legal:</label>
                   <input type="date" className="form-control" value={fecha_firma} onChange={e => setFecha_firma(e.target.value)} />
@@ -1432,16 +1528,50 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Años:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="form-control"
+                    value={anios_financiamiento}
+                    onChange={e => actualizarAniosFinanciamiento(e.target.value)}
+                    placeholder="5"
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Mes Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.mes} readOnly />
+                  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    className="form-control"
+                    value={inicioPagosCalculado.mes}
+                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, mes: e.target.value })}
+                  />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Año Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.anio} readOnly />
+                  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="2000"
+                    className="form-control"
+                    value={inicioPagosCalculado.anio}
+                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Ultima Cuota:</label>
+                  <input
+                    type="text"
+                    className="form-control bg-light"
+                    value={ultimaCuotaCalculada}
+                    readOnly
+                  />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Fecha de Firma Legal:</label>
