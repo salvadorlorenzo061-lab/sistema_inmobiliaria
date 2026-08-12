@@ -303,6 +303,21 @@ function Contratos_Residentes() {
   const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
   const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
 
+  const obtenerPrecioTotalConIntereses = () => {
+    const montoTotalNumero = Number(monto_total || 0);
+    const engancheNumero = Number(enganche || 0);
+    const interesNumero = Number(interes_porcentaje || 0);
+    const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
+
+    if (capitalFinanciado <= 0 || cuotasCalculadasNumero <= 0) {
+      return '';
+    }
+
+    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
+    const totalConInteres = redondearMoneda(capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios));
+    return totalConInteres.toFixed(2);
+  };
+
   const obtenerUltimaCuotaCalculada = () => {
     const montoTotalNumero = Number(monto_total || 0);
     const engancheNumero = Number(enganche || 0);
@@ -328,6 +343,7 @@ function Contratos_Residentes() {
     return ultimaCuota.toFixed(2);
   };
 
+  const precioTotalConInteresesCalculado = obtenerPrecioTotalConIntereses();
   const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
 
   const normalizarMesInicioPagos = (valor) => {
@@ -1226,15 +1242,19 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">Interés Anual (%):</label>
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} placeholder="14" />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Precio Total con Intereses (Q):</label>
+                  <input type="text" className="form-control bg-light" value={precioTotalConInteresesCalculado} readOnly />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light text-success fw-bold" value={montoCuotaCalculado} readOnly />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
                   <input type="number" className="form-control" value={mora} onChange={e => setMora(e.target.value)} placeholder="600" />
                 </div>
@@ -1507,15 +1527,19 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">Interés Anual (%):</label>
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Precio Total con Intereses (Q):</label>
+                  <input type="text" className="form-control bg-light" value={precioTotalConInteresesCalculado} readOnly />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light text-success fw-bold" value={montoCuotaCalculado} readOnly />
                 </div>
-                <div className="col-md-4 mb-3">
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
                   <input type="number" className="form-control" value={mora} onChange={e => setMora(e.target.value)} />
                 </div>
