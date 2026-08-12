@@ -64,7 +64,6 @@ function Contratos_Residentes() {
   const [id_tipo_contrato, setId_tipo_contrato] = useState("");
   const [monto_total, setMonto_total] = useState("120000");
   const [cuotas_pactadas, setCuotas_pactadas] = useState("60");
-  const [monto_cuota, setMonto_cuota] = useState("");
   const [dia_pago_limite, setDia_pago_limite] = useState("5");
   const [fecha_firma, setFecha_firma] = useState("");
   const [fecha_compra, setFecha_compra] = useState("");
@@ -106,8 +105,6 @@ function Contratos_Residentes() {
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
   const [plazo_meses, setPlazo_meses] = useState("60");
-  const [mes_inicio_pagos, setMes_inicio_pagos] = useState("7");
-  const [anio_inicio_pagos, setAnio_inicio_pagos] = useState("2026");
 
   // Listas de datos
   const [contratosList, setContratosList] = useState([]);
@@ -224,11 +221,6 @@ function Contratos_Residentes() {
     }
   }, [showEditModal, id_proyecto, proyecto_propiedad, proyectosList, id_empresa_marca]);
 
-  // La cuota automática debe calcularse sobre el capital financiado: precio total menos enganche.
-  useEffect(() => {
-    setMonto_cuota(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses));
-  }, [monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses]);
-
   // "Numero de Cuotas" y "Plazo Total (meses)" son el mismo dato para el flujo de cobros:
   // Caja resuelve las cuotas del contrato con COALESCE(plazo_meses, cuotas_pactadas). Si se
   // guardan distintos (p. ej. 36 cuotas con plazo 60), la cuota del contrato no coincide con
@@ -245,6 +237,8 @@ function Contratos_Residentes() {
 
   const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
   const obtenerPlazoEnvio = () => String(plazo_meses || cuotas_pactadas || '').trim();
+  const montoCuotaCalculado = calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses);
+  const inicioPagosCalculado = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
 
   const validarContrato = () => {
     if (!codigo_contrato.trim()) return "Debe generar o escribir el código del contrato.";
@@ -279,12 +273,12 @@ function Contratos_Residentes() {
       monto_total,
       enganche,
       cuotas_pactadas: cuotasEnvio,
-      monto_cuota: montoCuotaCalculado || monto_cuota || "0.00",
+      monto_cuota: montoCuotaCalculado || "0.00",
       interes_porcentaje,
       mora,
       plazo_meses: plazoEnvio,
-      mes_inicio_pagos,
-      anio_inicio_pagos,
+      mes_inicio_pagos: inicioPagosCalculado.mes,
+      anio_inicio_pagos: inicioPagosCalculado.anio,
       dia_pago_limite,
       fecha_firma,
       fecha_compra: fecha_compra || null,
@@ -299,13 +293,6 @@ function Contratos_Residentes() {
 
     return payload;
   };
-
-  // Mes y anio de inicio se calculan automaticamente desde la fecha del contrato.
-  useEffect(() => {
-    const inicio = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
-    setMes_inicio_pagos(inicio.mes);
-    setAnio_inicio_pagos(inicio.anio);
-  }, [fecha_compra, fecha_firma]);
 
   // Generar código de contrato automático al seleccionar residente
   const seleccionarResidenteContrato = (idResidente) => {
@@ -328,7 +315,6 @@ function Contratos_Residentes() {
     }
 
     const payload = construirPayloadContrato(false);
-    setMonto_cuota(payload.monto_cuota);
 
     Axios.post(`${API_URL}/crear`, payload)
     .then(async () => {
@@ -358,7 +344,7 @@ function Contratos_Residentes() {
             medida_norte, medida_sur, medida_oriente, medida_poniente,
             // Datos económicos
             enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-            mes_inicio_pagos, anio_inicio_pagos
+            mes_inicio_pagos: payload.mes_inicio_pagos, anio_inicio_pagos: payload.anio_inicio_pagos
           };
           
           // Descargar PDF automáticamente
@@ -392,7 +378,6 @@ function Contratos_Residentes() {
     }
 
     const payload = construirPayloadContrato(true);
-    setMonto_cuota(payload.monto_cuota);
 
     Axios.put(`${API_URL}/actualizar`, payload)
     .then(async () => {
@@ -458,7 +443,7 @@ function Contratos_Residentes() {
         medida_norte, medida_sur, medida_oriente, medida_poniente,
         // Datos económicos
         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-        mes_inicio_pagos, anio_inicio_pagos
+        mes_inicio_pagos: val.mes_inicio_pagos, anio_inicio_pagos: val.anio_inicio_pagos
       };
       
       // Generar e imprimir PDF
@@ -500,7 +485,7 @@ function Contratos_Residentes() {
         medida_norte, medida_sur, medida_oriente, medida_poniente,
         // Datos económicos
         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-        mes_inicio_pagos, anio_inicio_pagos
+        mes_inicio_pagos: val.mes_inicio_pagos, anio_inicio_pagos: val.anio_inicio_pagos
       };
 
       // Generar y descargar PDF automático con el formato programado.
@@ -774,7 +759,6 @@ function Contratos_Residentes() {
     // Las cuotas pactadas manda; el plazo se alinea a ellas para que la cuota que calcula el
     // contrato sea la misma que cobra Caja (contratos antiguos podian traer 36 cuotas / 60 meses).
     setCuotas_pactadas(val.cuotas_pactadas || val.plazo_meses || '');
-    setMonto_cuota(val.monto_cuota);
     setDia_pago_limite(val.dia_pago_limite);
     setFecha_firma(val.fecha_firma.split('T')[0]);
     setFecha_compra(val.fecha_compra ? val.fecha_compra.split('T')[0] : '');
@@ -783,8 +767,6 @@ function Contratos_Residentes() {
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
-    setMes_inicio_pagos(val.mes_inicio_pagos ? String(val.mes_inicio_pagos) : '');
-    setAnio_inicio_pagos(val.anio_inicio_pagos ? String(val.anio_inicio_pagos) : '');
     setEstado(val.estado);
     setDocumento_contrato(val.documento_contrato || '');
     setShowEditModal(true);
@@ -842,7 +824,7 @@ function Contratos_Residentes() {
     setId_empresa_marca(""); setId_proyecto(""); setId_tipo_contrato("");
     // Cuotas y plazo arrancan con el mismo valor por defecto: si uno queda vacio y el otro
     // precargado, la cuota automatica se calcula sobre un plazo distinto al pactado.
-    setMonto_total(""); setCuotas_pactadas("60"); setMonto_cuota(""); setDia_pago_limite("5");
+    setMonto_total(""); setCuotas_pactadas("60"); setDia_pago_limite("5");
     setFecha_firma(""); setFecha_compra(""); setFecha_fin(""); setEstado(""); setDocumento_contrato("");
     // Restablecer valores del vendedor/empresa a los valores por defecto
     setNombre_vendedor("DULCE MARIA OSORIO SABAN DE PEREZ");
@@ -862,7 +844,7 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
-    setPorcentaje_dominio("80"); setPlazo_meses("60"); setMes_inicio_pagos("7"); setAnio_inicio_pagos("2026");
+    setPorcentaje_dominio("80"); setPlazo_meses("60");
   };
 
   const filtrados = contratosList.filter(c => 
@@ -1122,7 +1104,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
-                  <input type="text" className="form-control bg-light text-success fw-bold" value={monto_cuota} readOnly />
+                  <input type="text" className="form-control bg-light text-success fw-bold" value={montoCuotaCalculado} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
@@ -1142,11 +1124,11 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mes Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={mes_inicio_pagos} readOnly />
+                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.mes} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Año Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={anio_inicio_pagos} readOnly />
+                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.anio} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Fecha de Firma Legal:</label>
@@ -1225,7 +1207,7 @@ function Contratos_Residentes() {
                   <div className="col-12">
                     <PdfPreview 
                       datosContrato={{
-                        codigo_contrato, monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite,
+                        codigo_contrato, monto_total, cuotas_pactadas, monto_cuota: montoCuotaCalculado, dia_pago_limite,
                         dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '',
                         mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '',
                         anio_firma: fecha_firma ? new Date(fecha_firma).getFullYear() : '',
@@ -1236,7 +1218,7 @@ function Contratos_Residentes() {
                         manzana_propiedad, area_propiedad, proyecto_propiedad,
                         medida_norte, medida_sur, medida_oriente, medida_poniente,
                         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-                        mes_inicio_pagos, anio_inicio_pagos
+                        mes_inicio_pagos: inicioPagosCalculado.mes, anio_inicio_pagos: inicioPagosCalculado.anio
                       }}
                       datosResidente={residentesList.find(r => String(r.id_residente) === String(id_residente)) || {}}
                       mostrar={true}
@@ -1368,7 +1350,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
-                  <input type="text" className="form-control bg-light text-success fw-bold" value={monto_cuota} readOnly />
+                  <input type="text" className="form-control bg-light text-success fw-bold" value={montoCuotaCalculado} readOnly />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
@@ -1388,11 +1370,11 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mes Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={mes_inicio_pagos} readOnly />
+                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.mes} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Año Inicio de Pagos (Auto):</label>
-                  <input type="text" className="form-control bg-light" value={anio_inicio_pagos} readOnly />
+                  <input type="text" className="form-control bg-light" value={inicioPagosCalculado.anio} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Fecha de Firma Legal:</label>
@@ -1466,7 +1448,7 @@ function Contratos_Residentes() {
                   <div className="col-12">
                     <PdfPreview 
                       datosContrato={{
-                        codigo_contrato, monto_total, cuotas_pactadas, monto_cuota, dia_pago_limite,
+                        codigo_contrato, monto_total, cuotas_pactadas, monto_cuota: montoCuotaCalculado, dia_pago_limite,
                         dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '',
                         mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '',
                         anio_firma: fecha_firma ? new Date(fecha_firma).getFullYear() : '',
@@ -1477,7 +1459,7 @@ function Contratos_Residentes() {
                         manzana_propiedad, area_propiedad, proyecto_propiedad,
                         medida_norte, medida_sur, medida_oriente, medida_poniente,
                         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-                        mes_inicio_pagos, anio_inicio_pagos
+                        mes_inicio_pagos: inicioPagosCalculado.mes, anio_inicio_pagos: inicioPagosCalculado.anio
                       }}
                       datosResidente={residentesList.find(r => String(r.id_residente) === String(id_residente)) || {}}
                       mostrar={true}
