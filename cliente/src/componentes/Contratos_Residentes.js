@@ -14,10 +14,15 @@ function Contratos_Residentes() {
     const montoTotalNumero = Number(montoTotalValue || 0);
     const engancheNumero = Number(engancheValue || 0);
     const interesNumero = Number(interesValue || 0);
-    const plazoNumero = Number(plazoValue || cuotasValue || 0);
-    const cuotasNumero = Number.isFinite(plazoNumero) && plazoNumero > 0
-      ? plazoNumero
-      : Number(cuotasValue || 0);
+    // El divisor de la cuota es el "Numero de Cuotas" que escribe el usuario; el
+    // "Plazo Total (meses)" solo es respaldo. Antes mandaba el plazo, por eso al aperturar
+    // un contrato (cuotas vacio y plazo precargado en 60) la cuota se calculaba sobre 60
+    // meses y no sobre las cuotas realmente pactadas.
+    const cuotasIngresadas = Number(cuotasValue || 0);
+    const plazoIngresado = Number(plazoValue || 0);
+    const cuotasNumero = Number.isFinite(cuotasIngresadas) && cuotasIngresadas > 0
+      ? cuotasIngresadas
+      : ((Number.isFinite(plazoIngresado) && plazoIngresado > 0) ? plazoIngresado : 0);
 
     if (!Number.isFinite(montoTotalNumero) || !Number.isFinite(engancheNumero) || !Number.isFinite(interesNumero) || !Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
       return "";
@@ -224,6 +229,23 @@ function Contratos_Residentes() {
     setMonto_cuota(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses));
   }, [monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses]);
 
+  // "Numero de Cuotas" y "Plazo Total (meses)" son el mismo dato para el flujo de cobros:
+  // Caja resuelve las cuotas del contrato con COALESCE(plazo_meses, cuotas_pactadas). Si se
+  // guardan distintos (p. ej. 36 cuotas con plazo 60), la cuota del contrato no coincide con
+  // las cuotas que cobra Caja. Se sincronizan al editarlos, en alta y en modificacion.
+  const actualizarCuotasPactadas = (valor) => {
+    setCuotas_pactadas(valor);
+    setPlazo_meses(valor);
+  };
+
+  const actualizarPlazoMeses = (valor) => {
+    setPlazo_meses(valor);
+    setCuotas_pactadas(valor);
+  };
+
+  const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
+  const obtenerPlazoEnvio = () => String(plazo_meses || cuotas_pactadas || '').trim();
+
   // Mes y anio de inicio se calculan automaticamente desde la fecha del contrato.
   useEffect(() => {
     const inicio = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
@@ -255,17 +277,17 @@ function Contratos_Residentes() {
       id_residente,
       id_empresa_marca: id_empresa_marca || null,
       id_proyecto: id_proyecto || null,
-      id_tipo_contrato, 
+      id_tipo_contrato,
       monto_total,
       enganche,
-      cuotas_pactadas, 
-      monto_cuota, 
+      cuotas_pactadas: obtenerCuotasEnvio(),
+      monto_cuota,
       interes_porcentaje,
       mora,
-      plazo_meses,
+      plazo_meses: obtenerPlazoEnvio(),
       mes_inicio_pagos,
       anio_inicio_pagos,
-      dia_pago_limite, 
+      dia_pago_limite,
       fecha_firma,
       fecha_compra: fecha_compra || null,
       fecha_fin: fecha_fin || null,
@@ -337,11 +359,11 @@ function Contratos_Residentes() {
       id_proyecto: id_proyecto || null,
       id_tipo_contrato, monto_total,
       enganche,
-      cuotas_pactadas,
+      cuotas_pactadas: obtenerCuotasEnvio(),
       monto_cuota,
       interes_porcentaje,
       mora,
-      plazo_meses,
+      plazo_meses: obtenerPlazoEnvio(),
       mes_inicio_pagos,
       anio_inicio_pagos,
       dia_pago_limite,
@@ -727,7 +749,9 @@ function Contratos_Residentes() {
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
     setId_tipo_contrato(val.id_tipo_contrato);
     setMonto_total(val.monto_total);
-    setCuotas_pactadas(val.cuotas_pactadas);
+    // Las cuotas pactadas manda; el plazo se alinea a ellas para que la cuota que calcula el
+    // contrato sea la misma que cobra Caja (contratos antiguos podian traer 36 cuotas / 60 meses).
+    setCuotas_pactadas(val.cuotas_pactadas || val.plazo_meses || '');
     setMonto_cuota(val.monto_cuota);
     setDia_pago_limite(val.dia_pago_limite);
     setFecha_firma(val.fecha_firma.split('T')[0]);
@@ -736,7 +760,7 @@ function Contratos_Residentes() {
     setEnganche(val.enganche ?? '20000');
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
-    setPlazo_meses(val.plazo_meses || val.cuotas_pactadas || '');
+    setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
     setMes_inicio_pagos(val.mes_inicio_pagos ? String(val.mes_inicio_pagos) : '');
     setAnio_inicio_pagos(val.anio_inicio_pagos ? String(val.anio_inicio_pagos) : '');
     setEstado(val.estado);
@@ -794,7 +818,9 @@ function Contratos_Residentes() {
   const limpiarCampos = () => {
     setId_contrato(""); setCodigo_contrato(""); setId_residente("");
     setId_empresa_marca(""); setId_proyecto(""); setId_tipo_contrato("");
-    setMonto_total(""); setCuotas_pactadas(""); setMonto_cuota(""); setDia_pago_limite("5");
+    // Cuotas y plazo arrancan con el mismo valor por defecto: si uno queda vacio y el otro
+    // precargado, la cuota automatica se calcula sobre un plazo distinto al pactado.
+    setMonto_total(""); setCuotas_pactadas("60"); setMonto_cuota(""); setDia_pago_limite("5");
     setFecha_firma(""); setFecha_compra(""); setFecha_fin(""); setEstado(""); setDocumento_contrato("");
     // Restablecer valores del vendedor/empresa a los valores por defecto
     setNombre_vendedor("DULCE MARIA OSORIO SABAN DE PEREZ");
@@ -1070,7 +1096,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
+                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
@@ -1086,7 +1112,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Plazo Total (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} placeholder="60" />
+                  <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} placeholder="60" />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
@@ -1309,7 +1335,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => setCuotas_pactadas(e.target.value)} />
+                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
@@ -1325,7 +1351,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Plazo (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => setPlazo_meses(e.target.value)} />
+                  <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">% Reserva Dominio:</label>

@@ -1082,10 +1082,19 @@ router.get("/meses-pendientes", (req, res) => {
             candidatos.push(etiqueta);
         };
 
+        // === CUOTA 0 = ENGANCHE ===
+        // Cuando el contrato tiene enganche, el mes de compra/firma cobra el enganche (cuota 0)
+        // y las cuotas financiadas arrancan el mes siguiente (cuota 1 ... cuota N). Por eso el
+        // flujo necesita un mes extra: sin el, la ultima cuota pactada nunca queda cobrable.
+        const usaCuotaCeroEnganche = !tieneConvenioActivo && engancheContrato > 0;
+        const mesesFlujoContrato = (Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0)
+            ? cuotasBaseContrato + (usaCuotaCeroEnganche ? 1 : 0)
+            : 0;
+
         if (fechaFinMes) {
             while (
                 cursor <= fechaFinMes
-                && (!(Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0) || candidatosMeta.length < cuotasBaseContrato)
+                && (!(mesesFlujoContrato > 0) || candidatosMeta.length < mesesFlujoContrato)
             ) {
                 registrarCandidato(cursor);
                 cursor.setMonth(cursor.getMonth() + 1);
@@ -1094,8 +1103,8 @@ router.get("/meses-pendientes", (req, res) => {
             // Respetar el plazo pactado del contrato. El tiempo transcurrido no puede ampliar
             // el flujo de cuotas por encima de lo acordado en el contrato, porque eso rompe la
             // conciliación de cuotas reales vs. cuotas pactadas sin tocar la configuración vigente.
-            const totalMesesObjetivo = Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0
-                ? cuotasBaseContrato
+            const totalMesesObjetivo = mesesFlujoContrato > 0
+                ? mesesFlujoContrato
                 : Math.max(mesesTranscurridos, 1);
 
             for (let i = 0; i < totalMesesObjetivo; i += 1) {
@@ -1256,7 +1265,7 @@ router.get("/meses-pendientes", (req, res) => {
                         extra.setMonth(extra.getMonth() + offset);
                         const numeroCuotaExtra = obtenerNumeroCuotaDesdeFechas(fechaInicio, extra) || (candidatosMeta.length + pendientesMeta.length + 1);
 
-                        if (Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0 && numeroCuotaExtra > cuotasBaseContrato) {
+                        if (mesesFlujoContrato > 0 && numeroCuotaExtra > mesesFlujoContrato) {
                             break;
                         }
 
@@ -1290,14 +1299,30 @@ router.get("/meses-pendientes", (req, res) => {
             pendientesMeta = pendientesMeta.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
             const mesesPendientes = pendientesMeta.map((item) => item.mes);
 
+            // El enganche (cuota 0) esta anclado al mes de compra/firma del contrato, no al
+            // primer mes pendiente. Caja lo necesita explicito para pintarlo siempre igual.
+            const enganchePendienteContrato = Math.max(engancheContrato - enganchePagado, 0);
+            const mesEngancheContrato = (usaCuotaCeroEnganche && candidatosMeta.length)
+                ? candidatosMeta[0].mes
+                : null;
+
             return res.status(200).json({
                 meses: mesesPendientes,
-                meses_detalle: pendientesMeta.map((item) => ({ mes: item.mes, numero_cuota: item.numero_cuota })),
+                meses_detalle: pendientesMeta.map((item) => ({
+                    mes: item.mes,
+                    numero_cuota: item.numero_cuota,
+                    es_enganche: Boolean(mesEngancheContrato && item.mes === mesEngancheContrato)
+                })),
                 meses_pagados: mesesPagadosOrdenados,
                 total_cuotas: totalCuotasContrato,
                 cuotas_pagadas: cuotasPagadasContrato,
                 cuotas_pendientes: cuotasPendientesContrato,
-                siguiente_mes_pendiente: mesesPendientes[0] || null
+                siguiente_mes_pendiente: mesesPendientes[0] || null,
+                usa_cuota_cero_enganche: usaCuotaCeroEnganche,
+                mes_enganche: mesEngancheContrato,
+                enganche: engancheContrato,
+                enganche_pagado: enganchePagado,
+                enganche_pendiente: enganchePendienteContrato
             });
             });
         });
@@ -1903,8 +1928,14 @@ router.post("/procesar-pago", (req, res) => {
             };
 
             const primerMesSeleccionado = mesesAProcesar[0] || '';
+            // El enganche (cuota 0) corresponde al mes de compra/firma del contrato. Ese mes no
+            // cobra cuota de terreno; si no hay fecha base, se conserva la regla anterior
+            // (primer mes seleccionado) para no romper contratos historicos sin fechas.
+            const mesEngancheContrato = enganchePendienteContrato > 0
+                ? (fechaInicioContrato ? etiquetaMesDesdeFecha(fechaInicioContrato) : primerMesSeleccionado)
+                : '';
             const mesesTerrenoProcesar = montoTerrenoTotal > 0
-                ? mesesAProcesar.filter((mes) => !(enganchePendienteContrato > 0 && mes === primerMesSeleccionado))
+                ? mesesAProcesar.filter((mes) => !(mesEngancheContrato && mes === mesEngancheContrato))
                 : [];
 
             if (montoTerrenoTotal > 0 && !mesesTerrenoProcesar.length) {

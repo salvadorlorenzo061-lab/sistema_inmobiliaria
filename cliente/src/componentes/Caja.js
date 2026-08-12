@@ -300,6 +300,9 @@ const Caja = () => {
     const [fechaOperacion, setFechaOperacion] = useState('');
     const [mesesPendientes, setMesesPendientes] = useState([]);
     const [mesesDetalleMap, setMesesDetalleMap] = useState({});
+    // Mes al que pertenece la cuota 0 (enganche): mes de compra/firma del contrato.
+    // Lo envia /meses-pendientes para que Caja no lo confunda con el primer mes pendiente.
+    const [mesEngancheContrato, setMesEngancheContrato] = useState('');
     const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
     const [montoTotalSeleccionado, setMontoTotalSeleccionado] = useState(0);
     const [montoTerrenoSeleccionado, setMontoTerrenoSeleccionado] = useState(0);
@@ -396,16 +399,29 @@ const Caja = () => {
     const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '').split(' ')[0] || '');
     const tieneAnioEnEtiquetaMes = (valor = '') => /\b(19|20)\d{2}\b/.test(String(valor || ''));
 
-    const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null) => {
+    // La cuota 0 (enganche) es SIEMPRE el mes de compra/firma del contrato que envia el backend.
+    // Antes se tomaba "el primer mes pendiente", por eso la etiqueta y el monto cambiaban segun
+    // los meses que el cajero marcaba. Ahora depende solo de datos del contrato.
+    const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
         if (Number(datosDeuda?.id_convenio_activo || 0) > 0) {
             return false;
         }
+        if (!mesEtiqueta) return false;
+
+        const engancheActual = enganchePendienteValor == null
+            ? Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0)
+            : Math.max(Number(enganchePendienteValor || 0), 0);
+        if (!(engancheActual > 0)) return false;
+
+        const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
+        if (mesEngancheActual) {
+            return mesEtiqueta === mesEngancheActual;
+        }
+
+        // Respaldo para contratos historicos sin fecha base: se conserva la regla anterior.
         const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
         const primerMesPendiente = mesesLista[0] || '';
-        const engancheActual = enganchePendienteValor == null
-            ? enganchePendiente
-            : Math.max(Number(enganchePendienteValor || 0), 0);
-        return engancheActual > 0 && primerMesPendiente && mesEtiqueta === primerMesPendiente;
+        return Boolean(primerMesPendiente) && mesEtiqueta === primerMesPendiente;
     };
 
     const obtenerMesKeyLocal = (mesTexto = '') => {
@@ -485,9 +501,9 @@ const Caja = () => {
         return nombres.findIndex((nombre) => nombre === objetivo);
     };
 
-    const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null) => {
-        if (esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase)) {
-            return `Cuota inicial 0 - ${mesEtiqueta}`;
+    const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
+        if (esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
+            return `Cuota 0 - Enganche - ${mesEtiqueta}`;
         }
 
         const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
@@ -609,6 +625,7 @@ const Caja = () => {
         setIdResidenteActivo('');
         setMesesPendientes([]);
         setMesesDetalleMap({});
+        setMesEngancheContrato('');
         setMesesSeleccionados([]);
         setMontoAPagar('');
         setMontoMora('0');
@@ -646,7 +663,8 @@ const Caja = () => {
         residenteActual = datosDeuda,
         serviciosDisponibles = serviciosContrato,
         engancheOverride = null,
-        engancheContratoOverride = null
+        engancheContratoOverride = null,
+        mesEngancheOverride = null
     ) => {
         const cantidadMeses = (meses || []).length;
         const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
@@ -692,7 +710,11 @@ const Caja = () => {
         const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos + costoCargosExtra) : 0;
         const mesesOrdenados = [...(meses || [])]
             .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
-        const primerMesConEnganche = (mesesPendientes || [])[0] || '';
+        // Mes de la cuota 0: viene del contrato (mes de compra/firma), no del primer mes marcado.
+        const mesEngancheBase = mesEngancheOverride == null ? mesEngancheContrato : mesEngancheOverride;
+        const primerMesConEnganche = (!tieneConvenioActivo && enganchePendienteContrato > 0)
+            ? (mesEngancheBase || (mesesPendientes || [])[0] || '')
+            : '';
         const engancheContratoBase = engancheContratoOverride == null
             ? parseFloat(tieneConvenioActivo ? 0 : (montoEngancheContratoSeleccionado || residenteActual?.enganche_pendiente || 0))
             : parseFloat(engancheContratoOverride || 0);
@@ -842,8 +864,10 @@ const Caja = () => {
                     mapaMeses[mes] = numero;
                 }
             });
+            const mesEngancheApi = String(res?.data?.mes_enganche || '').trim();
             setMesesPendientes(meses);
             setMesesDetalleMap(mapaMeses);
+            setMesEngancheContrato(mesEngancheApi);
             setDatosDeuda((prev) => ({
                 ...(prev || residenteActualizado),
                 cuotas_pagadas: Number(res?.data?.cuotas_pagadas || 0),
@@ -865,7 +889,7 @@ const Caja = () => {
                 const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
                 return {
                     value: String(index + 1),
-                    label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, meses)
+                    label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, meses, mesEngancheApi)
                 };
             });
             const opciones = [...opcionesMeses];
@@ -883,16 +907,16 @@ const Caja = () => {
                         .map((s) => s.id_servicio);
 
                     setServiciosSeleccionados(seleccionInicialServicios);
-                    recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residenteActualizado, servicios, null, engancheInicial);
+                    recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residenteActualizado, servicios, null, engancheInicial, mesEngancheApi);
                 } catch (serviciosError) {
                     console.error('Error al obtener servicios del contrato:', serviciosError);
                     setServiciosContrato([]);
                     setServiciosSeleccionados([]);
                     // Mantener meses pendientes aunque servicios falle, para no bloquear el cobro de terreno.
-                    recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado, [], null, engancheInicial);
+                    recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado, [], null, engancheInicial, mesEngancheApi);
                 }
             } else {
-                recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado, undefined, null, engancheInicial);
+                recalcularTotalesCobro(mesesASeleccionar, [], residenteActualizado, undefined, null, engancheInicial, mesEngancheApi);
             }
 
             try {
@@ -1213,8 +1237,10 @@ const Caja = () => {
                             mapaMesesActualizados[mes] = numero;
                         }
                     });
+                    const mesEngancheActualizado = String(resMeses?.data?.mes_enganche || '').trim();
                     setMesesPendientes(mesesActualizados);
                     setMesesDetalleMap(mapaMesesActualizados);
+                    setMesEngancheContrato(mesEngancheActualizado);
                     setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
                     const engancheRefrescado = Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
                     setMontoEngancheContratoSeleccionado(engancheRefrescado);
@@ -1222,7 +1248,7 @@ const Caja = () => {
                         const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
                         return {
                             value: String(index + 1),
-                            label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados)
+                            label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados, mesEngancheActualizado)
                         };
                     });
                     const opcionesActualizadas = [...opcionesMesesActualizadas];
@@ -1241,7 +1267,7 @@ const Caja = () => {
                         ...datosDeuda,
                         saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheSeleccionado || 0), 0),
                         enganche_pendiente: engancheRefrescado
-                    }, servicios, null, engancheRefrescado);
+                    }, servicios, null, engancheRefrescado, mesEngancheActualizado);
                 } catch (errMeses) {
                     console.error('Error al recargar meses pendientes:', errMeses);
                 }
