@@ -1815,63 +1815,71 @@ router.post("/procesar-pago", (req, res) => {
             const cuotasBaseInteres = Number.isInteger(cuotasContratoBase) && cuotasContratoBase > 0
                 ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
+            const tieneConvenioActivoContrato = Number(saldoRows[0]?.id_convenio_activo || 0) > 0;
+
+            // === PLAN FINANCIERO PACTADO EN EL CONTRATO ===
+            // Caja no puede inventar su propio plan: debe cobrar exactamente la cuota que
+            // pacta el modulo de Contratos. Misma formula que Contratos_Residentes y que
+            // cliente/src/utils/amortizacion.js (interes simple sobre el capital financiado):
+            //   capital financiado = Precio Total (monto_total) - Enganche
+            //   cuota fija         = (capital + capital * interes% * anios) / cuotas
+            //   interes por cuota  = capital * interes% / 12  (constante)
+            //   capital por cuota  = cuota fija - interes por cuota
+            const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
+                const principal = Math.round(Math.max(Number(capital || 0), 0));
+                const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+                const tasa = Math.max(Number(tasaAnual || 0), 0);
+
+                if (principal <= 0 || plazo <= 0) return 0;
+                if (tasa <= 0) return Math.round(principal / plazo);
+
+                const anios = Math.max(plazo / 12, 1);
+                const interesTotal = principal * (tasa / 100) * anios;
+                return Math.round((principal + interesTotal) / plazo);
+            };
+
             const cuotasPagadasContrato = Math.max(Number(saldoRows[0]?.cuotas_pagadas || 0), 0);
             const cuotasPendientesContrato = Math.max(cuotasBaseInteres - cuotasPagadasContrato, 0);
-            const capitalBaseInteresContrato = redondear2(Math.max(saldoActual - enganchePendienteContrato, 0));
-            const cuotaCapitalTeoricaContrato = (capitalBaseInteresContrato > 0 && cuotasBaseInteres > 0)
-                ? redondear2(capitalBaseInteresContrato / cuotasBaseInteres)
+            const capitalBaseInteresContrato = tieneConvenioActivoContrato
+                ? Math.round(Math.max(saldoActual, 0))
+                : Math.round(Math.max(saldoActual - engancheContrato, 0));
+            const interesPlanContrato = tieneConvenioActivoContrato ? 0 : interesPorcentajeContrato;
+            // Con convenio el plan se reparte solo entre las cuotas que quedan del convenio;
+            // sin convenio se usa el plazo pactado completo del contrato (igual que el cliente).
+            const cuotasPlanContrato = tieneConvenioActivoContrato
+                ? Math.max(cuotasPendientesContrato, 1)
+                : cuotasBaseInteres;
+            const primeraCuotaPlanContrato = tieneConvenioActivoContrato ? (cuotasPagadasContrato + 1) : 1;
+            const cuotaFijaPactadaContrato = calcularCuotaFijaContrato(
+                capitalBaseInteresContrato,
+                interesPlanContrato,
+                cuotasPlanContrato
+            );
+            const interesPorCuotaContrato = interesPlanContrato > 0
+                ? Math.round(capitalBaseInteresContrato * (interesPlanContrato / 100) / 12)
                 : 0;
-            const referenciaCuotaCapitalContrato = montoCuotaBaseContrato > 0
-                ? montoCuotaBaseContrato
-                : cuotaCapitalTeoricaContrato;
-            const desfaseRelativoCuotaContrato = cuotaCapitalTeoricaContrato > 0
-                ? Math.abs(referenciaCuotaCapitalContrato - cuotaCapitalTeoricaContrato) / cuotaCapitalTeoricaContrato
-                : 0;
-            const usarCuotaCapitalTeoricaContrato = cuotaCapitalTeoricaContrato > 0
-                && (referenciaCuotaCapitalContrato <= 0 || desfaseRelativoCuotaContrato > 0.1);
-            const montoCuotaCapitalNormalizadaContrato = usarCuotaCapitalTeoricaContrato
-                ? cuotaCapitalTeoricaContrato
-                : referenciaCuotaCapitalContrato;
-            const cuotaBaseParaSaldo = montoCuotaCapitalNormalizadaContrato > 0
-                ? montoCuotaCapitalNormalizadaContrato
-                : montoCuotaContratoRaw;
+            const capitalPorCuotaContrato = Math.max(cuotaFijaPactadaContrato - interesPorCuotaContrato, 0);
+            const cuotaBaseParaSaldo = capitalPorCuotaContrato > 0
+                ? capitalPorCuotaContrato
+                : montoCuotaBaseContrato;
 
+            // El flujo cobrable nunca puede superar las cuotas pactadas del contrato.
             const cuotasRestantesContrato = (cuotaBaseParaSaldo > 0 && saldoActual > 0)
-                ? Math.max(Math.ceil(saldoActual / cuotaBaseParaSaldo), 1)
+                ? Math.min(
+                    Math.max(Math.ceil(saldoActual / cuotaBaseParaSaldo), 1),
+                    Math.max(cuotasBaseInteres, 1)
+                )
                 : Math.max(mesesAProcesar.length, 1);
-            const tasaMensualContrato = interesPorcentajeContrato > 0
-                ? (interesPorcentajeContrato / 100 / 12)
-                : 0;
-            const calcularCuotaAmortizada = (principal = 0, tasaMensual = 0, cuotas = 0) => {
-                const p = Math.max(Number(principal || 0), 0);
-                const n = Math.max(Number(cuotas || 0), 0);
-                if (p <= 0 || n <= 0) return 0;
-                if (tasaMensual <= 0) return p / n;
-                const factor = Math.pow(1 + tasaMensual, n);
-                const denominador = factor - 1;
-                if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
-                    return p / n;
-                }
-                return p * ((tasaMensual * factor) / denominador);
-            };
-            const cuotaMensualAmortizadaContrato = calcularCuotaAmortizada(capitalBaseInteresContrato, tasaMensualContrato, cuotasPendientesContrato);
-            const cuotaMensualConInteresContrato = Math.round(cuotaMensualAmortizadaContrato);
+
+            const ultimaCuotaPlanContrato = primeraCuotaPlanContrato + cuotasPlanContrato - 1;
             const tablaAmortizacionContrato = [];
-            let saldoAmortizacion = Math.round(capitalBaseInteresContrato);
-            for (let indicePendiente = 1; indicePendiente <= cuotasPendientesContrato; indicePendiente += 1) {
-                const indiceCuota = cuotasPagadasContrato + indicePendiente;
-                const interesCuota = Math.round(saldoAmortizacion * tasaMensualContrato);
-                const capitalCuota = indicePendiente === cuotasPendientesContrato
-                    ? saldoAmortizacion
-                    : Math.round(Math.min(Math.max(cuotaMensualConInteresContrato - interesCuota, 0), saldoAmortizacion));
-                const saldoFinalCuota = Math.round(Math.max(saldoAmortizacion - capitalCuota, 0));
+            for (let numeroCuotaPlan = primeraCuotaPlanContrato; numeroCuotaPlan <= ultimaCuotaPlanContrato; numeroCuotaPlan += 1) {
                 tablaAmortizacionContrato.push({
-                    numero_cuota: indiceCuota,
-                    capital_cuota: capitalCuota,
-                    interes_mes: interesCuota,
-                    cuota_estimada: Math.round(capitalCuota + interesCuota)
+                    numero_cuota: numeroCuotaPlan,
+                    capital_cuota: capitalPorCuotaContrato,
+                    interes_mes: interesPorCuotaContrato,
+                    cuota_estimada: redondear2(capitalPorCuotaContrato + interesPorCuotaContrato)
                 });
-                saldoAmortizacion = saldoFinalCuota;
             }
             const obtenerFilaAmortizacion = (numeroCuota) => {
                 const cuotaNumero = Number(numeroCuota || 0);

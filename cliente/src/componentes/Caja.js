@@ -145,14 +145,20 @@ const Caja = () => {
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
     const redondear2 = (valor) => parseFloat((Number(valor || 0)).toFixed(2));
+    // Caja NO define su propio plan financiero: consume el mismo que pacta el modulo de Contratos.
+    // Base acordada (identica a Contratos_Residentes.calcularMontoCuotaContrato):
+    //   capital financiado = Precio Total del contrato (saldo/monto_total) - Enganche
+    //   cuota mensual      = calcularCuotaFija(capital financiado, interes anual, cuotas pactadas)
+    // De esa forma la "Cuota 1+ (capital + interes)" de Caja coincide con el
+    // "Monto de Cuota (Auto)" que muestra y guarda el contrato.
     const calcularPlanFinancieroContrato = (contrato = {}) => {
         const tieneConvenioActivo = Number(contrato?.id_convenio_activo || 0) > 0;
         const saldoPendiente = Math.max(parseFloat(contrato?.saldo_pendiente || 0), 0);
-        const montoTotalContrato = Math.max(parseFloat(contrato?.monto_total_original || contrato?.monto_total_contrato || 0), 0);
-        const enganche = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche || 0), 0);
+        const enganche = tieneConvenioActivo
+            ? 0
+            : Math.max(parseFloat(contrato?.enganche ?? contrato?.enganche_total ?? 0), 0);
         const enganchePagado = tieneConvenioActivo ? enganche : Math.max(parseFloat(contrato?.enganche_pagado || 0), 0);
         const capitalPagadoTotal = Math.max(parseFloat(contrato?.capital_pagado_total || 0), 0);
-        const capitalPorCuotaContrato = Math.max(parseFloat(contrato?.monto_cuota || 0), 0);
         const cuotasPactadas = Math.max(parseInt(contrato?.plazo_meses || contrato?.cuotas_pactadas || 0, 10), 0);
         const cuotasPagadas = Math.max(parseInt(contrato?.cuotas_pagadas || 0, 10), 0);
         const cuotasPendientes = Math.max(cuotasPactadas - cuotasPagadas, 0);
@@ -163,33 +169,21 @@ const Caja = () => {
             ? 0
             : Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
 
-        const capitalTotalContrato = montoTotalContrato > 0
-            ? parseFloat(Math.max(tieneConvenioActivo ? montoTotalContrato : (montoTotalContrato - enganche), 0).toFixed(2))
-            : ((capitalPorCuotaContrato > 0 && cuotasPactadas > 0)
-                ? parseFloat((capitalPorCuotaContrato * cuotasPactadas).toFixed(2))
-                : parseFloat(saldoPendiente.toFixed(2)));
+        // Capital financiado pactado: mismo dato que usa el contrato para su cuota automatica.
+        // Con convenio activo el saldo del convenio ya es el capital a financiar (sin enganche).
+        const capitalTotalContrato = tieneConvenioActivo
+            ? parseFloat(saldoPendiente.toFixed(2))
+            : parseFloat(Math.max(saldoPendiente - enganche, 0).toFixed(2));
         const capitalPagadoFinanciado = tieneConvenioActivo
             ? 0
             : Math.max(parseFloat((capitalPagadoTotal - enganchePagado).toFixed(2)), 0);
-        const capitalPendienteFinanciado = tieneConvenioActivo
-            ? saldoPendiente
-            : Math.max(parseFloat((capitalTotalContrato - capitalPagadoFinanciado).toFixed(2)), 0);
-        const capitalBaseInteres = Math.max(parseFloat(capitalTotalContrato.toFixed(2)), 0);
-        const cuotaCapitalTeorica = (capitalBaseInteres > 0 && cuotasPactadas > 0)
-            ? parseFloat((capitalBaseInteres / cuotasPactadas).toFixed(2))
-            : 0;
-        const referenciaCuotaCapital = capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica;
-        const desfaseRelativoCuota = cuotaCapitalTeorica > 0
-            ? Math.abs(referenciaCuotaCapital - cuotaCapitalTeorica) / cuotaCapitalTeorica
-            : 0;
-        const usarCuotaCapitalTeorica = cuotaCapitalTeorica > 0
-            && (referenciaCuotaCapital <= 0 || desfaseRelativoCuota > 0.1);
-        const capitalPorCuota = tieneConvenioActivo
-            ? (capitalPorCuotaContrato > 0 ? capitalPorCuotaContrato : cuotaCapitalTeorica)
-            : (usarCuotaCapitalTeorica ? cuotaCapitalTeorica : referenciaCuotaCapital);
+        // saldoPendiente (monto_total) ya viene neto de lo abonado, por eso el capital
+        // financiado pactado es tambien el capital que queda por cobrar.
+        const capitalPendienteFinanciado = capitalTotalContrato;
+        const capitalBaseInteres = capitalTotalContrato;
         const tablaContratoCompleta = generarTablaAmortizacion(
-            tieneConvenioActivo ? Math.max(capitalPendienteFinanciado, 0) : capitalBaseInteres,
-            tieneConvenioActivo ? 0 : interesPorcentaje,
+            capitalBaseInteres,
+            interesPorcentaje,
             tieneConvenioActivo ? cuotasPendientes : cuotasPactadas,
             tieneConvenioActivo ? cuotasPagadas : 0
         );
@@ -197,6 +191,8 @@ const Caja = () => {
             ? tablaContratoCompleta
             : tablaContratoCompleta.filter((fila) => Number(fila?.numero_cuota || 0) > cuotasFinanciadasPagadas);
         const cuotaMensualConInteres = tablaAmortizacion[0]?.cuota_estimada || 0;
+        // Capital de la cuota = cuota pactada - interes de la cuota (mismo desglose del contrato).
+        const capitalPorCuota = parseFloat(Number(tablaAmortizacion[0]?.capital_cuota || 0).toFixed(2));
         const interesTotalContrato = parseFloat(
             tablaAmortizacion.reduce((sum, fila) => sum + Number(fila.interes_mes || 0), 0).toFixed(2)
         );
@@ -209,7 +205,7 @@ const Caja = () => {
 
         return {
             saldoPendiente,
-            precioTotalContrato: montoTotalContrato,
+            precioTotalContrato: parseFloat((capitalTotalContrato + enganche).toFixed(2)),
             enganche,
             enganchePagado,
             capitalPorCuota,
