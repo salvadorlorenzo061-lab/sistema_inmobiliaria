@@ -351,7 +351,8 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   doc.setFont('Helvetica', 'bold');
   doc.text('Referencia:', 120, y);
   doc.setFont('Helvetica', 'normal');
-  const referenciaPrincipal = (metodo.includes('deposit') || metodo.includes('transfer'))
+  const esPagoBancario = metodo.includes('deposit') || metodo.includes('transfer');
+  const referenciaPrincipal = esPagoBancario
     ? texto(pago?.boletaReferencia || pago?.referencia || documentoNo)
     : texto(pago?.referencia || documentoNo);
   doc.text(referenciaPrincipal, 143, y);
@@ -360,20 +361,20 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   const banco = texto(pago?.banco, '');
   const fechaOperacion = texto(pago?.fechaOperacion, '');
   const boletaReferencia = texto(pago?.boletaReferencia, '');
-  if ((metodo.includes('deposit') || metodo.includes('transfer')) && (banco || fechaOperacion || boletaReferencia)) {
+  if (esPagoBancario) {
     doc.setFont('Helvetica', 'bold');
     doc.text('Banco:', 12, y);
     doc.setFont('Helvetica', 'normal');
-    doc.text(banco || 'N/A', 28, y);
+    doc.text(banco, 28, y);
     doc.setFont('Helvetica', 'bold');
     doc.text('Fecha op.:', 120, y);
     doc.setFont('Helvetica', 'normal');
-    doc.text(fechaOperacion || 'N/A', 145, y);
+    doc.text(fechaOperacion, 145, y);
     y += 6;
     doc.setFont('Helvetica', 'bold');
     doc.text('Boleta/Ref.:', 12, y);
     doc.setFont('Helvetica', 'normal');
-    doc.text(boletaReferencia || 'N/A', 35, y);
+    doc.text(boletaReferencia, 35, y);
     y += 8;
   }
 

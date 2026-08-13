@@ -7,7 +7,6 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { calcularCuotaFija, redondearMoneda } from '../utils/amortizacion';
 import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfGenerator';
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
-import PdfPreview from './PdfPreview';
 
 function Contratos_Residentes() {
  const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '' });
@@ -127,7 +126,6 @@ function Contratos_Residentes() {
   // Modales
   const [showRegModal, setShowRegModal] = useState(false);  
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showPdfPreview, setShowPdfPreview] = useState(true); // Vista previa PDF habilitada por defecto
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
@@ -1452,43 +1450,6 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">Libro Registro Mercantil:</label>
                   <input type="text" className="form-control" value={registro_libro} onChange={e => setRegistro_libro(e.target.value)} placeholder="853" />
                 </div>
-
-                {/* SEPARADOR Y BOTÓN PARA VER VISTA PREVIA */}
-                <div className="col-12">
-                  <hr className="my-2" />
-                  <button 
-                    type="button" 
-                    className="btn btn-info btn-sm w-100 mb-3"
-                    onClick={() => setShowPdfPreview(!showPdfPreview)}
-                  >
-                    {showPdfPreview ? '📄 Ocultar Vista Previa del PDF' : '📄 Mostrar Vista Previa del PDF'}
-                  </button>
-                </div>
-
-                {/* VISTA PREVIA DEL PDF */}
-                {showPdfPreview && (
-                  <div className="col-12">
-                    <PdfPreview 
-                      datosContrato={{
-                        codigo_contrato, monto_total, cuotas_pactadas, monto_cuota: montoCuotaCalculado, dia_pago_limite,
-                        fecha_firma, fecha_compra,
-                        dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '',
-                        mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '',
-                        anio_firma: fecha_firma ? new Date(fecha_firma).getFullYear() : '',
-                        nombre_vendedor, edad_vendedor, estado_civil_vendedor, profesion_vendedor,
-                        dpi_vendedor, empresa_vendedor, notario, fecha_nombramiento,
-                        registro_numero, registro_folio, registro_libro,
-                        numero_finca, folio_propiedad, libro_propiedad, numero_lote,
-                        manzana_propiedad, area_propiedad, proyecto_propiedad,
-                        medida_norte, medida_sur, medida_oriente, medida_poniente,
-                        enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-                        mes_inicio_pagos: inicioPagosCalculado.mes, anio_inicio_pagos: inicioPagosCalculado.anio
-                      }}
-                      datosResidente={residentesList.find(r => String(r.id_residente) === String(id_residente)) || {}}
-                      mostrar={true}
-                    />
-                  </div>
-                )}
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setShowRegModal(false)}>Cancelar</button>
@@ -1756,38 +1717,6 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">Libro Registro:</label>
                   <input type="text" className="form-control" value={registro_libro} onChange={e => setRegistro_libro(e.target.value)} />
                 </div>
-
-                {/* BOTÓN VISTA PREVIA */}
-                <div className="col-12">
-                  <hr className="my-2" />
-                  <button type="button" className="btn btn-info btn-sm w-100 mb-3" onClick={() => setShowPdfPreview(!showPdfPreview)}>
-                    {showPdfPreview ? '📄 Ocultar Vista Previa del PDF' : '📄 Mostrar Vista Previa del PDF'}
-                  </button>
-                </div>
-
-                {showPdfPreview && (
-                  <div className="col-12">
-                    <PdfPreview 
-                      datosContrato={{
-                        codigo_contrato, monto_total, cuotas_pactadas, monto_cuota: montoCuotaCalculado, dia_pago_limite,
-                        fecha_firma, fecha_compra,
-                        dia_firma: fecha_firma ? new Date(fecha_firma).getDate() : '',
-                        mes_firma: fecha_firma ? (new Date(fecha_firma).getMonth() + 1) : '',
-                        anio_firma: fecha_firma ? new Date(fecha_firma).getFullYear() : '',
-                        nombre_vendedor, edad_vendedor, estado_civil_vendedor, profesion_vendedor,
-                        dpi_vendedor, empresa_vendedor, notario, fecha_nombramiento,
-                        registro_numero, registro_folio, registro_libro,
-                        numero_finca, folio_propiedad, libro_propiedad, numero_lote,
-                        manzana_propiedad, area_propiedad, proyecto_propiedad,
-                        medida_norte, medida_sur, medida_oriente, medida_poniente,
-                        enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-                        mes_inicio_pagos: inicioPagosCalculado.mes, anio_inicio_pagos: inicioPagosCalculado.anio
-                      }}
-                      datosResidente={residentesList.find(r => String(r.id_residente) === String(id_residente)) || {}}
-                      mostrar={true}
-                    />
-                  </div>
-                )}
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setShowEditModal(false)}>Cancelar</button>

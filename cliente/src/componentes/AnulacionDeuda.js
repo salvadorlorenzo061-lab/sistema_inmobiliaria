@@ -386,7 +386,10 @@ function AnulacionDeuda() {
           || `#${anulacion.id_contrato || "-"}`,
         pago: {
           metodo: documento?.metodo_pago,
-          referencia: documento?.correlativo || correlativoTexto
+          referencia: documento?.correlativo || correlativoTexto,
+          banco: documento?.banco_pago,
+          fechaOperacion: documento?.fecha_operacion,
+          boletaReferencia: documento?.boleta_referencia
         },
         filas: filasFactura,
         resumen: [
