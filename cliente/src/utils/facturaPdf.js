@@ -165,7 +165,18 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
       return;
     }
 
-    if (item.tipo === 'interes' || item.tipo === 'mora') {
+    if (item.tipo === 'mora') {
+      const claveMora = `mora:${item.mes || item.orden}`;
+      const fila = asegurarFila(claveMora, {
+        orden: item.orden,
+        concepto: 'Mora',
+        mes: item.mes || 'N/A'
+      });
+      fila.total = Number((fila.total + item.monto).toFixed(2));
+      return;
+    }
+
+    if (item.tipo === 'interes') {
       const clavesCuota = [...filasPorClave.keys()].filter((clave) => clave.startsWith('cuota:'));
       const claveCuotaExacta = item.mes
         ? clavesCuota.find((clave) => {
