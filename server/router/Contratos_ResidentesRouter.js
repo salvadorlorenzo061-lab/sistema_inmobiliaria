@@ -538,6 +538,52 @@ ensureContratosServiciosTable();
 ensureContratosDocumentosTable();
 ensureContratosFiniquitosTable();
 
+const asegurarCuotasPagadasPersistidas = ({ idContrato, codigoContrato, cuotasEsperadas }, callback) => {
+    const idContratoSeguro = Number(idContrato || 0);
+    const cuotasObjetivo = Math.max(parseInt(cuotasEsperadas || 0, 10), 0);
+
+    if (!Number.isInteger(idContratoSeguro) || idContratoSeguro <= 0) {
+        return callback(null, null);
+    }
+
+    const sqlSelect = 'SELECT id_contrato, codigo_contrato, cuotas_pagadas FROM contratos_residentes WHERE id_contrato = ? LIMIT 1';
+    db.query(sqlSelect, [idContratoSeguro], (selectErr, selectRows) => {
+        if (selectErr) {
+            return callback(selectErr);
+        }
+
+        const filaActual = selectRows?.[0] || null;
+        const cuotasActuales = Math.max(parseInt(filaActual?.cuotas_pagadas || 0, 10), 0);
+        if (cuotasActuales === cuotasObjetivo) {
+            return callback(null, filaActual);
+        }
+
+        console.warn('[contratos] cuotas_pagadas no persistio al primer intento, aplicando correccion puntual:', {
+            idContrato: idContratoSeguro,
+            codigoContrato: codigoContrato || filaActual?.codigo_contrato || '',
+            cuotasObjetivo,
+            cuotasActuales
+        });
+
+        db.query(
+            'UPDATE contratos_residentes SET cuotas_pagadas = ? WHERE id_contrato = ?',
+            [cuotasObjetivo, idContratoSeguro],
+            (updateErr) => {
+                if (updateErr) {
+                    return callback(updateErr);
+                }
+
+                db.query(sqlSelect, [idContratoSeguro], (verifyErr, verifyRows) => {
+                    if (verifyErr) {
+                        return callback(verifyErr);
+                    }
+                    return callback(null, verifyRows?.[0] || null);
+                });
+            }
+        );
+    });
+};
+
 // === 1. LISTAR CONTRATOS (CON JOINS) ===
 router.get("/", (req, res) => {
     ensureContratosFiniquitosTable((ensureErr) => {
@@ -694,18 +740,36 @@ router.post("/crear", (req, res) => {
                         }
                     );
 
-                    const serviciosEnPayload = Array.isArray(servicios_contrato);
-                    if (!serviciosEnPayload) {
-                        return res.status(200).send("Contrato establecido con éxito");
-                    }
-
-                    syncServiciosContrato(idContratoCreado, servicios_contrato, (asignErr) => {
-                        if (asignErr) {
-                            console.error('Contrato creado pero sin asignacion de servicios:', asignErr.message);
-                            return res.status(200).send("Contrato establecido con éxito (servicios pendientes de asignación)");
+                    const finalizarRespuestaCrear = () => {
+                        const serviciosEnPayload = Array.isArray(servicios_contrato);
+                        if (!serviciosEnPayload) {
+                            return res.status(200).send("Contrato establecido con éxito");
                         }
-                        return res.status(200).send("Contrato establecido con éxito");
-                    });
+
+                        syncServiciosContrato(idContratoCreado, servicios_contrato, (asignErr) => {
+                            if (asignErr) {
+                                console.error('Contrato creado pero sin asignacion de servicios:', asignErr.message);
+                                return res.status(200).send("Contrato establecido con éxito (servicios pendientes de asignación)");
+                            }
+                            return res.status(200).send("Contrato establecido con éxito");
+                        });
+                    };
+
+                    asegurarCuotasPagadasPersistidas(
+                        {
+                            idContrato: idContratoCreado,
+                            codigoContrato: codigo_contrato,
+                            cuotasEsperadas: cuotasPagadasNormalizadas
+                        },
+                        (persistErr, filaPersistida) => {
+                            if (persistErr) {
+                                console.error('[contratos][crear] error corrigiendo/verificando cuotas_pagadas:', persistErr);
+                            } else {
+                                console.log('[contratos][crear] fila final persistida:', filaPersistida);
+                            }
+                            return finalizarRespuestaCrear();
+                        }
+                    );
                 }
             }
         );
@@ -798,17 +862,35 @@ router.put("/actualizar", (req, res) => {
                     }
                 );
 
-                if (!Array.isArray(servicios_contrato)) {
-                    return res.status(200).send("Contrato actualizado correctamente");
-                }
-
-                syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
-                    if (syncErr) {
-                        console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
-                        return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
+                const finalizarRespuestaActualizar = () => {
+                    if (!Array.isArray(servicios_contrato)) {
+                        return res.status(200).send("Contrato actualizado correctamente");
                     }
-                    return res.status(200).send("Contrato actualizado correctamente");
-                });
+
+                    syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
+                        if (syncErr) {
+                            console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
+                            return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
+                        }
+                        return res.status(200).send("Contrato actualizado correctamente");
+                    });
+                };
+
+                asegurarCuotasPagadasPersistidas(
+                    {
+                        idContrato: id_contrato,
+                        codigoContrato: codigo_contrato,
+                        cuotasEsperadas: cuotasPagadasNormalizadas
+                    },
+                    (persistErr, filaPersistida) => {
+                        if (persistErr) {
+                            console.error('[contratos][actualizar] error corrigiendo/verificando cuotas_pagadas:', persistErr);
+                        } else {
+                            console.log('[contratos][actualizar] fila final persistida:', filaPersistida);
+                        }
+                        return finalizarRespuestaActualizar();
+                    }
+                );
             }
         }
     );
