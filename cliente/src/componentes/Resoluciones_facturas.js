@@ -42,6 +42,7 @@ function Resoluciones_facturas() {
 
   const [showRegModal, setShowRegModal] = useState(false);  
   const [showEditModal, setShowEditModal] = useState(false);
+  const [accionSeleccionadaPorFila, setAccionSeleccionadaPorFila] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
@@ -647,6 +648,23 @@ function Resoluciones_facturas() {
     setShowEditModal(true);
   };
 
+  const ejecutarAccionFila = (val, accion) => {
+    if (!accion) return;
+
+    if (accion === 'actualizar') {
+      abrirEditarModal(val);
+    } else if (accion === 'eliminar') {
+      deteleResolucion(val);
+    } else if (accion === 'pdf') {
+      descargarPDFIndividual(val);
+    }
+
+    setAccionSeleccionadaPorFila((prev) => ({
+      ...prev,
+      [val.group_key || val.id_resolucion]: ''
+    }));
+  };
+
   const resolucionesAgrupadas = agruparResoluciones(Resoluciones_facturasList);
 
   const resoluciones_facturasFiltrados = resolucionesAgrupadas.filter((prov) => 
@@ -740,11 +758,23 @@ function Resoluciones_facturas() {
                   </span>
                 </td>
                 <td>
-                  <div className="btn-group" role="group">
-                    <button type="button" onClick={() => abrirEditarModal(val)} className="btn btn-info btn-sm m-1 fw-bold">ACTUALIZAR</button>
-                    <button type="button" onClick={() => deteleResolucion(val)} className="btn btn-danger btn-sm m-1 fw-bold">ELIMINAR</button>
-                    <button type="button" onClick={() => descargarPDFIndividual(val)} className="btn btn-secondary btn-sm m-1 fw-bold">📄 PDF</button>
-                  </div>
+                  <select
+                    className="form-select form-select-sm fw-bold"
+                    value={accionSeleccionadaPorFila[val.group_key || val.id_resolucion] || ''}
+                    onChange={(e) => {
+                      const accion = e.target.value;
+                      setAccionSeleccionadaPorFila((prev) => ({
+                        ...prev,
+                        [val.group_key || val.id_resolucion]: accion
+                      }));
+                      ejecutarAccionFila(val, accion);
+                    }}
+                  >
+                    <option value="">Seleccione opcion</option>
+                    <option value="actualizar">Actualizar</option>
+                    <option value="pdf">Descargar PDF</option>
+                    <option value="eliminar">Eliminar</option>
+                  </select>
                 </td>
               </tr>
             ))
