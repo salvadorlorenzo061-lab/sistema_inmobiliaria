@@ -418,6 +418,32 @@ function Contratos_Residentes() {
     return payload;
   };
 
+  const verificarPersistenciaCuotasPagadas = async ({ idContratoObjetivo = null, codigoContratoObjetivo = '', cuotasEsperadas = 0 }) => {
+    try {
+      const res = await Axios.get(API_URL);
+      const contratos = Array.isArray(res?.data) ? res.data : [];
+      const encontrado = contratos.find((item) => (
+        (idContratoObjetivo && Number(item?.id_contrato) === Number(idContratoObjetivo))
+        || (!idContratoObjetivo && String(item?.codigo_contrato || '').trim() === String(codigoContratoObjetivo || '').trim())
+      ));
+
+      if (!encontrado) {
+        return { ok: false, motivo: 'not_found' };
+      }
+
+      const cuotasGuardadas = Math.max(parseInt(String(encontrado?.cuotas_pagadas || '0').trim(), 10) || 0, 0);
+      return {
+        ok: cuotasGuardadas === Math.max(parseInt(String(cuotasEsperadas || '0').trim(), 10) || 0, 0),
+        motivo: cuotasGuardadas === Math.max(parseInt(String(cuotasEsperadas || '0').trim(), 10) || 0, 0) ? '' : 'mismatch',
+        contrato: encontrado,
+        cuotasGuardadas
+      };
+    } catch (error) {
+      console.error('No se pudo verificar la persistencia de cuotas pagadas:', error);
+      return { ok: false, motivo: 'request_error' };
+    }
+  };
+
   // Generar código de contrato automático al seleccionar residente
   const seleccionarResidenteContrato = (idResidente) => {
     setId_residente(idResidente);
@@ -442,6 +468,11 @@ function Contratos_Residentes() {
 
     Axios.post(`${API_URL}/crear`, payload)
     .then(async () => {
+      const verificacionPersistencia = await verificarPersistenciaCuotasPagadas({
+        codigoContratoObjetivo: payload.codigo_contrato,
+        cuotasEsperadas: payload.cuotas_pagadas
+      });
+
       // Obtener datos del residente para el PDF
       const residente = residentesList.find(r => String(r.id_residente) === String(id_residente));
       
@@ -489,6 +520,16 @@ function Contratos_Residentes() {
       cargarCatalogos();
       limpiarCampos();
       setShowRegModal(false);
+
+      if (!verificacionPersistencia.ok) {
+        Swal.fire({
+          icon: "warning",
+          title: "Contrato creado con observación",
+          text: "El contrato se creó, pero el servidor no reflejó el valor de cuotas pagadas. Verifica que el backend de contratos/caja esté actualizado y reiniciado."
+        });
+        return;
+      }
+
       Swal.fire({ icon: "success", title: "Contrato Establecido Correctamente", text: "El PDF se ha generado y descargado automáticamente", timer: 3000, showConfirmButton: false });
     })
     .catch((error) => {
@@ -507,6 +548,12 @@ function Contratos_Residentes() {
 
     Axios.put(`${API_URL}/actualizar`, payload)
     .then(async () => {
+      const verificacionPersistencia = await verificarPersistenciaCuotasPagadas({
+        idContratoObjetivo: payload.id_contrato,
+        codigoContratoObjetivo: payload.codigo_contrato,
+        cuotasEsperadas: payload.cuotas_pagadas
+      });
+
       try {
         await Axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`);
       } catch (moraErr) {
@@ -516,9 +563,19 @@ function Contratos_Residentes() {
       cargarCatalogos();
       limpiarCampos();
       setShowEditModal(false);
+
+      if (!verificacionPersistencia.ok) {
+        Swal.fire({
+          icon: "warning",
+          title: "Actualizado con observación",
+          text: "El contrato se actualizó, pero el servidor no reflejó el valor de cuotas pagadas. Verifica que el backend de contratos/caja esté actualizado y reiniciado."
+        });
+        return;
+      }
+
       Swal.fire({ icon: "success", title: "Contrato Actualizado", timer: 2500, showConfirmButton: false });
     })
-    .catch(() => Swal.fire({ icon: "error", title: "Error al modificar" }));
+    .catch((error) => Swal.fire({ icon: "error", title: "Error al modificar", text: error.response?.data?.message || "No se pudo actualizar el contrato" }));
   };
 
   const deleteContrato = (val) => {
