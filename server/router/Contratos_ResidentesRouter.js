@@ -524,6 +524,7 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('enganche', 'DECIMAL(12,2) NULL DEFAULT 0');
     ensureFinancialColumn('mora', 'DECIMAL(12,2) NULL DEFAULT 0');
     ensureFinancialColumn('plazo_meses', 'INT NULL DEFAULT 0');
+    ensureFinancialColumn('cuotas_pagadas', 'INT NULL DEFAULT 0');
     ensureFinancialColumn('mes_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('anio_inicio_pagos', 'INT NULL DEFAULT 2026');
 };
@@ -547,7 +548,7 @@ router.get("/", (req, res) => {
         const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
-                   c.monto_total, c.enganche, c.cuotas_pactadas, c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
+                   c.monto_total, c.enganche, c.cuotas_pactadas, c.cuotas_pagadas, c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
                    c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
@@ -601,7 +602,7 @@ router.get("/", (req, res) => {
 router.post("/crear", (req, res) => {
     const { 
         codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
-        enganche, cuotas_pactadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
+        enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
         dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
     } = req.body;
@@ -623,6 +624,7 @@ router.post("/crear", (req, res) => {
         const montoTotalNumerico = Number(monto_total || 0);
         const engancheNumerico = Number(enganche || 0);
         const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
+        const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
         const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
         const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
             ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
@@ -630,8 +632,8 @@ router.post("/crear", (req, res) => {
 
         const queryInsert = `
             INSERT INTO contratos_residentes 
-            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, enganche, cuotas_pactadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         db.query(
             queryInsert,
@@ -645,6 +647,7 @@ router.post("/crear", (req, res) => {
                 montoTotalNumerico,
                 engancheNumerico,
                 cuotasNormalizadas,
+                cuotasPagadasNormalizadas,
                 montoCuotaNormalizado,
                 interesPorcentajeNumerico,
                 Number(mora || 0),
@@ -690,7 +693,7 @@ router.post("/crear", (req, res) => {
 router.put("/actualizar", (req, res) => {
     const { 
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
-        enganche, cuotas_pactadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
+        enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
         dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
     } = req.body;
@@ -702,6 +705,7 @@ router.put("/actualizar", (req, res) => {
     const montoTotalNumerico = Number(monto_total || 0);
     const engancheNumerico = Number(enganche || 0);
     const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
+    const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
     const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
     const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
         ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
@@ -710,7 +714,7 @@ router.put("/actualizar", (req, res) => {
     const queryUpdate = `
         UPDATE contratos_residentes SET 
         codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
-        enganche=?, cuotas_pactadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
+        enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
         dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
         WHERE id_contrato=?
     `;
@@ -726,6 +730,7 @@ router.put("/actualizar", (req, res) => {
             montoTotalNumerico,
             engancheNumerico,
             cuotasNormalizadas,
+            cuotasPagadasNormalizadas,
             montoCuotaNormalizado,
             interesPorcentajeNumerico,
             Number(mora || 0),

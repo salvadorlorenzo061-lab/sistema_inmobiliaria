@@ -250,7 +250,11 @@ const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
         COALESCE(COUNT(DISTINCT CASE
             WHEN pd.tipo_concepto = 'cuota_terreno' AND COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
             ELSE NULL
-        END), 0) AS cuotas_pagadas
+        END), 0) AS cuotas_pagadas,
+        COALESCE(MAX(CASE
+            WHEN pd.tipo_concepto = 'cuota_terreno' AND COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+            ELSE 0
+        END), 0) AS ultima_cuota_pagada
     FROM pagos p
     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
     GROUP BY p.id_contrato
@@ -783,6 +787,15 @@ router.get("/residentes-pendientes", (req, res) => {
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
+            (
+                GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.ultima_cuota_pagada, 0))
+                + CASE
+                    WHEN COALESCE(c.enganche, 0) > 0
+                     AND COALESCE(pagos_resumen.enganche_pagado, 0) >= (COALESCE(c.enganche, 0) - 0.01)
+                    THEN 1
+                    ELSE 0
+                  END
+            ) AS cuotas_pagadas,
             c.interes_porcentaje, c.mora, tc.id_tipo_contrato,
             tc.nombre_tipo_contrato AS nombre_contrato,
             conv.id_convenio AS id_convenio_activo,
@@ -911,6 +924,15 @@ router.get("/buscar-residente", (req, res) => {
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
+            (
+                GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.ultima_cuota_pagada, 0))
+                + CASE
+                    WHEN COALESCE(c.enganche, 0) > 0
+                     AND COALESCE(pagos_resumen.enganche_pagado, 0) >= (COALESCE(c.enganche, 0) - 0.01)
+                    THEN 1
+                    ELSE 0
+                  END
+            ) AS cuotas_pagadas,
             c.interes_porcentaje,
             c.mora,
             tc.id_tipo_contrato,
@@ -998,6 +1020,7 @@ router.get("/meses-pendientes", (req, res) => {
             COALESCE(conv.saldo_actual, c.monto_total) AS monto_total,
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             c.enganche AS enganche,
+            COALESCE(c.cuotas_pagadas, 0) AS cuotas_pagadas_manual,
             COALESCE((
                 SELECT SUM(pd_enganche.subtotal)
                 FROM pagos_detalle pd_enganche
@@ -1247,6 +1270,19 @@ router.get("/meses-pendientes", (req, res) => {
                 // Al liquidarse totalmente el enganche, el primer mes contractual se considera atendido.
                 if (engancheContrato > 0 && enganchePagado >= (engancheContrato - 0.01) && candidatosMeta.length > 0) {
                     mesesPagadosSet.add(candidatosMeta[0].mes);
+                }
+
+                // Cuotas pagadas configuradas en el contrato: representan cuotas financiadas
+                // ya atendidas antes del seguimiento puntual en Caja, por lo que se marcan
+                // desde la primera cuota financiada sin alterar el flujo actual del enganche.
+                const cuotasPagadasManual = Math.max(Number(contratoResult[0]?.cuotas_pagadas_manual || 0), 0);
+                if (cuotasPagadasManual > 0 && candidatosMeta.length > 0) {
+                    const offsetInicioFinanciado = usaCuotaCeroEnganche ? 1 : 0;
+                    for (let indice = 0; indice < cuotasPagadasManual; indice += 1) {
+                        const cuotaHistorica = candidatosMeta[offsetInicioFinanciado + indice];
+                        if (!cuotaHistorica) break;
+                        mesesPagadosSet.add(cuotaHistorica.mes);
+                    }
                 }
 
                 // Filtrar: solo retornar meses que NO estén en pagados
@@ -1713,7 +1749,29 @@ router.post("/procesar-pago", (req, res) => {
                                                 WHERE p_cuota.id_contrato = c.id_contrato
                                                     AND pd_cuota.tipo_concepto = 'cuota_terreno'
                                                     AND pd_cuota.numero_cuota_afectada > 0
-                                        ), 0) AS cuotas_pagadas,
+                                        ), 0) AS cuotas_pagadas_registradas,
+                    GREATEST(
+                        COALESCE(c.cuotas_pagadas, 0),
+                        COALESCE((
+                            SELECT MAX(pd_cuota.numero_cuota_afectada)
+                            FROM pagos_detalle pd_cuota
+                            INNER JOIN pagos p_cuota ON p_cuota.id_pago = pd_cuota.id_pago
+                            WHERE p_cuota.id_contrato = c.id_contrato
+                              AND pd_cuota.tipo_concepto = 'cuota_terreno'
+                              AND pd_cuota.numero_cuota_afectada > 0
+                        ), 0)
+                    ) + CASE
+                        WHEN COALESCE(c.enganche, 0) > 0
+                         AND COALESCE((
+                            SELECT SUM(pd_enganche.subtotal)
+                            FROM pagos_detalle pd_enganche
+                            INNER JOIN pagos p_enganche ON p_enganche.id_pago = pd_enganche.id_pago
+                            WHERE p_enganche.id_contrato = c.id_contrato
+                              AND pd_enganche.tipo_concepto = 'enganche'
+                         ), 0) >= (COALESCE(c.enganche, 0) - 0.01)
+                        THEN 1
+                        ELSE 0
+                    END AS cuotas_pagadas,
                     COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
                     c.fecha_firma,
                     COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,

@@ -396,6 +396,7 @@ function Contratos_Residentes() {
       monto_total,
       enganche,
       cuotas_pactadas: cuotasEnvio,
+      cuotas_pagadas: cuotasPagadasNumero,
       monto_cuota: montoCuotaCalculado || "0.00",
       interes_porcentaje,
       mora,
