@@ -607,6 +607,13 @@ router.post("/crear", (req, res) => {
         servicios_contrato
     } = req.body;
 
+    console.log('[contratos][crear] payload cuotas_pagadas recibido:', {
+        codigo_contrato,
+        id_residente,
+        cuotas_pagadas,
+        bodyKeys: Object.keys(req.body || {})
+    });
+
     // Validar que el código de contrato no esté duplicado
     db.query('SELECT * FROM contratos_residentes WHERE codigo_contrato = ?', [codigo_contrato], (err, result) => {
         if (err) {
@@ -667,9 +674,25 @@ router.post("/crear", (req, res) => {
                     return res.status(500).send("Error al registrar el contrato");
                 } else {
                     const idContratoCreado = insertResult?.insertId;
+                    console.log('[contratos][crear] insert ejecutado:', {
+                        idContratoCreado,
+                        cuotasPagadasNormalizadas
+                    });
                     if (!idContratoCreado) {
                         return res.status(200).send("Contrato establecido con éxito");
                     }
+
+                    db.query(
+                        'SELECT id_contrato, codigo_contrato, cuotas_pagadas FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+                        [idContratoCreado],
+                        (verifyErr, verifyRows) => {
+                            if (verifyErr) {
+                                console.error('[contratos][crear] error verificando cuotas_pagadas guardadas:', verifyErr);
+                            } else {
+                                console.log('[contratos][crear] fila guardada:', verifyRows?.[0] || null);
+                            }
+                        }
+                    );
 
                     const serviciosEnPayload = Array.isArray(servicios_contrato);
                     if (!serviciosEnPayload) {
@@ -697,6 +720,13 @@ router.put("/actualizar", (req, res) => {
         dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
     } = req.body;
+
+    console.log('[contratos][actualizar] payload cuotas_pagadas recibido:', {
+        id_contrato,
+        codigo_contrato,
+        cuotas_pagadas,
+        bodyKeys: Object.keys(req.body || {})
+    });
     
     const plazoNormalizado = Number(plazo_meses || cuotas_pactadas || 0);
     const cuotasNormalizadas = Number.isFinite(plazoNormalizado) && plazoNormalizado > 0
@@ -750,6 +780,24 @@ router.put("/actualizar", (req, res) => {
                 console.error(err);
                 res.status(500).send("Error al actualizar el contrato");
             } else {
+                console.log('[contratos][actualizar] update ejecutado:', {
+                    id_contrato,
+                    affectedRows: result?.affectedRows || 0,
+                    cuotasPagadasNormalizadas
+                });
+
+                db.query(
+                    'SELECT id_contrato, codigo_contrato, cuotas_pagadas FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+                    [id_contrato],
+                    (verifyErr, verifyRows) => {
+                        if (verifyErr) {
+                            console.error('[contratos][actualizar] error verificando cuotas_pagadas guardadas:', verifyErr);
+                        } else {
+                            console.log('[contratos][actualizar] fila guardada:', verifyRows?.[0] || null);
+                        }
+                    }
+                );
+
                 if (!Array.isArray(servicios_contrato)) {
                     return res.status(200).send("Contrato actualizado correctamente");
                 }
