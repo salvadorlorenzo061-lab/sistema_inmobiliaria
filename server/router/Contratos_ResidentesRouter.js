@@ -611,7 +611,8 @@ router.get("/", (req, res) => {
                    f.nombre_original AS nombre_finiquito,
                    f.fecha_actualizacion AS fecha_finiquito,
                    (
-                       SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
+                      
+                   SELECT GROUP_CONCAT(cs.id_servicio ORDER BY cs.id_servicio SEPARATOR ',')
                        FROM contratos_servicios cs
                        WHERE cs.id_contrato = c.id_contrato
                          AND cs.estado = 'activo'
