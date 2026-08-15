@@ -114,6 +114,7 @@ function Contratos_Residentes() {
   const [plazo_meses, setPlazo_meses] = useState("");
   const [anios_financiamiento, setAnios_financiamiento] = useState("");
   const [cuotas_pagadas_manual, setCuotas_pagadas_manual] = useState("0");
+  const [saldo_pendiente, setSaldo_pendiente] = useState("0");
   const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
 
   // Listas de datos
