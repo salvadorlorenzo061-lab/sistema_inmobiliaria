@@ -527,6 +527,22 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('cuotas_pagadas', 'INT NULL DEFAULT 0');
     ensureFinancialColumn('mes_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('anio_inicio_pagos', 'INT NULL DEFAULT 2026');
+    ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
+};
+
+const backfillSaldoPendienteContrato = () => {
+    db.query(`
+        UPDATE contratos_residentes
+        SET saldo_pendiente = COALESCE(saldo_pendiente, monto_total, 0)
+        WHERE saldo_pendiente IS NULL
+           OR saldo_pendiente = 0
+    `, (err) => {
+        if (err) {
+            console.error('Error aplicando backfill global de saldo_pendiente en contratos_residentes:', err.message);
+            return;
+        }
+        console.log('Backfill global de saldo_pendiente aplicado a contratos_residentes.');
+    });
 };
 
 ensureEmpresaMarcaColumn();
@@ -534,6 +550,7 @@ ensureProyectoColumn();
 ensureFormatoContratoColumn();
 ensureInteresPorcentajeColumn();
 ensureFinancialContractColumns();
+backfillSaldoPendienteContrato();
 ensureContratosServiciosTable();
 ensureContratosDocumentosTable();
 ensureContratosFiniquitosTable();
