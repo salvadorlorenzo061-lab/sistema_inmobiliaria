@@ -941,6 +941,7 @@ function Contratos_Residentes() {
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
     setId_tipo_contrato(val.id_tipo_contrato);
     setMonto_total(val.monto_total);
+    setSaldo_pendiente(String(val.saldo_pendiente ?? val.monto_total ?? '0'));
     // Las cuotas pactadas manda; el plazo se alinea a ellas para que la cuota que calcula el
     // contrato sea la misma que cobra Caja (contratos antiguos podian traer 36 cuotas / 60 meses).
     setCuotas_pactadas(val.cuotas_pactadas || val.plazo_meses || '');
@@ -1045,6 +1046,7 @@ function Contratos_Residentes() {
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
+    setSaldo_pendiente("0");
     setInicioPagosCalculado({ mes: '', anio: '' });
     ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
   };

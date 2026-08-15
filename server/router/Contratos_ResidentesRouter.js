@@ -648,7 +648,7 @@ router.get("/", (req, res) => {
 // === 2. CREAR CONTRATO ===
 router.post("/crear", (req, res) => {
     const { 
-        codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
+        codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
         dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
@@ -683,11 +683,15 @@ router.post("/crear", (req, res) => {
         const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
             ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
             : Number(monto_cuota || 0);
+        const saldoPendienteBase = capitalFinanciado > 0 && cuotasNormalizadas > 0
+            ? capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))
+            : montoTotalNumerico;
+        const saldoPendienteNumerico = Number(saldo_pendiente ?? saldoPendienteBase ?? 0);
 
         const queryInsert = `
             INSERT INTO contratos_residentes 
-            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         db.query(
             queryInsert,
@@ -699,6 +703,7 @@ router.post("/crear", (req, res) => {
                 id_tipo_contrato,
                 formato_contrato || 'FORMATO_01',
                 montoTotalNumerico,
+                saldoPendienteNumerico,
                 engancheNumerico,
                 cuotasNormalizadas,
                 cuotasPagadasNormalizadas,
@@ -780,7 +785,7 @@ router.post("/crear", (req, res) => {
 // === 3. ACTUALIZAR CONTRATO ===
 router.put("/actualizar", (req, res) => {
     const { 
-        id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, 
+        id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
         dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
         servicios_contrato
@@ -805,10 +810,14 @@ router.put("/actualizar", (req, res) => {
     const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
         ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
         : Number(monto_cuota || 0);
+    const saldoPendienteBase = capitalFinanciado > 0 && cuotasNormalizadas > 0
+        ? capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))
+        : montoTotalNumerico;
+    const saldoPendienteNumerico = Number(saldo_pendiente ?? saldoPendienteBase ?? 0);
 
     const queryUpdate = `
         UPDATE contratos_residentes SET 
-        codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, monto_total=?, 
+        codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, monto_total=?, saldo_pendiente=?, 
         enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
         dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
         WHERE id_contrato=?
@@ -823,6 +832,7 @@ router.put("/actualizar", (req, res) => {
             id_tipo_contrato,
             formato_contrato || 'FORMATO_01',
             montoTotalNumerico,
+            saldoPendienteNumerico,
             engancheNumerico,
             cuotasNormalizadas,
             cuotasPagadasNormalizadas,
