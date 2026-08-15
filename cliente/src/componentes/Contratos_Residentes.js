@@ -385,6 +385,9 @@ function Contratos_Residentes() {
       cuotasEnvio,
       plazoEnvio
     );
+    const saldoPendienteVisible = Number(saldo_pendiente || monto_total || 0) > 0
+      ? saldo_pendiente || monto_total || '0'
+      : monto_total || '0';
 
     const payload = {
       codigo_contrato: String(codigo_contrato || '').trim(),
@@ -393,6 +396,7 @@ function Contratos_Residentes() {
       id_proyecto: id_proyecto || null,
       id_tipo_contrato,
       monto_total,
+      saldo_pendiente: saldoPendienteVisible,
       enganche,
       cuotas_pactadas: cuotasEnvio,
       cuotas_pagadas: cuotasPagadasNumero,
@@ -1305,6 +1309,20 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">Interés Anual (%):</label>
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} placeholder="14" />
                 </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Saldo pendiente a pagar</label>
+                  <div
+                    className="form-control d-flex align-items-center justify-content-center fw-bold border border-warning"
+                    style={{
+                      minHeight: '38px',
+                      backgroundColor: '#f59e0b',
+                      color: '#fff',
+                      fontSize: '1.05rem'
+                    }}
+                  >
+                    Q {Number(saldo_pendiente || monto_total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
                   <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
@@ -1571,6 +1589,20 @@ function Contratos_Residentes() {
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
                   <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} />
+                </div>
+                <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Saldo pendiente a pagar</label>
+                  <div
+                    className="form-control d-flex align-items-center justify-content-center fw-bold border border-warning"
+                    style={{
+                      minHeight: '38px',
+                      backgroundColor: '#f59e0b',
+                      color: '#fff',
+                      fontSize: '1.05rem'
+                    }}
+                  >
+                    Q {Number(saldo_pendiente || monto_total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
