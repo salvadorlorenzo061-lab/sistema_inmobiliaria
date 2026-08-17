@@ -511,7 +511,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                         if (txErr) return res.status(500).send({ message: 'Error de transacción al anular cobro.' });
 
                         db.query(
-                            'UPDATE contratos_residentes SET monto_total = monto_total + ? WHERE id_contrato = ?',
+                            'UPDATE contratos_residentes SET saldo_pendiente = COALESCE(saldo_pendiente, monto_total, 0) + ? WHERE id_contrato = ?',
                             [capitalRestaurar, pago.id_contrato],
                             (saldoErr) => {
                                 if (saldoErr) {

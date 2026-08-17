@@ -773,7 +773,7 @@ router.get("/residentes-pendientes", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
-            COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
+            COALESCE(c.saldo_pendiente, c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
                         c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
             ) AS monto_total_original,
@@ -910,7 +910,7 @@ router.get("/buscar-residente", (req, res) => {
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
-            COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
+            COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
                         c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
             ) AS monto_total_original,
@@ -1726,7 +1726,8 @@ router.post("/procesar-pago", (req, res) => {
 
             const sqlContratoCobro = `
                 SELECT
-                    COALESCE(conv.saldo_actual, c.monto_total) AS monto_total,
+                    c.monto_total AS monto_total,
+                    COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
                     c.enganche,
                     COALESCE((
                         SELECT SUM(pd_capital.subtotal)
@@ -1873,7 +1874,7 @@ router.post("/procesar-pago", (req, res) => {
                                         return db.rollback(() => res.status(403).send('No se puede generar cobro: este contrato no pertenece a tus empresas/proyectos con correlativos activos asignados.'));
                                 }
 
-                        const saldoActual = parseFloat(saldoRows[0].monto_total || 0);
+                        const saldoActual = parseFloat(saldoRows[0]?.saldo_pendiente ?? saldoRows[0]?.monto_total ?? 0);
                         const engancheContrato = Math.max(Number(saldoRows[0]?.enganche || 0), 0);
                         const enganchePagadoContrato = Math.max(Number(saldoRows[0]?.enganche_pagado || 0), 0);
                         const enganchePendienteContrato = Math.max(engancheContrato - enganchePagadoContrato, 0);
@@ -2804,15 +2805,19 @@ router.post("/procesar-pago", (req, res) => {
                                             };
 
                                             sincronizarMorosidadPagada(() => {
-                                            // monto_total del contrato es el capital completo e incluye el enganche
-                                            // (al crear el contrato: capital financiado = monto_total - enganche).
-                                            // Los tres conceptos de capital deben descontarlo, y la anulacion los devuelve igual.
                                             const descuentoCapital = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
                                             const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, finalizarCommit);
 
                                             if (descuentoCapital > 0) {
-                                                const sqlRestar = `UPDATE contratos_residentes SET monto_total = GREATEST(monto_total - ?, 0) WHERE id_contrato = ?`;
-                                                db.query(sqlRestar, [descuentoCapital, id_contrato], (updErr) => {
+                                                const nuevoSaldoPendiente = redondear2(Math.max(saldoActual - descuentoCapital, 0));
+                                                const estadoContratoSaldado = nuevoSaldoPendiente <= 0 ? 'finalizado' : 'activo';
+                                                const sqlRestar = `
+                                                    UPDATE contratos_residentes
+                                                    SET saldo_pendiente = GREATEST(COALESCE(saldo_pendiente, monto_total, 0) - ?, 0),
+                                                        estado = ?
+                                                    WHERE id_contrato = ?
+                                                `;
+                                                db.query(sqlRestar, [descuentoCapital, estadoContratoSaldado, id_contrato], (updErr) => {
                                                     if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
                                                     return finalizarConConvenio();
                                                 });

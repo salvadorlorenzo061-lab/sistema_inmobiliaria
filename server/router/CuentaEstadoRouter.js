@@ -153,7 +153,7 @@ router.get('/buscar-residente', (req, res) => {
             c.codigo_contrato,
             c.estado AS estado_contrato,
             c.fecha_firma,
-            COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
+            COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
                 c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
             ) AS monto_total_original,
@@ -212,7 +212,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             c.codigo_contrato,
             c.id_residente,
             c.fecha_firma,
-            COALESCE(conv.saldo_actual, c.monto_total) AS saldo_pendiente,
+            COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original,
                 c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
             ) AS monto_total_original,

@@ -535,13 +535,39 @@ const backfillSaldoPendienteContrato = () => {
         UPDATE contratos_residentes
         SET saldo_pendiente = COALESCE(saldo_pendiente, monto_total, 0)
         WHERE saldo_pendiente IS NULL
-           OR saldo_pendiente = 0
     `, (err) => {
         if (err) {
             console.error('Error aplicando backfill global de saldo_pendiente en contratos_residentes:', err.message);
             return;
         }
         console.log('Backfill global de saldo_pendiente aplicado a contratos_residentes.');
+    });
+};
+
+const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {}) => {
+    const idContratoSeguro = Number(idContrato || 0);
+    const fallbackSeguro = Math.max(parseInt(fallback || 0, 10), 0);
+
+    if (!Number.isInteger(idContratoSeguro) || idContratoSeguro <= 0) {
+        return callback(null, fallbackSeguro);
+    }
+
+    const sql = `
+        SELECT COUNT(DISTINCT pd.numero_cuota_afectada) AS cuotas_pagadas_reales
+        FROM pagos p
+        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+        WHERE p.id_contrato = ?
+          AND pd.tipo_concepto = 'cuota_terreno'
+          AND COALESCE(pd.numero_cuota_afectada, 0) > 0
+    `;
+
+    db.query(sql, [idContratoSeguro], (err, rows) => {
+        if (err) {
+            return callback(err);
+        }
+
+        const reales = Math.max(parseInt(rows?.[0]?.cuotas_pagadas_reales || 0, 10), 0);
+        return callback(null, reales > 0 ? reales : fallbackSeguro);
     });
 };
 
@@ -611,7 +637,26 @@ router.get("/", (req, res) => {
         const query = `
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
-                   c.monto_total, c.enganche, c.cuotas_pactadas, c.cuotas_pagadas, c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
+                   c.monto_total, c.saldo_pendiente, c.enganche, c.cuotas_pactadas,
+                   CASE
+                       WHEN COALESCE((
+                           SELECT COUNT(DISTINCT pd.numero_cuota_afectada)
+                           FROM pagos p
+                           INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                           WHERE p.id_contrato = c.id_contrato
+                             AND pd.tipo_concepto = 'cuota_terreno'
+                             AND COALESCE(pd.numero_cuota_afectada, 0) > 0
+                       ), 0) > 0 THEN (
+                           SELECT COUNT(DISTINCT pd.numero_cuota_afectada)
+                           FROM pagos p
+                           INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                           WHERE p.id_contrato = c.id_contrato
+                             AND pd.tipo_concepto = 'cuota_terreno'
+                             AND COALESCE(pd.numero_cuota_afectada, 0) > 0
+                       )
+                       ELSE c.cuotas_pagadas
+                   END AS cuotas_pagadas,
+                   c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
                    c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
@@ -657,7 +702,13 @@ router.get("/", (req, res) => {
                 console.error('Error al listar contratos:', err);
                 return res.status(500).send('Error de servidor');
             }
-            return res.send(result);
+
+            const contratosNormalizados = (result || []).map((contrato) => ({
+                ...contrato,
+                cuotas_pagadas: Math.max(Number(contrato?.cuotas_pagadas || 0), 0)
+            }));
+
+            return res.send(contratosNormalizados);
         });
     });
 });
@@ -705,97 +756,99 @@ router.post("/crear", (req, res) => {
             : montoTotalNumerico;
         const saldoPendienteNumerico = Number(saldo_pendiente ?? saldoPendienteBase ?? 0);
 
-        const queryInsert = `
-            INSERT INTO contratos_residentes 
-            (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        db.query(
-            queryInsert,
-            [
-                codigo_contrato,
-                id_residente,
-                id_empresa_marca || null,
-                id_proyecto || null,
-                id_tipo_contrato,
-                formato_contrato || 'FORMATO_01',
-                montoTotalNumerico,
-                saldoPendienteNumerico,
-                engancheNumerico,
-                cuotasNormalizadas,
-                cuotasPagadasNormalizadas,
-                montoCuotaNormalizado,
-                interesPorcentajeNumerico,
-                Number(mora || 0),
-                cuotasNormalizadas,
-                normalizeMesInicioPagos(mes_inicio_pagos, 1),
-                normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
-                Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
-                fecha_firma,
-                fecha_compra || null,
-                fecha_fin || null,
-                estado,
-                documento_contrato || null
-            ],
-            (insertErr, insertResult) => {
-                if (insertErr) {
-                    console.error(insertErr);
-                    return res.status(500).send("Error al registrar el contrato");
-                } else {
-                    const idContratoCreado = insertResult?.insertId;
-                    console.log('[contratos][crear] insert ejecutado:', {
-                        idContratoCreado,
-                        cuotasPagadasNormalizadas
-                    });
-                    if (!idContratoCreado) {
-                        return res.status(200).send("Contrato establecido con éxito");
-                    }
-
-                    db.query(
-                        'SELECT id_contrato, codigo_contrato, cuotas_pagadas FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
-                        [idContratoCreado],
-                        (verifyErr, verifyRows) => {
-                            if (verifyErr) {
-                                console.error('[contratos][crear] error verificando cuotas_pagadas guardadas:', verifyErr);
-                            } else {
-                                console.log('[contratos][crear] fila guardada:', verifyRows?.[0] || null);
-                            }
-                        }
-                    );
-
-                    const finalizarRespuestaCrear = () => {
-                        const serviciosEnPayload = Array.isArray(servicios_contrato);
-                        if (!serviciosEnPayload) {
-                            return res.status(200).send("Contrato establecido con éxito");
-                        }
-
-                        syncServiciosContrato(idContratoCreado, servicios_contrato, (asignErr) => {
-                            if (asignErr) {
-                                console.error('Contrato creado pero sin asignacion de servicios:', asignErr.message);
-                                return res.status(200).send("Contrato establecido con éxito (servicios pendientes de asignación)");
-                            }
-                            return res.status(200).send("Contrato establecido con éxito");
+        obtenerCuotasPagadasReales(0, cuotasPagadasNormalizadas, (_realErr, cuotasPagadasDefinitivas) => {
+            const queryInsert = `
+                INSERT INTO contratos_residentes 
+                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+            db.query(
+                queryInsert,
+                [
+                    codigo_contrato,
+                    id_residente,
+                    id_empresa_marca || null,
+                    id_proyecto || null,
+                    id_tipo_contrato,
+                    formato_contrato || 'FORMATO_01',
+                    montoTotalNumerico,
+                    saldoPendienteNumerico,
+                    engancheNumerico,
+                    cuotasNormalizadas,
+                    cuotasPagadasDefinitivas,
+                    montoCuotaNormalizado,
+                    interesPorcentajeNumerico,
+                    Number(mora || 0),
+                    cuotasNormalizadas,
+                    normalizeMesInicioPagos(mes_inicio_pagos, 1),
+                    normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
+                    Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
+                    fecha_firma,
+                    fecha_compra || null,
+                    fecha_fin || null,
+                    estado,
+                    documento_contrato || null
+                ],
+                (insertErr, insertResult) => {
+                    if (insertErr) {
+                        console.error(insertErr);
+                        return res.status(500).send("Error al registrar el contrato");
+                    } else {
+                        const idContratoCreado = insertResult?.insertId;
+                        console.log('[contratos][crear] insert ejecutado:', {
+                            idContratoCreado,
+                            cuotasPagadasDefinitivas
                         });
-                    };
-
-                    asegurarCuotasPagadasPersistidas(
-                        {
-                            idContrato: idContratoCreado,
-                            codigoContrato: codigo_contrato,
-                            cuotasEsperadas: cuotasPagadasNormalizadas
-                        },
-                        (persistErr, filaPersistida) => {
-                            if (persistErr) {
-                                console.error('[contratos][crear] error corrigiendo/verificando cuotas_pagadas:', persistErr);
-                            } else {
-                                console.log('[contratos][crear] fila final persistida:', filaPersistida);
-                            }
-                            return finalizarRespuestaCrear();
+                        if (!idContratoCreado) {
+                            return res.status(200).send("Contrato establecido con éxito");
                         }
-                    );
+
+                        db.query(
+                            'SELECT id_contrato, codigo_contrato, cuotas_pagadas FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+                            [idContratoCreado],
+                            (verifyErr, verifyRows) => {
+                                if (verifyErr) {
+                                    console.error('[contratos][crear] error verificando cuotas_pagadas guardadas:', verifyErr);
+                                } else {
+                                    console.log('[contratos][crear] fila guardada:', verifyRows?.[0] || null);
+                                }
+                            }
+                        );
+
+                        const finalizarRespuestaCrear = () => {
+                            const serviciosEnPayload = Array.isArray(servicios_contrato);
+                            if (!serviciosEnPayload) {
+                                return res.status(200).send("Contrato establecido con éxito");
+                            }
+
+                            syncServiciosContrato(idContratoCreado, servicios_contrato, (asignErr) => {
+                                if (asignErr) {
+                                    console.error('Contrato creado pero sin asignacion de servicios:', asignErr.message);
+                                    return res.status(200).send("Contrato establecido con éxito (servicios pendientes de asignación)");
+                                }
+                                return res.status(200).send("Contrato establecido con éxito");
+                            });
+                        };
+
+                        asegurarCuotasPagadasPersistidas(
+                            {
+                                idContrato: idContratoCreado,
+                                codigoContrato: codigo_contrato,
+                                cuotasEsperadas: cuotasPagadasDefinitivas
+                            },
+                            (persistErr, filaPersistida) => {
+                                if (persistErr) {
+                                    console.error('[contratos][crear] error corrigiendo/verificando cuotas_pagadas:', persistErr);
+                                } else {
+                                    console.log('[contratos][crear] fila final persistida:', filaPersistida);
+                                }
+                                return finalizarRespuestaCrear();
+                            }
+                        );
+                    }
                 }
-            }
-        );
+            );
+        });
     });
 });
 
@@ -832,96 +885,103 @@ router.put("/actualizar", (req, res) => {
         : montoTotalNumerico;
     const saldoPendienteNumerico = Number(saldo_pendiente ?? saldoPendienteBase ?? 0);
 
-    const queryUpdate = `
-        UPDATE contratos_residentes SET 
-        codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, monto_total=?, saldo_pendiente=?, 
-        enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
-        dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
-        WHERE id_contrato=?
-    `;
-    db.query(
-        queryUpdate,
-        [
-            codigo_contrato,
-            id_residente,
-            id_empresa_marca || null,
-            id_proyecto || null,
-            id_tipo_contrato,
-            formato_contrato || 'FORMATO_01',
-            montoTotalNumerico,
-            saldoPendienteNumerico,
-            engancheNumerico,
-            cuotasNormalizadas,
-            cuotasPagadasNormalizadas,
-            montoCuotaNormalizado,
-            interesPorcentajeNumerico,
-            Number(mora || 0),
-            cuotasNormalizadas,
-            normalizeMesInicioPagos(mes_inicio_pagos, 1),
-            normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
-            Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
-            fecha_firma,
-            fecha_compra || null,
-            fecha_fin || null,
-            estado,
-            documento_contrato || null,
-            id_contrato
-        ],
-        (err, result) => {
-            if (err) {
-                console.error(err);
-                res.status(500).send("Error al actualizar el contrato");
-            } else {
-                console.log('[contratos][actualizar] update ejecutado:', {
-                    id_contrato,
-                    affectedRows: result?.affectedRows || 0,
-                    cuotasPagadasNormalizadas
-                });
-
-                db.query(
-                    'SELECT id_contrato, codigo_contrato, cuotas_pagadas FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
-                    [id_contrato],
-                    (verifyErr, verifyRows) => {
-                        if (verifyErr) {
-                            console.error('[contratos][actualizar] error verificando cuotas_pagadas guardadas:', verifyErr);
-                        } else {
-                            console.log('[contratos][actualizar] fila guardada:', verifyRows?.[0] || null);
-                        }
-                    }
-                );
-
-                const finalizarRespuestaActualizar = () => {
-                    if (!Array.isArray(servicios_contrato)) {
-                        return res.status(200).send("Contrato actualizado correctamente");
-                    }
-
-                    syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
-                        if (syncErr) {
-                            console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
-                            return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
-                        }
-                        return res.status(200).send("Contrato actualizado correctamente");
-                    });
-                };
-
-                asegurarCuotasPagadasPersistidas(
-                    {
-                        idContrato: id_contrato,
-                        codigoContrato: codigo_contrato,
-                        cuotasEsperadas: cuotasPagadasNormalizadas
-                    },
-                    (persistErr, filaPersistida) => {
-                        if (persistErr) {
-                            console.error('[contratos][actualizar] error corrigiendo/verificando cuotas_pagadas:', persistErr);
-                        } else {
-                            console.log('[contratos][actualizar] fila final persistida:', filaPersistida);
-                        }
-                        return finalizarRespuestaActualizar();
-                    }
-                );
-            }
+    obtenerCuotasPagadasReales(id_contrato, cuotasPagadasNormalizadas, (realErr, cuotasPagadasDefinitivas) => {
+        if (realErr) {
+            console.error('[contratos][actualizar] error calculando cuotas reales:', realErr.message);
+            return res.status(500).send('Error al validar cuotas pagadas del contrato');
         }
-    );
+
+        const queryUpdate = `
+            UPDATE contratos_residentes SET 
+            codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, monto_total=?, saldo_pendiente=?, 
+            enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
+            dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
+            WHERE id_contrato=?
+        `;
+        db.query(
+            queryUpdate,
+            [
+                codigo_contrato,
+                id_residente,
+                id_empresa_marca || null,
+                id_proyecto || null,
+                id_tipo_contrato,
+                formato_contrato || 'FORMATO_01',
+                montoTotalNumerico,
+                saldoPendienteNumerico,
+                engancheNumerico,
+                cuotasNormalizadas,
+                cuotasPagadasDefinitivas,
+                montoCuotaNormalizado,
+                interesPorcentajeNumerico,
+                Number(mora || 0),
+                cuotasNormalizadas,
+                normalizeMesInicioPagos(mes_inicio_pagos, 1),
+                normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
+                Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
+                fecha_firma,
+                fecha_compra || null,
+                fecha_fin || null,
+                estado,
+                documento_contrato || null,
+                id_contrato
+            ],
+            (err, result) => {
+                if (err) {
+                    console.error(err);
+                    res.status(500).send("Error al actualizar el contrato");
+                } else {
+                    console.log('[contratos][actualizar] update ejecutado:', {
+                        id_contrato,
+                        affectedRows: result?.affectedRows || 0,
+                        cuotasPagadasDefinitivas
+                    });
+
+                    db.query(
+                        'SELECT id_contrato, codigo_contrato, cuotas_pagadas FROM contratos_residentes WHERE id_contrato = ? LIMIT 1',
+                        [id_contrato],
+                        (verifyErr, verifyRows) => {
+                            if (verifyErr) {
+                                console.error('[contratos][actualizar] error verificando cuotas_pagadas guardadas:', verifyErr);
+                            } else {
+                                console.log('[contratos][actualizar] fila guardada:', verifyRows?.[0] || null);
+                            }
+                        }
+                    );
+
+                    const finalizarRespuestaActualizar = () => {
+                        if (!Array.isArray(servicios_contrato)) {
+                            return res.status(200).send("Contrato actualizado correctamente");
+                        }
+
+                        syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
+                            if (syncErr) {
+                                console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
+                                return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
+                            }
+                            return res.status(200).send("Contrato actualizado correctamente");
+                        });
+                    };
+
+                    asegurarCuotasPagadasPersistidas(
+                        {
+                            idContrato: id_contrato,
+                            codigoContrato: codigo_contrato,
+                            cuotasEsperadas: cuotasPagadasDefinitivas
+                        },
+                        (persistErr, filaPersistida) => {
+                            if (persistErr) {
+                                console.error('[contratos][actualizar] error corrigiendo/verificando cuotas_pagadas:', persistErr);
+                            } else {
+                                console.log('[contratos][actualizar] fila final persistida:', filaPersistida);
+                            }
+                            return finalizarRespuestaActualizar();
+                        }
+                    );
+                }
+            }
+        );
+    });
 });
 
 // === 4. ELIMINAR CONTRATO ===
