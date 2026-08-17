@@ -571,12 +571,47 @@ const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {
     });
 };
 
+const sincronizarCuotasPagadasContrato = (idContrato = null, callback = () => {}) => {
+    const condicional = Number.isInteger(Number(idContrato)) && Number(idContrato) > 0
+        ? ' WHERE c.id_contrato = ? '
+        : '';
+    const params = Number.isInteger(Number(idContrato)) && Number(idContrato) > 0
+        ? [Number(idContrato)]
+        : [];
+
+    const sql = `
+        UPDATE contratos_residentes c
+        LEFT JOIN (
+            SELECT p.id_contrato,
+                   COUNT(DISTINCT pd.numero_cuota_afectada) AS cuotas_reales
+            FROM pagos p
+            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            WHERE pd.tipo_concepto = 'cuota_terreno'
+              AND COALESCE(pd.numero_cuota_afectada, 0) > 0
+            GROUP BY p.id_contrato
+        ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
+        SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.cuotas_reales, 0), COALESCE(c.cuotas_pagadas, 0))
+        ${condicional}
+    `;
+
+    db.query(sql, params, (err) => {
+        if (err) {
+            console.error('[contratos] error sincronizando cuotas_pagadas global:', err.message);
+            return callback(err);
+        }
+        return callback(null);
+    });
+};
+
 ensureEmpresaMarcaColumn();
 ensureProyectoColumn();
 ensureFormatoContratoColumn();
 ensureInteresPorcentajeColumn();
 ensureFinancialContractColumns();
 backfillSaldoPendienteContrato();
+sincronizarCuotasPagadasContrato(null, () => {
+    console.log('Backfill global de cuotas_pagadas aplicado a contratos_residentes.');
+});
 ensureContratosServiciosTable();
 ensureContratosDocumentosTable();
 ensureContratosFiniquitosTable();
@@ -963,21 +998,27 @@ router.put("/actualizar", (req, res) => {
                         });
                     };
 
-                    asegurarCuotasPagadasPersistidas(
-                        {
-                            idContrato: id_contrato,
-                            codigoContrato: codigo_contrato,
-                            cuotasEsperadas: cuotasPagadasDefinitivas
-                        },
-                        (persistErr, filaPersistida) => {
-                            if (persistErr) {
-                                console.error('[contratos][actualizar] error corrigiendo/verificando cuotas_pagadas:', persistErr);
-                            } else {
-                                console.log('[contratos][actualizar] fila final persistida:', filaPersistida);
-                            }
-                            return finalizarRespuestaActualizar();
+                    sincronizarCuotasPagadasContrato(id_contrato, (syncErr) => {
+                        if (syncErr) {
+                            console.warn('[contratos][actualizar] no fue posible sincronizar cuotas_pagadas reales:', syncErr.message);
                         }
-                    );
+
+                        asegurarCuotasPagadasPersistidas(
+                            {
+                                idContrato: id_contrato,
+                                codigoContrato: codigo_contrato,
+                                cuotasEsperadas: cuotasPagadasDefinitivas
+                            },
+                            (persistErr, filaPersistida) => {
+                                if (persistErr) {
+                                    console.error('[contratos][actualizar] error corrigiendo/verificando cuotas_pagadas:', persistErr);
+                                } else {
+                                    console.log('[contratos][actualizar] fila final persistida:', filaPersistida);
+                                }
+                                return finalizarRespuestaActualizar();
+                            }
+                        );
+                    });
                 }
             }
         );
