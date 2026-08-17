@@ -1744,22 +1744,20 @@ router.post("/procesar-pago", (req, res) => {
                           AND pd_enganche.tipo_concepto = 'enganche'
                     ), 0) AS enganche_pagado,
                                         COALESCE((
-                                                SELECT COUNT(DISTINCT pd_cuota.numero_cuota_afectada)
+                                                SELECT COUNT(DISTINCT COALESCE(pd_cuota.numero_cuota_afectada, p_cuota.id_pago))
                                                 FROM pagos_detalle pd_cuota
                                                 INNER JOIN pagos p_cuota ON p_cuota.id_pago = pd_cuota.id_pago
                                                 WHERE p_cuota.id_contrato = c.id_contrato
                                                     AND pd_cuota.tipo_concepto = 'cuota_terreno'
-                                                    AND pd_cuota.numero_cuota_afectada > 0
                                         ), 0) AS cuotas_pagadas_registradas,
                     GREATEST(
                         COALESCE(c.cuotas_pagadas, 0),
                         COALESCE((
-                            SELECT MAX(pd_cuota.numero_cuota_afectada)
+                            SELECT MAX(COALESCE(pd_cuota.numero_cuota_afectada, p_cuota.id_pago))
                             FROM pagos_detalle pd_cuota
                             INNER JOIN pagos p_cuota ON p_cuota.id_pago = pd_cuota.id_pago
                             WHERE p_cuota.id_contrato = c.id_contrato
                               AND pd_cuota.tipo_concepto = 'cuota_terreno'
-                              AND pd_cuota.numero_cuota_afectada > 0
                         ), 0)
                     ) + CASE
                         WHEN COALESCE(c.enganche, 0) > 0

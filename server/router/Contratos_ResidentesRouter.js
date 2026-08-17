@@ -553,12 +553,15 @@ const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {
     }
 
     const sql = `
-        SELECT COUNT(DISTINCT pd.numero_cuota_afectada) AS cuotas_pagadas_reales
+        SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago)) AS cuotas_pagadas_reales
         FROM pagos p
         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE p.id_contrato = ?
           AND pd.tipo_concepto = 'cuota_terreno'
-          AND COALESCE(pd.numero_cuota_afectada, 0) > 0
+          AND (
+              COALESCE(pd.numero_cuota_afectada, 0) > 0
+              OR COALESCE(pd.numero_cuota_afectada, 0) = 0
+          )
     `;
 
     db.query(sql, [idContratoSeguro], (err, rows) => {
@@ -583,11 +586,10 @@ const sincronizarCuotasPagadasContrato = (idContrato = null, callback = () => {}
         UPDATE contratos_residentes c
         LEFT JOIN (
             SELECT p.id_contrato,
-                   COUNT(DISTINCT pd.numero_cuota_afectada) AS cuotas_reales
+                   COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago)) AS cuotas_reales
             FROM pagos p
             INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             WHERE pd.tipo_concepto = 'cuota_terreno'
-              AND COALESCE(pd.numero_cuota_afectada, 0) > 0
             GROUP BY p.id_contrato
         ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.cuotas_reales, 0), COALESCE(c.cuotas_pagadas, 0))
@@ -675,19 +677,17 @@ router.get("/", (req, res) => {
                    c.monto_total, c.saldo_pendiente, c.enganche, c.cuotas_pactadas,
                    CASE
                        WHEN COALESCE((
-                           SELECT COUNT(DISTINCT pd.numero_cuota_afectada)
+                           SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago))
                            FROM pagos p
                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                            WHERE p.id_contrato = c.id_contrato
                              AND pd.tipo_concepto = 'cuota_terreno'
-                             AND COALESCE(pd.numero_cuota_afectada, 0) > 0
                        ), 0) > 0 THEN (
-                           SELECT COUNT(DISTINCT pd.numero_cuota_afectada)
+                           SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago))
                            FROM pagos p
                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                            WHERE p.id_contrato = c.id_contrato
                              AND pd.tipo_concepto = 'cuota_terreno'
-                             AND COALESCE(pd.numero_cuota_afectada, 0) > 0
                        )
                        ELSE c.cuotas_pagadas
                    END AS cuotas_pagadas,
