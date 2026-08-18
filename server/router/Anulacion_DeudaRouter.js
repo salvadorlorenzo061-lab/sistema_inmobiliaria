@@ -524,8 +524,26 @@ router.post('/anular-por-correlativo', (req, res) => {
                         if (txErr) return res.status(500).send({ message: 'Error de transacción al anular cobro.' });
 
                         db.query(
-                            'UPDATE contratos_residentes SET saldo_pendiente = COALESCE(saldo_pendiente, monto_total, 0) + ?, cuotas_pagadas = GREATEST(COALESCE(cuotas_pagadas, 0) - ?, 0) WHERE id_contrato = ?',
-                            [capitalRestaurar, cuotasRevertidas, pago.id_contrato],
+                            `
+                                UPDATE contratos_residentes c
+                                LEFT JOIN (
+                                    SELECT p.id_contrato,
+                                           COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                                    FROM pagos p
+                                    INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                                    GROUP BY p.id_contrato
+                                ) pagos ON pagos.id_contrato = c.id_contrato
+                                SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0),
+                                    c.cuotas_pagadas = (
+                                        SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago))
+                                        FROM pagos p
+                                        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                                        WHERE p.id_contrato = c.id_contrato
+                                          AND pd.tipo_concepto = 'cuota_terreno'
+                                    )
+                                WHERE c.id_contrato = ?
+                            `,
+                            [pago.id_contrato],
                             (saldoErr) => {
                                 if (saldoErr) {
                                     return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
@@ -677,8 +695,15 @@ router.post('/anular-por-correlativo', (req, res) => {
                                             `;
 
                                             db.query(sqlExtra, [pago.id_contrato, ...idsPagoExtraRevertir], (extraErr) => {
-                                                if (extraErr && String(extraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
-                                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el cargo extraordinario anulado.' }));
+                                                if (extraErr) {
+                                                    const codigoError = String(extraErr?.code || '').toUpperCase();
+                                                    console.warn('[anulacion] No se pudo restaurar cargo extraordinario; se continúa con la anulacion.', {
+                                                        id_contrato: pago.id_contrato,
+                                                        idsPagoExtraRevertir,
+                                                        codigoError,
+                                                        mensaje: extraErr?.message || ''
+                                                    });
+                                                    return continuarTrasExtras();
                                                 }
 
                                                 return continuarTrasExtras();

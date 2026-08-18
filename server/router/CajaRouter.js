@@ -2831,12 +2831,19 @@ router.post("/procesar-pago", (req, res) => {
                                                 const nuevoSaldoPendiente = redondear2(Math.max(saldoActual - descuentoCapital, 0));
                                                 const estadoContratoSaldado = nuevoSaldoPendiente <= 0 ? 'finalizado' : 'activo';
                                                 const sqlRestar = `
-                                                    UPDATE contratos_residentes
-                                                    SET saldo_pendiente = GREATEST(COALESCE(saldo_pendiente, monto_total, 0) - ?, 0),
-                                                        estado = ?
-                                                    WHERE id_contrato = ?
+                                                    UPDATE contratos_residentes c
+                                                    LEFT JOIN (
+                                                        SELECT p.id_contrato,
+                                                               COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                                                        FROM pagos p
+                                                        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                                                        GROUP BY p.id_contrato
+                                                    ) pagos ON pagos.id_contrato = c.id_contrato
+                                                    SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0),
+                                                        c.estado = ?
+                                                    WHERE c.id_contrato = ?
                                                 `;
-                                                db.query(sqlRestar, [descuentoCapital, estadoContratoSaldado, id_contrato], (updErr) => {
+                                                db.query(sqlRestar, [estadoContratoSaldado, id_contrato], (updErr) => {
                                                     if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
                                                     return finalizarConConvenio();
                                                 });

@@ -532,18 +532,67 @@ const ensureFinancialContractColumns = () => {
 
 const backfillSaldoPendienteContrato = () => {
     db.query(`
-        UPDATE contratos_residentes
-        SET saldo_pendiente = CASE
-            WHEN COALESCE(saldo_pendiente, 0) <= 0 THEN GREATEST(COALESCE(monto_total, 0) - COALESCE(enganche, 0), 0)
-            ELSE saldo_pendiente
-        END
-        WHERE saldo_pendiente IS NULL OR saldo_pendiente <= 0
+        UPDATE contratos_residentes c
+        LEFT JOIN (
+            SELECT p.id_contrato,
+                   COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+            FROM pagos p
+            LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            GROUP BY p.id_contrato
+        ) pagos ON pagos.id_contrato = c.id_contrato
+        SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0)
+        WHERE c.saldo_pendiente IS NULL OR c.saldo_pendiente <= 0
     `, (err) => {
         if (err) {
             console.error('Error aplicando backfill global de saldo_pendiente en contratos_residentes:', err.message);
             return;
         }
         console.log('Backfill global de saldo_pendiente aplicado a contratos_residentes.');
+    });
+};
+
+const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
+    const idContratoSeguro = Number(idContrato || 0);
+    if (!Number.isInteger(idContratoSeguro) || idContratoSeguro <= 0) {
+        return callback(null);
+    }
+
+    db.query(`
+        UPDATE contratos_residentes c
+        LEFT JOIN (
+            SELECT p.id_contrato,
+                   COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+            FROM pagos p
+            LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            GROUP BY p.id_contrato
+        ) pagos ON pagos.id_contrato = c.id_contrato
+        SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0)
+        WHERE c.id_contrato = ?
+    `, [idContratoSeguro], (err) => {
+        if (err) {
+            console.error('[contratos] error recalculando saldo_pendiente:', err.message);
+            return callback(err);
+        }
+
+        db.query(`
+            UPDATE contratos_residentes c
+            LEFT JOIN (
+                SELECT p.id_contrato,
+                       COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago)) AS cuotas_reales
+                FROM pagos p
+                INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                WHERE pd.tipo_concepto = 'cuota_terreno'
+                GROUP BY p.id_contrato
+            ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
+            SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.cuotas_reales, 0), 0)
+            WHERE c.id_contrato = ?
+        `, [idContratoSeguro], (syncErr) => {
+            if (syncErr) {
+                console.error('[contratos] error sincronizando cuotas_pagadas al recalcular saldo:', syncErr.message);
+                return callback(syncErr);
+            }
+            return callback(null);
+        });
     });
 };
 
@@ -863,6 +912,12 @@ router.post("/crear", (req, res) => {
                             }
                         );
 
+                        recalcularSaldoPendienteContrato(idContratoCreado, (recalcErr) => {
+                            if (recalcErr) {
+                                console.warn('[contratos][crear] no fue posible recalcular saldo pendiente:', recalcErr.message);
+                            }
+                        });
+
                         const finalizarRespuestaCrear = () => {
                             const serviciosEnPayload = Array.isArray(servicios_contrato);
                             if (!serviciosEnPayload) {
@@ -998,6 +1053,12 @@ router.put("/actualizar", (req, res) => {
                             }
                         }
                     );
+
+                    recalcularSaldoPendienteContrato(id_contrato, (recalcErr) => {
+                        if (recalcErr) {
+                            console.warn('[contratos][actualizar] no fue posible recalcular saldo pendiente:', recalcErr.message);
+                        }
+                    });
 
                     const finalizarRespuestaActualizar = () => {
                         if (!Array.isArray(servicios_contrato)) {

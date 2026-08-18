@@ -47,6 +47,11 @@ function Contratos_Residentes() {
     const plazoEnvio = obtenerPlazoEnvio();
     const cuotaTotal = Number(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotasEnvio, plazoEnvio) || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
+    const saldoPersistido = Number(saldo_pendiente || 0);
+
+    if (Number.isFinite(saldoPersistido) && saldoPersistido >= 0 && String(saldo_pendiente || '').trim() !== '') {
+      return saldoPersistido;
+    }
 
     if (!Number.isFinite(cuotaTotal) || cuotaTotal <= 0) {
       return Math.max(capitalFinanciado, 0);
@@ -973,9 +978,12 @@ function Contratos_Residentes() {
     );
     const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
     const cuotasPagadasExistentes = Math.max(parseInt(String(val.cuotas_pagadas || '0').trim(), 10) || 0, 0);
-    const saldoCalculado = cuotaTotalContrato > 0
-      ? Math.max(capitalFinanciado - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
-      : Number(val.saldo_pendiente ?? val.monto_total ?? 0);
+    const saldoPersistido = Number(val.saldo_pendiente ?? 0);
+    const saldoCalculado = Number.isFinite(saldoPersistido) && saldoPersistido >= 0
+      ? saldoPersistido
+      : (cuotaTotalContrato > 0
+        ? Math.max(capitalFinanciado - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
+        : Number(val.monto_total ?? 0));
 
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
