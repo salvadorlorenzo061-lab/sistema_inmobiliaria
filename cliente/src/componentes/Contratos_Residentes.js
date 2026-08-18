@@ -405,6 +405,7 @@ function Contratos_Residentes() {
   const precioProyectoConEngancheEInteresesCalculado = obtenerPrecioProyectoConEngancheEIntereses();
   const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
 
+  
   const normalizarMesInicioPagos = (valor) => {
     const numero = parseInt(String(valor || '').trim(), 10);
     const respaldo = parseInt(String(inicioPagosAutomatico.mes || '1').trim(), 10) || 1;
