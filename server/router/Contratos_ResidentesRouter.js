@@ -691,6 +691,14 @@ router.get("/", (req, res) => {
                        )
                        ELSE c.cuotas_pagadas
                    END AS cuotas_pagadas,
+                   COALESCE((
+                       SELECT MAX(COALESCE(pd.numero_cuota_afectada, 0))
+                       FROM pagos p
+                       INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                       WHERE p.id_contrato = c.id_contrato
+                         AND pd.tipo_concepto = 'cuota_terreno'
+                         AND COALESCE(pd.numero_cuota_afectada, 0) > 0
+                   ), 0) AS ultima_cuota_pagada,
                    c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
                    c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
                    c.estado, c.formato_contrato, c.documento_contrato,

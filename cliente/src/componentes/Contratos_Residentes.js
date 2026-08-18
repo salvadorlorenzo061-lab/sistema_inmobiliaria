@@ -321,6 +321,10 @@ function Contratos_Residentes() {
   const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
   const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
   const cuotasPagadasNumero = Math.max(parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0, 0);
+  const ultimaCuotaPagadaReal = Math.max(
+    parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0,
+    0
+  );
   const cuotasPendientesCalculadas = Math.max(cuotasCalculadasNumero - cuotasPagadasNumero, 0);
   const saldoPendienteVisibleCalculado = calcularSaldoPendienteDesdeCuota();
 
@@ -993,7 +997,8 @@ function Contratos_Residentes() {
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
-    setCuotas_pagadas_manual(String(val.cuotas_pagadas ?? '0'));
+    const ultimaCuotaPagadaPersistida = Math.max(parseInt(String(val.ultima_cuota_pagada ?? val.cuotas_pagadas ?? '0').trim(), 10) || 0, 0);
+    setCuotas_pagadas_manual(String(ultimaCuotaPagadaPersistida));
     const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
     setAnios_financiamiento(
       Number.isFinite(plazoContrato) && plazoContrato > 0
@@ -1370,6 +1375,15 @@ function Contratos_Residentes() {
                     className="form-control"
                     value={cuotas_pagadas_manual}
                     onChange={e => setCuotas_pagadas_manual(e.target.value)}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Última cuota pagada (real):</label>
+                  <input
+                    type="text"
+                    className="form-control bg-light"
+                    value={String(ultimaCuotaPagadaReal)}
+                    readOnly
                   />
                 </div>
                 <div className="col-md-3 mb-3">
