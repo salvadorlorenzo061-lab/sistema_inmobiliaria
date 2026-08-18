@@ -72,7 +72,7 @@ function Contratos_Residentes() {
       return Math.max(capitalFinanciado, 0);
     }
 
-    return Math.max(capitalFinanciado - (cuotasPagadas * cuotaTotal), 0);
+    return Math.max(totalConIntereses - (cuotasPagadas * cuotaTotal), 0);
   };
 
   const obtenerInicioPagosAutomatico = (fechaCompraValue, fechaFirmaValue) => {
@@ -354,13 +354,14 @@ function Contratos_Residentes() {
     const interesNumero = Number(interes_porcentaje || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
 
-    if (capitalFinanciado <= 0 || cuotasCalculadasNumero <= 0) {
+    if (montoTotalNumero <= 0 || cuotasCalculadasNumero <= 0) {
       return '';
     }
 
     const anios = Math.max(cuotasCalculadasNumero / 12, 1);
-    const totalConInteres = redondearMoneda(capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios));
-    return totalConInteres.toFixed(2);
+    const interesSobreFinanciado = capitalFinanciado * (interesNumero / 100) * anios;
+    const totalProyecto = redondearMoneda(montoTotalNumero + interesSobreFinanciado + engancheNumero);
+    return totalProyecto.toFixed(2);
   };
 
   const obtenerUltimaCuotaCalculada = () => {

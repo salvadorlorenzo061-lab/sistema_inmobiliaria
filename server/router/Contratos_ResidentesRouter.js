@@ -535,12 +535,17 @@ const backfillSaldoPendienteContrato = () => {
         UPDATE contratos_residentes c
         LEFT JOIN (
             SELECT p.id_contrato,
-                   COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                   COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
             FROM pagos p
             LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             GROUP BY p.id_contrato
         ) pagos ON pagos.id_contrato = c.id_contrato
-        SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0)
+        SET c.saldo_pendiente = GREATEST(
+            COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) + (
+                (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)) * COALESCE(c.interes_porcentaje, 0) / 100 * ((COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)) / 12)
+            ) - COALESCE(pagos.total_pagado, 0),
+            0
+        )
         WHERE c.saldo_pendiente IS NULL OR c.saldo_pendiente <= 0
     `, (err) => {
         if (err) {
@@ -566,7 +571,12 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
             LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             GROUP BY p.id_contrato
         ) pagos ON pagos.id_contrato = c.id_contrato
-        SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0)
+        SET c.saldo_pendiente = GREATEST(
+            COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) + (
+                (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)) * COALESCE(c.interes_porcentaje, 0) / 100 * ((COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)) / 12)
+            ) - COALESCE(pagos.total_pagado, 0),
+            0
+        )
         WHERE c.id_contrato = ?
     `, [idContratoSeguro], (err) => {
         if (err) {
@@ -852,7 +862,7 @@ router.post("/crear", (req, res) => {
         const saldoPendienteBase = (cuotasPagadasNormalizadas <= 0 && totalConIntereses > 0)
             ? totalConIntereses
             : (capitalFinanciado > 0
-                ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+                ? Math.max(totalConIntereses - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
                 : 0);
         const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
             ? Number(saldo_pendiente)
@@ -994,7 +1004,7 @@ router.put("/actualizar", (req, res) => {
     const saldoPendienteBase = (cuotasPagadasNormalizadas <= 0 && totalConIntereses > 0)
         ? totalConIntereses
         : (capitalFinanciado > 0
-            ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+            ? Math.max(totalConIntereses - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
             : 0);
     const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
         ? Number(saldo_pendiente)
