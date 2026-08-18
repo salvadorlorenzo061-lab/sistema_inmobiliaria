@@ -1138,13 +1138,15 @@ router.get("/meses-pendientes", (req, res) => {
 
         // Traer SOLO meses ya pagados exactos de esta forma: "Mes Año"
         const query = `
-            SELECT DISTINCT pd.mes_pagado
+            SELECT DISTINCT
+                pd.mes_pagado,
+                COALESCE(pd.numero_cuota_afectada, 0) AS numero_cuota_afectada
             FROM pagos p
             INNER JOIN pagos_detalle pd ON p.id_pago = pd.id_pago
-                        WHERE p.id_contrato = ?
-                            AND pd.tipo_concepto = 'cuota_terreno'
-                            AND pd.mes_pagado IS NOT NULL
-                            AND pd.mes_pagado != ''
+            WHERE p.id_contrato = ?
+              AND pd.tipo_concepto = 'cuota_terreno'
+              AND pd.mes_pagado IS NOT NULL
+              AND pd.mes_pagado != ''
         `;
 
         db.query(query, [id_contrato], (err2, result) => {
@@ -1195,9 +1197,18 @@ router.get("/meses-pendientes", (req, res) => {
                 }
             });
 
-            (result || []).forEach(row => {
+            (result || []).forEach((row) => {
                 const bruto = String(row?.mes_pagado || '').trim();
-                if (!bruto) return;
+                const cuotaAfectada = Number(row?.numero_cuota_afectada || 0);
+                if (!bruto && cuotaAfectada <= 0) return;
+
+                if (cuotaAfectada > 0) {
+                    const cuotaCoincidente = candidatosMeta.find((item) => Number(item.numero_cuota) === cuotaAfectada);
+                    if (cuotaCoincidente) {
+                        mesesPagadosSet.add(cuotaCoincidente.mes);
+                        return;
+                    }
+                }
 
                 const parsed = parsearEtiquetaMes(bruto);
                 if (parsed instanceof Date) {
@@ -1276,7 +1287,7 @@ router.get("/meses-pendientes", (req, res) => {
                 // ya atendidas antes del seguimiento puntual en Caja, por lo que se marcan
                 // desde la primera cuota financiada sin alterar el flujo actual del enganche.
                 const cuotasPagadasManual = Math.max(Number(contratoResult[0]?.cuotas_pagadas_manual || 0), 0);
-                if (cuotasPagadasManual > 0 && candidatosMeta.length > 0) {
+                if (cuotasPagadasManual > 0 && mesesPagadosSet.size === 0 && candidatosMeta.length > 0) {
                     const offsetInicioFinanciado = usaCuotaCeroEnganche ? 1 : 0;
                     for (let indice = 0; indice < cuotasPagadasManual; indice += 1) {
                         const cuotaHistorica = candidatosMeta[offsetInicioFinanciado + indice];
