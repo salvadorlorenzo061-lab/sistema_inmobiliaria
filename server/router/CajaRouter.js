@@ -1175,6 +1175,7 @@ router.get("/meses-pendientes", (req, res) => {
             const mesesPagadosSet = new Set();
             const legacySoloMes = [];
             const mesesAnuladosSet = new Set();
+            const cuotasPagadasRealPorNumero = new Set();
 
             (anulRows || []).forEach((row) => {
                 const bruto = String(row?.mes_pagado || '').trim();
@@ -1203,10 +1204,10 @@ router.get("/meses-pendientes", (req, res) => {
                 if (!bruto && cuotaAfectada <= 0) return;
 
                 if (cuotaAfectada > 0) {
+                    cuotasPagadasRealPorNumero.add(cuotaAfectada);
                     const cuotaCoincidente = candidatosMeta.find((item) => Number(item.numero_cuota) === cuotaAfectada);
                     if (cuotaCoincidente) {
                         mesesPagadosSet.add(cuotaCoincidente.mes);
-                        return;
                     }
                 }
 
@@ -1220,6 +1221,15 @@ router.get("/meses-pendientes", (req, res) => {
                     legacySoloMes.push(parsed.indiceMes);
                 }
             });
+
+            if (cuotasPagadasRealPorNumero.size > 0) {
+                const cuotaMasAltaPagada = Math.max(...Array.from(cuotasPagadasRealPorNumero));
+                candidatosMeta.forEach((item) => {
+                    if (Number(item.numero_cuota) <= cuotaMasAltaPagada) {
+                        mesesPagadosSet.add(item.mes);
+                    }
+                });
+            }
 
             let pendientesMeta = [];
             let mesesPagadosOrdenados = [];
