@@ -533,8 +533,11 @@ const ensureFinancialContractColumns = () => {
 const backfillSaldoPendienteContrato = () => {
     db.query(`
         UPDATE contratos_residentes
-        SET saldo_pendiente = COALESCE(saldo_pendiente, monto_total, 0)
-        WHERE saldo_pendiente IS NULL
+        SET saldo_pendiente = CASE
+            WHEN COALESCE(saldo_pendiente, 0) <= 0 THEN GREATEST(COALESCE(monto_total, 0) - COALESCE(enganche, 0), 0)
+            ELSE saldo_pendiente
+        END
+        WHERE saldo_pendiente IS NULL OR saldo_pendiente <= 0
     `, (err) => {
         if (err) {
             console.error('Error aplicando backfill global de saldo_pendiente en contratos_residentes:', err.message);
@@ -794,10 +797,12 @@ router.post("/crear", (req, res) => {
         const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
             ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
             : Number(monto_cuota || 0);
-        const saldoPendienteBase = capitalFinanciado > 0 && cuotasNormalizadas > 0
-            ? capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))
-            : montoTotalNumerico;
-        const saldoPendienteNumerico = Number(saldo_pendiente ?? saldoPendienteBase ?? 0);
+        const saldoPendienteBase = capitalFinanciado > 0
+            ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+            : 0;
+        const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) >= 0
+            ? Number(saldo_pendiente)
+            : saldoPendienteBase;
 
         obtenerCuotasPagadasReales(0, cuotasPagadasNormalizadas, (_realErr, cuotasPagadasDefinitivas) => {
             const queryInsert = `
@@ -923,10 +928,12 @@ router.put("/actualizar", (req, res) => {
     const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
         ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
         : Number(monto_cuota || 0);
-    const saldoPendienteBase = capitalFinanciado > 0 && cuotasNormalizadas > 0
-        ? capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))
-        : montoTotalNumerico;
-    const saldoPendienteNumerico = Number(saldo_pendiente ?? saldoPendienteBase ?? 0);
+    const saldoPendienteBase = capitalFinanciado > 0
+        ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+        : 0;
+    const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) >= 0
+        ? Number(saldo_pendiente)
+        : saldoPendienteBase;
 
     obtenerCuotasPagadasReales(id_contrato, cuotasPagadasNormalizadas, (realErr, cuotasPagadasDefinitivas) => {
         if (realErr) {
