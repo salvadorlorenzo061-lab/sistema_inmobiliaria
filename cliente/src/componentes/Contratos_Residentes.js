@@ -47,7 +47,6 @@ function Contratos_Residentes() {
     const plazoEnvio = obtenerPlazoEnvio();
     const cuotaTotal = Number(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotasEnvio, plazoEnvio) || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
-    const saldoPersistido = Number(saldo_pendiente || 0);
     const totalConIntereses = (() => {
       if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) {
         return 0;
@@ -59,10 +58,6 @@ function Contratos_Residentes() {
       const anios = cuotasNumero / 12;
       return Number((capitalFinanciado + (capitalFinanciado * (Number(interes_porcentaje || 0) / 100) * anios)).toFixed(2));
     })();
-
-    if (Number.isFinite(saldoPersistido) && saldoPersistido > 0) {
-      return saldoPersistido;
-    }
 
     if (totalConIntereses > 0 && cuotasPagadas <= 0) {
       return totalConIntereses;
@@ -360,8 +355,25 @@ function Contratos_Residentes() {
 
     const anios = Math.max(cuotasCalculadasNumero / 12, 1);
     const interesSobreFinanciado = capitalFinanciado * (interesNumero / 100) * anios;
-    const totalProyecto = redondearMoneda(montoTotalNumero + interesSobreFinanciado + engancheNumero);
-    return totalProyecto.toFixed(2);
+    const totalFinanciadoConIntereses = redondearMoneda(capitalFinanciado + interesSobreFinanciado);
+    return totalFinanciadoConIntereses.toFixed(2);
+  };
+
+  const obtenerPrecioProyectoConEngancheEIntereses = () => {
+    const montoTotalNumero = Number(monto_total || 0);
+    const engancheNumero = Number(enganche || 0);
+    const interesNumero = Number(interes_porcentaje || 0);
+    const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
+
+    if (montoTotalNumero <= 0 || cuotasCalculadasNumero <= 0) {
+      return '';
+    }
+
+    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
+    const interesSobreFinanciado = capitalFinanciado * (interesNumero / 100) * anios;
+    const totalFinanciadoConIntereses = redondearMoneda(capitalFinanciado + interesSobreFinanciado);
+    const totalProyectoConEnganche = redondearMoneda(totalFinanciadoConIntereses + engancheNumero);
+    return totalProyectoConEnganche.toFixed(2);
   };
 
   const obtenerUltimaCuotaCalculada = () => {
@@ -390,6 +402,7 @@ function Contratos_Residentes() {
   };
 
   const precioTotalConInteresesCalculado = obtenerPrecioTotalConIntereses();
+  const precioProyectoConEngancheEInteresesCalculado = obtenerPrecioProyectoConEngancheEIntereses();
   const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
 
   const normalizarMesInicioPagos = (valor) => {
@@ -994,7 +1007,6 @@ function Contratos_Residentes() {
     );
     const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
     const cuotasPagadasExistentes = Math.max(parseInt(String(val.cuotas_pagadas || '0').trim(), 10) || 0, 0);
-    const saldoPersistido = Number(val.saldo_pendiente ?? 0);
     const totalConInteresesContrato = (() => {
       if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) return 0;
       const cuotasNumero = Number(val.cuotas_pactadas || val.plazo_meses || 0);
@@ -1003,13 +1015,11 @@ function Contratos_Residentes() {
       const anios = cuotasNumero / 12;
       return Number((capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios)).toFixed(2));
     })();
-    const saldoCalculado = Number.isFinite(saldoPersistido) && saldoPersistido > 0
-      ? saldoPersistido
-      : (totalConInteresesContrato > 0 && cuotasPagadasExistentes <= 0
-        ? totalConInteresesContrato
-        : (cuotaTotalContrato > 0
-          ? Math.max(capitalFinanciado - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
-          : Number(val.monto_total ?? 0)));
+    const saldoCalculado = totalConInteresesContrato > 0 && cuotasPagadasExistentes <= 0
+      ? totalConInteresesContrato
+      : (cuotaTotalContrato > 0
+        ? Math.max(totalConInteresesContrato - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
+        : Math.max(capitalFinanciado, 0));
 
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
@@ -1455,6 +1465,10 @@ function Contratos_Residentes() {
                   <input type="text" className="form-control bg-light" value={precioTotalConInteresesCalculado} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Precio inmueble + enganche + intereses (Q):</label>
+                  <input type="text" className="form-control bg-light border-warning text-warning fw-bold" value={precioProyectoConEngancheEInteresesCalculado} readOnly />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
                   <input type="text" className="form-control bg-light text-success fw-bold" value={montoCuotaCalculado} readOnly />
                 </div>
@@ -1734,6 +1748,10 @@ function Contratos_Residentes() {
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Precio Total con Intereses (Q):</label>
                   <input type="text" className="form-control bg-light" value={precioTotalConInteresesCalculado} readOnly />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Precio inmueble + enganche + intereses (Q):</label>
+                  <input type="text" className="form-control bg-light border-warning text-warning fw-bold" value={precioProyectoConEngancheEInteresesCalculado} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
