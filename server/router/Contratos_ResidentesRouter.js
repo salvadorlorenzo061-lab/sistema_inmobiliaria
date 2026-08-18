@@ -561,7 +561,7 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
         UPDATE contratos_residentes c
         LEFT JOIN (
             SELECT p.id_contrato,
-                   COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                   COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
             FROM pagos p
             LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             GROUP BY p.id_contrato

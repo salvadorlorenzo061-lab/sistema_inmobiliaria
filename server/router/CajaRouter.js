@@ -1755,7 +1755,7 @@ router.post("/procesar-pago", (req, res) => {
                         FROM pagos_detalle pd_capital
                         INNER JOIN pagos p_capital ON p_capital.id_pago = pd_capital.id_pago
                         WHERE p_capital.id_contrato = c.id_contrato
-                          AND pd_capital.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital')
+                          AND pd_capital.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital')
                     ), 0) AS capital_pagado_total,
                     COALESCE((
                         SELECT SUM(pd_enganche.subtotal)
@@ -2102,7 +2102,7 @@ router.post("/procesar-pago", (req, res) => {
                 }
             }
 
-            const capitalCobroTotal = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
+            const capitalCobroTotal = redondear2(montoTerrenoTotal + montoInteresTotal + montoServiciosTotal + montoAbonoCapitalTotal + moraTotal);
             if (capitalCobroTotal > redondear2(Math.max(saldoActual, 0))) {
                 return db.rollback(() => res.status(400).send(`El capital a cobrar excede el saldo pendiente del contrato (Q${saldoActual.toFixed(2)}).`));
             }
@@ -2557,20 +2557,48 @@ router.post("/procesar-pago", (req, res) => {
                                                                 total: desgloseTerreno.total
                                                             });
                                                         }
+                                                    });
 
-                                                        serviciosSolicitados
-                                                            .filter((servicio) => !servicio.es_cobro_unico)
-                                                            .forEach((servicio) => {
+                                                    serviciosSolicitados
+                                                        .filter((servicio) => !servicio.es_extraordinario && !servicio.es_cobro_unico)
+                                                        .forEach((servicio) => {
+                                                            mesesAProcesar.forEach((mes) => {
+                                                                const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
+                                                                detalleCobro.push({
+                                                                    concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                    mes,
+                                                                    monto_base: desgloseServicio.subtotal,
+                                                                    iva: desgloseServicio.iva,
+                                                                    total: desgloseServicio.total
+                                                                });
+                                                            });
+                                                        });
+
+                                                    serviciosSolicitados
+                                                        .filter((servicio) => !servicio.es_extraordinario && servicio.es_cobro_unico)
+                                                        .forEach((servicio) => {
                                                             const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
                                                             detalleCobro.push({
-                                                                concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
-                                                                mes,
+                                                                concepto: `Servicio único: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                mes: mesesAProcesar[0] || '',
                                                                 monto_base: desgloseServicio.subtotal,
                                                                 iva: desgloseServicio.iva,
                                                                 total: desgloseServicio.total
                                                             });
                                                         });
-                                                    });
+
+                                                    serviciosSolicitados
+                                                        .filter((servicio) => servicio.es_extraordinario)
+                                                        .forEach((servicio) => {
+                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
+                                                            detalleCobro.push({
+                                                                concepto: `Cargo extraordinario: ${servicio?.nombre_servicio || `ID ${servicio?.id_pago_extra || 'N/A'}`}`,
+                                                                mes: mesesAProcesar[0] || '',
+                                                                monto_base: desgloseServicio.subtotal,
+                                                                iva: desgloseServicio.iva,
+                                                                total: desgloseServicio.total
+                                                            });
+                                                        });
 
                                                     if (montoEngancheTotal > 0) {
                                                         const desgloseEnganche = calcularComponentesFiscalmente(montoEngancheTotal);
@@ -2707,7 +2735,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         banco_pago: banco_pago || '',
                                                         fecha_operacion: fecha_operacion || '',
                                                         boleta_referencia: boleta_referencia || '',
-                                                        saldo_pendiente_restante: redondear2(Math.max(saldoActual - montoTerrenoTotal - montoEngancheTotal - montoAbonoCapitalTotal, 0)),
+                                                        saldo_pendiente_restante: redondear2(Math.max(saldoActual - montoTerrenoTotal - montoInteresTotal - montoAbonoCapitalTotal, 0)),
                                                         enganche_pendiente_restante: redondear2(Math.max(enganchePendienteContrato - montoEngancheTotal, 0)),
                                                         no_referencia: correlativoFinal,
                                                         id_pago: lastIdPago,
@@ -2824,7 +2852,7 @@ router.post("/procesar-pago", (req, res) => {
                                             };
 
                                             sincronizarMorosidadPagada(() => {
-                                            const descuentoCapital = redondear2(montoTerrenoTotal + montoEngancheTotal + montoAbonoCapitalTotal);
+                                            const descuentoCapital = redondear2(montoTerrenoTotal + montoInteresTotal + montoAbonoCapitalTotal);
                                             const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, finalizarCommit);
 
                                             if (descuentoCapital > 0) {
@@ -2834,7 +2862,7 @@ router.post("/procesar-pago", (req, res) => {
                                                     UPDATE contratos_residentes c
                                                     LEFT JOIN (
                                                         SELECT p.id_contrato,
-                                                               COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                                                               COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
                                                         FROM pagos p
                                                         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                                         GROUP BY p.id_contrato

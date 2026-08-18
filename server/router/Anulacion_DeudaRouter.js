@@ -486,9 +486,15 @@ router.post('/anular-por-correlativo', (req, res) => {
                 const mesesUnicos = [...new Set(mesList.map((mes) => String(mes || '').trim()).filter(Boolean))];
                 return mesesUnicos.length;
             })();
-        // monto_total del contrato es el capital completo (incluye el enganche), por lo que al
-        // anular hay que devolver los tres conceptos de capital, no solo terreno y abono.
-        const capitalRestaurar = parseFloat((principalTerreno + principalEnganche + principalAbonoCapital).toFixed(2));
+        const capitalRestaurar = parseFloat(
+            (Array.isArray(pago?.detalle_cobro) ? pago.detalle_cobro : [])
+                .filter((item) => {
+                    const tipo = String(item?.tipo_concepto || '').toLowerCase();
+                    return ['cuota_terreno', 'interes', 'abono_capital'].includes(tipo);
+                })
+                .reduce((sum, item) => sum + Number(item?.subtotal || 0), 0)
+                .toFixed(2)
+        );
         const correlativoFinal = String(pago.no_referencia || correlativo || '').trim();
         if (!Number.isFinite(principalAnular) || principalAnular <= 0) {
             return res.status(400).send({ message: 'El correlativo no tiene detalle válido para reversar el cargo.' });
@@ -528,7 +534,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                 UPDATE contratos_residentes c
                                 LEFT JOIN (
                                     SELECT p.id_contrato,
-                                           COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'enganche', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                                           COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
                                     FROM pagos p
                                     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                     GROUP BY p.id_contrato

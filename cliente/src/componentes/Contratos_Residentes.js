@@ -1142,6 +1142,11 @@ function Contratos_Residentes() {
     setCurrentPage(1);
   };
 
+  const limpiarBusquedaContrato = () => {
+    setBusqueda("");
+    setCurrentPage(1);
+  };
+
   const thCompacto = {
     fontSize: '0.88rem',
     padding: '0.45rem 0.35rem',
@@ -1163,7 +1168,23 @@ function Contratos_Residentes() {
       <div className="row bg-light p-3 rounded shadow-sm align-items-center">
         <div className="col-md-4"><h3 className="fw-bold m-0 text-primary">📑 CONTRATOS DE RESIDENTES</h3></div>
         <div className="col-md-5">
-          <input type="text" placeholder="Buscar por código de contrato o residente..." className="form-control" value={busqueda} onChange={handleBusquedaChange} />
+          <div className="input-group">
+            <input
+              type="text"
+              placeholder="Buscar por código de contrato o residente..."
+              className="form-control"
+              value={busqueda}
+              onChange={handleBusquedaChange}
+            />
+            <button type="button" className="btn btn-primary fw-bold" onClick={() => setCurrentPage(1)}>
+              Buscar
+            </button>
+            {busqueda.trim() && (
+              <button type="button" className="btn btn-outline-secondary" onClick={limpiarBusquedaContrato}>
+                Limpiar
+              </button>
+            )}
+          </div>
         </div>
         <div className="col-md-3 text-end">
           <button className="btn btn-primary fw-bold w-100" onClick={() => { limpiarCampos(); setShowRegModal(true); }}>➕ APERTURAR CONTRATO</button>
