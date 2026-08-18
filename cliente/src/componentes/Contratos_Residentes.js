@@ -34,7 +34,25 @@ function Contratos_Residentes() {
       return "0.00";
     }
 
+    // La cuota del contrato debe reflejar la cuota total del financiamiento:
+    // capital + intereses. No debe mostrarse solo el capital por cuota.
     return Number(calcularCuotaFija(capitalFinanciado, interesNumero, cuotasNumero) || 0).toFixed(2);
+  };
+
+  const calcularSaldoPendienteDesdeCuota = () => {
+    const montoTotalNumero = Number(monto_total || 0);
+    const engancheNumero = Number(enganche || 0);
+    const cuotasPagadas = Math.max(parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0, 0);
+    const cuotasEnvio = obtenerCuotasEnvio();
+    const plazoEnvio = obtenerPlazoEnvio();
+    const cuotaTotal = Number(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotasEnvio, plazoEnvio) || 0);
+    const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
+
+    if (!Number.isFinite(cuotaTotal) || cuotaTotal <= 0) {
+      return Math.max(capitalFinanciado, 0);
+    }
+
+    return Math.max(capitalFinanciado - (cuotasPagadas * cuotaTotal), 0);
   };
 
   const obtenerInicioPagosAutomatico = (fechaCompraValue, fechaFirmaValue) => {
@@ -304,6 +322,7 @@ function Contratos_Residentes() {
   const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
   const cuotasPagadasNumero = Math.max(parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0, 0);
   const cuotasPendientesCalculadas = Math.max(cuotasCalculadasNumero - cuotasPagadasNumero, 0);
+  const saldoPendienteVisibleCalculado = calcularSaldoPendienteDesdeCuota();
 
   const obtenerPrecioTotalConIntereses = () => {
     const montoTotalNumero = Number(monto_total || 0);
@@ -385,9 +404,11 @@ function Contratos_Residentes() {
       cuotasEnvio,
       plazoEnvio
     );
-    const saldoPendienteVisible = Number(saldo_pendiente || monto_total || 0) > 0
-      ? saldo_pendiente || monto_total || '0'
-      : monto_total || '0';
+    const saldoPendienteVisible = String(
+      Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
+        ? Number(saldo_pendiente)
+        : saldoPendienteVisibleCalculado
+    );
 
     const payload = {
       codigo_contrato: String(codigo_contrato || '').trim(),
@@ -937,6 +958,20 @@ function Contratos_Residentes() {
 
   const abrirEditarModal = (val) => {
     const proyectoResuelto = resolverProyectoContrato(val);
+    const cuotaTotalContrato = Number(
+      calcularMontoCuotaContrato(
+        val.monto_total,
+        val.enganche ?? 0,
+        val.interes_porcentaje ?? 0,
+        val.cuotas_pactadas || val.plazo_meses || 0,
+        val.cuotas_pactadas || val.plazo_meses || 0
+      ) || 0
+    );
+    const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
+    const cuotasPagadasExistentes = Math.max(parseInt(String(val.cuotas_pagadas || '0').trim(), 10) || 0, 0);
+    const saldoCalculado = cuotaTotalContrato > 0
+      ? Math.max(capitalFinanciado - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
+      : Number(val.saldo_pendiente ?? val.monto_total ?? 0);
 
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
@@ -946,7 +981,7 @@ function Contratos_Residentes() {
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
     setId_tipo_contrato(val.id_tipo_contrato);
     setMonto_total(val.monto_total);
-    setSaldo_pendiente(String(val.saldo_pendiente ?? val.monto_total ?? '0'));
+    setSaldo_pendiente(String(saldoCalculado));
     // Las cuotas pactadas manda; el plazo se alinea a ellas para que la cuota que calcula el
     // contrato sea la misma que cobra Caja (contratos antiguos podian traer 36 cuotas / 60 meses).
     setCuotas_pactadas(val.cuotas_pactadas || val.plazo_meses || '');
@@ -1320,7 +1355,7 @@ function Contratos_Residentes() {
                       fontSize: '1.05rem'
                     }}
                   >
-                    Q {Number(saldo_pendiente || monto_total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    Q {Number(saldoPendienteVisibleCalculado || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
                 <div className="col-md-3 mb-3">
@@ -1601,7 +1636,7 @@ function Contratos_Residentes() {
                       fontSize: '1.05rem'
                     }}
                   >
-                    Q {Number(saldo_pendiente || monto_total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    Q {Number(saldoPendienteVisibleCalculado || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
                 <div className="col-md-3 mb-3">
