@@ -399,6 +399,34 @@ const Caja = () => {
     const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '').split(' ')[0] || '');
     const tieneAnioEnEtiquetaMes = (valor = '') => /\b(19|20)\d{2}\b/.test(String(valor || ''));
 
+    const parsearEtiquetaMes = (valor = '') => {
+        const limpio = String(valor || '').trim().replace(/\s+/g, ' ');
+        if (!limpio) return null;
+
+        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+        if (conAnio) {
+            const indice = obtenerIndiceMesLocal(conAnio[1]);
+            if (indice >= 0) {
+                return new Date(Number(conAnio[2]), indice, 1);
+            }
+        }
+
+        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
+        if (soloMes) {
+            const indice = obtenerIndiceMesLocal(soloMes[1]);
+            if (indice >= 0) {
+                return new Date(new Date().getFullYear(), indice, 1);
+            }
+        }
+
+        const indice = obtenerIndiceMesLocal(limpio);
+        if (indice >= 0) {
+            return new Date(new Date().getFullYear(), indice, 1);
+        }
+
+        return null;
+    };
+
     // La cuota 0 (enganche) es SIEMPRE el mes de compra/firma del contrato que envia el backend.
     // Antes se tomaba "el primer mes pendiente", por eso la etiqueta y el monto cambiaban segun
     // los meses que el cajero marcaba. Ahora depende solo de datos del contrato.
