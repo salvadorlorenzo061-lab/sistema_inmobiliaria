@@ -846,10 +846,15 @@ router.post("/crear", (req, res) => {
         const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
             ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
             : Number(monto_cuota || 0);
-        const saldoPendienteBase = capitalFinanciado > 0
-            ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+        const totalConIntereses = (capitalFinanciado > 0 && cuotasNormalizadas > 0)
+            ? Number((capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))).toFixed(2))
             : 0;
-        const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) >= 0
+        const saldoPendienteBase = (cuotasPagadasNormalizadas <= 0 && totalConIntereses > 0)
+            ? totalConIntereses
+            : (capitalFinanciado > 0
+                ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+                : 0);
+        const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
             ? Number(saldo_pendiente)
             : saldoPendienteBase;
 
@@ -983,10 +988,15 @@ router.put("/actualizar", (req, res) => {
     const montoCuotaNormalizado = (cuotasNormalizadas > 0 && capitalFinanciado > 0)
         ? calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)
         : Number(monto_cuota || 0);
-    const saldoPendienteBase = capitalFinanciado > 0
-        ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+    const totalConIntereses = (capitalFinanciado > 0 && cuotasNormalizadas > 0)
+        ? Number((capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))).toFixed(2))
         : 0;
-    const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) >= 0
+    const saldoPendienteBase = (cuotasPagadasNormalizadas <= 0 && totalConIntereses > 0)
+        ? totalConIntereses
+        : (capitalFinanciado > 0
+            ? Math.max(capitalFinanciado - (cuotasPagadasNormalizadas * Number(montoCuotaNormalizado || 0)), 0)
+            : 0);
+    const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
         ? Number(saldo_pendiente)
         : saldoPendienteBase;
 

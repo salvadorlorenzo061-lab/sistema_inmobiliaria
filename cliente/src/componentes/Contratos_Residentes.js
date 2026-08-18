@@ -48,9 +48,24 @@ function Contratos_Residentes() {
     const cuotaTotal = Number(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotasEnvio, plazoEnvio) || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
     const saldoPersistido = Number(saldo_pendiente || 0);
+    const totalConIntereses = (() => {
+      if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) {
+        return 0;
+      }
+      const cuotasNumero = Number(obtenerCuotasEnvio() || 0);
+      if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
+        return 0;
+      }
+      const anios = cuotasNumero / 12;
+      return Number((capitalFinanciado + (capitalFinanciado * (Number(interes_porcentaje || 0) / 100) * anios)).toFixed(2));
+    })();
 
-    if (Number.isFinite(saldoPersistido) && saldoPersistido >= 0 && String(saldo_pendiente || '').trim() !== '') {
+    if (Number.isFinite(saldoPersistido) && saldoPersistido > 0) {
       return saldoPersistido;
+    }
+
+    if (totalConIntereses > 0 && cuotasPagadas <= 0) {
+      return totalConIntereses;
     }
 
     if (!Number.isFinite(cuotaTotal) || cuotaTotal <= 0) {
@@ -979,11 +994,21 @@ function Contratos_Residentes() {
     const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
     const cuotasPagadasExistentes = Math.max(parseInt(String(val.cuotas_pagadas || '0').trim(), 10) || 0, 0);
     const saldoPersistido = Number(val.saldo_pendiente ?? 0);
-    const saldoCalculado = Number.isFinite(saldoPersistido) && saldoPersistido >= 0
+    const totalConInteresesContrato = (() => {
+      if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) return 0;
+      const cuotasNumero = Number(val.cuotas_pactadas || val.plazo_meses || 0);
+      if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) return 0;
+      const interesNumero = Number(val.interes_porcentaje ?? 0);
+      const anios = cuotasNumero / 12;
+      return Number((capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios)).toFixed(2));
+    })();
+    const saldoCalculado = Number.isFinite(saldoPersistido) && saldoPersistido > 0
       ? saldoPersistido
-      : (cuotaTotalContrato > 0
-        ? Math.max(capitalFinanciado - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
-        : Number(val.monto_total ?? 0));
+      : (totalConInteresesContrato > 0 && cuotasPagadasExistentes <= 0
+        ? totalConInteresesContrato
+        : (cuotaTotalContrato > 0
+          ? Math.max(capitalFinanciado - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
+          : Number(val.monto_total ?? 0)));
 
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
