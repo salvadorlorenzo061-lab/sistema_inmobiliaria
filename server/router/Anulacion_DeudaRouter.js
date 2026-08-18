@@ -473,6 +473,19 @@ router.post('/anular-por-correlativo', (req, res) => {
         const principalTerreno = parseFloat(pago.principal_terreno || 0);
         const principalEnganche = parseFloat(pago.principal_enganche || 0);
         const principalAbonoCapital = parseFloat(pago.principal_abono_capital || 0);
+        const cuotasTerrenoAfectadas = [...new Set(
+            (Array.isArray(pago?.detalle_cobro) ? pago.detalle_cobro : [])
+                .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'cuota_terreno')
+                .map((item) => Number(item?.numero_cuota_afectada || 0))
+                .filter((numero) => Number.isInteger(numero) && numero > 0)
+        )];
+        const cuotasRevertidas = cuotasTerrenoAfectadas.length
+            ? cuotasTerrenoAfectadas.length
+            : (() => {
+                const mesList = (Array.isArray(pago?.meses_pagados) ? pago.meses_pagados : String(pago?.meses_pagados || '').split(','));
+                const mesesUnicos = [...new Set(mesList.map((mes) => String(mes || '').trim()).filter(Boolean))];
+                return mesesUnicos.length;
+            })();
         // monto_total del contrato es el capital completo (incluye el enganche), por lo que al
         // anular hay que devolver los tres conceptos de capital, no solo terreno y abono.
         const capitalRestaurar = parseFloat((principalTerreno + principalEnganche + principalAbonoCapital).toFixed(2));
@@ -511,8 +524,8 @@ router.post('/anular-por-correlativo', (req, res) => {
                         if (txErr) return res.status(500).send({ message: 'Error de transacción al anular cobro.' });
 
                         db.query(
-                            'UPDATE contratos_residentes SET saldo_pendiente = COALESCE(saldo_pendiente, monto_total, 0) + ? WHERE id_contrato = ?',
-                            [capitalRestaurar, pago.id_contrato],
+                            'UPDATE contratos_residentes SET saldo_pendiente = COALESCE(saldo_pendiente, monto_total, 0) + ?, cuotas_pagadas = GREATEST(COALESCE(cuotas_pagadas, 0) - ?, 0) WHERE id_contrato = ?',
+                            [capitalRestaurar, cuotasRevertidas, pago.id_contrato],
                             (saldoErr) => {
                                 if (saldoErr) {
                                     return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
