@@ -450,31 +450,38 @@ const Caja = () => {
         };
     };
 
-    const esMesVencidoParaMoraLocal = (mesTexto = '') => {
-        const hoy = new Date();
-        const hoyMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const esMesVencidoParaMoraLocal = (mesTexto = '', fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5) => {
         const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
         if (!limpio) return false;
 
-        const conAnio = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
-        if (conAnio) {
-            const indiceMes = obtenerIndiceMesLocal(conAnio[1]);
-            if (indiceMes >= 0) {
-                const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
-                return fechaMes < hoyMes;
-            }
-        }
+        const fechaContratoMatch = String(fechaContratoRaw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const fechaContrato = fechaContratoMatch
+            ? new Date(Number(fechaContratoMatch[1]), Number(fechaContratoMatch[2]) - 1, Number(fechaContratoMatch[3]))
+            : (fechaContratoRaw ? new Date(fechaContratoRaw) : null);
+        const mesCuota = parsearEtiquetaMes(mesTexto);
 
-        const soloMes = limpio.match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$/);
-        if (soloMes) {
-            const indiceMes = obtenerIndiceMesLocal(soloMes[1]);
-            if (indiceMes >= 0) {
-                const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
-                return fechaMes < hoyMes;
-            }
-        }
+        if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return false;
+        if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return false;
 
-        return false;
+        const primerMesCuota = new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
+        const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
+        if (mesEvaluado < primerMesCuota) return false;
+
+        const hoy = new Date();
+        const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        if (mesEvaluado > mesActual) return false;
+
+        const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
+        const fechaVencimiento = new Date(
+            mesCuota.getFullYear(),
+            mesCuota.getMonth(),
+            Math.min(fechaContrato.getDate(), ultimoDiaMes)
+        );
+        const diasGracia = Math.max(0, Math.min(31, Number(diasGraciaRaw ?? 5)));
+        const fechaInicioMora = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), fechaVencimiento.getDate());
+        fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia);
+
+        return hoy >= fechaInicioMora;
     };
 
     const compararMesesMoraLocal = (mesA = '', mesB = '') => {
@@ -535,7 +542,7 @@ const Caja = () => {
             const moraMes = morasPendientes.find((mora) => {
                 const mesMora = String(mora?.mes_atrasado || '').trim();
                 return mesMora
-                    && esMesVencidoParaMoraLocal(mesMora)
+                    && esMesVencidoParaMoraLocal(mesMora, datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, datosDeuda?.dia_pago_limite ?? 5)
                     && compararMesesMoraLocal(mesSeleccionado, mesMora);
             });
 
@@ -1206,9 +1213,10 @@ const Caja = () => {
                     saldo_pendiente: datosDeuda?.saldo_pendiente || 0
                 }, empresaPdf);
                 
+                const montoCuotaFinanciadaCobrada = Math.max(parseFloat(montoTerreno || 0) + parseFloat(montoInteresSeleccionado || 0), 0);
                 setDatosDeuda(prev => ({
                     ...prev,
-                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheSeleccionado || 0), 0),
+                    saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoCuotaFinanciadaCobrada, 0),
                     enganche_pendiente: Math.max(parseFloat(prev?.enganche_pendiente || 0) - parseFloat(montoEngancheContratoAplicado || 0), 0)
                 }));
 
