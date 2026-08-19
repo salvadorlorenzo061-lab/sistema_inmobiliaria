@@ -405,7 +405,7 @@ function Contratos_Residentes() {
   const precioProyectoConEngancheEInteresesCalculado = obtenerPrecioProyectoConEngancheEIntereses();
   const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
 
-  
+
   const normalizarMesInicioPagos = (valor) => {
     const numero = parseInt(String(valor || '').trim(), 10);
     const respaldo = parseInt(String(inicioPagosAutomatico.mes || '1').trim(), 10) || 1;
@@ -420,6 +420,8 @@ function Contratos_Residentes() {
     return String(Math.max(2000, numero));
   };
 
+
+  
   const validarContrato = () => {
     if (!codigo_contrato.trim()) return "Debe generar o escribir el código del contrato.";
     if (!id_residente) return "Debe seleccionar un residente.";
