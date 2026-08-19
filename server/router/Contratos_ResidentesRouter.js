@@ -530,6 +530,34 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
 };
 
+// Migra contratos históricos calculados automáticamente con ROUND a la regla
+// actual de cuotas enteras hacia arriba. Una cuota manual diferente se conserva.
+const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
+    const cuotasSql = 'COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1)';
+    const capitalSql = 'GREATEST(ROUND(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0), 0), 0)';
+    const totalSql = `(${capitalSql} + (${capitalSql} * COALESCE(c.interes_porcentaje, 0) / 100 * GREATEST(${cuotasSql} / 12, 1)))`;
+    const cuotaAnteriorSql = `ROUND(${totalSql} / ${cuotasSql}, 0)`;
+    const cuotaNuevaSql = `CEIL(${totalSql} / ${cuotasSql})`;
+
+    db.query(`
+        UPDATE contratos_residentes c
+        SET c.monto_cuota = ${cuotaNuevaSql}
+        WHERE ${cuotasSql} > 0
+          AND ${capitalSql} > 0
+          AND (
+              COALESCE(c.monto_cuota, 0) <= 0
+              OR ABS(COALESCE(c.monto_cuota, 0) - ${cuotaAnteriorSql}) < 0.01
+          )
+    `, (err, result) => {
+        if (err) {
+            console.error('Error normalizando cuotas automáticas existentes:', err.message);
+            return callback(err);
+        }
+        console.log(`Cuotas automáticas existentes normalizadas: ${result?.affectedRows || 0}`);
+        return callback(null);
+    });
+};
+
 const backfillSaldoPendienteContrato = () => {
     db.query(`
         UPDATE contratos_residentes c
@@ -546,7 +574,6 @@ const backfillSaldoPendienteContrato = () => {
             ) - COALESCE(pagos.total_pagado, 0),
             0
         )
-        WHERE c.saldo_pendiente IS NULL OR c.saldo_pendiente <= 0
     `, (err) => {
         if (err) {
             console.error('Error aplicando backfill global de saldo_pendiente en contratos_residentes:', err.message);
@@ -672,7 +699,7 @@ ensureProyectoColumn();
 ensureFormatoContratoColumn();
 ensureInteresPorcentajeColumn();
 ensureFinancialContractColumns();
-backfillSaldoPendienteContrato();
+normalizarCuotasAutomaticasExistentes(() => backfillSaldoPendienteContrato());
 sincronizarCuotasPagadasContrato(null, () => {
     console.log('Backfill global de cuotas_pagadas aplicado a contratos_residentes.');
 });
