@@ -44,8 +44,7 @@ function Contratos_Residentes() {
     const engancheNumero = Number(enganche || 0);
     const cuotasPagadas = Math.max(parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0, 0);
     const cuotasEnvio = obtenerCuotasEnvio();
-    const plazoEnvio = obtenerPlazoEnvio();
-    const cuotaTotal = Number(calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotasEnvio, plazoEnvio) || 0);
+    const cuotaTotal = Number(montoCuotaGuardable || 0);
     const capitalFinanciado = Math.max(montoTotalNumero - engancheNumero, 0);
     const totalConIntereses = (() => {
       if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) {
@@ -67,6 +66,7 @@ function Contratos_Residentes() {
       return Math.max(capitalFinanciado, 0);
     }
 
+    if (cuotasPagadas >= Number(cuotasEnvio || 0)) return 0;
     return Math.max(totalConIntereses - (cuotasPagadas * cuotaTotal), 0);
   };
 
@@ -146,6 +146,7 @@ function Contratos_Residentes() {
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
   const [plazo_meses, setPlazo_meses] = useState("");
   const [anios_financiamiento, setAnios_financiamiento] = useState("");
+  const [monto_cuota_manual, setMonto_cuota_manual] = useState("");
   const [cuotas_pagadas_manual, setCuotas_pagadas_manual] = useState("0");
   const [saldo_pendiente, setSaldo_pendiente] = useState("0");
   const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
@@ -333,6 +334,11 @@ function Contratos_Residentes() {
   const obtenerCuotasEnvio = () => String(cuotas_pactadas || plazo_meses || '').trim();
   const obtenerPlazoEnvio = () => String(plazo_meses || cuotas_pactadas || '').trim();
   const montoCuotaCalculado = calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses);
+  const montoCuotaGuardable = (() => {
+    const manual = Number(String(monto_cuota_manual || '').trim());
+    if (Number.isFinite(manual) && manual > 0) return Math.round(manual);
+    return Math.ceil(Number(montoCuotaCalculado || 0));
+  })();
   const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
   const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
   const cuotasPagadasNumero = Math.max(parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0, 0);
@@ -385,15 +391,16 @@ function Contratos_Residentes() {
       return '';
     }
 
-    const cuotaRegular = Number(montoCuotaCalculado || 0);
+    const cuotaRegular = Number(montoCuotaGuardable || 0);
     if (!Number.isFinite(cuotaRegular) || cuotaRegular <= 0) {
       return '';
     }
 
-    // La cuota fija del contrato ya incorpora el interes distribuido con la regla
-    // de amortizacion actual del sistema. La ultima cuota debe respetar esa misma
-    // cuota fija para no mostrar un remanente artificial por redondeo.
-    const ultimaCuota = redondearMoneda(cuotaRegular);
+    const totalFinanciado = Number(obtenerPrecioTotalConIntereses() || 0);
+    const ultimaCuota = redondearMoneda(Math.max(
+      totalFinanciado - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0)),
+      0
+    ));
     if (ultimaCuota <= 0) {
       return '';
     }
@@ -428,6 +435,10 @@ function Contratos_Residentes() {
     if (!id_tipo_contrato) return "Debe seleccionar el tipo de contrato.";
     if (!String(monto_total || '').trim()) return "Debe ingresar el precio total del contrato.";
     if (!String(obtenerCuotasEnvio() || '').trim()) return "Debe ingresar la cantidad de cuotas.";
+    if (montoCuotaGuardable <= 0) return "Debe indicar un monto de cuota válido.";
+    if (cuotasCalculadasNumero > 1 && (montoCuotaGuardable * (cuotasCalculadasNumero - 1)) >= Number(precioTotalConInteresesCalculado || 0)) {
+      return "La cuota regular es demasiado alta: la última cuota debe ser mayor que cero.";
+    }
     if (dia_pago_limite === '') return "Debe indicar los días de gracia.";
     if (!fecha_firma) return "Debe ingresar la fecha de firma.";
     if (!fecha_compra) return "Debe ingresar la fecha de compra.";
@@ -438,13 +449,6 @@ function Contratos_Residentes() {
   const construirPayloadContrato = (incluirId = false) => {
     const cuotasEnvio = obtenerCuotasEnvio();
     const plazoEnvio = obtenerPlazoEnvio();
-    const montoCuotaCalculado = calcularMontoCuotaContrato(
-      monto_total,
-      enganche,
-      interes_porcentaje,
-      cuotasEnvio,
-      plazoEnvio
-    );
     const saldoPendienteVisible = String(
       Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
         ? Number(saldo_pendiente)
@@ -462,7 +466,7 @@ function Contratos_Residentes() {
       enganche,
       cuotas_pactadas: cuotasEnvio,
       cuotas_pagadas: cuotasPagadasNumero,
-      monto_cuota: montoCuotaCalculado || "0.00",
+      monto_cuota: String(montoCuotaGuardable || 0),
       interes_porcentaje,
       mora,
       plazo_meses: plazoEnvio,
@@ -1043,6 +1047,7 @@ function Contratos_Residentes() {
     setEnganche(val.enganche ?? '20000');
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
+    setMonto_cuota_manual(String(Number(val.monto_cuota || 0) > 0 ? Math.round(Number(val.monto_cuota)) : ''));
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
     const ultimaCuotaPagadaPersistida = Math.max(parseInt(String(val.ultima_cuota_pagada ?? val.cuotas_pagadas ?? '0').trim(), 10) || 0, 0);
     setCuotas_pagadas_manual(String(ultimaCuotaPagadaPersistida));
@@ -1138,6 +1143,7 @@ function Contratos_Residentes() {
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
+    setMonto_cuota_manual("");
     setSaldo_pendiente("0");
     setInicioPagosCalculado({ mes: '', anio: '' });
     ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
@@ -1472,8 +1478,16 @@ function Contratos_Residentes() {
                   <input type="text" className="form-control bg-light border-warning text-warning fw-bold" value={precioProyectoConEngancheEInteresesCalculado} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
-                  <input type="text" className="form-control bg-light text-success fw-bold" value={montoCuotaCalculado} readOnly />
+                  <label className="form-label fw-bold">Monto de Cuota (Auto / Manual):</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="form-control text-success fw-bold"
+                    value={monto_cuota_manual || montoCuotaCalculado}
+                    onChange={e => setMonto_cuota_manual(e.target.value)}
+                  />
+                  <small className="text-muted">Automática: Q {montoCuotaCalculado || '0'}. Puede escribir una cuota entera diferente.</small>
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
@@ -1757,8 +1771,16 @@ function Contratos_Residentes() {
                   <input type="text" className="form-control bg-light border-warning text-warning fw-bold" value={precioProyectoConEngancheEInteresesCalculado} readOnly />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Monto de Cuota (Auto):</label>
-                  <input type="text" className="form-control bg-light text-success fw-bold" value={montoCuotaCalculado} readOnly />
+                  <label className="form-label fw-bold">Monto de Cuota (Auto / Manual):</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="form-control text-success fw-bold"
+                    value={monto_cuota_manual || montoCuotaCalculado}
+                    onChange={e => setMonto_cuota_manual(e.target.value)}
+                  />
+                  <small className="text-muted">Automática: Q {montoCuotaCalculado || '0'}. Puede escribir una cuota entera diferente.</small>
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>

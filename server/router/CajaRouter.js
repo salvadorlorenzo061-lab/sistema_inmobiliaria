@@ -774,9 +774,7 @@ router.get("/residentes-pendientes", (req, res) => {
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
             COALESCE(c.saldo_pendiente, c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            COALESCE(conv.monto_original,
-                        c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
-            ) AS monto_total_original,
+            COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
@@ -911,9 +909,7 @@ router.get("/buscar-residente", (req, res) => {
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
             c.id_contrato, c.codigo_contrato,
             COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            COALESCE(conv.monto_original,
-                        c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
-            ) AS monto_total_original,
+            COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
@@ -1748,7 +1744,8 @@ router.post("/procesar-pago", (req, res) => {
             const sqlContratoCobro = `
                 SELECT
                     c.monto_total AS monto_total,
-                    COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
+                    COALESCE(conv.saldo_actual, c.saldo_pendiente, c.monto_total) AS saldo_pendiente,
+                    COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
                     c.enganche,
                     COALESCE((
                         SELECT SUM(pd_capital.subtotal)
@@ -1934,18 +1931,19 @@ router.post("/procesar-pago", (req, res) => {
                 const tasa = Math.max(Number(tasaAnual || 0), 0);
 
                 if (principal <= 0 || plazo <= 0) return 0;
-                if (tasa <= 0) return Math.round(principal / plazo);
+                if (tasa <= 0) return Math.ceil(principal / plazo);
 
                 const anios = Math.max(plazo / 12, 1);
                 const interesTotal = principal * (tasa / 100) * anios;
-                return Math.round((principal + interesTotal) / plazo);
+                return Math.ceil((principal + interesTotal) / plazo);
             };
 
             const cuotasPagadasContrato = Math.max(Number(saldoRows[0]?.cuotas_pagadas || 0), 0);
             const cuotasPendientesContrato = Math.max(cuotasBaseInteres - cuotasPagadasContrato, 0);
+            const montoOriginalContrato = Math.max(Number(saldoRows[0]?.monto_total_original || 0), 0);
             const capitalBaseInteresContrato = tieneConvenioActivoContrato
-                ? Math.round(Math.max(saldoActual, 0))
-                : Math.round(Math.max(saldoActual - engancheContrato, 0));
+                ? Math.round(montoOriginalContrato)
+                : Math.round(Math.max(montoOriginalContrato - engancheContrato, 0));
             const interesPlanContrato = tieneConvenioActivoContrato ? 0 : interesPorcentajeContrato;
             // Con convenio el plan se reparte solo entre las cuotas que quedan del convenio;
             // sin convenio se usa el plazo pactado completo del contrato (igual que el cliente).
@@ -1953,15 +1951,16 @@ router.post("/procesar-pago", (req, res) => {
                 ? Math.max(cuotasPendientesContrato, 1)
                 : cuotasBaseInteres;
             const primeraCuotaPlanContrato = tieneConvenioActivoContrato ? (cuotasPagadasContrato + 1) : 1;
-            const cuotaFijaPactadaContrato = calcularCuotaFijaContrato(
-                capitalBaseInteresContrato,
-                interesPlanContrato,
-                cuotasPlanContrato
+            const cuotaCalculadaContrato = calcularCuotaFijaContrato(capitalBaseInteresContrato, interesPlanContrato, cuotasPlanContrato);
+            const cuotaFijaPactadaContrato = montoCuotaBaseContrato > 0 ? Math.round(montoCuotaBaseContrato) : cuotaCalculadaContrato;
+            const interesTotalPlanContrato = redondear2(
+                capitalBaseInteresContrato * (interesPlanContrato / 100) * (cuotasPlanContrato / 12)
             );
-            const interesPorCuotaContrato = interesPlanContrato > 0
-                ? Math.round(capitalBaseInteresContrato * (interesPlanContrato / 100) / 12)
+            const totalFinanciadoPlanContrato = redondear2(capitalBaseInteresContrato + interesTotalPlanContrato);
+            const interesPorCuotaContrato = cuotasPlanContrato > 0
+                ? redondear2(interesTotalPlanContrato / cuotasPlanContrato)
                 : 0;
-            const capitalPorCuotaContrato = Math.max(cuotaFijaPactadaContrato - interesPorCuotaContrato, 0);
+            const capitalPorCuotaContrato = Math.max(redondear2(cuotaFijaPactadaContrato - interesPorCuotaContrato), 0);
             const cuotaBaseParaSaldo = capitalPorCuotaContrato > 0
                 ? capitalPorCuotaContrato
                 : montoCuotaBaseContrato;
@@ -1976,13 +1975,25 @@ router.post("/procesar-pago", (req, res) => {
 
             const ultimaCuotaPlanContrato = primeraCuotaPlanContrato + cuotasPlanContrato - 1;
             const tablaAmortizacionContrato = [];
+            let capitalRestantePlan = capitalBaseInteresContrato;
+            let interesRestantePlan = interesTotalPlanContrato;
             for (let numeroCuotaPlan = primeraCuotaPlanContrato; numeroCuotaPlan <= ultimaCuotaPlanContrato; numeroCuotaPlan += 1) {
+                const esUltimaCuota = numeroCuotaPlan === ultimaCuotaPlanContrato;
+                const pagoCuota = esUltimaCuota
+                    ? redondear2(totalFinanciadoPlanContrato - (cuotaFijaPactadaContrato * (cuotasPlanContrato - 1)))
+                    : cuotaFijaPactadaContrato;
+                const interesCuota = esUltimaCuota ? redondear2(interesRestantePlan) : Math.min(interesPorCuotaContrato, interesRestantePlan);
+                const capitalCuota = esUltimaCuota
+                    ? redondear2(capitalRestantePlan)
+                    : redondear2(Math.max(pagoCuota - interesCuota, 0));
                 tablaAmortizacionContrato.push({
                     numero_cuota: numeroCuotaPlan,
-                    capital_cuota: capitalPorCuotaContrato,
-                    interes_mes: interesPorCuotaContrato,
-                    cuota_estimada: redondear2(capitalPorCuotaContrato + interesPorCuotaContrato)
+                    capital_cuota: capitalCuota,
+                    interes_mes: interesCuota,
+                    cuota_estimada: pagoCuota
                 });
+                capitalRestantePlan = redondear2(Math.max(capitalRestantePlan - capitalCuota, 0));
+                interesRestantePlan = redondear2(Math.max(interesRestantePlan - interesCuota, 0));
             }
             const obtenerFilaAmortizacion = (numeroCuota) => {
                 const cuotaNumero = Number(numeroCuota || 0);
@@ -2867,7 +2878,14 @@ router.post("/procesar-pago", (req, res) => {
                                                         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                                         GROUP BY p.id_contrato
                                                     ) pagos ON pagos.id_contrato = c.id_contrato
-                                                    SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0),
+                                                    SET c.saldo_pendiente = GREATEST(
+                                                        (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
+                                                        + ((COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
+                                                           * COALESCE(c.interes_porcentaje, 0) / 100
+                                                           * (COALESCE(c.cuotas_pactadas, c.plazo_meses, 1) / 12))
+                                                        - COALESCE(pagos.total_pagado, 0),
+                                                        0
+                                                    ),
                                                         c.estado = ?
                                                     WHERE c.id_contrato = ?
                                                 `;

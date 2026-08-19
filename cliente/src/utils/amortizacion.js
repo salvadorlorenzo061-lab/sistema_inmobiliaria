@@ -13,12 +13,14 @@ export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
   const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
 
   if (principal <= 0 || plazo <= 0) return 0;
-  if (tasa <= 0) return Math.round(principal / plazo);
+  if (tasa <= 0) return Math.ceil(principal / plazo);
 
   const anios = Math.max(plazo / 12, 1);
   const interesTotal = principal * (tasa / 100) * anios;
   const cuotaFija = (principal + interesTotal) / plazo;
-  return Math.round(cuotaFija);
+  // Las cuotas regulares no manejan centavos. Se redondean hacia arriba y la
+  // diferencia se compensa exactamente en la última cuota del contrato.
+  return Math.ceil(cuotaFija);
 };
 
 export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicial = 0) => {

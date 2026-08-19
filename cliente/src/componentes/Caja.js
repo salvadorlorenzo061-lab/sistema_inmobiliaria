@@ -5,7 +5,6 @@ import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
-import { generarTablaAmortizacion } from '../utils/amortizacion';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
@@ -169,11 +168,12 @@ const Caja = () => {
             ? 0
             : Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
 
-        // Capital financiado pactado: mismo dato que usa el contrato para su cuota automatica.
-        // Con convenio activo el saldo del convenio ya es el capital a financiar (sin enganche).
+        // El precio original nunca se reconstruye desde el saldo pendiente. El saldo ya
+        // incluye capital e interés pendiente y descontarle otra vez el enganche altera la cuota.
+        const precioOriginal = Math.max(parseFloat(contrato?.monto_total_original || 0), 0);
         const capitalTotalContrato = tieneConvenioActivo
-            ? parseFloat(saldoPendiente.toFixed(2))
-            : parseFloat(Math.max(saldoPendiente - enganche, 0).toFixed(2));
+            ? parseFloat(precioOriginal.toFixed(2))
+            : parseFloat(Math.max(precioOriginal - enganche, 0).toFixed(2));
         const capitalPagadoFinanciado = tieneConvenioActivo
             ? 0
             : Math.max(parseFloat((capitalPagadoTotal - enganchePagado).toFixed(2)), 0);
@@ -181,12 +181,37 @@ const Caja = () => {
         // financiado pactado es tambien el capital que queda por cobrar.
         const capitalPendienteFinanciado = capitalTotalContrato;
         const capitalBaseInteres = capitalTotalContrato;
-        const tablaContratoCompleta = generarTablaAmortizacion(
-            capitalBaseInteres,
-            interesPorcentaje,
-            tieneConvenioActivo ? cuotasPendientes : cuotasPactadas,
-            tieneConvenioActivo ? cuotasPagadas : 0
-        );
+        const interesTotalPactado = tieneConvenioActivo
+            ? 0
+            : redondear2(capitalBaseInteres * (interesPorcentaje / 100) * (cuotasPactadas / 12));
+        const totalFinanciadoPactado = redondear2(capitalBaseInteres + interesTotalPactado);
+        const cuotaRegularGuardada = Math.round(Math.max(parseFloat(contrato?.monto_cuota || 0), 0));
+        const cuotaRegular = cuotaRegularGuardada > 0
+            ? cuotaRegularGuardada
+            : Math.ceil(totalFinanciadoPactado / Math.max(cuotasPactadas, 1));
+        const interesRegular = cuotasPactadas > 0 ? redondear2(interesTotalPactado / cuotasPactadas) : 0;
+        let capitalRestantePlan = capitalBaseInteres;
+        let interesRestantePlan = interesTotalPactado;
+        const tablaContratoCompleta = [];
+        for (let indice = 1; indice <= cuotasPactadas; indice += 1) {
+            const esUltima = indice === cuotasPactadas;
+            const pagoCuota = esUltima
+                ? redondear2(totalFinanciadoPactado - (cuotaRegular * (cuotasPactadas - 1)))
+                : cuotaRegular;
+            const interesCuota = esUltima ? redondear2(interesRestantePlan) : Math.min(interesRegular, interesRestantePlan);
+            const capitalCuota = esUltima
+                ? redondear2(capitalRestantePlan)
+                : redondear2(Math.max(pagoCuota - interesCuota, 0));
+            tablaContratoCompleta.push({
+                indice,
+                numero_cuota: indice,
+                capital_cuota: capitalCuota,
+                interes_mes: interesCuota,
+                cuota_estimada: pagoCuota
+            });
+            capitalRestantePlan = redondear2(Math.max(capitalRestantePlan - capitalCuota, 0));
+            interesRestantePlan = redondear2(Math.max(interesRestantePlan - interesCuota, 0));
+        }
         const tablaAmortizacion = tieneConvenioActivo
             ? tablaContratoCompleta
             : tablaContratoCompleta.filter((fila) => Number(fila?.numero_cuota || 0) > cuotasFinanciadasPagadas);
