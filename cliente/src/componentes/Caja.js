@@ -252,7 +252,15 @@ const Caja = () => {
                 ? servicio.es_cobro_unico
                 : esServicioCobroUnico(servicio?.periodicidad, servicio?.nombre_servicio);
             const yaPagadoAlgunaVez = Boolean(servicio?.ya_pagado_alguna_vez);
-            return !(esUnico && yaPagadoAlgunaVez);
+
+            // El flujo funcional del sistema exige que los servicios activos sigan visibles y
+            // seleccionables en cada mes. Si el usuario desmarca un servicio, entonces el cobro
+            // queda limitado a la cuota financiada y a la mora según corresponda.
+            if (esUnico && yaPagadoAlgunaVez) {
+                return true;
+            }
+
+            return true;
         });
     };
 
@@ -2183,25 +2191,22 @@ const Caja = () => {
                                                             return (
                                                         <div
                                                             key={servicio.id_servicio}
-                                                            className={`d-flex align-items-center p-3 border rounded-2 ${serviciosSeleccionados.includes(servicio.id_servicio) ? 'bg-success bg-opacity-10 border-success border-2' : 'bg-white border-secondary'} ${servicio.ya_pagado_mes ? 'opacity-75' : ''}`}
-                                                            style={{ cursor: servicio.ya_pagado_mes ? 'not-allowed' : 'pointer' }}
-                                                            onClick={() => !servicio.ya_pagado_mes && toggleServicioSeleccionado(servicio.id_servicio)}
+                                                            className={`d-flex align-items-center p-3 border rounded-2 ${serviciosSeleccionados.includes(servicio.id_servicio) ? 'bg-success bg-opacity-10 border-success border-2' : 'bg-white border-secondary'}`}
+                                                            style={{ cursor: 'pointer' }}
+                                                            onClick={() => toggleServicioSeleccionado(servicio.id_servicio)}
                                                         >
                                                             <input
                                                                 type="checkbox"
                                                                 className="form-check-input me-3"
                                                                 checked={serviciosSeleccionados.includes(servicio.id_servicio)}
-                                                                disabled={servicio.ya_pagado_mes}
-                                                                onChange={() => !servicio.ya_pagado_mes && toggleServicioSeleccionado(servicio.id_servicio)}
-                                                                style={{ cursor: servicio.ya_pagado_mes ? 'not-allowed' : 'pointer', width: '20px', height: '20px' }}
+                                                                onChange={() => toggleServicioSeleccionado(servicio.id_servicio)}
+                                                                style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                                                             />
                                                             <div className="flex-grow-1">
                                                                 <span className="fw-bold fs-6 text-dark">{servicio.nombre_servicio}</span>
                                                                 <span className={`badge ms-2 ${esUnico ? 'bg-secondary' : 'bg-info text-dark'}`}>
                                                                     {esUnico ? 'Cobro unico' : 'Mensual'}
                                                                 </span>
-                                                                <br />
-                                                                {servicio.ya_pagado_mes && <small className="text-success fw-bold">Ya pagado en el mes seleccionado</small>}
                                                             </div>
                                                             <span className="badge bg-primary">Q{parseFloat(servicio.costo_servicio || 0).toFixed(2)}{esUnico ? ' pago unico' : ' / mes'}</span>
                                                         </div>
