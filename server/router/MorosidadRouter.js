@@ -107,7 +107,8 @@ const obtenerFechaInicioMora = (fechaVencimiento, diasGracia) => {
         fechaVencimiento.getMonth(),
         fechaVencimiento.getDate()
     );
-    inicioMora.setDate(inicioMora.getDate() + diasGracia);
+    // Los días de gracia son completos: con 5 días, la mora inicia al sexto día.
+    inicioMora.setDate(inicioMora.getDate() + diasGracia + 1);
     return inicioMora;
 };
 

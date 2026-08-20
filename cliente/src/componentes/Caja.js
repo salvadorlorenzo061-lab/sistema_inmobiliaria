@@ -540,7 +540,7 @@ const Caja = () => {
         );
         const diasGracia = Math.max(0, Math.min(31, Number(diasGraciaRaw ?? 5)));
         const fechaInicioMora = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), fechaVencimiento.getDate());
-        fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia);
+        fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia + 1);
 
         return hoy >= fechaInicioMora;
     };
@@ -1697,81 +1697,26 @@ const Caja = () => {
     const primerMesSeleccionado = mesesSeleccionados.length ? mesesSeleccionados[0] : '';
     const numeroCuotaPrimerMes = obtenerNumeroCuotaMesVista(primerMesSeleccionado);
     const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
-    const mesAplicacionAbonoCapital = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
-    const mesAplicacionCobroUnico = primerMesSeleccionado || mesPagado || (mesesPendientes[0] || '');
     const obtenerCapitalPorNumeroCuotaVista = (numeroCuota) => {
         return redondear2(obtenerFilaAmortizacionVista(numeroCuota)?.capital_cuota || 0);
     };
-    const obtenerDesgloseCuotaMesVista = (mesEtiqueta = '') => {
-        const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
-        const aplicarCobroUnicoMes = Boolean(mesEtiqueta) && mesEtiqueta === mesAplicacionCobroUnico;
-        const mesEstaSeleccionado = (mesesSeleccionados || []).includes(mesEtiqueta);
-        const serviciosMensuales = serviciosSeleccionadosDetalleVista
-            .filter((servicio) => mesEstaSeleccionado && !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
-            .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
-        const serviciosUnicos = (mesEstaSeleccionado && aplicarCobroUnicoMes)
-            ? serviciosSeleccionadosDetalleVista
-                .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
-                .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
-            : 0;
-        const cargosExtra = (mesEstaSeleccionado && aplicarCobroUnicoMes) ? montoCargosExtraSeleccionado : 0;
-        const mora = (!mesEstaSeleccionado || esCuotaEnganche)
-            ? 0
-            : obtenerMorasAplicables([mesEtiqueta]).reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
-        const abonoCapital = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
-            ? parseFloat(montoEngancheSeleccionado || 0)
-            : 0;
-        const capital = esCuotaEnganche
-            ? Math.max(Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente), 0)
-            : obtenerCapitalPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
-        const interes = esCuotaEnganche
-            ? 0
-            : obtenerInteresPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
-        const servicios = serviciosMensuales + serviciosUnicos + cargosExtra;
-
-        return {
-            cuota: redondear2(capital + abonoCapital),
-            interes: redondear2(interes),
-            mora: redondear2(mora),
-            servicios: redondear2(servicios),
-            total: redondear2(capital + abonoCapital + interes + mora + servicios)
-        };
-    };
-    const obtenerTotalCuotaMesVista = (mesEtiqueta = '') => {
-        const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
-        const aplicarCobroUnicoMes = Boolean(mesEtiqueta) && mesEtiqueta === mesAplicacionCobroUnico;
-        const mesEstaSeleccionado = (mesesSeleccionados || []).includes(mesEtiqueta);
-        const serviciosMensualesMes = serviciosSeleccionadosDetalleVista
-            .filter((servicio) => mesEstaSeleccionado && !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
-            .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
-        const serviciosUnicosMes = (mesEstaSeleccionado && aplicarCobroUnicoMes)
-            ? serviciosSeleccionadosDetalleVista
-                .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
-                .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0)
-            : 0;
-        const cargosExtraMes = (mesEstaSeleccionado && aplicarCobroUnicoMes) ? montoCargosExtraSeleccionado : 0;
-        const moraMes = (!mesEstaSeleccionado || esCuotaEnganche)
-            ? 0
-            : parseFloat(obtenerMorasAplicables([mesEtiqueta]).reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0).toFixed(2));
-        if (esCuotaEnganche) {
-            const engancheBaseVista = Math.max(
+    // En la lista de cuotas pactadas se muestra un único importe contractual:
+    // cuota financiada + recargo vencido. La mora conserva su desglose interno
+    // para recibos, auditoría y anulaciones, pero no se presenta por separado.
+    const obtenerCuotaPactadaConRecargoVista = (mesEtiqueta = '') => {
+        if (esMesEngancheVisual(mesEtiqueta)) {
+            return Math.max(
                 Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),
                 0
             );
-            const abonoManual = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
-                ? parseFloat(montoEngancheSeleccionado || 0)
-                : 0;
-            return parseFloat((engancheBaseVista + abonoManual + serviciosMensualesMes + serviciosUnicosMes + cargosExtraMes + moraMes).toFixed(2));
         }
-
-        const capital = obtenerCapitalPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
-        const interes = obtenerInteresPorNumeroCuotaVista(obtenerNumeroCuotaMesVista(mesEtiqueta));
-        const abono = mesEtiqueta && mesEtiqueta === mesAplicacionAbonoCapital
-            ? parseFloat(montoEngancheSeleccionado || 0)
-            : 0;
-        return parseFloat((capital + interes + abono + serviciosMensualesMes + serviciosUnicosMes + cargosExtraMes + moraMes).toFixed(2));
+        const numeroCuota = obtenerNumeroCuotaMesVista(mesEtiqueta);
+        const cuotaFinanciada = obtenerCapitalPorNumeroCuotaVista(numeroCuota)
+            + obtenerInteresPorNumeroCuotaVista(numeroCuota);
+        const recargoVencido = obtenerMorasAplicables([mesEtiqueta])
+            .reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
+        return redondear2(cuotaFinanciada + recargoVencido);
     };
-
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
     const engancheSeleccionado = parseFloat(montoEngancheContratoAplicado || 0);
     const abonoCapitalSeleccionado = parseFloat(montoEngancheSeleccionado || 0);
@@ -1785,7 +1730,6 @@ const Caja = () => {
     const serviciosUnicosVista = serviciosSeleccionadosDetalleVista
         .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
-    const montoMoraActual = Math.max(parseFloat(montoMora || 0), 0);
     const moraTotalDistribuidaVista = parseFloat((mesesSeleccionados || [])
         .filter((mes) => !esMesEngancheVisual(mes))
         .reduce((sum, mes) => sum + Number(obtenerMorasAplicables([mes]).reduce((acc, mora) => acc + Number(mora?.monto_mora || 0), 0)), 0)
@@ -2032,8 +1976,7 @@ const Caja = () => {
                                             <small><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
                                             <small><strong>Cuota fija:</strong> Q{Math.round(planFinancieroContrato.capitalPorCuota)}</small><br />
                                             <small><strong>Interés por cuota:</strong> Q{Math.round(interesMensualSeleccionado)}</small><br />
-                                            <small><strong>Cuota con interés:</strong> Q{Math.round(planFinancieroContrato.cuotaTotalConInteres)}</small><br />
-                                            <small><strong>Mora aplicada:</strong> Q{montoMoraActual.toFixed(2)}</small>
+                                            <small><strong>Cuota pactada:</strong> Q{Math.round(planFinancieroContrato.cuotaTotalConInteres)}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -2139,7 +2082,7 @@ const Caja = () => {
                                             {moraTotalDistribuidaVista > 0 && (
                                                 <>
                                                     <br />
-                                                    Total con mora: Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
+                                                    Total seleccionado: Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
                                                 </>
                                             )}
                                         </span>
@@ -2274,14 +2217,9 @@ const Caja = () => {
                                                                     {getEtiquetaCuotaMes(mes, obtenerNumeroCuotaRealMesVista(mes))}
                                                                 </span>
                                                             </div>
-                                                            {(() => {
-                                                                const desglose = obtenerDesgloseCuotaMesVista(mes);
-                                                                return (
-                                                                    <div className="text-end">
-                                                                        <span className="badge bg-primary fs-6">Q{Math.round(desglose.total)}</span>
-                                                                    </div>
-                                                                );
-                                                            })()}
+                                                            <div className="text-end">
+                                                                <span className="badge bg-primary fs-6">Q{Math.round(obtenerCuotaPactadaConRecargoVista(mes))}</span>
+                                                            </div>
                                                             {mesesSeleccionados.includes(mes) && (
                                                                 <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
                                                             )}
@@ -2296,7 +2234,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Resumen:</strong> Terreno Q{Math.round(montoTerrenoSeleccionado)} + Enganche Q{Math.round(montoEngancheContratoAplicado)} + Abono capital Q{Math.round(montoEngancheSeleccionado)} + Interés Q{Math.round(montoInteresSeleccionado)} + Servicios Q{Math.round(montoServiciosSeleccionado)} + Mora Q{Math.round(moraTotalDistribuidaVista)} = Q{Math.round(montoTotalSeleccionado + moraTotalDistribuidaVista)}
+                                                <strong>Total seleccionado:</strong> Q{Math.round(montoTotalSeleccionado + moraTotalDistribuidaVista)}
                                             </div>
                                         )}
                                     </div>
@@ -2337,18 +2275,7 @@ const Caja = () => {
                                     </div>
 
                                     <div className="row mb-3">
-                                        <div className="col-md-6">
-                                            {montoMoraActual > 0 ? (
-                                                <div className="alert alert-warning py-2 mb-0">
-                                                    <strong>Mora automática aplicada:</strong> Q{montoMoraActual.toFixed(2)}
-                                                </div>
-                                            ) : (
-                                                <div className="alert alert-light border py-2 mb-0 text-muted">
-                                                    La mora se aplica automáticamente solo cuando el mes financiado seleccionado tiene recargo pendiente.
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="col-md-6">
+                                        <div className="col-md-12">
                                             <label className="form-label fw-bold">Método de pago:</label>
                                             <select
                                                 className="form-select"

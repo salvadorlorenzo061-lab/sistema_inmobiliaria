@@ -139,7 +139,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
         const indiceMes = obtenerIndiceMes(conAnio[1]);
         if (indiceMes >= 0) {
             const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
-            return fechaMes < hoyMes;
+            return fechaMes <= hoyMes;
         }
     }
 
@@ -148,7 +148,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
         const indiceMes = obtenerIndiceMes(soloMes[1]);
         if (indiceMes >= 0) {
             const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
-            return fechaMes < hoyMes;
+            return fechaMes <= hoyMes;
         }
     }
 
@@ -183,7 +183,7 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
         fechaVencimiento.getMonth(),
         fechaVencimiento.getDate()
     );
-    fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia);
+    fechaInicioMora.setDate(fechaInicioMora.getDate() + diasGracia + 1);
 
     return hoy >= fechaInicioMora;
 };
@@ -794,7 +794,7 @@ router.get("/residentes-pendientes", (req, res) => {
                     ELSE 0
                   END
             ) AS cuotas_pagadas,
-            c.interes_porcentaje, c.mora, tc.id_tipo_contrato,
+            c.interes_porcentaje, c.mora, c.fecha_compra, c.fecha_firma, c.dia_pago_limite, tc.id_tipo_contrato,
             tc.nombre_tipo_contrato AS nombre_contrato,
             conv.id_convenio AS id_convenio_activo,
             conv.fecha_inicio AS convenio_fecha_inicio,
@@ -931,6 +931,9 @@ router.get("/buscar-residente", (req, res) => {
             ) AS cuotas_pagadas,
             c.interes_porcentaje,
             c.mora,
+            c.fecha_compra,
+            c.fecha_firma,
+            c.dia_pago_limite,
             tc.id_tipo_contrato,
             tc.nombre_tipo_contrato AS nombre_contrato,
             conv.id_convenio AS id_convenio_activo,
