@@ -764,6 +764,13 @@ const Caja = () => {
         const obtenerFilaAmortizacion = (numeroCuota) => (
             tablaAmortizacion.find((fila) => fila.numero_cuota === numeroCuota) || null
         );
+        const obtenerFilaAmortizacionMes = (mesEtiqueta = '') => {
+            const numeroCuota = obtenerNumeroCuotaMes(mesEtiqueta);
+            const filaPorNumero = obtenerFilaAmortizacion(numeroCuota);
+            if (filaPorNumero) return filaPorNumero;
+            const indicePendiente = (mesesPendientes || []).indexOf(mesEtiqueta);
+            return indicePendiente >= 0 ? (tablaAmortizacion[indicePendiente] || null) : null;
+        };
 
         // No permitir cobrar terreno por encima del saldo pendiente real del contrato.
         const cuotasRestantes = planContrato.cuotasRestantes;
@@ -799,9 +806,6 @@ const Caja = () => {
         const engancheContratoAplicado = (enganchePendienteContrato > 0 && (soloEngancheSeleccionado || (primerMesConEnganche && mesesOrdenados.includes(primerMesConEnganche))))
             ? Math.max(Math.min(engancheContratoBase, enganchePendienteContrato), 0)
             : 0;
-        const obtenerCapitalPorNumeroCuota = (numeroCuota) => {
-            return redondear2(obtenerFilaAmortizacion(numeroCuota)?.capital_cuota || 0);
-        };
         const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
             if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
             return mes !== primerMesConEnganche;
@@ -809,15 +813,13 @@ const Caja = () => {
         const mesesTerrenoReales = Math.min(mesesElegiblesTerreno.length, cuotasRestantes);
         const mesesConTerreno = mesesElegiblesTerreno.slice(0, mesesTerrenoReales);
         const terrenoCalculadoAjustado = mesesConTerreno.reduce((sum, mes) => {
-            const numeroCuotaMes = obtenerNumeroCuotaMes(mes);
-            return sum + obtenerCapitalPorNumeroCuota(numeroCuotaMes);
+            return sum + redondear2(obtenerFilaAmortizacionMes(mes)?.capital_cuota || 0);
         }, 0);
         const terrenoTotalAjustado = Math.min(parseFloat(terrenoCalculadoAjustado.toFixed(2)), Math.max(saldoPendiente, 0));
         const interesSeleccionado = parseFloat(
             mesesConTerreno
                 .reduce((acc, mes) => {
-                    const numeroCuotaMes = obtenerNumeroCuotaMes(mes);
-                    return acc + redondear2(obtenerFilaAmortizacion(numeroCuotaMes)?.interes_mes || 0);
+                    return acc + redondear2(obtenerFilaAmortizacionMes(mes)?.interes_mes || 0);
                 }, 0)
                 .toFixed(2)
         );
@@ -1697,9 +1699,6 @@ const Caja = () => {
     const primerMesSeleccionado = mesesSeleccionados.length ? mesesSeleccionados[0] : '';
     const numeroCuotaPrimerMes = obtenerNumeroCuotaMesVista(primerMesSeleccionado);
     const interesMensualSeleccionado = obtenerInteresPorNumeroCuotaVista(numeroCuotaPrimerMes);
-    const obtenerCapitalPorNumeroCuotaVista = (numeroCuota) => {
-        return redondear2(obtenerFilaAmortizacionVista(numeroCuota)?.capital_cuota || 0);
-    };
     // En la lista de cuotas pactadas se muestra un único importe contractual:
     // cuota financiada + recargo vencido. La mora conserva su desglose interno
     // para recibos, auditoría y anulaciones, pero no se presenta por separado.
@@ -1711,11 +1710,30 @@ const Caja = () => {
             );
         }
         const numeroCuota = obtenerNumeroCuotaMesVista(mesEtiqueta);
-        const cuotaFinanciada = obtenerCapitalPorNumeroCuotaVista(numeroCuota)
-            + obtenerInteresPorNumeroCuotaVista(numeroCuota);
+        const indicePendiente = (mesesPendientes || []).indexOf(mesEtiqueta);
+        const filaFinanciera = obtenerFilaAmortizacionVista(numeroCuota)
+            || (indicePendiente >= 0 ? tablaAmortizacionVista[indicePendiente] : null);
+        const cuotaFinanciada = Number(filaFinanciera?.capital_cuota || 0)
+            + Number(filaFinanciera?.interes_mes || 0);
         const recargoVencido = obtenerMorasAplicables([mesEtiqueta])
             .reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
-        return redondear2(cuotaFinanciada + recargoVencido);
+        const mesSeleccionado = (mesesSeleccionados || []).includes(mesEtiqueta);
+        const serviciosMensuales = mesSeleccionado
+            ? serviciosSeleccionadosDetalleVista
+                .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
+                .reduce((sum, servicio) => sum + Number(servicio.costo_servicio || 0), 0)
+            : 0;
+        const esPrimerMesSeleccionado = mesSeleccionado && mesEtiqueta === primerMesSeleccionado;
+        const serviciosUnicos = esPrimerMesSeleccionado
+            ? serviciosSeleccionadosDetalleVista
+                .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
+                .reduce((sum, servicio) => sum + Number(servicio.costo_servicio || 0), 0)
+            : 0;
+        const cargosExtra = esPrimerMesSeleccionado ? Number(montoCargosExtraSeleccionado || 0) : 0;
+        const abonoCapital = esPrimerMesSeleccionado ? Number(montoEngancheSeleccionado || 0) : 0;
+        return redondear2(
+            cuotaFinanciada + recargoVencido + serviciosMensuales + serviciosUnicos + cargosExtra + abonoCapital
+        );
     };
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
     const engancheSeleccionado = parseFloat(montoEngancheContratoAplicado || 0);
