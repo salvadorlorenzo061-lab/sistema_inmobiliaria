@@ -1703,20 +1703,25 @@ const Caja = () => {
     // cuota financiada + recargo vencido. La mora conserva su desglose interno
     // para recibos, auditoría y anulaciones, pero no se presenta por separado.
     const obtenerCuotaPactadaConRecargoVista = (mesEtiqueta = '') => {
-        if (esMesEngancheVisual(mesEtiqueta)) {
-            return Math.max(
+        const esCuotaEnganche = esMesEngancheVisual(mesEtiqueta);
+        let cuotaFinanciada = 0;
+        if (esCuotaEnganche) {
+            cuotaFinanciada = Math.max(
                 Math.min(parseFloat(montoEngancheContratoSeleccionado || enganchePendiente || 0), enganchePendiente),
                 0
             );
+        } else {
+            const numeroCuota = obtenerNumeroCuotaMesVista(mesEtiqueta);
+            const indicePendiente = (mesesPendientes || []).indexOf(mesEtiqueta);
+            const filaFinanciera = obtenerFilaAmortizacionVista(numeroCuota)
+                || (indicePendiente >= 0 ? tablaAmortizacionVista[indicePendiente] : null);
+            cuotaFinanciada = Number(filaFinanciera?.capital_cuota || 0)
+                + Number(filaFinanciera?.interes_mes || 0);
         }
-        const numeroCuota = obtenerNumeroCuotaMesVista(mesEtiqueta);
-        const indicePendiente = (mesesPendientes || []).indexOf(mesEtiqueta);
-        const filaFinanciera = obtenerFilaAmortizacionVista(numeroCuota)
-            || (indicePendiente >= 0 ? tablaAmortizacionVista[indicePendiente] : null);
-        const cuotaFinanciada = Number(filaFinanciera?.capital_cuota || 0)
-            + Number(filaFinanciera?.interes_mes || 0);
-        const recargoVencido = obtenerMorasAplicables([mesEtiqueta])
-            .reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
+        const recargoVencido = esCuotaEnganche
+            ? 0
+            : obtenerMorasAplicables([mesEtiqueta])
+                .reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
         const mesSeleccionado = (mesesSeleccionados || []).includes(mesEtiqueta);
         const serviciosMensuales = mesSeleccionado
             ? serviciosSeleccionadosDetalleVista
