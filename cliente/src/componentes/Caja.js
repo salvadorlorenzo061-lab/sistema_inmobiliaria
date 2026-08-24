@@ -186,7 +186,9 @@ const Caja = () => {
             : redondear2(capitalBaseInteres * (interesPorcentaje / 100) * (cuotasPactadas / 12));
         const totalFinanciadoPactado = redondear2(capitalBaseInteres + interesTotalPactado);
         const cuotaRegularGuardada = Math.round(Math.max(parseFloat(contrato?.monto_cuota || 0), 0));
-        const cuotaRegular = cuotaRegularGuardada > 0
+        const cuotaGuardadaValida = cuotaRegularGuardada > 0
+            && (cuotasPactadas <= 1 || (cuotaRegularGuardada * (cuotasPactadas - 1)) < totalFinanciadoPactado);
+        const cuotaRegular = cuotaGuardadaValida
             ? cuotaRegularGuardada
             : Math.ceil(totalFinanciadoPactado / Math.max(cuotasPactadas, 1));
         const interesRegular = cuotasPactadas > 0 ? redondear2(interesTotalPactado / cuotasPactadas) : 0;

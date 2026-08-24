@@ -71,10 +71,24 @@ const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
     if (principal <= 0 || plazo <= 0) return 0;
     if (tasa <= 0) return Math.ceil(principal / plazo);
 
-    const anios = Math.max(plazo / 12, 1);
+    const anios = plazo / 12;
     const interesTotal = principal * (tasa / 100) * anios;
     const cuotaFija = (principal + interesTotal) / plazo;
     return Math.ceil(cuotaFija);
+};
+
+const normalizarCuotaContrato = (cuotaManual = 0, capital = 0, tasaAnual = 0, cuotas = 0) => {
+    const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+    const principal = Math.max(Number(capital || 0), 0);
+    const tasa = Math.max(Number(tasaAnual || 0), 0);
+    const totalFinanciado = plazo > 0
+        ? Number((principal + (principal * (tasa / 100) * (plazo / 12))).toFixed(2))
+        : 0;
+    const manual = Math.round(Number(cuotaManual || 0));
+    const manualValida = manual > 0
+        && (plazo <= 1 || (manual * (plazo - 1)) < totalFinanciado);
+
+    return manualValida ? manual : calcularCuotaFijaContrato(principal, tasa, plazo);
 };
 
 const normalizeMesInicioPagos = (value, fallback = 1) => {
@@ -647,7 +661,7 @@ const backfillVentasPropiedad = () => {
 const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
     const cuotasSql = 'COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1)';
     const capitalSql = 'GREATEST(ROUND(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0), 0), 0)';
-    const totalSql = `(${capitalSql} + (${capitalSql} * COALESCE(c.interes_porcentaje, 0) / 100 * GREATEST(${cuotasSql} / 12, 1)))`;
+    const totalSql = `(${capitalSql} + (${capitalSql} * COALESCE(c.interes_porcentaje, 0) / 100 * (${cuotasSql} / 12)))`;
     const cuotaAnteriorSql = `ROUND(${totalSql} / ${cuotasSql}, 0)`;
     const cuotaNuevaSql = `CEIL(${totalSql} / ${cuotasSql})`;
 
@@ -659,6 +673,7 @@ const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
           AND (
               COALESCE(c.monto_cuota, 0) <= 0
               OR ABS(COALESCE(c.monto_cuota, 0) - ${cuotaAnteriorSql}) < 0.01
+              OR (COALESCE(c.monto_cuota, 0) * GREATEST(${cuotasSql} - 1, 0)) >= ${totalSql}
           )
     `, (err, result) => {
         if (err) {
@@ -996,10 +1011,12 @@ router.post("/crear", (req, res) => {
         const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
         const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
         const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
-        const cuotaManual = Number(monto_cuota || 0);
-        const montoCuotaNormalizado = Number.isFinite(cuotaManual) && cuotaManual > 0
-            ? Math.round(cuotaManual)
-            : calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas);
+        const montoCuotaNormalizado = normalizarCuotaContrato(
+            monto_cuota,
+            capitalFinanciado,
+            interesPorcentajeNumerico,
+            cuotasNormalizadas
+        );
         const totalConIntereses = (capitalFinanciado > 0 && cuotasNormalizadas > 0)
             ? Number((capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))).toFixed(2))
             : 0;
@@ -1143,10 +1160,12 @@ router.put("/actualizar", (req, res) => {
     const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
     const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
     const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
-    const cuotaManual = Number(monto_cuota || 0);
-    const montoCuotaNormalizado = Number.isFinite(cuotaManual) && cuotaManual > 0
-        ? Math.round(cuotaManual)
-        : calcularCuotaFijaContrato(capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas);
+    const montoCuotaNormalizado = normalizarCuotaContrato(
+        monto_cuota,
+        capitalFinanciado,
+        interesPorcentajeNumerico,
+        cuotasNormalizadas
+    );
     const totalConIntereses = (capitalFinanciado > 0 && cuotasNormalizadas > 0)
         ? Number((capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))).toFixed(2))
         : 0;

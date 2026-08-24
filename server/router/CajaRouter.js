@@ -1936,7 +1936,7 @@ router.post("/procesar-pago", (req, res) => {
                 if (principal <= 0 || plazo <= 0) return 0;
                 if (tasa <= 0) return Math.ceil(principal / plazo);
 
-                const anios = Math.max(plazo / 12, 1);
+                const anios = plazo / 12;
                 const interesTotal = principal * (tasa / 100) * anios;
                 return Math.ceil((principal + interesTotal) / plazo);
             };
@@ -1955,11 +1955,17 @@ router.post("/procesar-pago", (req, res) => {
                 : cuotasBaseInteres;
             const primeraCuotaPlanContrato = tieneConvenioActivoContrato ? (cuotasPagadasContrato + 1) : 1;
             const cuotaCalculadaContrato = calcularCuotaFijaContrato(capitalBaseInteresContrato, interesPlanContrato, cuotasPlanContrato);
-            const cuotaFijaPactadaContrato = montoCuotaBaseContrato > 0 ? Math.round(montoCuotaBaseContrato) : cuotaCalculadaContrato;
             const interesTotalPlanContrato = redondear2(
                 capitalBaseInteresContrato * (interesPlanContrato / 100) * (cuotasPlanContrato / 12)
             );
             const totalFinanciadoPlanContrato = redondear2(capitalBaseInteresContrato + interesTotalPlanContrato);
+            const cuotaGuardadaContrato = Math.round(montoCuotaBaseContrato);
+            const cuotaGuardadaValidaContrato = cuotaGuardadaContrato > 0
+                && (cuotasPlanContrato <= 1
+                    || (cuotaGuardadaContrato * (cuotasPlanContrato - 1)) < totalFinanciadoPlanContrato);
+            const cuotaFijaPactadaContrato = cuotaGuardadaValidaContrato
+                ? cuotaGuardadaContrato
+                : cuotaCalculadaContrato;
             const interesPorCuotaContrato = cuotasPlanContrato > 0
                 ? redondear2(interesTotalPlanContrato / cuotasPlanContrato)
                 : 0;

@@ -15,7 +15,7 @@ export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
   if (principal <= 0 || plazo <= 0) return 0;
   if (tasa <= 0) return Math.ceil(principal / plazo);
 
-  const anios = Math.max(plazo / 12, 1);
+  const anios = plazo / 12;
   const interesTotal = principal * (tasa / 100) * anios;
   const cuotaFija = (principal + interesTotal) / plazo;
   // Las cuotas regulares no manejan centavos. Se redondean hacia arriba y la

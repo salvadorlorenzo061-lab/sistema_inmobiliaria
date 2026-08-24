@@ -359,7 +359,7 @@ function Contratos_Residentes() {
       return '';
     }
 
-    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
+    const anios = cuotasCalculadasNumero / 12;
     const interesSobreFinanciado = capitalFinanciado * (interesNumero / 100) * anios;
     const totalFinanciadoConIntereses = redondearMoneda(capitalFinanciado + interesSobreFinanciado);
     return totalFinanciadoConIntereses.toFixed(2);
@@ -375,7 +375,7 @@ function Contratos_Residentes() {
       return '';
     }
 
-    const anios = Math.max(cuotasCalculadasNumero / 12, 1);
+    const anios = cuotasCalculadasNumero / 12;
     const interesSobreFinanciado = capitalFinanciado * (interesNumero / 100) * anios;
     const totalFinanciadoConIntereses = redondearMoneda(capitalFinanciado + interesSobreFinanciado);
     const totalProyectoConEnganche = redondearMoneda(totalFinanciadoConIntereses + engancheNumero);
