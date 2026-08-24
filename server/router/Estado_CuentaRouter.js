@@ -75,9 +75,9 @@ router.get("/buscar-residente", (req, res) => {
     db.query(query, queryParams, (err, result) => {
         if (err) {
             console.error("Error en la consulta:", err.message);
-            return res.status(500).send("No se pudo consultar el residente en este momento.");
+            return res.status(500).send("No se pudo consultar el cliente en este momento.");
         }
-        if (result.length === 0) return res.status(404).send("No se encontraron residentes.");
+        if (result.length === 0) return res.status(404).send("No se encontraron clientes.");
         
         res.status(200).json(result);
     });

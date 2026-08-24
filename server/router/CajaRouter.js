@@ -833,8 +833,8 @@ router.get("/residentes-pendientes", (req, res) => {
 
         db.query(query, queryParams, (err, result) => {
             if (err) {
-                console.error("Error al obtener residentes pendientes:", err.message);
-                return res.status(500).send("Error al obtener residentes: " + err.message);
+                console.error("Error al obtener clientes pendientes:", err.message);
+                return res.status(500).send("Error al obtener clientes: " + err.message);
             }
 
             return res.status(200).json(result || []);
@@ -980,9 +980,9 @@ router.get("/buscar-residente", (req, res) => {
         db.query(query, queryParams, (err, result) => {
             if (err) {
                 console.error("Error en la consulta:", err.message);
-                return res.status(500).send("Error al consultar el residente: " + err.message);
+                return res.status(500).send("Error al consultar el cliente: " + err.message);
             }
-            if (result.length === 0) return res.status(404).send("No se encontraron residentes con contratos activos bajo ese criterio.");
+            if (result.length === 0) return res.status(404).send("No se encontraron clientes con contratos activos bajo ese criterio.");
             
             return res.status(200).json(result);
         });

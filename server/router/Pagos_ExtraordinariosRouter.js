@@ -125,12 +125,12 @@ router.get('/buscar-residente', (req, res) => {
     const searchTerm = `%${criterio}%`;
     db.query(query, [searchTerm, searchTerm, searchTerm, searchTerm], (err, result) => {
         if (err) {
-            console.error('Error al buscar residente para pago extraordinario:', err.message);
-            return res.status(500).send('Error al consultar residentes.');
+            console.error('Error al buscar cliente para pago extraordinario:', err.message);
+            return res.status(500).send('Error al consultar clientes.');
         }
 
         if (!result.length) {
-            return res.status(404).send('No se encontraron residentes con contratos activos.');
+            return res.status(404).send('No se encontraron clientes con contratos activos.');
         }
 
         res.status(200).json(result);

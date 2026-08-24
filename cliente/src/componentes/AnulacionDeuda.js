@@ -430,7 +430,7 @@ function AnulacionDeuda() {
         <div style="text-align:left">
           <p><strong>Correlativo:</strong> ${correlativo}</p>
           <p><strong>Pago:</strong> #${id_pago_anulado}</p>
-          <p><strong>Residente:</strong> ${residenteTexto}</p>
+          <p><strong>Cliente:</strong> ${residenteTexto}</p>
           <p><strong>Contrato:</strong> #${id_contrato || '-'}</p>
           <p><strong>Meses a revertir:</strong> ${mesesTexto}</p>
           <p><strong>Monto a revertir:</strong> ${montoTexto}</p>
@@ -753,7 +753,7 @@ function AnulacionDeuda() {
                     {detalleCorrelativo && (
                       <div className="alert alert-info py-2 mb-2">
                         <div><strong>Correlativo encontrado:</strong> {detalleCorrelativo.no_referencia || correlativo || 'N/A'}</div>
-                        <div><strong>Residente:</strong> {detalleCorrelativo.nombre_residente || 'N/A'}</div>
+                        <div><strong>Cliente:</strong> {detalleCorrelativo.nombre_residente || 'N/A'}</div>
                         <div><strong>Contrato:</strong> {detalleCorrelativo.codigo_contrato || `#${detalleCorrelativo.id_contrato}`}</div>
                         <div><strong>Cobrado por:</strong> {detalleCorrelativo.nombre_usuario_cobro || `Usuario #${detalleCorrelativo.id_usuario || 'N/A'}`}</div>
                         <div><strong>Fecha de cobro:</strong> {detalleCorrelativo.fecha_pago ? new Date(detalleCorrelativo.fecha_pago).toLocaleString() : 'N/A'}</div>

@@ -86,8 +86,8 @@ const EstadoCuenta = () => {
         setMensajeBusqueda('No hay datos que coincidan con la búsqueda realizada.');
       } else {
         setTipoMensajeBusqueda('danger');
-        setMensajeBusqueda('No se pudo consultar el residente en este momento.');
-        showFadeToast(obtenerMensajeError(error, 'No se pudo consultar el residente en este momento.'), 'error');
+        setMensajeBusqueda('No se pudo consultar el cliente en este momento.');
+        showFadeToast(obtenerMensajeError(error, 'No se pudo consultar el cliente en este momento.'), 'error');
       }
     } finally {
       setLoading(false);
@@ -393,7 +393,7 @@ const EstadoCuenta = () => {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(12);
         doc.setTextColor(...darkTextColor);
-        doc.text((contrato.nombre || 'RESIDENTE').toUpperCase(), resumenX + (resumenW / 2), resumenY + 6, { align: 'center' });
+        doc.text((contrato.nombre || 'CLIENTE').toUpperCase(), resumenX + (resumenW / 2), resumenY + 6, { align: 'center' });
 
         doc.setFontSize(12);
         doc.text('DIRECCION', 43, resumenY + 15.3, { align: 'center' });
@@ -434,7 +434,7 @@ const EstadoCuenta = () => {
       const tratamiento = /^SRA\.?\s+/i.test(nombreResidenteTexto) || /^SRA\.?\s+/i.test(nombreResidenteMayus) ? 'Sra.' : 'Sr.';
       const solicitanteTexto = nombreResidenteTexto
         ? `el ${tratamiento} ${nombreSinPrefijo || nombreResidenteMayus}`
-        : 'el residente';
+        : 'el cliente';
       const cuerpoIntro = `Por medio del presente, se adjunta el detalle de pagos solicitado por ${solicitanteTexto}, el cual se especifica de manera clara la forma y fecha en que fueron aplicados cada uno de sus pagos.`;
       const fechaReporteBase = estadoCuenta?.fecha_fin || new Date();
       const fechaLarga = new Date(fechaReporteBase).toLocaleDateString('es-GT', {
@@ -621,7 +621,7 @@ const EstadoCuenta = () => {
         }
       });
 
-      const fileName = `EstadoCuenta_${estadoCuenta.contrato.codigo_contrato || 'residente'}.pdf`;
+      const fileName = `EstadoCuenta_${estadoCuenta.contrato.codigo_contrato || 'cliente'}.pdf`;
       doc.save(fileName);
     } catch (error) {
       console.error('Error al exportar PDF:', error);
@@ -633,7 +633,7 @@ const EstadoCuenta = () => {
     <div className="estado-cuenta-view p-4">
       <div className="card w-100 shadow-sm">
         <div className="card-header bg-primary text-white module-header" style={{position: 'sticky', top: 0, zIndex: 100}}>
-          <h3 className="mb-0">📋 Estado de Cuenta de Residentes</h3>
+          <h3 className="mb-0">📋 Estado de Cuenta de Clientes</h3>
         </div>
 
         <div className="card-body">
@@ -669,7 +669,7 @@ const EstadoCuenta = () => {
           {/* LISTA DE RESIDENTES */}
           {listaResidentes.length > 0 && (
             <div className="mb-4">
-              <h5 className="text-secondary">Residentes encontrados:</h5>
+              <h5 className="text-secondary">Clientes encontrados:</h5>
               <div className="list-group">
                 {listaResidentes.map((residente) => (
                   <button
@@ -716,11 +716,11 @@ const EstadoCuenta = () => {
                 </div>
               </div>
               <div className="row">
-                {/* DATOS DEL RESIDENTE */}
+                {/* DATOS DEL CLIENTE */}
                 <div className="col-md-6 mb-3">
                   <div className="card border-primary estado-cuenta-summary-card">
                     <div className="card-header bg-primary text-white">
-                      <h6 className="mb-0">👤 Datos del Residente</h6>
+                      <h6 className="mb-0">👤 Datos del Cliente</h6>
                     </div>
                     <div className="card-body">
                       <p className="mb-2">
@@ -839,7 +839,7 @@ const EstadoCuenta = () => {
                     </div>
                   ) : (
                     <div className="alert alert-warning mb-0">
-                      ⚠️ No hay pagos registrados para este residente.
+                      ⚠️ No hay pagos registrados para este cliente.
                     </div>
                   )}
                 </div>

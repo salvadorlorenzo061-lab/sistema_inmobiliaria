@@ -265,7 +265,7 @@ function Servicios() {
                   <small className="text-muted">Use mensual para servicios que deben volver a aparecer cada mes. Use cobro unico para extras que solo se cobran una vez.</small>
                 </div>
                 <div className="mb-3">
-                  <label className="fw-bold">Buscar residente (clave, ID, nombre, apellido o DPI):</label>
+                  <label className="fw-bold">Buscar cliente (clave, ID, nombre, apellido o DPI):</label>
                   <input
                     type="text"
                     className="form-control"
@@ -275,23 +275,23 @@ function Servicios() {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="fw-bold">Asignar a residente:</label>
+                  <label className="fw-bold">Asignar a cliente:</label>
                   <select
                     className="form-select"
                     value={contratoAsignadoId}
                     onChange={(e) => setContratoAsignadoId(e.target.value)}
                   >
-                    <option value="">Sin residente</option>
+                    <option value="">Sin cliente</option>
                     {contratosCatalogoFiltrados.map((contrato) => (
                       <option key={contrato.id_contrato} value={contrato.id_contrato}>
                         {contrato.codigo_contrato} - {contrato.nombre_residente} {contrato.dpi ? `| DPI: ${contrato.dpi}` : ''}
                       </option>
                     ))}
                   </select>
-                  <small className="text-muted">Opcional. Seleccione el residente/contrato al que se cargara este servicio.</small>
+                  <small className="text-muted">Opcional. Seleccione el cliente/contrato al que se cargara este servicio.</small>
                   {contratoSeleccionadoDetalle && (
                     <div className="mt-2 small text-primary fw-bold">
-                      Proyecto del residente: {contratoSeleccionadoDetalle.nombre_proyecto || 'Sin proyecto asignado'}
+                      Proyecto del cliente: {contratoSeleccionadoDetalle.nombre_proyecto || 'Sin proyecto asignado'}
                     </div>
                   )}
                 </div>
@@ -322,7 +322,7 @@ function Servicios() {
                   <small className="text-muted">Cambie aqui si el servicio debe cobrarse cada mes o una sola vez.</small>
                 </div>
                 <div className="mb-3">
-                  <label className="fw-bold">Buscar residente (clave, ID, nombre, apellido o DPI):</label>
+                  <label className="fw-bold">Buscar cliente (clave, ID, nombre, apellido o DPI):</label>
                   <input
                     type="text"
                     className="form-control"
@@ -332,23 +332,23 @@ function Servicios() {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="fw-bold">Asignar a residente:</label>
+                  <label className="fw-bold">Asignar a cliente:</label>
                   <select
                     className="form-select"
                     value={contratoAsignadoId}
                     onChange={(e) => setContratoAsignadoId(e.target.value)}
                   >
-                    <option value="">Sin residente</option>
+                    <option value="">Sin cliente</option>
                     {contratosCatalogoFiltrados.map((contrato) => (
                       <option key={contrato.id_contrato} value={contrato.id_contrato}>
                         {contrato.codigo_contrato} - {contrato.nombre_residente} {contrato.dpi ? `| DPI: ${contrato.dpi}` : ''}
                       </option>
                     ))}
                   </select>
-                  <small className="text-muted">Opcional. Puede ajustar aqui el residente/contrato al que aplica este servicio.</small>
+                  <small className="text-muted">Opcional. Puede ajustar aqui el cliente/contrato al que aplica este servicio.</small>
                   {contratoSeleccionadoDetalle && (
                     <div className="mt-2 small text-primary fw-bold">
-                      Proyecto del residente: {contratoSeleccionadoDetalle.nombre_proyecto || 'Sin proyecto asignado'}
+                      Proyecto del cliente: {contratoSeleccionadoDetalle.nombre_proyecto || 'Sin proyecto asignado'}
                     </div>
                   )}
                 </div>

@@ -33,6 +33,10 @@ const PERMISOS_MODULOS = [
   'Estado de Cuenta'
 ];
 
+// Se conserva el valor técnico "Residentes" en permisos existentes para no
+// invalidar accesos guardados; únicamente cambia su etiqueta visible.
+const etiquetaPermiso = (permiso) => permiso === 'Residentes' ? 'Clientes' : permiso;
+
 function Usuarios() {
   const [id_usuario, setId_usuario] = useState("");
   const [nombre, setNombre] = useState("");
@@ -456,12 +460,12 @@ function Usuarios() {
                   {permisosLista.length > 0 ? (
                     <div className="d-flex flex-wrap gap-1">
                       {permisosLista.slice(0, 3).map((permiso) => (
-                        <span key={`${val.id_usuario}-${permiso}`} className="badge bg-dark">{permiso}</span>
+                        <span key={`${val.id_usuario}-${permiso}`} className="badge bg-dark">{etiquetaPermiso(permiso)}</span>
                       ))}
                       {permisosLista.length > 3 && (
                         <span
                           className="badge bg-secondary"
-                          title={permisosOcultos.join(', ')}
+                          title={permisosOcultos.map(etiquetaPermiso).join(', ')}
                           style={{ cursor: 'help' }}
                         >
                           +{permisosLista.length - 3} más
@@ -569,7 +573,7 @@ function Usuarios() {
                           onChange={() => togglePermiso(permiso)}
                         />
                         <label className="form-check-label" htmlFor={`perm-reg-${permiso}`}>
-                          {permiso}
+                          {etiquetaPermiso(permiso)}
                         </label>
                       </div>
                     ))}
@@ -655,7 +659,7 @@ function Usuarios() {
                           onChange={() => togglePermiso(permiso)}
                         />
                         <label className="form-check-label" htmlFor={`perm-edit-${permiso}`}>
-                          {permiso}
+                          {etiquetaPermiso(permiso)}
                         </label>
                       </div>
                     ))}

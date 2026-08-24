@@ -84,7 +84,7 @@ function Residentes() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(40, 40, 40);
-    doc.text("DATOS GENERALES DEL RESIDENTE", 14, 49);
+    doc.text("DATOS GENERALES DEL CLIENTE", 14, 49);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
@@ -97,7 +97,7 @@ function Residentes() {
         startY: 88, 
         head: [['PARÁMETRO', 'VALOR ASIGNADO']],
         body: [
-          ['CÓDIGO RESIDENTE', `RES-${val.id_residente}`],
+          ['CÓDIGO CLIENTE', `RES-${val.id_residente}`],
           ['NOMBRE COMPLETO', val.nombre.toUpperCase()],
           ['DPI / IDENTIFICACIÓN', val.dpi],
           ['TELÉFONO', val.telefono],
@@ -122,9 +122,9 @@ function Residentes() {
       doc.setFont("helvetica", "italic");
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
-      doc.text("Nota de seguridad: Esta ficha contiene datos confidenciales del residente.", 14, finalY);
+      doc.text("Nota de seguridad: Esta ficha contiene datos confidenciales del cliente.", 14, finalY);
       
-      doc.save(`Ficha_Residente_${val.nombre.replace(/\s+/g, '_')}.pdf`);
+      doc.save(`Ficha_Cliente_${val.nombre.replace(/\s+/g, '_')}.pdf`);
     };
 
     if (val.foto && val.foto.startsWith("data:image")) {
@@ -161,7 +161,7 @@ function Residentes() {
   const getResidentes = useCallback(() => {
     Axios.get(API_URL)
     .then((response) => { setResidentes(response.data); })
-    .catch((error) => { console.error("Error al obtener residentes", error); });
+    .catch((error) => { console.error("Error al obtener clientes", error); });
   }, [API_URL]);
 
   useEffect(() => {
@@ -210,7 +210,7 @@ function Residentes() {
       Swal.fire({
         position: "top-end",
         icon: "success",
-        title: 'Residente creado correctamente',
+        title: 'Cliente creado correctamente',
         html: `Número de identificación asignado:<br><strong>${response.data.numero_identificacion || 'Sin asignar'}</strong>`,
         showConfirmButton: false,
         timer: 4000
@@ -258,7 +258,7 @@ function Residentes() {
       getResidentes();
       limpiarCampos();
       setShowEditModal(false);
-      Swal.fire({ html: '<strong>¡Éxito!</strong><p>Residente actualizado correctamente</p>', icon: 'success', timer: 3000, showConfirmButton: false });
+      Swal.fire({ html: '<strong>¡Éxito!</strong><p>Cliente actualizado correctamente</p>', icon: 'success', timer: 3000, showConfirmButton: false });
     })
     .catch((error) => {
       console.error(error);
@@ -333,7 +333,7 @@ function Residentes() {
   const asignarIdentificacion = (val) => {
     Swal.fire({
       title: `Asignar identificación a ${val.nombre}`,
-      text: 'Se generará y asignará un número de identificación único a este residente.',
+      text: 'Se generará y asignará un número de identificación único a este cliente.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Generar y Asignar',
@@ -371,7 +371,7 @@ function Residentes() {
       <div className="module-header">
         <div className="row align-items-center bg-light p-3 rounded shadow-sm">
           <div className="col-md-4">
-            <h3 className="m-0 text-dark fw-bold">GESTIÓN DE RESIDENTES</h3>
+            <h3 className="m-0 text-dark fw-bold">GESTIÓN DE CLIENTES</h3>
           </div>
           <div className="col-md-5">
             <div className="input-group">
@@ -387,7 +387,7 @@ function Residentes() {
           </div>
           <div className="col-md-3 text-end">
             <button className="btn btn-success fw-bold w-100" onClick={() => { limpiarCampos(); setShowRegModal(true); }}>
-              ➕ AGREGAR RESIDENTE
+              ➕ AGREGAR CLIENTE
             </button>
           </div>
         </div>
@@ -448,7 +448,7 @@ function Residentes() {
               ))
             ) : (
               <tr>
-                <td colSpan="10" className="text-center text-muted py-3">No se encontraron residentes coincidentes.</td>
+                <td colSpan="10" className="text-center text-muted py-3">No se encontraron clientes coincidentes.</td>
               </tr>
             )}
           </tbody>
@@ -462,7 +462,7 @@ function Residentes() {
         startIndex={startIndex}
         endIndex={endIndex}
         itemsCount={residentesFiltrados.length}
-        itemLabel="residentes"
+        itemLabel="clientes"
         className="paginacion-residentes"
       />
 
@@ -472,7 +472,7 @@ function Residentes() {
           <div className="modal-dialog modal-dialog-scrollable">
             <div className="modal-content shadow-lg">
               <div className="modal-header bg-success text-white">
-                <h5 className="modal-title fw-bold">Registrar Residente</h5>
+                <h5 className="modal-title fw-bold">Registrar Cliente</h5>
                 <button type="button" className="btn-close btn-close-white" onClick={() => { setShowRegModal(false); limpiarCampos(); }}></button>
               </div>
               <div className="modal-body">
@@ -490,7 +490,7 @@ function Residentes() {
                   <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="form-control" placeholder="Nombre completo" />
                 </div>
                 <div className="mb-3 bg-light p-2 border rounded">
-                  <small className="text-muted">El sistema asignará automáticamente un número de identificación único al guardar el residente.</small>
+                  <small className="text-muted">El sistema asignará automáticamente un número de identificación único al guardar el cliente.</small>
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">DPI:</label>
@@ -536,7 +536,7 @@ function Residentes() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Dirección de Residencia:</label>
-                  <input type="text" value={direccion_residencia} onChange={(e) => setDireccion_residencia(e.target.value)} className="form-control" placeholder="Dirección del domicilio del residente" />
+                  <input type="text" value={direccion_residencia} onChange={(e) => setDireccion_residencia(e.target.value)} className="form-control" placeholder="Dirección del domicilio del cliente" />
                 </div>
                 <div className="mb-3 bg-light p-2 border rounded">
                   <label className="form-label fw-bold text-primary">¿Es obligatorio subir fotografía?</label>
@@ -546,7 +546,7 @@ function Residentes() {
                   </select>
                 </div>
                 <div className="mb-3">
-                  <label className="form-label fw-bold">Fotografía del Residente:</label>
+                  <label className="form-label fw-bold">Fotografía del Cliente:</label>
                   <input type="file" accept="image/*" onChange={handleFotoChange} className="form-control" />
                   {foto && (
                     <div className="mt-2 text-center">
@@ -574,7 +574,7 @@ function Residentes() {
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => { setShowRegModal(false); limpiarCampos(); }}>Cancelar</button>
-                <button type="button" className="btn btn-success fw-bold" onClick={add}>Guardar Residente</button>
+                <button type="button" className="btn btn-success fw-bold" onClick={add}>Guardar Cliente</button>
               </div>
             </div>
           </div>
@@ -587,7 +587,7 @@ function Residentes() {
           <div className="modal-dialog modal-dialog-scrollable">
             <div className="modal-content shadow-lg">
               <div className="modal-header bg-warning text-dark">
-                <h5 className="modal-title fw-bold">Actualizar Residente #{id_residente}</h5>
+                <h5 className="modal-title fw-bold">Actualizar Cliente #{id_residente}</h5>
                 <button type="button" className="btn-close" onClick={() => { setShowEditModal(false); limpiarCampos(); }}></button>
               </div>
               <div className="modal-body">

@@ -147,7 +147,7 @@ const ReporteFacturas = () => {
       <div className="border rounded shadow-sm bg-white p-3 mb-4">
         <div className="row g-3 align-items-end">
           <div className="col-lg-5">
-            <label className="form-label fw-bold">Residente, identificación o documento</label>
+            <label className="form-label fw-bold">Cliente, identificación o documento</label>
             <input
               type="search"
               className="form-control"
@@ -190,7 +190,7 @@ const ReporteFacturas = () => {
                 <th>Cuota / Mes</th>
                 <th>Factura</th>
                 <th>Fecha</th>
-                <th>Residente</th>
+                <th>Cliente</th>
                 <th>Identificación</th>
                 <th>Contrato</th>
                 <th>Estado</th>

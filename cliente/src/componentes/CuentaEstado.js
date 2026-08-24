@@ -133,7 +133,7 @@ const CuentaEstado = () => {
       setSimulacion(null);
     } catch (error) {
       setResultados([]);
-      showToast(String(error?.response?.data || 'No se pudo buscar el residente.'), 'error');
+      showToast(String(error?.response?.data || 'No se pudo buscar el cliente.'), 'error');
     } finally {
       setCargando(false);
     }
@@ -312,7 +312,7 @@ const CuentaEstado = () => {
     const doc = new jsPDF('l', 'mm', 'letter');
     const pageWidth = doc.internal.pageSize.getWidth();
     const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
-    const nombreResidente = String(contrato?.nombre_residente || 'SIN-RESIDENTE');
+    const nombreResidente = String(contrato?.nombre_residente || 'SIN-CLIENTE');
     const fecha = new Date().toLocaleDateString('es-GT');
 
     doc.setFontSize(14);
@@ -321,7 +321,7 @@ const CuentaEstado = () => {
     doc.setFontSize(10);
     doc.setTextColor(60, 60, 60);
     doc.text(`Contrato: ${codigoContrato}`, 14, 20);
-    doc.text(`Residente: ${nombreResidente}`, 14, 25);
+    doc.text(`Cliente: ${nombreResidente}`, 14, 25);
     doc.text(`Fecha: ${fecha}`, pageWidth - 14, 20, { align: 'right' });
 
     autoTable(doc, {
@@ -367,7 +367,7 @@ const CuentaEstado = () => {
 
     const encabezados = [
       'Contrato',
-      'Residente',
+      'Cliente',
       'Cuota',
       'Saldo Inicial',
       'Capital Cuota',
@@ -378,7 +378,7 @@ const CuentaEstado = () => {
     ];
 
     const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
-    const nombreResidente = String(contrato?.nombre_residente || 'SIN-RESIDENTE');
+    const nombreResidente = String(contrato?.nombre_residente || 'SIN-CLIENTE');
 
     const filas = tablaAmortizacionPendiente.map((row) => ([
       codigoContrato,
@@ -470,7 +470,7 @@ const CuentaEstado = () => {
                   <div className="card border-primary h-100">
                     <div className="card-header bg-primary text-white">Datos base del contrato</div>
                     <div className="card-body">
-                      <p className="mb-1"><strong>Residente:</strong> {contrato.nombre_residente}</p>
+                      <p className="mb-1"><strong>Cliente:</strong> {contrato.nombre_residente}</p>
                       <p className="mb-1"><strong>Contrato:</strong> {contrato.codigo_contrato}</p>
                       <p className="mb-1"><strong>Precio total terreno:</strong> {formatoMoneda(contrato.precio_total_terreno)}</p>
                       <div className={`alert ${contrato.estado_enganche === 'PAGADO' ? 'alert-success' : 'alert-warning'} py-2 px-3 my-2`}>

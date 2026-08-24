@@ -60,7 +60,7 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true }) {
   if (!datosContrato.codigo_contrato || !datosResidente.id_residente) {
     return (
       <div className="alert alert-info mt-3">
-        <strong>ℹ️ Vista Previa del PDF:</strong> Completa los datos del contrato y residente para ver la previsualización
+        <strong>ℹ️ Vista Previa del PDF:</strong> Completa los datos del contrato y cliente para ver la previsualización
       </div>
     );
   }
@@ -71,7 +71,7 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true }) {
         <div className="spinner-border spinner-border-sm me-2" role="status">
           <span className="visually-hidden">Generando PDF...</span>
         </div>
-        Generando PDF con los datos del residente...
+        Generando PDF con los datos del cliente...
       </div>
     );
   }
@@ -104,7 +104,7 @@ function PdfPreview({ datosContrato, datosResidente, mostrar = true }) {
         <div className="card-footer text-muted small">
           ✅ PDF actualizado en tiempo real - Los datos mostrados incluyen:
           <br />
-          • Residente: <strong>{datosResidente.nombre || 'N/A'}</strong>
+          • Cliente: <strong>{datosResidente.nombre || 'N/A'}</strong>
           • Identificación: <strong>{datosResidente.numero_identificacion || 'N/A'}</strong>
           • Código Contrato: <strong>{datosContrato.codigo_contrato || 'N/A'}</strong>
           • Monto: <strong>Q. {parseFloat(datosContrato.monto_total || 0).toLocaleString('es-GT', { minimumFractionDigits: 2 })}</strong>

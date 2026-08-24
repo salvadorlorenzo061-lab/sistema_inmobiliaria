@@ -105,8 +105,8 @@ const generarNumeroIdentificacionUnico = (callback) => {
 router.get("/", (req, res) => {
     db.query('SELECT * FROM residentes', (err, result) => {
         if (err) {
-            console.error("Error al obtener residentes:", err);
-            return res.status(500).send("Error al obtener residentes");
+            console.error("Error al obtener clientes:", err);
+            return res.status(500).send("Error al obtener clientes");
         }
         res.status(200).send(result);
     });
@@ -171,10 +171,10 @@ router.post("/crear", (req, res) => {
             ], (insertErr, insertResult) => {
                 if (insertErr) {
                     console.error("Error al insertar residente:", insertErr);
-                    return res.status(500).send("Error al registrar el residente");
+                    return res.status(500).send("Error al registrar el cliente");
                 }
                 res.status(200).json({
-                    message: "Residente registrado con éxito!!!",
+                    message: "Cliente registrado con éxito!!!",
                     numero_identificacion: numeroIdentificacion,
                     id_residente: insertResult.insertId
                 });
@@ -210,11 +210,11 @@ router.put("/actualizar", (req, res) => {
     db.query(queryCurrentId, [id_residente], (fetchErr, rows) => {
         if (fetchErr) {
             console.error("Error al consultar identificación actual:", fetchErr);
-            return res.status(500).send("Error al actualizar el residente");
+            return res.status(500).send("Error al actualizar el cliente");
         }
 
         if (!rows || rows.length === 0) {
-            return res.status(404).send("Residente no encontrado");
+            return res.status(404).send("Cliente no encontrado");
         }
 
         const incomingId = String(numero_identificacion || '').trim();
@@ -244,10 +244,10 @@ router.put("/actualizar", (req, res) => {
                 id_residente
             ], (err) => {
                 if (err) {
-                    console.error("Error al actualizar residente:", err);
-                    return res.status(500).send("Error al actualizar el residente");
+                    console.error("Error al actualizar cliente:", err);
+                    return res.status(500).send("Error al actualizar el cliente");
                 }
-                return res.status(200).send("Residente actualizado correctamente");
+                return res.status(200).send("Cliente actualizado correctamente");
             });
         };
 
@@ -275,10 +275,10 @@ router.delete("/delete/:id_residente", (req, res) => {
     const { id_residente } = req.params; 
     db.query('DELETE FROM residentes WHERE id_residente=?', [id_residente], (err, result) => {
         if (err) {
-            console.error("Error al eliminar residente:", err);
-            return res.status(500).send("Error al eliminar el residente");
+            console.error("Error al eliminar cliente:", err);
+            return res.status(500).send("Error al eliminar el cliente");
         }
-        res.status(200).send("Residente eliminado correctamente"); 
+        res.status(200).send("Cliente eliminado correctamente");
     });
 });
 
@@ -292,18 +292,18 @@ router.post("/asignar-identificacion/:id", (req, res) => {
     const queryResidente = 'SELECT numero_identificacion FROM residentes WHERE id_residente = ? LIMIT 1';
     db.query(queryResidente, [idResidente], (fetchErr, rows) => {
         if (fetchErr) {
-            console.error('Error al consultar residente para asignar identificación:', fetchErr);
-            return res.status(500).send({ message: 'No se pudo consultar el residente.' });
+            console.error('Error al consultar cliente para asignar identificación:', fetchErr);
+            return res.status(500).send({ message: 'No se pudo consultar el cliente.' });
         }
 
         if (!rows || rows.length === 0) {
-            return res.status(404).send({ message: 'Residente no encontrado.' });
+            return res.status(404).send({ message: 'Cliente no encontrado.' });
         }
 
         const actual = String(rows[0].numero_identificacion || '').trim();
         const placeholdersSinId = new Set(['', 'sin asignar', 'n/a', 'na', 'null', 'undefined']);
         if (!placeholdersSinId.has(actual.toLowerCase())) {
-            return res.status(400).send({ message: 'El residente ya tiene un número de identificación asignado.' });
+            return res.status(400).send({ message: 'El cliente ya tiene un número de identificación asignado.' });
         }
 
         const intentarAsignacion = (intento = 1) => {
@@ -331,7 +331,7 @@ router.post("/asignar-identificacion/:id", (req, res) => {
                         }
 
                         if (!result || result.affectedRows === 0) {
-                            return res.status(404).send({ message: 'No se pudo actualizar el residente.' });
+                            return res.status(404).send({ message: 'No se pudo actualizar el cliente.' });
                         }
 
                         return res.status(200).json({

@@ -133,7 +133,7 @@ function Convenio() {
       Swal.fire({
         icon: 'error',
         title: 'Error en la busqueda',
-        text: error?.response?.data?.message || 'No se pudo consultar residentes.'
+        text: error?.response?.data?.message || 'No se pudo consultar clientes.'
       });
     }
   };
@@ -257,7 +257,7 @@ function Convenio() {
       doc.text(`Estado: ${String(item?.estado || 'activo').toUpperCase()}`, 14, 33);
 
       doc.text(`Contrato: ${item?.codigo_contrato || `#${item?.id_contrato || 'N/A'}`}`, 110, 23);
-      doc.text(`Residente: ${item?.nombre_residente || 'N/A'}`, 110, 28);
+      doc.text(`Cliente: ${item?.nombre_residente || 'N/A'}`, 110, 28);
       doc.text(`Identificacion: ${item?.numero_identificacion || 'N/A'}`, 110, 33);
 
       autoTable(doc, {
@@ -304,7 +304,7 @@ function Convenio() {
 
       const finalY = (doc.lastAutoTable?.finalY || 200) + 20;
       doc.setFont('Helvetica', 'normal');
-      doc.text('Firma residente: ________________________________', 14, Math.min(finalY, 250));
+      doc.text('Firma cliente: _________________________________', 14, Math.min(finalY, 250));
       doc.text('Firma representante: _____________________________', 110, Math.min(finalY, 250));
 
       doc.save(`Convenio_${item?.id_convenio || 'NUEVO'}.pdf`);
@@ -348,7 +348,7 @@ function Convenio() {
             <input
               type="text"
               className="form-control"
-              placeholder="Buscar por convenio, contrato o residente..."
+              placeholder="Buscar por convenio, contrato o cliente..."
               value={busqueda}
               onChange={(e) => {
                 setBusqueda(e.target.value);
@@ -367,7 +367,7 @@ function Convenio() {
           <tr>
             <th>ID</th>
             <th>CONTRATO</th>
-            <th>RESIDENTE</th>
+            <th>CLIENTE</th>
             <th>FECHA CONVENIO</th>
             <th>MONTO ORIGINAL</th>
             <th>SALDO ACTUAL</th>
@@ -387,7 +387,7 @@ function Convenio() {
                 <small className="text-muted">Contrato #{item.id_contrato}</small>
               </td>
               <td>
-                <div className="fw-bold">{item.nombre_residente || 'Sin residente'}</div>
+                <div className="fw-bold">{item.nombre_residente || 'Sin cliente'}</div>
                 <small className="text-muted">{item.numero_identificacion || 'Sin clave'}</small>
               </td>
               <td>{item.fecha_convenio ? new Date(item.fecha_convenio).toLocaleDateString('es-GT') : '-'}</td>
@@ -435,7 +435,7 @@ function Convenio() {
               </div>
               <div className="modal-body row">
                 <div className="col-md-9 mb-2">
-                  <label className="form-label fw-bold">Buscar Residente / Contrato:</label>
+                  <label className="form-label fw-bold">Buscar Cliente / Contrato:</label>
                   <div className="input-group">
                     <input
                       type="text"

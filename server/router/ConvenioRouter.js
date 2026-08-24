@@ -105,8 +105,8 @@ router.get('/buscar-residente', async (req, res) => {
 
         return res.status(200).json(rows);
     } catch (error) {
-        console.error('Error al buscar residente para convenio:', error);
-        return res.status(500).json({ message: 'No se pudo realizar la busqueda de residentes.' });
+        console.error('Error al buscar cliente para convenio:', error);
+        return res.status(500).json({ message: 'No se pudo realizar la búsqueda de clientes.' });
     }
 });
 

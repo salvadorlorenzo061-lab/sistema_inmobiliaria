@@ -36,7 +36,7 @@ export const modulesConfig = [
   },
   {
     id: 'residentes',
-    label: 'Residentes',
+    label: 'Clientes',
     icon: '🏡',
     path: '/residentes',
     component: Residentes,

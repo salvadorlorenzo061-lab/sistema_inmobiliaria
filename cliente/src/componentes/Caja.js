@@ -318,7 +318,7 @@ const Caja = () => {
     const [busqueda, setBusqueda] = useState(''); // Ahora acepta texto o números
     const [listaResidentes, setListaResidentes] = useState([]); // Guarda las coincidencias
     const [listaResidentesPendientes, setListaResidentesPendientes] = useState([]); // Lista inicial de residentes con pagos pendientes
-    const [datosDeuda, setDatosDeuda] = useState(null); // Residente seleccionado actualmente
+    const [datosDeuda, setDatosDeuda] = useState(null); // Cliente seleccionado actualmente
     const [idResidenteActivo, setIdResidenteActivo] = useState(''); // Guarda el ID del seleccionado para el pago
 
     // Estados del formulario de cobro
@@ -878,7 +878,7 @@ const Caja = () => {
                 seleccionarResidente(res.data[0]);
             }
         } catch (error) {
-            mostrarToast(error.response?.data || "Error al buscar residente", "error");
+            mostrarToast(error.response?.data || "Error al buscar cliente", "error");
             setListaResidentes([]);
             setDatosDeuda(null);
         }
@@ -1269,7 +1269,7 @@ const Caja = () => {
 
                 generarPDF(response.data, {
                     ...datosDeuda,
-                    nombre: datosDeuda?.nombre || 'Residente',
+                    nombre: datosDeuda?.nombre || 'Cliente',
                     dpi: datosDeuda?.dpi || 'N/A',
                     codigo_contrato: datosDeuda?.codigo_contrato || 'N/A',
                     nombre_contrato: datosDeuda?.nombre_contrato || 'Contrato',
@@ -1817,7 +1817,7 @@ const Caja = () => {
             {!datosDeuda && !listaResidentes.length && listaResidentesPendientes.length > 0 && (
                 <div className="card mb-4 shadow-sm border-info">
                     <div className="card-header bg-info text-white fw-bold">
-                        📋 Residentes activos (pendientes y solventes) - click para seleccionar
+                        📋 Clientes activos (pendientes y solventes) - click para seleccionar
                     </div>
                     <ul className="list-group list-group-flush" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         {listaResidentesPaginada.map((r) => (
@@ -1920,7 +1920,7 @@ const Caja = () => {
             {/* Resumen del residente seleccionado */}
             {datosDeuda && (
                 <div className="card mb-4 shadow-sm border-success">
-                    <div className="card-header bg-success text-white fw-bold">✅ Residente seleccionado</div>
+                    <div className="card-header bg-success text-white fw-bold">✅ Cliente seleccionado</div>
                     <div className="card-body">
                         <div className="row">
                             <div className="col-md-8">
@@ -2213,7 +2213,7 @@ const Caja = () => {
 
                                     {/* Selección de meses pendientes como lista de items */}
                                     <div className="mb-4">
-                                        <label className="form-label fw-bold">📅 Meses a Pagar (seleccione cuáles paga el residente):</label>
+                                        <label className="form-label fw-bold">📅 Meses a Pagar (seleccione cuáles paga el cliente):</label>
                                         <div className="border rounded-3 p-3 bg-light">
                                             {mesesPendientes.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">
@@ -2363,7 +2363,7 @@ const Caja = () => {
                                     <div className="mb-3">
                                         <label className="form-label fw-bold">Marca de Empresa en PDF:</label>
                                         <input className="form-control" type="text" value="Automática (usa la empresa ya asociada al contrato)" readOnly />
-                                        <small className="text-muted">El sistema toma automáticamente el logo y nombre ya registrados para ese contrato/residente.</small>
+                                        <small className="text-muted">El sistema toma automáticamente el logo y nombre ya registrados para ese contrato/cliente.</small>
                                     </div>
                                 </form>
                             </div>

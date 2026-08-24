@@ -431,13 +431,14 @@ function Contratos_Residentes() {
   
   const validarContrato = () => {
     if (!codigo_contrato.trim()) return "Debe generar o escribir el código del contrato.";
-    if (!id_residente) return "Debe seleccionar un residente.";
+    if (!id_residente) return "Debe seleccionar un cliente.";
     if (!id_tipo_contrato) return "Debe seleccionar el tipo de contrato.";
     if (!String(monto_total || '').trim()) return "Debe ingresar el precio total del contrato.";
     if (!String(obtenerCuotasEnvio() || '').trim()) return "Debe ingresar la cantidad de cuotas.";
     if (montoCuotaGuardable <= 0) return "Debe indicar un monto de cuota válido.";
     if (cuotasCalculadasNumero > 1 && (montoCuotaGuardable * (cuotasCalculadasNumero - 1)) >= Number(precioTotalConInteresesCalculado || 0)) {
-      return "La cuota regular es demasiado alta: la última cuota debe ser mayor que cero.";
+      const cuotaMaxima = Math.max(Math.floor((Number(precioTotalConInteresesCalculado || 0) - 0.01) / (cuotasCalculadasNumero - 1)), 0);
+      return `La cuota regular es demasiado alta. Ingrese un valor máximo de Q ${cuotaMaxima.toLocaleString('es-GT')} para conservar una última cuota positiva.`;
     }
     if (dia_pago_limite === '') return "Debe indicar los días de gracia.";
     if (!fecha_firma) return "Debe ingresar la fecha de firma.";
@@ -551,7 +552,7 @@ function Contratos_Residentes() {
         cuotasEsperadas: payload.cuotas_pagadas
       });
 
-      // Obtener datos del residente para el PDF
+      // Obtener datos del cliente para el PDF
       const residente = residentesList.find(r => String(r.id_residente) === String(id_residente));
       
       // Generar PDF automáticamente
@@ -680,7 +681,7 @@ function Contratos_Residentes() {
       const residente = residentesList.find(r => String(r.id_residente) === String(val.id_residente));
       
       if (!residente) {
-        Swal.fire({ icon: "error", title: "Error", text: "No se encontraron datos del residente" });
+        Swal.fire({ icon: "error", title: "Error", text: "No se encontraron datos del cliente" });
         return;
       }
 
@@ -724,7 +725,7 @@ function Contratos_Residentes() {
       const residente = residentesList.find(r => String(r.id_residente) === String(val.id_residente));
 
       if (!residente) {
-        Swal.fire({ icon: "error", title: "Error", text: "No se encontraron datos del residente" });
+        Swal.fire({ icon: "error", title: "Error", text: "No se encontraron datos del cliente" });
         return;
       }
 
@@ -1056,11 +1057,16 @@ function Contratos_Residentes() {
     setEnganche(val.enganche ?? '20000');
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
-    setMonto_cuota_manual(String(Number(val.monto_cuota || 0) > 0 ? Math.round(Number(val.monto_cuota)) : ''));
+    const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
+    const cuotaGuardada = Math.round(Number(val.monto_cuota || 0));
+    const cuotaGuardadaValida = cuotaGuardada > 0
+      && (plazoContrato <= 1 || (cuotaGuardada * (plazoContrato - 1)) < totalConInteresesContrato);
+    // Los contratos históricos con una última cuota negativa vuelven al cálculo
+    // automático para poder editarlos sin sobrecobrar en Caja.
+    setMonto_cuota_manual(cuotaGuardadaValida ? String(cuotaGuardada) : '');
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
     const ultimaCuotaPagadaPersistida = Math.max(parseInt(String(val.ultima_cuota_pagada ?? val.cuotas_pagadas ?? '0').trim(), 10) || 0, 0);
     setCuotas_pagadas_manual(String(ultimaCuotaPagadaPersistida));
-    const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
     setAnios_financiamiento(
       Number.isFinite(plazoContrato) && plazoContrato > 0
         ? String(redondearMoneda(plazoContrato / 12))
@@ -1195,12 +1201,12 @@ function Contratos_Residentes() {
       <div className="module-header">
       {/* HEADER */}
       <div className="row bg-light p-3 rounded shadow-sm align-items-center">
-        <div className="col-md-4"><h3 className="fw-bold m-0 text-primary">📑 CONTRATOS DE RESIDENTES</h3></div>
+        <div className="col-md-4"><h3 className="fw-bold m-0 text-primary">📑 CONTRATOS DE CLIENTES</h3></div>
         <div className="col-md-5">
           <div className="input-group">
             <input
               type="text"
-              placeholder="Buscar por código de contrato o residente..."
+              placeholder="Buscar por código de contrato o cliente..."
               className="form-control"
               value={busqueda}
               onChange={handleBusquedaChange}
@@ -1226,7 +1232,7 @@ function Contratos_Residentes() {
         <thead className="table-dark">
           <tr>
             <th style={thCompacto}>CÓDIGO</th>
-            <th style={thCompacto}>RESIDENTE</th>
+            <th style={thCompacto}>CLIENTE</th>
             <th style={thCompacto}>IDENTIFICACIÓN</th>
             <th style={thCompacto}>TIPO CONTRATO</th>
             <th style={thCompacto}>MONTO TOTAL</th>
@@ -1333,15 +1339,15 @@ function Contratos_Residentes() {
                 {/* SECCIÓN 1: DATOS BÁSICOS DEL CONTRATO */}
                 <div className="col-12 mb-2"><h6 className="fw-bold text-primary border-bottom pb-1">📑 DATOS BÁSICOS DEL CONTRATO</h6></div>
                 <div className="col-md-6 mb-3">
-                  <label className="form-label fw-bold">Seleccionar Residente:</label>
+                  <label className="form-label fw-bold">Seleccionar Cliente:</label>
                   <select className="form-select" value={id_residente} onChange={e => seleccionarResidenteContrato(e.target.value)}>
-                    <option value="">-- Seleccione un Residente --</option>
+                    <option value="">-- Seleccione un Cliente --</option>
                     {residentesList.map(r => <option key={r.id_residente} value={r.id_residente}>{r.nombre} {r.numero_identificacion ? `· ${r.numero_identificacion}` : ''}</option>)}
                   </select>
                 </div>
                 <div className="col-md-6 mb-3">
                   <label className="form-label fw-bold">Código de Contrato <small className="text-muted fw-normal">(auto-generado)</small>:</label>
-                  <input type="text" className="form-control" value={codigo_contrato} onChange={e => setCodigo_contrato(e.target.value)} placeholder="Seleccione un residente para generar" />
+                  <input type="text" className="form-control" value={codigo_contrato} onChange={e => setCodigo_contrato(e.target.value)} placeholder="Seleccione un cliente para generar" />
                 </div>
                 <div className="col-md-6 mb-3">
                   <label className="form-label fw-bold">Tipo de Contrato:</label>
@@ -1639,9 +1645,9 @@ function Contratos_Residentes() {
                   <input type="text" className="form-control" value={codigo_contrato} onChange={e => setCodigo_contrato(e.target.value)} />
                 </div>
                 <div className="col-md-6 mb-3">
-                  <label className="form-label fw-bold">Residente:</label>
+                  <label className="form-label fw-bold">Cliente:</label>
                   <select className="form-select" value={id_residente} onChange={e => setId_residente(e.target.value)}>
-                    <option value="">-- Seleccione un Residente --</option>
+                    <option value="">-- Seleccione un Cliente --</option>
                     {residentesList.map(r => <option key={r.id_residente} value={r.id_residente}>{r.nombre} {r.numero_identificacion ? `· ${r.numero_identificacion}` : ''}</option>)}
                   </select>
                 </div>

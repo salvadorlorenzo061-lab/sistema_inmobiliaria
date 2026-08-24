@@ -312,7 +312,7 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   doc.rect(10, y, pW - 20, 7, 'F');
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(9.5);
-  doc.text('DATOS DEL CLIENTE / RESIDENTE', 12, y + 5);
+  doc.text('DATOS DEL CLIENTE', 12, y + 5);
   y += 10;
 
   doc.setFont('Helvetica', 'bold');

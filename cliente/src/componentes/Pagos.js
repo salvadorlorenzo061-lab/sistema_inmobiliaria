@@ -252,7 +252,7 @@ function Pagos() {
                   <select value={id_contrato} onChange={(e) => setId_contrato(e.target.value)} className="form-select">
                     <option value="">-- Seleccione el Contrato --</option>
                     {contratosList.map(c => (
-                      <option key={c.id_contrato} value={c.id_contrato}>ID: {c.id_contrato} - Residente: {c.nombre || c.id_residente}</option>
+                      <option key={c.id_contrato} value={c.id_contrato}>ID: {c.id_contrato} - Cliente: {c.nombre || c.id_residente}</option>
                     ))}
                   </select>
                 </div>

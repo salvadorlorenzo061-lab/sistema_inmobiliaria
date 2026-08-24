@@ -189,11 +189,11 @@ router.get('/buscar-residente', (req, res) => {
     db.query(sql, [searchTerm, searchTerm, searchTerm, searchTerm], (err, rows) => {
         if (err) {
             console.error('Error en busqueda de cuenta capital:', err.message);
-            return res.status(500).send('No se pudo buscar el residente.');
+            return res.status(500).send('No se pudo buscar el cliente.');
         }
 
         if (!rows || rows.length === 0) {
-            return res.status(404).send('No se encontraron residentes.');
+            return res.status(404).send('No se encontraron clientes.');
         }
 
         return res.status(200).json(rows);

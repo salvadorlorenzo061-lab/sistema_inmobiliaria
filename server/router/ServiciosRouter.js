@@ -408,7 +408,7 @@ router.get('/contratos/:id_servicio', (req, res) => {
         (err, rows) => {
             if (err) {
                 console.error('Error obteniendo contratos del servicio:', err);
-                return res.status(500).send({ message: 'No se pudo obtener relacion del servicio con residentes.' });
+                return res.status(500).send({ message: 'No se pudo obtener relación del servicio con clientes.' });
             }
 
             const contratos = (rows || []).map((row) => Number(row.id_contrato)).filter((id) => Number.isInteger(id) && id > 0);
@@ -566,7 +566,7 @@ router.post("/crear", (req, res) => {
                 const idProyectoPrincipal = idProyectoPrincipalDirecto || idProyectoDesdeContrato;
 
                 if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
-                    return res.status(400).send({ message: 'Debe seleccionar un residente con contrato activo para crear esta amenidad.' });
+                    return res.status(400).send({ message: 'Debe seleccionar un cliente con contrato activo para crear esta amenidad.' });
                 }
 
                 const insertSql = colProyectoInfo.exists
@@ -682,7 +682,7 @@ router.put("/actualizar", (req, res) => {
                 const idProyectoPrincipal = idProyectoPrincipalDirecto || idProyectoDesdeContrato;
 
                 if (colProyectoInfo.exists && !colProyectoInfo.nullable && !idProyectoPrincipal) {
-                    return res.status(400).send({ message: 'Debe seleccionar un residente con contrato activo para actualizar esta amenidad.' });
+                    return res.status(400).send({ message: 'Debe seleccionar un cliente con contrato activo para actualizar esta amenidad.' });
                 }
 
                 const updateSql = colProyectoInfo.exists

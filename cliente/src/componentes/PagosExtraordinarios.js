@@ -100,7 +100,7 @@ function PagosExtraordinarios() {
 
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(11);
-      doc.text('DATOS DEL RESIDENTE', 14, 48);
+      doc.text('DATOS DEL CLIENTE', 14, 48);
 
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(10);
@@ -339,7 +339,7 @@ function PagosExtraordinarios() {
       const res = await Axios.get(`${API_URL}/buscar-residente?criterio=${encodeURIComponent(busquedaResidente.trim())}`);
       const resultadosApi = Array.isArray(res.data) ? res.data : [];
       setResultadosResidentes(resultadosApi);
-      setMensajeBusquedaResidente(resultadosApi.length ? "" : "No se encontraron residentes activos con ese criterio.");
+      setMensajeBusquedaResidente(resultadosApi.length ? "" : "No se encontraron clientes activos con ese criterio.");
     } catch (err) {
       const criterio = busquedaResidente.trim().toLowerCase();
       const resultadosLocales = (contratosList || [])
@@ -410,7 +410,7 @@ function PagosExtraordinarios() {
       </div>
 
       <div className="card mb-3 shadow-sm border-info">
-        <div className="card-header bg-info text-white fw-bold">👥 Residentes con cobro extra cargado</div>
+        <div className="card-header bg-info text-white fw-bold">👥 Clientes con cobro extra cargado</div>
         <div className="card-body py-2">
           {resumenResidentesConExtra.length ? (
             <div className="d-flex flex-wrap gap-2">
@@ -437,7 +437,7 @@ function PagosExtraordinarios() {
               <td>
                 {val.codigo_contrato || `Contrato #${val.id_contrato}`}
                 <br />
-                <small className="text-muted">{val.nombre_residente || 'Residente no disponible'}</small>
+                <small className="text-muted">{val.nombre_residente || 'Cliente no disponible'}</small>
               </td>
               <td className="fw-bold">{val.concepto}</td>
               <td className="text-danger fw-bold">Q {parseFloat(val.monto).toFixed(2)}</td>
@@ -533,7 +533,7 @@ function PagosExtraordinarios() {
                 {!esEdicion && modoFormulario === 'cargo' && (
                   <>
                     <div className="mb-2">
-                      <label className="fw-bold">Buscar Residente (Nombre / DPI / Clave / Contrato):</label>
+                      <label className="fw-bold">Buscar Cliente (Nombre / DPI / Clave / Contrato):</label>
                       <div className="input-group">
                         <input
                           type="text"
@@ -595,7 +595,7 @@ function PagosExtraordinarios() {
                       <option value="">-- Seleccione Contrato Destino --</option>
                       {contratosList.map(c => (
                         <option key={c.id_contrato} value={c.id_contrato}>
-                          #{c.id_contrato} - {c.codigo_contrato || 'SIN-CODIGO'} - {c.nombre_residente || 'Residente'}
+                          #{c.id_contrato} - {c.codigo_contrato || 'SIN-CODIGO'} - {c.nombre_residente || 'Cliente'}
                         </option>
                       ))}
                     </select>
@@ -650,11 +650,11 @@ function PagosExtraordinarios() {
                     >
                       {contratosList.map((contrato) => (
                         <option key={contrato.id_contrato} value={contrato.id_contrato}>
-                          {contrato.codigo_contrato || `#${contrato.id_contrato}`} - {contrato.nombre_residente || 'Residente'}
+                          {contrato.codigo_contrato || `#${contrato.id_contrato}`} - {contrato.nombre_residente || 'Cliente'}
                         </option>
                       ))}
                     </select>
-                    <small className="text-muted">Si eliges un contrato aquí, la amenidad aparecerá en Caja de inmediato para ese residente.</small>
+                    <small className="text-muted">Si eliges un contrato aquí, la amenidad aparecerá en Caja de inmediato para ese cliente.</small>
                   </div>
                 )}
                 {(modoFormulario === 'cargo' || esEdicion) && (
