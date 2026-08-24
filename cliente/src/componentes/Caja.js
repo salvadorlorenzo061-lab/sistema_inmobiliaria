@@ -1764,6 +1764,7 @@ const Caja = () => {
     const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
     const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes || tieneEnganchePendiente) && tienePermisoCobroSeleccion;
+    const financiamientoSolvente = !!datosDeuda && saldoTerrenoPendiente <= 0;
     const posibleCobroServiciosIniciales =
         !!datosDeuda
         && mesesSeleccionados.includes(mesesPendientes[0] || '')
@@ -1945,9 +1946,9 @@ const Caja = () => {
                             </div>
                         </div>
                         <hr />
-                        {!puedeGenerarCobro && (
+                        {financiamientoSolvente && (
                             <div className="alert alert-success text-center fw-bold mb-3">
-                                ✅ LA CUENTA YA SE ENCUENTRA SOLVENTE. No hay cobros pendientes por generar.
+                                ✅ FINANCIAMIENTO SOLVENTE. La cuota financiada se encuentra en cero y el contrato puede generar finiquito.
                             </div>
                         )}
                         {saldoTerrenoPendiente <= 0 && tieneServiciosPendientes && (

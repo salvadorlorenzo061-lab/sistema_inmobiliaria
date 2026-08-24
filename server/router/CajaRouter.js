@@ -2876,8 +2876,6 @@ router.post("/procesar-pago", (req, res) => {
                                             const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, finalizarCommit);
 
                                             if (descuentoCapital > 0) {
-                                                const nuevoSaldoPendiente = redondear2(Math.max(saldoActual - descuentoCapital, 0));
-                                                const estadoContratoSaldado = nuevoSaldoPendiente <= 0 ? 'finalizado' : 'activo';
                                                 const sqlRestar = `
                                                     UPDATE contratos_residentes c
                                                     LEFT JOIN (
@@ -2895,10 +2893,13 @@ router.post("/procesar-pago", (req, res) => {
                                                         - COALESCE(pagos.total_pagado, 0),
                                                         0
                                                     ),
-                                                        c.estado = ?
+                                                        c.estado = CASE
+                                                            WHEN c.saldo_pendiente <= 0.009 THEN 'finalizado'
+                                                            ELSE 'activo'
+                                                        END
                                                     WHERE c.id_contrato = ?
                                                 `;
-                                                db.query(sqlRestar, [estadoContratoSaldado, id_contrato], (updErr) => {
+                                                db.query(sqlRestar, [id_contrato], (updErr) => {
                                                     if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
                                                     db.query(`
                                                         UPDATE ventas_propiedad vp

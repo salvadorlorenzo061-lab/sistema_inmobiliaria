@@ -148,7 +148,6 @@ function Contratos_Residentes() {
   const [anios_financiamiento, setAnios_financiamiento] = useState("");
   const [monto_cuota_manual, setMonto_cuota_manual] = useState("");
   const [cuotas_pagadas_manual, setCuotas_pagadas_manual] = useState("0");
-  const [saldo_pendiente, setSaldo_pendiente] = useState("0");
   const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
 
   // Listas de datos
@@ -296,6 +295,7 @@ function Contratos_Residentes() {
   // las cuotas que cobra Caja. Se sincronizan al editarlos, en alta y en modificacion.
   const actualizarCuotasPactadas = (valor) => {
     setCuotas_pactadas(valor);
+    setMonto_cuota_manual('');
     setPlazo_meses(valor);
     const cuotasNumero = parseInt(String(valor || '').trim(), 10);
     if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
@@ -318,6 +318,7 @@ function Contratos_Residentes() {
 
   const actualizarAniosFinanciamiento = (valor) => {
     setAnios_financiamiento(valor);
+    setMonto_cuota_manual('');
     const aniosNumero = Number(String(valor || '').trim());
     if (!Number.isFinite(aniosNumero) || aniosNumero <= 0) {
       setCuotas_pactadas('');
@@ -450,11 +451,9 @@ function Contratos_Residentes() {
   const construirPayloadContrato = (incluirId = false) => {
     const cuotasEnvio = obtenerCuotasEnvio();
     const plazoEnvio = obtenerPlazoEnvio();
-    const saldoPendienteVisible = String(
-      Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
-        ? Number(saldo_pendiente)
-        : saldoPendienteVisibleCalculado
-    );
+    // Nunca enviar el saldo cargado al abrir la edición si cambió precio, enganche,
+    // interés o plazo. El valor visible recalculado es la base financiera vigente.
+    const saldoPendienteVisible = String(saldoPendienteVisibleCalculado || 0);
 
     const payload = {
       codigo_contrato: String(codigo_contrato || '').trim(),
@@ -917,6 +916,21 @@ function Contratos_Residentes() {
   };
 
   const generarFiniquito = async (contrato) => {
+    try {
+      const { data } = await Axios.get(`${API_URL}/solvencia-finiquito/${contrato.id_contrato}`);
+      if (!data?.puede_generar_finiquito) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Financiamiento pendiente',
+          text: `No se puede generar el finiquito. La cuota financiada pendiente es Q ${Number(data?.saldo_financiado || 0).toLocaleString('es-GT', { minimumFractionDigits: 2 })}.`
+        });
+        return;
+      }
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'No se pudo validar', text: error?.response?.data?.message || 'No fue posible verificar el saldo financiado.' });
+      return;
+    }
+
     const confirmacion = await Swal.fire({
       icon: 'warning',
       title: 'Confirmar solvencia total',
@@ -937,6 +951,21 @@ function Contratos_Residentes() {
   };
 
   const subirFiniquito = async (contrato, forzarReemplazo = false) => {
+    try {
+      const { data } = await Axios.get(`${API_URL}/solvencia-finiquito/${contrato.id_contrato}`);
+      if (!data?.puede_generar_finiquito) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Financiamiento pendiente',
+          text: `No se puede subir el finiquito. La cuota financiada pendiente es Q ${Number(data?.saldo_financiado || 0).toLocaleString('es-GT', { minimumFractionDigits: 2 })}.`
+        });
+        return;
+      }
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'No se pudo validar', text: error?.response?.data?.message || 'No fue posible verificar el saldo financiado.' });
+      return;
+    }
+
     const inputResultado = await Swal.fire({
       title: forzarReemplazo ? 'Reemplazar finiquito firmado' : 'Subir finiquito firmado',
       text: 'Adjunta el finiquito revisado y firmado. El archivo del contrato no sera modificado.',
@@ -1013,17 +1042,7 @@ function Contratos_Residentes() {
 
   const abrirEditarModal = (val) => {
     const proyectoResuelto = resolverProyectoContrato(val);
-    const cuotaTotalContrato = Number(
-      calcularMontoCuotaContrato(
-        val.monto_total,
-        val.enganche ?? 0,
-        val.interes_porcentaje ?? 0,
-        val.cuotas_pactadas || val.plazo_meses || 0,
-        val.cuotas_pactadas || val.plazo_meses || 0
-      ) || 0
-    );
     const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
-    const cuotasPagadasExistentes = Math.max(parseInt(String(val.cuotas_pagadas || '0').trim(), 10) || 0, 0);
     const totalConInteresesContrato = (() => {
       if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) return 0;
       const cuotasNumero = Number(val.cuotas_pactadas || val.plazo_meses || 0);
@@ -1032,12 +1051,6 @@ function Contratos_Residentes() {
       const anios = cuotasNumero / 12;
       return Number((capitalFinanciado + (capitalFinanciado * (interesNumero / 100) * anios)).toFixed(2));
     })();
-    const saldoCalculado = totalConInteresesContrato > 0 && cuotasPagadasExistentes <= 0
-      ? totalConInteresesContrato
-      : (cuotaTotalContrato > 0
-        ? Math.max(totalConInteresesContrato - (cuotasPagadasExistentes * cuotaTotalContrato), 0)
-        : Math.max(capitalFinanciado, 0));
-
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
     setId_residente(val.id_residente);
@@ -1046,7 +1059,6 @@ function Contratos_Residentes() {
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
     setId_tipo_contrato(val.id_tipo_contrato);
     setMonto_total(val.monto_total);
-    setSaldo_pendiente(String(saldoCalculado));
     // Las cuotas pactadas manda; el plazo se alinea a ellas para que la cuota que calcula el
     // contrato sea la misma que cobra Caja (contratos antiguos podian traer 36 cuotas / 60 meses).
     setCuotas_pactadas(val.cuotas_pactadas || val.plazo_meses || '');
@@ -1159,7 +1171,6 @@ function Contratos_Residentes() {
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
     setMonto_cuota_manual("");
-    setSaldo_pendiente("0");
     setInicioPagosCalculado({ mes: '', anio: '' });
     ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
   };
@@ -1428,15 +1439,15 @@ function Contratos_Residentes() {
                 <div className="col-12 mb-2"><h6 className="fw-bold text-danger border-bottom pb-1">💰 TÉRMINOS FINANCIEROS (Cláusula Cuarta)</h6></div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Precio Total del Inmueble (Q):</label>
-                  <input type="number" className="form-control" value={monto_total} onChange={e => setMonto_total(e.target.value)} />
+                  <input type="number" className="form-control" value={monto_total} onChange={e => { setMonto_total(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
-                  <input type="number" className="form-control" value={enganche} onChange={e => setEnganche(e.target.value)} />
+                  <input type="number" className="form-control" value={enganche} onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
-                  <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} placeholder="14" />
+                  <input type="number" className="form-control" value={interes_porcentaje} onChange={e => { setInteres_porcentaje(e.target.value); setMonto_cuota_manual(''); }} placeholder="14" />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Saldo pendiente a pagar</label>
@@ -1730,15 +1741,15 @@ function Contratos_Residentes() {
                 <div className="col-12 mb-2"><h6 className="fw-bold text-danger border-bottom pb-1">💰 TÉRMINOS FINANCIEROS</h6></div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Precio Total del Inmueble (Q):</label>
-                  <input type="number" className="form-control" value={monto_total} onChange={e => setMonto_total(e.target.value)} />
+                  <input type="number" className="form-control" value={monto_total} onChange={e => { setMonto_total(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
-                  <input type="number" className="form-control" value={enganche} onChange={e => setEnganche(e.target.value)} />
+                  <input type="number" className="form-control" value={enganche} onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
-                  <input type="number" className="form-control" value={interes_porcentaje} onChange={e => setInteres_porcentaje(e.target.value)} />
+                  <input type="number" className="form-control" value={interes_porcentaje} onChange={e => { setInteres_porcentaje(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Saldo pendiente a pagar</label>

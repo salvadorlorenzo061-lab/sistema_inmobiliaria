@@ -760,6 +760,57 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
     });
 };
 
+const obtenerSaldoFinanciadoReal = (idContrato, callback = () => {}) => {
+    const idContratoSeguro = Number(idContrato || 0);
+    if (!Number.isInteger(idContratoSeguro) || idContratoSeguro <= 0) {
+        return callback(new Error('Contrato inválido.'));
+    }
+
+    const sql = `
+        SELECT c.id_contrato,
+               GREATEST(
+                   (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
+                   + ((COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
+                      * COALESCE(c.interes_porcentaje, 0) / 100
+                      * (COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1) / 12))
+                   - COALESCE(pagos.total_pagado, 0),
+                   0
+               ) AS saldo_financiado
+        FROM contratos_residentes c
+        LEFT JOIN (
+            SELECT p.id_contrato,
+                   COALESCE(SUM(CASE
+                       WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital')
+                       THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+            FROM pagos p
+            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            GROUP BY p.id_contrato
+        ) pagos ON pagos.id_contrato = c.id_contrato
+        WHERE c.id_contrato = ?
+        LIMIT 1
+    `;
+
+    db.query(sql, [idContratoSeguro], (err, rows) => {
+        if (err) return callback(err);
+        if (!rows?.length) return callback(null, null);
+        return callback(null, Math.max(Number(rows[0].saldo_financiado || 0), 0));
+    });
+};
+
+const validarSolvenciaFiniquito = (req, res, next) => {
+    obtenerSaldoFinanciadoReal(req.params.id_contrato, (err, saldoFinanciado) => {
+        if (err) return res.status(500).send({ message: 'No se pudo validar el saldo financiado.' });
+        if (saldoFinanciado === null) return res.status(404).send({ message: 'Contrato no encontrado.' });
+        if (saldoFinanciado > 0.009) {
+            return res.status(409).send({
+                message: `No se puede registrar el finiquito: existe una cuota financiada pendiente de Q ${saldoFinanciado.toFixed(2)}.`,
+                saldo_financiado: saldoFinanciado
+            });
+        }
+        return next();
+    });
+};
+
 const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {}) => {
     const idContratoSeguro = Number(idContrato || 0);
     const fallbackSeguro = Math.max(parseInt(fallback || 0, 10), 0);
@@ -1540,7 +1591,18 @@ router.get('/descargar-archivo/:id_contrato', (req, res) => {
     return router.handle(req, res);
 });
 
-router.post('/subir-finiquito/:id_contrato', uploadFiniquito.single('archivo'), (req, res) => {
+router.get('/solvencia-finiquito/:id_contrato', (req, res) => {
+    obtenerSaldoFinanciadoReal(req.params.id_contrato, (err, saldoFinanciado) => {
+        if (err) return res.status(500).send({ message: 'No se pudo validar el saldo financiado.' });
+        if (saldoFinanciado === null) return res.status(404).send({ message: 'Contrato no encontrado.' });
+        return res.status(200).json({
+            saldo_financiado: Number(saldoFinanciado.toFixed(2)),
+            puede_generar_finiquito: saldoFinanciado <= 0.009
+        });
+    });
+});
+
+router.post('/subir-finiquito/:id_contrato', uploadFiniquito.single('archivo'), validarSolvenciaFiniquito, (req, res) => {
     const idContrato = Number(req.params.id_contrato || 0);
     if (!Number.isInteger(idContrato) || idContrato <= 0) {
         return res.status(400).send({ message: 'Contrato invalido.' });
