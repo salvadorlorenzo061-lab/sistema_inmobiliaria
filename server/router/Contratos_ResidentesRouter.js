@@ -530,6 +530,118 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
 };
 
+// ventas_propiedad es un resumen de la venta. contratos_residentes continúa siendo
+// la fuente financiera de Caja; esta relación evita registros duplicados y permite
+// mantener ambos módulos sincronizados sin cambiar el cálculo de cobros existente.
+const ensureVentasPropiedadSchema = (callback = () => {}) => {
+    const createSql = `
+        CREATE TABLE IF NOT EXISTS ventas_propiedad (
+            id_venta INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_contrato INT NULL,
+            id_residente INT NOT NULL,
+            id_lote INT NOT NULL DEFAULT 0,
+            fecha_compra DATE NOT NULL,
+            precio_venta DECIMAL(12,2) NOT NULL,
+            enganche DECIMAL(12,2) NOT NULL DEFAULT 0,
+            saldo_pendiente DECIMAL(12,2) NOT NULL,
+            estado_venta VARCHAR(20) NOT NULL DEFAULT 'vigente',
+            observaciones TEXT NULL,
+            UNIQUE KEY uk_ventas_propiedad_contrato (id_contrato)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `;
+
+    db.query(createSql, (createErr) => {
+        if (createErr) return callback(createErr);
+        db.query(`
+            SELECT COUNT(*) AS total
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'ventas_propiedad'
+              AND COLUMN_NAME = 'id_contrato'
+        `, (columnErr, rows) => {
+            if (columnErr) return callback(columnErr);
+            const ensureIndex = () => db.query(`
+                SELECT COUNT(*) AS total
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'ventas_propiedad'
+                  AND INDEX_NAME = 'uk_ventas_propiedad_contrato'
+            `, (indexErr, indexes) => {
+                if (indexErr) return callback(indexErr);
+                if ((indexes?.[0]?.total || 0) > 0) return callback(null);
+                db.query(
+                    'ALTER TABLE ventas_propiedad ADD UNIQUE INDEX uk_ventas_propiedad_contrato (id_contrato)',
+                    callback
+                );
+            });
+
+            if ((rows?.[0]?.total || 0) > 0) return ensureIndex();
+            db.query('ALTER TABLE ventas_propiedad ADD COLUMN id_contrato INT NULL AFTER id_venta', (alterErr) => {
+                if (alterErr) return callback(alterErr);
+                return ensureIndex();
+            });
+        });
+    });
+};
+
+const normalizarIdLote = (value) => {
+    const numero = parseInt(String(value ?? '').trim(), 10);
+    return Number.isInteger(numero) && numero >= 0 ? numero : 0;
+};
+
+const sincronizarVentaPropiedad = (idContrato, datos = {}, callback = () => {}) => {
+    const idContratoSeguro = Number(idContrato || 0);
+    if (!Number.isInteger(idContratoSeguro) || idContratoSeguro <= 0) return callback(null);
+
+    const observaciones = datos.datos_propiedad && typeof datos.datos_propiedad === 'object'
+        ? JSON.stringify(datos.datos_propiedad)
+        : null;
+    const lote = normalizarIdLote(datos.numero_lote);
+    const sql = `
+        INSERT INTO ventas_propiedad
+            (id_contrato, id_residente, id_lote, fecha_compra, precio_venta,
+             enganche, saldo_pendiente, estado_venta, observaciones)
+        SELECT c.id_contrato, c.id_residente, ?, COALESCE(c.fecha_compra, c.fecha_firma, CURDATE()),
+               COALESCE(c.monto_total, 0), COALESCE(c.enganche, 0),
+               COALESCE(c.saldo_pendiente, 0),
+               CASE WHEN LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'vigente') THEN 'vigente'
+                    ELSE LOWER(COALESCE(c.estado, 'vigente')) END,
+               ?
+        FROM contratos_residentes c
+        WHERE c.id_contrato = ?
+        ON DUPLICATE KEY UPDATE
+            id_residente = VALUES(id_residente),
+            id_lote = CASE WHEN VALUES(id_lote) > 0 THEN VALUES(id_lote) ELSE id_lote END,
+            fecha_compra = VALUES(fecha_compra),
+            precio_venta = VALUES(precio_venta),
+            enganche = VALUES(enganche),
+            saldo_pendiente = VALUES(saldo_pendiente),
+            estado_venta = VALUES(estado_venta),
+            observaciones = COALESCE(VALUES(observaciones), observaciones)
+    `;
+    db.query(sql, [lote, observaciones, idContratoSeguro], callback);
+};
+
+const backfillVentasPropiedad = () => {
+    const sql = `
+        INSERT INTO ventas_propiedad
+            (id_contrato, id_residente, id_lote, fecha_compra, precio_venta,
+             enganche, saldo_pendiente, estado_venta, observaciones)
+        SELECT c.id_contrato, c.id_residente, 0, COALESCE(c.fecha_compra, c.fecha_firma, CURDATE()),
+               COALESCE(c.monto_total, 0), COALESCE(c.enganche, 0), COALESCE(c.saldo_pendiente, 0),
+               CASE WHEN LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'vigente') THEN 'vigente'
+                    ELSE LOWER(COALESCE(c.estado, 'vigente')) END,
+               'Migrado automáticamente desde contratos_residentes; lote histórico no disponible.'
+        FROM contratos_residentes c
+        LEFT JOIN ventas_propiedad vp ON vp.id_contrato = c.id_contrato
+        WHERE vp.id_venta IS NULL
+    `;
+    db.query(sql, (err, result) => {
+        if (err) return console.error('Error migrando ventas de contratos existentes:', err.message);
+        console.log(`Ventas de contratos existentes migradas: ${result?.affectedRows || 0}`);
+    });
+};
+
 // Migra contratos históricos calculados automáticamente con ROUND a la regla
 // actual de cuotas enteras hacia arriba. Una cuota manual diferente se conserva.
 const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
@@ -700,6 +812,10 @@ ensureFormatoContratoColumn();
 ensureInteresPorcentajeColumn();
 ensureFinancialContractColumns();
 normalizarCuotasAutomaticasExistentes(() => backfillSaldoPendienteContrato());
+ensureVentasPropiedadSchema((ventasErr) => {
+    if (ventasErr) return console.error('No se pudo preparar ventas_propiedad:', ventasErr.message);
+    return backfillVentasPropiedad();
+});
 sincronizarCuotasPagadasContrato(null, () => {
     console.log('Backfill global de cuotas_pagadas aplicado a contratos_residentes.');
 });
@@ -851,7 +967,7 @@ router.post("/crear", (req, res) => {
         codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
         dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
-        servicios_contrato
+        servicios_contrato, numero_lote, datos_propiedad
     } = req.body;
 
     console.log('[contratos][crear] payload cuotas_pagadas recibido:', {
@@ -958,7 +1074,11 @@ router.post("/crear", (req, res) => {
                         recalcularSaldoPendienteContrato(idContratoCreado, (recalcErr) => {
                             if (recalcErr) {
                                 console.warn('[contratos][crear] no fue posible recalcular saldo pendiente:', recalcErr.message);
+                                return;
                             }
+                            sincronizarVentaPropiedad(idContratoCreado, { numero_lote, datos_propiedad }, (ventaErr) => {
+                                if (ventaErr) console.error('[contratos][crear] error sincronizando venta:', ventaErr.message);
+                            });
                         });
 
                         const finalizarRespuestaCrear = () => {
@@ -1004,7 +1124,7 @@ router.put("/actualizar", (req, res) => {
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
         dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
-        servicios_contrato
+        servicios_contrato, numero_lote, datos_propiedad
     } = req.body;
 
     console.log('[contratos][actualizar] payload cuotas_pagadas recibido:', {
@@ -1106,7 +1226,13 @@ router.put("/actualizar", (req, res) => {
                     recalcularSaldoPendienteContrato(id_contrato, (recalcErr) => {
                         if (recalcErr) {
                             console.warn('[contratos][actualizar] no fue posible recalcular saldo pendiente:', recalcErr.message);
+                            return;
                         }
+                        // En edición se conservan lote y observaciones ya registrados. Los datos
+                        // financieros sí se refrescan siempre desde contratos_residentes.
+                        sincronizarVentaPropiedad(id_contrato, {}, (ventaErr) => {
+                            if (ventaErr) console.error('[contratos][actualizar] error sincronizando venta:', ventaErr.message);
+                        });
                     });
 
                     const finalizarRespuestaActualizar = () => {

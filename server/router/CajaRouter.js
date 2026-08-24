@@ -2894,7 +2894,23 @@ router.post("/procesar-pago", (req, res) => {
                                                 `;
                                                 db.query(sqlRestar, [estadoContratoSaldado, id_contrato], (updErr) => {
                                                     if (updErr) return db.rollback(() => res.status(500).send("Error al actualizar saldo: " + updErr.message));
-                                                    return finalizarConConvenio();
+                                                    db.query(`
+                                                        UPDATE ventas_propiedad vp
+                                                        INNER JOIN contratos_residentes c ON c.id_contrato = vp.id_contrato
+                                                        SET vp.saldo_pendiente = COALESCE(c.saldo_pendiente, 0),
+                                                            vp.estado_venta = CASE
+                                                                WHEN LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'vigente') THEN 'vigente'
+                                                                ELSE LOWER(COALESCE(c.estado, 'vigente'))
+                                                            END
+                                                        WHERE c.id_contrato = ?
+                                                    `, [id_contrato], (ventaErr) => {
+                                                        // La venta es un resumen auxiliar: una falla de sincronización
+                                                        // nunca debe cancelar un cobro que ya fue validado correctamente.
+                                                        if (ventaErr && ventaErr.code !== 'ER_NO_SUCH_TABLE' && ventaErr.code !== 'ER_BAD_FIELD_ERROR') {
+                                                            console.error('[caja] no se pudo sincronizar ventas_propiedad:', ventaErr.message);
+                                                        }
+                                                        return finalizarConConvenio();
+                                                    });
                                                 });
                                             } else {
                                                 return finalizarConConvenio();

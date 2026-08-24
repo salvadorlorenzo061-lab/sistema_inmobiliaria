@@ -477,7 +477,16 @@ function Contratos_Residentes() {
       fecha_compra: fecha_compra || null,
       fecha_fin: fecha_fin || null,
       estado,
-      documento_contrato: documento_contrato || null
+      documento_contrato: documento_contrato || null,
+      numero_lote: String(numero_lote || '').trim(),
+      datos_propiedad: {
+        numero_finca: String(numero_finca || '').trim(),
+        folio: String(folio_propiedad || '').trim(),
+        libro: String(libro_propiedad || '').trim(),
+        manzana: String(manzana_propiedad || '').trim(),
+        area: String(area_propiedad || '').trim(),
+        proyecto: String(proyecto_propiedad || '').trim()
+      }
     };
 
     if (incluirId) {
