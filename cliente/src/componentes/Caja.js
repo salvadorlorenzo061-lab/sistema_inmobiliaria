@@ -348,7 +348,7 @@ const Caja = () => {
     const [morasPendientes, setMorasPendientes] = useState([]);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
     const [quitarMoraTodo, setQuitarMoraTodo] = useState(false);
-    const [quitarMoraMesSeleccionado, setQuitarMoraMesSeleccionado] = useState(false);
+    const [quitarMoraMesesSeleccionados, setQuitarMoraMesesSeleccionados] = useState(false);
     const [serviciosContrato, setServiciosContrato] = useState([]);
     const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
     const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
@@ -605,11 +605,11 @@ const Caja = () => {
             return [];
         }
 
-        const mesExonerado = String(mesPagado || mesesSeleccionados?.[0] || '').trim();
-
         return mesesFinanciados.reduce((morasAplicables, mesSeleccionado) => {
+            const esMesMarcadoParaPago = (mesesSeleccionados || [])
+                .some((mesMarcado) => compararMesesMoraLocal(mesSeleccionado, mesMarcado));
             if (quitarMoraTodo
-                || (quitarMoraMesSeleccionado && compararMesesMoraLocal(mesSeleccionado, mesExonerado))) {
+                || (quitarMoraMesesSeleccionados && esMesMarcadoParaPago)) {
                 return morasAplicables;
             }
             const moraMes = morasPendientes.find((mora) => {
@@ -727,7 +727,7 @@ const Caja = () => {
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
         setQuitarMoraTodo(false);
-        setQuitarMoraMesSeleccionado(false);
+        setQuitarMoraMesesSeleccionados(false);
         setServiciosContrato([]);
         setServiciosSeleccionados([]);
         setMontoServiciosSeleccionado(0);
@@ -941,7 +941,7 @@ const Caja = () => {
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
         setQuitarMoraTodo(false);
-        setQuitarMoraMesSeleccionado(false);
+        setQuitarMoraMesesSeleccionados(false);
         setMontoServiciosSeleccionado(0);
         setMontoCargosExtraSeleccionado(0);
         setResumenServiciosIniciales(null);
@@ -1174,7 +1174,7 @@ const Caja = () => {
 
         setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
         setMontoAPagar(String((Number(montoTotalSeleccionado || 0) + Number(totalSeleccionado || 0)).toFixed(2)));
-    }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado, quitarMoraTodo, quitarMoraMesSeleccionado, mesPagado]);
+    }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado, quitarMoraTodo, quitarMoraMesesSeleccionados]);
 
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
@@ -2242,7 +2242,7 @@ const Caja = () => {
                                                         checked={quitarMoraTodo}
                                                         onChange={(e) => {
                                                             setQuitarMoraTodo(e.target.checked);
-                                                            if (e.target.checked) setQuitarMoraMesSeleccionado(false);
+                                                            if (e.target.checked) setQuitarMoraMesesSeleccionados(false);
                                                         }}
                                                     />
                                                     <label className="form-check-label" htmlFor="quitar-mora-todo">
@@ -2254,12 +2254,12 @@ const Caja = () => {
                                                         id="quitar-mora-mes"
                                                         type="checkbox"
                                                         className="form-check-input"
-                                                        checked={quitarMoraMesSeleccionado}
-                                                        disabled={quitarMoraTodo || !(mesPagado || mesesSeleccionados[0])}
-                                                        onChange={(e) => setQuitarMoraMesSeleccionado(e.target.checked)}
+                                                        checked={quitarMoraMesesSeleccionados}
+                                                        disabled={quitarMoraTodo || mesesSeleccionados.length === 0}
+                                                        onChange={(e) => setQuitarMoraMesesSeleccionados(e.target.checked)}
                                                     />
                                                     <label className="form-check-label" htmlFor="quitar-mora-mes">
-                                                        Quitar mora del mes actual seleccionado
+                                                        Quitar mora de todos los meses seleccionados
                                                     </label>
                                                 </div>
                                                 <small className="text-muted">
