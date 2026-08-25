@@ -139,7 +139,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
         const indiceMes = obtenerIndiceMes(conAnio[1]);
         if (indiceMes >= 0) {
             const fechaMes = new Date(Number(conAnio[2]), indiceMes, 1);
-            return fechaMes <= hoyMes;
+            return fechaMes < hoyMes;
         }
     }
 
@@ -148,7 +148,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
         const indiceMes = obtenerIndiceMes(soloMes[1]);
         if (indiceMes >= 0) {
             const fechaMes = new Date(hoy.getFullYear(), indiceMes, 1);
-            return fechaMes <= hoyMes;
+            return fechaMes < hoyMes;
         }
     }
 
@@ -169,7 +169,9 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
     if (mesEvaluado < primerMesCuota) return false;
     const hoy = new Date();
     const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    if (mesEvaluado > mesActual) return false;
+    // El mes calendario actual nunca genera mora. Solo se cobran cuotas de
+    // meses anteriores que ya agotaron todos sus dias de gracia.
+    if (mesEvaluado >= mesActual) return false;
 
     const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
     const fechaVencimiento = new Date(
@@ -1544,10 +1546,15 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
                                      ELSE m.monto_mora
                              END AS monto_mora,
                                  m.estado,
-                                 COALESCE(c.fecha_compra, c.fecha_firma) AS fecha_contrato,
+                                 COALESCE(vp.fecha_compra, c.fecha_compra, c.fecha_firma) AS fecha_contrato,
                                  COALESCE(c.dia_pago_limite, 5) AS dias_gracia
                 FROM morosidad m
                 INNER JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
+                LEFT JOIN (
+                    SELECT id_contrato, MAX(fecha_compra) AS fecha_compra
+                    FROM ventas_propiedad
+                    GROUP BY id_contrato
+                ) vp ON vp.id_contrato = c.id_contrato
                 WHERE m.id_contrato = ?
                     AND LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
         ORDER BY m.id_morosidad ASC

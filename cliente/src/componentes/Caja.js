@@ -347,6 +347,8 @@ const Caja = () => {
     const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
+    const [quitarMoraTodo, setQuitarMoraTodo] = useState(false);
+    const [quitarMoraMesSeleccionado, setQuitarMoraMesSeleccionado] = useState(false);
     const [serviciosContrato, setServiciosContrato] = useState([]);
     const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
     const [montoServiciosSeleccionado, setMontoServiciosSeleccionado] = useState(0);
@@ -532,7 +534,9 @@ const Caja = () => {
 
         const hoy = new Date();
         const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        if (mesEvaluado > mesActual) return false;
+        // El mes calendario actual no esta vencido para mora, aunque ya haya
+        // transcurrido el dia contractual. Se evalua a partir del mes siguiente.
+        if (mesEvaluado >= mesActual) return false;
 
         const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
         const fechaVencimiento = new Date(
@@ -601,7 +605,13 @@ const Caja = () => {
             return [];
         }
 
+        const mesExonerado = String(mesPagado || mesesSeleccionados?.[0] || '').trim();
+
         return mesesFinanciados.reduce((morasAplicables, mesSeleccionado) => {
+            if (quitarMoraTodo
+                || (quitarMoraMesSeleccionado && compararMesesMoraLocal(mesSeleccionado, mesExonerado))) {
+                return morasAplicables;
+            }
             const moraMes = morasPendientes.find((mora) => {
                 const mesMora = String(mora?.mes_atrasado || '').trim();
                 return mesMora
@@ -716,6 +726,8 @@ const Caja = () => {
         setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
+        setQuitarMoraTodo(false);
+        setQuitarMoraMesSeleccionado(false);
         setServiciosContrato([]);
         setServiciosSeleccionados([]);
         setMontoServiciosSeleccionado(0);
@@ -928,6 +940,8 @@ const Caja = () => {
         setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
         setMorasSeleccionadas([]);
+        setQuitarMoraTodo(false);
+        setQuitarMoraMesSeleccionado(false);
         setMontoServiciosSeleccionado(0);
         setMontoCargosExtraSeleccionado(0);
         setResumenServiciosIniciales(null);
@@ -1160,7 +1174,7 @@ const Caja = () => {
 
         setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
         setMontoAPagar(String((Number(montoTotalSeleccionado || 0) + Number(totalSeleccionado || 0)).toFixed(2)));
-    }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado]);
+    }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado, quitarMoraTodo, quitarMoraMesSeleccionado, mesPagado]);
 
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
@@ -2217,6 +2231,42 @@ const Caja = () => {
                                     {/* Selección de meses pendientes como lista de items */}
                                     <div className="mb-4">
                                         <label className="form-label fw-bold">📅 Meses a Pagar (seleccione cuáles paga el cliente):</label>
+                                        {morasPendientes.length > 0 && (
+                                            <div className="border rounded-3 p-3 mb-3 bg-warning bg-opacity-10">
+                                                <div className="fw-bold mb-2">Opciones de mora para este cobro</div>
+                                                <div className="form-check mb-2">
+                                                    <input
+                                                        id="quitar-mora-todo"
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        checked={quitarMoraTodo}
+                                                        onChange={(e) => {
+                                                            setQuitarMoraTodo(e.target.checked);
+                                                            if (e.target.checked) setQuitarMoraMesSeleccionado(false);
+                                                        }}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="quitar-mora-todo">
+                                                        Quitar mora a todo el cobro
+                                                    </label>
+                                                </div>
+                                                <div className="form-check">
+                                                    <input
+                                                        id="quitar-mora-mes"
+                                                        type="checkbox"
+                                                        className="form-check-input"
+                                                        checked={quitarMoraMesSeleccionado}
+                                                        disabled={quitarMoraTodo || !(mesPagado || mesesSeleccionados[0])}
+                                                        onChange={(e) => setQuitarMoraMesSeleccionado(e.target.checked)}
+                                                    />
+                                                    <label className="form-check-label" htmlFor="quitar-mora-mes">
+                                                        Quitar mora del mes actual seleccionado
+                                                    </label>
+                                                </div>
+                                                <small className="text-muted">
+                                                    Esta opción solo exonera la mora en este cobro; no elimina el historial del contrato.
+                                                </small>
+                                            </div>
+                                        )}
                                         <div className="border rounded-3 p-3 bg-light">
                                             {mesesPendientes.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">

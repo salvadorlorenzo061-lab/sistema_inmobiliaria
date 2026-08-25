@@ -284,7 +284,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         SELECT
             c.id_contrato,
             c.codigo_contrato,
-            c.fecha_compra,
+            COALESCE(vp.fecha_compra, c.fecha_compra) AS fecha_compra,
             c.fecha_firma,
             c.dia_pago_limite,
             c.monto_cuota,
@@ -294,6 +294,11 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             c.estado,
             COALESCE(c.mora, 0) AS mora_contrato
         FROM contratos_residentes c
+        LEFT JOIN (
+            SELECT id_contrato, MAX(fecha_compra) AS fecha_compra
+            FROM ventas_propiedad
+            GROUP BY id_contrato
+        ) vp ON vp.id_contrato = c.id_contrato
         WHERE c.estado = 'activo'
                     AND (? IS NULL OR c.id_contrato = ?)
         `, [idContrato, idContrato]);
@@ -372,7 +377,9 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         while (numeroCuota <= totalCuotas) {
             const fechaVencimiento = crearFechaLocal(primerVencimiento, numeroCuota - 1);
             const mesVencimiento = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), 1);
-            if (mesVencimiento > mesActual) break;
+            // El mes calendario actual aun no se considera vencido. La mora
+            // empieza a evaluarse desde el mes siguiente y tras la gracia.
+            if (mesVencimiento >= mesActual) break;
             const fechaInicioMora = obtenerFechaInicioMora(fechaVencimiento, diasGracia);
             if (fechaInicioMora > hoy) break;
 
