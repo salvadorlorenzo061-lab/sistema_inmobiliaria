@@ -577,7 +577,7 @@ const Caja = () => {
 
     const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
         if (esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
-            return `Cuota 0 - Enganche - ${mesEtiqueta}`;
+            return 'Cuota 0 - Enganche';
         }
 
         const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
