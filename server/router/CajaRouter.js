@@ -1016,6 +1016,8 @@ router.get("/meses-pendientes", (req, res) => {
             COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
             c.fecha_fin,
             c.fecha_firma,
+            c.mes_inicio_pagos,
+            c.anio_inicio_pagos,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
             COALESCE(conv.saldo_actual, c.monto_total) AS monto_total,
@@ -1080,9 +1082,25 @@ router.get("/meses-pendientes", (req, res) => {
         const saldoPendiente = Number(contratoResult[0].monto_total || 0);
         const montoCuota = Number(contratoResult[0].monto_cuota || 0);
 
-        let cursor = new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1);
+        const mesInicioConfigurado = Number(contratoResult[0].mes_inicio_pagos || 0);
+        const anioInicioConfigurado = Number(contratoResult[0].anio_inicio_pagos || 0);
+        const inicioConfiguradoValido = Number.isInteger(mesInicioConfigurado)
+            && mesInicioConfigurado >= 1 && mesInicioConfigurado <= 12
+            && Number.isInteger(anioInicioConfigurado) && anioInicioConfigurado >= 1900;
 
-        const fechaInicio = new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1);
+        // La fecha de compra conserva la cuota 0 (enganche), pero las cuotas
+        // financiadas deben iniciar exactamente en el mes/año pactado.
+        const usaCuotaCeroEnganche = !tieneConvenioActivo && engancheContrato > 0;
+        const fechaInicioFinanciado = (!tieneConvenioActivo && inicioConfiguradoValido)
+            ? new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1)
+            : new Date(
+                fechaInicioBase.getFullYear(),
+                fechaInicioBase.getMonth() + (usaCuotaCeroEnganche ? 1 : 0),
+                1
+            );
+        let cursor = new Date(fechaInicioFinanciado.getFullYear(), fechaInicioFinanciado.getMonth(), 1);
+
+        const fechaInicio = new Date(fechaInicioFinanciado.getFullYear(), fechaInicioFinanciado.getMonth(), 1);
         const fechaLimite = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
         const mesesTranscurridos = Math.max(
             ((fechaLimite.getFullYear() - fechaInicio.getFullYear()) * 12) +
@@ -1100,7 +1118,7 @@ router.get("/meses-pendientes", (req, res) => {
             const etiqueta = etiquetaMesDesdeFecha(fechaMes);
             candidatosMeta.push({
                 mes: etiqueta,
-                numero_cuota: obtenerNumeroCuotaDesdeFechas(fechaInicio, fechaMes) || (candidatosMeta.length + 1),
+                numero_cuota: candidatosMeta.length + 1,
                 fecha: new Date(fechaMes.getFullYear(), fechaMes.getMonth(), 1)
             });
             candidatos.push(etiqueta);
@@ -1110,10 +1128,13 @@ router.get("/meses-pendientes", (req, res) => {
         // Cuando el contrato tiene enganche, el mes de compra/firma cobra el enganche (cuota 0)
         // y las cuotas financiadas arrancan el mes siguiente (cuota 1 ... cuota N). Por eso el
         // flujo necesita un mes extra: sin el, la ultima cuota pactada nunca queda cobrable.
-        const usaCuotaCeroEnganche = !tieneConvenioActivo && engancheContrato > 0;
         const mesesFlujoContrato = (Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0)
             ? cuotasBaseContrato + (usaCuotaCeroEnganche ? 1 : 0)
             : 0;
+
+        if (usaCuotaCeroEnganche) {
+            registrarCandidato(new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1));
+        }
 
         if (fechaFinMes) {
             while (
@@ -1131,7 +1152,7 @@ router.get("/meses-pendientes", (req, res) => {
                 ? mesesFlujoContrato
                 : Math.max(mesesTranscurridos, 1);
 
-            for (let i = 0; i < totalMesesObjetivo; i += 1) {
+            while (candidatosMeta.length < totalMesesObjetivo) {
                 registrarCandidato(cursor);
                 cursor.setMonth(cursor.getMonth() + 1);
             }
@@ -1811,7 +1832,7 @@ router.post("/procesar-pago", (req, res) => {
                 FROM contratos_residentes c
                 LEFT JOIN residentes r ON r.id_residente = c.id_residente
                 LEFT JOIN (
-                    SELECT cp.id_convenio, cp.id_contrato, cp.fecha_inicio, cp.saldo_actual, cp.cuotas_pactadas, cp.monto_cuota
+                    SELECT cp.id_convenio, cp.id_contrato, cp.fecha_inicio, cp.monto_original, cp.saldo_actual, cp.cuotas_pactadas, cp.monto_cuota
                     FROM convenio_pagos cp
                     INNER JOIN (
                         SELECT id_contrato, MAX(id_convenio) AS ultimo_id_convenio

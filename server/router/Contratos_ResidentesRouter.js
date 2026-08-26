@@ -946,6 +946,13 @@ router.get("/", (req, res) => {
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
                    c.monto_total, c.saldo_pendiente, c.enganche, c.cuotas_pactadas,
+                   COALESCE((
+                       SELECT SUM(pd_eng.subtotal)
+                       FROM pagos p_eng
+                       INNER JOIN pagos_detalle pd_eng ON pd_eng.id_pago = p_eng.id_pago
+                       WHERE p_eng.id_contrato = c.id_contrato
+                         AND pd_eng.tipo_concepto = 'enganche'
+                   ), 0) AS enganche_pagado,
                    CASE
                        WHEN COALESCE((
                            SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago))
@@ -1187,6 +1194,41 @@ router.post("/crear", (req, res) => {
 });
 
 // === 3. ACTUALIZAR CONTRATO ===
+router.put("/actualizar", (req, res, next) => {
+    const idContrato = Number(req.body?.id_contrato || 0);
+    const engancheSolicitado = Number(req.body?.enganche || 0);
+    if (!Number.isInteger(idContrato) || idContrato <= 0) {
+        return res.status(400).send({ message: 'Contrato inválido.' });
+    }
+
+    db.query(`
+        SELECT c.enganche,
+               COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS enganche_pagado
+        FROM contratos_residentes c
+        LEFT JOIN pagos p ON p.id_contrato = c.id_contrato
+        LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+        WHERE c.id_contrato = ?
+        GROUP BY c.id_contrato, c.enganche
+        LIMIT 1
+    `, [idContrato], (err, rows) => {
+        if (err) {
+            return res.status(500).send({ message: 'No se pudo validar el estado del enganche.' });
+        }
+        if (!rows?.length) {
+            return res.status(404).send({ message: 'Contrato no encontrado.' });
+        }
+
+        const engancheActual = Number(rows[0].enganche || 0);
+        const enganchePagado = Number(rows[0].enganche_pagado || 0);
+        if (enganchePagado > 0.009 && Math.abs(engancheSolicitado - engancheActual) > 0.009) {
+            return res.status(400).send({
+                message: 'El enganche ya tiene pagos registrados y no puede modificarse.'
+            });
+        }
+        return next();
+    });
+});
+
 router.put("/actualizar", (req, res) => {
     const { 
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,

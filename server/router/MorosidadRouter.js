@@ -286,6 +286,8 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             c.codigo_contrato,
             COALESCE(vp.fecha_compra, c.fecha_compra) AS fecha_compra,
             c.fecha_firma,
+            c.mes_inicio_pagos,
+            c.anio_inicio_pagos,
             c.dia_pago_limite,
             c.monto_cuota,
             c.monto_total,
@@ -368,7 +370,13 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         }
 
         const diasGracia = Math.max(0, Math.min(31, Number(contrato.dia_pago_limite ?? 5)));
-        const primerVencimiento = crearFechaLocal(inicioRaw, 1);
+        const mesInicio = Number(contrato.mes_inicio_pagos || 0);
+        const anioInicio = Number(contrato.anio_inicio_pagos || 0);
+        const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
+            && Number.isInteger(anioInicio) && anioInicio >= 1900;
+        const primerVencimiento = inicioConfiguradoValido
+            ? crearFechaLocal(new Date(anioInicio, mesInicio - 1, inicioRaw.getDate()), 0)
+            : crearFechaLocal(inicioRaw, 1);
         let numeroCuota = 1;
 
         const pagadosSet = pagosPorContrato.get(String(contrato.id_contrato)) || new Set();

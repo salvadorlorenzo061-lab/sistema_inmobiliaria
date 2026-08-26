@@ -141,6 +141,7 @@ function Contratos_Residentes() {
 
   // Datos económicos adicionales (para el PDF)
   const [enganche, setEnganche] = useState("20000");
+  const [enganchePagadoContrato, setEnganchePagadoContrato] = useState(false);
   const [interes_porcentaje, setInteres_porcentaje] = useState("14");
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
@@ -1067,6 +1068,7 @@ function Contratos_Residentes() {
     setFecha_compra(val.fecha_compra ? val.fecha_compra.split('T')[0] : '');
     setFecha_fin(val.fecha_fin ? val.fecha_fin.split('T')[0] : '');
     setEnganche(val.enganche ?? '20000');
+    setEnganchePagadoContrato(Number(val.enganche_pagado || 0) > 0.009);
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
@@ -1169,6 +1171,7 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
+    setEnganchePagadoContrato(false);
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
     setMonto_cuota_manual("");
     setInicioPagosCalculado({ mes: '', anio: '' });
@@ -1745,7 +1748,15 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
-                  <input type="number" className="form-control" value={enganche} onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }} />
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={enganche}
+                    disabled={enganchePagadoContrato}
+                    title={enganchePagadoContrato ? 'El enganche ya tiene pagos registrados y no puede modificarse.' : ''}
+                    onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }}
+                  />
+                  {enganchePagadoContrato && <small className="text-muted">Bloqueado porque el enganche ya fue pagado total o parcialmente.</small>}
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
