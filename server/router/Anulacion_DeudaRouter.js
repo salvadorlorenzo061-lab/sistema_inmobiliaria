@@ -235,6 +235,8 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             p.no_referencia,
             c.codigo_contrato,
             c.id_residente,
+            c.mes_inicio_pagos,
+            c.anio_inicio_pagos,
             r.nombre AS nombre_residente,
             COALESCE(SUM(pd.subtotal), 0) AS principal_pagado,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END), 0) AS principal_terreno,
@@ -250,7 +252,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE ${whereSql}
-        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, u.nombre, u.correo, ru.nombre_rol, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, c.codigo_contrato, c.id_residente, r.nombre
+        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, u.nombre, u.correo, ru.nombre_rol, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, c.codigo_contrato, c.id_residente, c.mes_inicio_pagos, c.anio_inicio_pagos, r.nombre
         ORDER BY p.id_pago DESC
         LIMIT 1
     `;
@@ -367,9 +369,28 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                     }).filter((value) => value != null);
 
                     let idxExtraHistorial = 0;
+                    const obtenerCuotaFinanciadaCorrecta = (mesPagado, numeroGuardado) => {
+                        const mesInicio = Number(pago.mes_inicio_pagos || 0);
+                        const anioInicio = Number(pago.anio_inicio_pagos || 0);
+                        const match = String(mesPagado || '').trim().match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+                        if (!match || mesInicio < 1 || mesInicio > 12 || anioInicio < 1900) {
+                            return numeroGuardado ? Number(numeroGuardado) : null;
+                        }
+
+                        const nombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+                        const nombreMes = match[1].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                        const indiceMes = nombres.indexOf(nombreMes);
+                        if (indiceMes < 0) return numeroGuardado ? Number(numeroGuardado) : null;
+
+                        const diferencia = ((Number(match[2]) - anioInicio) * 12) + (indiceMes - (mesInicio - 1));
+                        return diferencia >= 0 ? diferencia + 1 : (numeroGuardado ? Number(numeroGuardado) : null);
+                    };
                     const detalle_cobro = (detailRows || []).map((row) => {
                         const tipoConcepto = String(row.tipo_concepto || '').toLowerCase();
                         let idConceptoServicio = row.id_concepto_servicio ? Number(row.id_concepto_servicio) : null;
+                        const numeroCuotaCorregido = tipoConcepto === 'cuota_terreno'
+                            ? obtenerCuotaFinanciadaCorrecta(row.mes_pagado, row.numero_cuota_afectada)
+                            : (row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null);
 
                         if (tipoConcepto === 'extraordinario' && !idConceptoServicio) {
                             idConceptoServicio = extrasHistorialIds[idxExtraHistorial] || null;
@@ -381,10 +402,10 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                             tipo_concepto: row.tipo_concepto,
                             id_concepto_servicio: idConceptoServicio,
                             mes_pagado: row.mes_pagado || '',
-                            numero_cuota_afectada: row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null,
+                            numero_cuota_afectada: numeroCuotaCorregido,
                             subtotal: Number(row.subtotal || 0),
                             concepto: tipoConcepto === 'cuota_terreno'
-                                ? `Cuota de Terreno No. ${row.numero_cuota_afectada || ''}`.trim()
+                                ? `Cuota de Terreno No. ${numeroCuotaCorregido || ''}`.trim()
                                 : tipoConcepto === 'enganche'
                                     ? 'Enganche'
                                 : tipoConcepto === 'abono_capital'

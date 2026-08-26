@@ -1822,6 +1822,8 @@ router.post("/procesar-pago", (req, res) => {
                     END AS cuotas_pagadas,
                     COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
                     c.fecha_firma,
+                    c.mes_inicio_pagos,
+                    c.anio_inicio_pagos,
                     COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
                     COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
                     COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
@@ -1943,6 +1945,20 @@ router.post("/procesar-pago", (req, res) => {
                 : ((fechaFirmaContrato && !Number.isNaN(fechaFirmaContrato.getTime()))
                     ? new Date(fechaFirmaContrato.getFullYear(), fechaFirmaContrato.getMonth(), 1)
                     : null);
+            const mesInicioPagosContrato = Number(saldoRows[0]?.mes_inicio_pagos || 0);
+            const anioInicioPagosContrato = Number(saldoRows[0]?.anio_inicio_pagos || 0);
+            const inicioFinanciadoConfiguradoValido = Number.isInteger(mesInicioPagosContrato)
+                && mesInicioPagosContrato >= 1 && mesInicioPagosContrato <= 12
+                && Number.isInteger(anioInicioPagosContrato) && anioInicioPagosContrato >= 1900;
+            const fechaInicioFinanciadoContrato = inicioFinanciadoConfiguradoValido
+                ? new Date(anioInicioPagosContrato, mesInicioPagosContrato - 1, 1)
+                : (fechaInicioContrato
+                    ? new Date(
+                        fechaInicioContrato.getFullYear(),
+                        fechaInicioContrato.getMonth() + (engancheContrato > 0 ? 1 : 0),
+                        1
+                    )
+                    : null);
             const cuotasBaseInteres = Number.isInteger(cuotasContratoBase) && cuotasContratoBase > 0
                 ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
@@ -2039,12 +2055,10 @@ router.post("/procesar-pago", (req, res) => {
 
             const obtenerNumeroCuotaParaMes = (mesTexto = '', fallbackIndex = 0) => {
                 const parsed = parsearEtiquetaMes(mesTexto);
-                if (parsed instanceof Date && fechaInicioContrato) {
-                    const cuotaCalculada = obtenerNumeroCuotaDesdeFechas(fechaInicioContrato, parsed);
+                if (parsed instanceof Date && fechaInicioFinanciadoContrato) {
+                    const cuotaCalculada = obtenerNumeroCuotaDesdeFechas(fechaInicioFinanciadoContrato, parsed);
                     if (Number.isInteger(cuotaCalculada) && cuotaCalculada > 0) {
-                        return engancheContrato > 0
-                            ? Math.max(cuotaCalculada - 1, 0)
-                            : cuotaCalculada;
+                        return cuotaCalculada;
                     }
                 }
 
