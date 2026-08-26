@@ -2150,7 +2150,13 @@ router.post("/procesar-pago", (req, res) => {
                 }
             }
 
-            const capitalCobroTotal = redondear2(montoTerrenoTotal + montoInteresTotal + montoServiciosTotal + montoAbonoCapitalTotal + moraTotal);
+            // El saldo del contrato corresponde únicamente al financiamiento.
+            // Servicios y mora son cargos adicionales y no deben consumir ese saldo.
+            // Usar moraTotal aquí también provocaba un ReferenceError porque esa variable
+            // solo se declara posteriormente al insertar el pago.
+            const capitalCobroTotal = redondear2(
+                montoTerrenoTotal + montoInteresTotal + montoAbonoCapitalTotal
+            );
             if (capitalCobroTotal > redondear2(Math.max(saldoActual, 0))) {
                 return db.rollback(() => res.status(400).send(`El capital a cobrar excede el saldo pendiente del contrato (Q${saldoActual.toFixed(2)}).`));
             }
