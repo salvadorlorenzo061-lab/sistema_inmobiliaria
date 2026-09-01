@@ -1181,11 +1181,32 @@ router.get("/meses-pendientes", (req, res) => {
                     return res.status(500).send('Error al consultar meses pendientes');
                 }
 
-            // Crear un Set con meses pagados de cuota de terreno
+            // Crear un Set con meses pagados de cuota de terreno.
+            // La fuente de verdad es la cuota financiada real (numero_cuota_afectada),
+            // no el mes de la factura ni el enganche. El enganche no cuenta como cuota.
             const mesesPagadosSet = new Set();
             const legacySoloMes = [];
             const mesesAnuladosSet = new Set();
             const cuotasPagadasRealPorNumero = new Set();
+
+            const registrarMesPagado = (mesTexto, numeroCuota) => {
+                const mes = String(mesTexto || '').trim();
+                if (!mes) return;
+
+                const parsed = parsearEtiquetaMes(mes);
+                if (parsed instanceof Date) {
+                    const etiqueta = etiquetaMesDesdeFecha(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+                    if (Number.isInteger(numeroCuota) && numeroCuota > 0) {
+                        cuotasPagadasRealPorNumero.add(numeroCuota);
+                    }
+                    mesesPagadosSet.add(etiqueta);
+                    return;
+                }
+
+                if (parsed && Number.isInteger(parsed.indiceMes)) {
+                    legacySoloMes.push(parsed.indiceMes);
+                }
+            };
 
             (anulRows || []).forEach((row) => {
                 const bruto = String(row?.mes_pagado || '').trim();
@@ -1221,21 +1242,17 @@ router.get("/meses-pendientes", (req, res) => {
                     }
                 }
 
-                const parsed = parsearEtiquetaMes(bruto);
-                if (parsed instanceof Date) {
-                    mesesPagadosSet.add(etiquetaMesDesdeFecha(new Date(parsed.getFullYear(), parsed.getMonth(), 1)));
-                    return;
-                }
-
-                if (parsed && Number.isInteger(parsed.indiceMes)) {
-                    legacySoloMes.push(parsed.indiceMes);
+                if (bruto) {
+                    registrarMesPagado(bruto, cuotaAfectada);
                 }
             });
 
             if (cuotasPagadasRealPorNumero.size > 0) {
-                const cuotaMasAltaPagada = Math.max(...Array.from(cuotasPagadasRealPorNumero));
+                const cuotasOrdenadas = [...cuotasPagadasRealPorNumero].sort((a, b) => a - b);
+                const cuotaMasAltaPagada = cuotasOrdenadas[cuotasOrdenadas.length - 1];
                 candidatosMeta.forEach((item) => {
-                    if (Number(item.numero_cuota) <= cuotaMasAltaPagada) {
+                    const numeroCuota = Number(item.numero_cuota || 0);
+                    if (numeroCuota > 0 && numeroCuota <= cuotaMasAltaPagada) {
                         mesesPagadosSet.add(item.mes);
                     }
                 });
@@ -1317,6 +1334,11 @@ router.get("/meses-pendientes", (req, res) => {
 
                 if (enganchePendienteContrato <= 0 && mesEngancheContrato) {
                     mesesPagadosSet.add(mesEngancheContrato);
+                }
+
+                // Normalizar: el enganche nunca debe dejarse dentro de la lista de cuotas financiadas pagadas.
+                if (mesEngancheContrato) {
+                    mesesPagadosSet.delete(mesEngancheContrato);
                 }
 
                 // Filtrar: solo retornar meses que NO estén en pagados
