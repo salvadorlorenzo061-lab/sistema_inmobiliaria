@@ -862,12 +862,14 @@ const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {
     }
 
     const sql = `
-        SELECT MAX(COALESCE(pd.numero_cuota_afectada, 0)) AS cuotas_pagadas_reales
+        SELECT COUNT(DISTINCT CASE
+            WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+            ELSE NULL
+        END) AS cuotas_pagadas_reales
         FROM pagos p
         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE p.id_contrato = ?
           AND pd.tipo_concepto = 'cuota_terreno'
-          AND COALESCE(pd.numero_cuota_afectada, 0) > 0
     `;
 
     db.query(sql, [idContratoSeguro], (err, rows) => {
@@ -892,14 +894,16 @@ const sincronizarCuotasPagadasContrato = (idContrato = null, callback = () => {}
         UPDATE contratos_residentes c
         LEFT JOIN (
             SELECT p.id_contrato,
-                   MAX(COALESCE(pd.numero_cuota_afectada, 0)) AS ultima_cuota_pagada
+                   COUNT(DISTINCT CASE
+                       WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                       ELSE NULL
+                   END) AS cuotas_pagadas_reales
             FROM pagos p
             INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             WHERE pd.tipo_concepto = 'cuota_terreno'
-              AND COALESCE(pd.numero_cuota_afectada, 0) > 0
             GROUP BY p.id_contrato
         ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
-        SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.ultima_cuota_pagada, 0), COALESCE(c.cuotas_pagadas, 0))
+        SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.cuotas_pagadas_reales, 0), COALESCE(c.cuotas_pagadas, 0))
         ${condicional}
     `;
 
