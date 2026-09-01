@@ -562,7 +562,10 @@ router.post('/anular-por-correlativo', (req, res) => {
                                 ) pagos ON pagos.id_contrato = c.id_contrato
                                 SET c.saldo_pendiente = GREATEST(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0), 0),
                                     c.cuotas_pagadas = (
-                                        SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago))
+                                        SELECT COUNT(DISTINCT CASE
+                                            WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                                            ELSE NULL
+                                        END)
                                         FROM pagos p
                                         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                         WHERE p.id_contrato = c.id_contrato

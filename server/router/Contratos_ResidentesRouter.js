@@ -781,7 +781,10 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
             UPDATE contratos_residentes c
             LEFT JOIN (
                 SELECT p.id_contrato,
-                       COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago)) AS cuotas_reales
+                       COUNT(DISTINCT CASE
+                           WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                           ELSE NULL
+                       END) AS cuotas_reales
                 FROM pagos p
                 INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                 WHERE pd.tipo_concepto = 'cuota_terreno'
@@ -992,13 +995,19 @@ router.get("/", (req, res) => {
                    ), 0) AS enganche_pagado,
                    CASE
                        WHEN COALESCE((
-                           SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago))
+                           SELECT COUNT(DISTINCT CASE
+                               WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                               ELSE NULL
+                           END)
                            FROM pagos p
                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                            WHERE p.id_contrato = c.id_contrato
                              AND pd.tipo_concepto = 'cuota_terreno'
                        ), 0) > 0 THEN (
-                           SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago))
+                           SELECT COUNT(DISTINCT CASE
+                               WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                               ELSE NULL
+                           END)
                            FROM pagos p
                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                            WHERE p.id_contrato = c.id_contrato
