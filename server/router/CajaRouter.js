@@ -1096,9 +1096,14 @@ router.get("/meses-pendientes", (req, res) => {
             : null;
 
         const candidatosMeta = [];
+        const mesesRegistradosSet = new Set();
 
         const registrarCandidato = (fechaMes) => {
             const etiqueta = etiquetaMesDesdeFecha(fechaMes);
+            if (!etiqueta || mesesRegistradosSet.has(etiqueta)) {
+                return;
+            }
+            mesesRegistradosSet.add(etiqueta);
             candidatosMeta.push({
                 mes: etiqueta,
                 numero_cuota: candidatosMeta.length + 1,
@@ -1364,7 +1369,16 @@ router.get("/meses-pendientes", (req, res) => {
             }
 
             pendientesMeta = pendientesMeta.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
-            const mesesPendientes = pendientesMeta.map((item) => item.mes);
+            const pendientesMetaUnicas = [];
+            const mesPendienteVisto = new Set();
+            pendientesMeta.forEach((item) => {
+                if (mesPendienteVisto.has(item.mes)) {
+                    return;
+                }
+                mesPendienteVisto.add(item.mes);
+                pendientesMetaUnicas.push(item);
+            });
+            const mesesPendientes = pendientesMetaUnicas.map((item) => item.mes);
 
             // El enganche (cuota 0) esta anclado al mes de compra/firma del contrato, no al
             // primer mes pendiente. Caja lo necesita explicito para pintarlo siempre igual.
@@ -1375,7 +1389,7 @@ router.get("/meses-pendientes", (req, res) => {
 
             return res.status(200).json({
                 meses: mesesPendientes,
-                meses_detalle: pendientesMeta.map((item) => ({
+                meses_detalle: pendientesMetaUnicas.map((item) => ({
                     mes: item.mes,
                     numero_cuota: item.numero_cuota,
                     es_enganche: Boolean(mesEngancheContrato && item.mes === mesEngancheContrato)
@@ -1781,7 +1795,10 @@ router.post("/procesar-pago", (req, res) => {
                           AND pd_enganche.tipo_concepto = 'enganche'
                     ), 0) AS enganche_pagado,
                                         COALESCE((
-                                                SELECT COUNT(DISTINCT COALESCE(pd_cuota.numero_cuota_afectada, p_cuota.id_pago))
+                                                SELECT COUNT(DISTINCT CASE
+                                                    WHEN COALESCE(pd_cuota.numero_cuota_afectada, 0) > 0 THEN pd_cuota.numero_cuota_afectada
+                                                    ELSE NULL
+                                                END)
                                                 FROM pagos_detalle pd_cuota
                                                 INNER JOIN pagos p_cuota ON p_cuota.id_pago = pd_cuota.id_pago
                                                 WHERE p_cuota.id_contrato = c.id_contrato
@@ -1790,7 +1807,10 @@ router.post("/procesar-pago", (req, res) => {
                     GREATEST(
                         COALESCE(c.cuotas_pagadas, 0),
                         COALESCE((
-                            SELECT MAX(COALESCE(pd_cuota.numero_cuota_afectada, p_cuota.id_pago))
+                            SELECT MAX(CASE
+                                WHEN COALESCE(pd_cuota.numero_cuota_afectada, 0) > 0 THEN pd_cuota.numero_cuota_afectada
+                                ELSE NULL
+                            END)
                             FROM pagos_detalle pd_cuota
                             INNER JOIN pagos p_cuota ON p_cuota.id_pago = pd_cuota.id_pago
                             WHERE p_cuota.id_contrato = c.id_contrato
