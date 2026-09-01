@@ -1310,6 +1310,15 @@ router.get("/meses-pendientes", (req, res) => {
                     }
                 }
 
+                const enganchePendienteContrato = Math.max(engancheContrato - enganchePagado, 0);
+                const mesEngancheContrato = (usaCuotaCeroEnganche && candidatosMeta.length)
+                    ? candidatosMeta[0].mes
+                    : null;
+
+                if (enganchePendienteContrato <= 0 && mesEngancheContrato) {
+                    mesesPagadosSet.add(mesEngancheContrato);
+                }
+
                 // Filtrar: solo retornar meses que NO estén en pagados
                 pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
 
@@ -1361,8 +1370,8 @@ router.get("/meses-pendientes", (req, res) => {
 
                 // Cuando hay enganche (cuota 0), NO se cuenta en cuotasPagadas. 
                 // Solo se cuentan las cuotas financiadas reales (cuota 1, 2, 3, ...)
-                const mesEngancheContrato = usaCuotaCeroEnganche && candidatosMeta.length > 0 ? candidatosMeta[0].mes : '';
-                const mesesPagadosSinEnganche = mesesPagadosOrdenados.filter((mes) => mes !== mesEngancheContrato);
+                const mesEngancheContratoBase = usaCuotaCeroEnganche && candidatosMeta.length > 0 ? candidatosMeta[0].mes : '';
+                const mesesPagadosSinEnganche = mesesPagadosOrdenados.filter((mes) => mes !== mesEngancheContratoBase);
                 
                 cuotasPagadasContrato = Math.min(mesesPagadosSinEnganche.length, totalCuotasContrato);
                 cuotasPendientesContrato = Math.max(totalCuotasContrato - cuotasPagadasContrato, 0);
@@ -1382,8 +1391,8 @@ router.get("/meses-pendientes", (req, res) => {
 
             // El enganche (cuota 0) esta anclado al mes de compra/firma del contrato, no al
             // primer mes pendiente. Caja lo necesita explicito para pintarlo siempre igual.
-            const enganchePendienteContrato = Math.max(engancheContrato - enganchePagado, 0);
-            const mesEngancheContrato = (usaCuotaCeroEnganche && candidatosMeta.length)
+            const enganchePendienteContratoFinal = Math.max(engancheContrato - enganchePagado, 0);
+            const mesEngancheContratoFinal = (usaCuotaCeroEnganche && candidatosMeta.length)
                 ? candidatosMeta[0].mes
                 : null;
 
@@ -1392,7 +1401,7 @@ router.get("/meses-pendientes", (req, res) => {
                 meses_detalle: pendientesMetaUnicas.map((item) => ({
                     mes: item.mes,
                     numero_cuota: item.numero_cuota,
-                    es_enganche: Boolean(mesEngancheContrato && item.mes === mesEngancheContrato)
+                    es_enganche: Boolean(mesEngancheContratoFinal && item.mes === mesEngancheContratoFinal)
                 })),
                 meses_pagados: mesesPagadosOrdenados,
                 total_cuotas: totalCuotasContrato,
@@ -1400,10 +1409,10 @@ router.get("/meses-pendientes", (req, res) => {
                 cuotas_pendientes: cuotasPendientesContrato,
                 siguiente_mes_pendiente: mesesPendientes[0] || null,
                 usa_cuota_cero_enganche: usaCuotaCeroEnganche,
-                mes_enganche: mesEngancheContrato,
+                mes_enganche: mesEngancheContratoFinal,
                 enganche: engancheContrato,
                 enganche_pagado: enganchePagado,
-                enganche_pendiente: enganchePendienteContrato
+                enganche_pendiente: enganchePendienteContratoFinal
             });
             });
         });
