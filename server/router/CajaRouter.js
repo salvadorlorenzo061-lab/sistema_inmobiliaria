@@ -786,16 +786,7 @@ router.get("/residentes-pendientes", (req, res) => {
             ) AS enganche_pendiente,
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
-            COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
-            (
-                GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.ultima_cuota_pagada, 0))
-                + CASE
-                    WHEN COALESCE(c.enganche, 0) > 0
-                     AND COALESCE(pagos_resumen.enganche_pagado, 0) >= (COALESCE(c.enganche, 0) - 0.01)
-                    THEN 1
-                    ELSE 0
-                  END
-            ) AS cuotas_pagadas,
+            GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.ultima_cuota_pagada, 0)) AS cuotas_pagadas,
             c.interes_porcentaje, c.mora, c.fecha_compra, c.fecha_firma, c.dia_pago_limite, tc.id_tipo_contrato,
             tc.nombre_tipo_contrato AS nombre_contrato,
             conv.id_convenio AS id_convenio_activo,
@@ -922,15 +913,7 @@ router.get("/buscar-residente", (req, res) => {
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
-            (
-                GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.ultima_cuota_pagada, 0))
-                + CASE
-                    WHEN COALESCE(c.enganche, 0) > 0
-                     AND COALESCE(pagos_resumen.enganche_pagado, 0) >= (COALESCE(c.enganche, 0) - 0.01)
-                    THEN 1
-                    ELSE 0
-                  END
-            ) AS cuotas_pagadas,
+            GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.ultima_cuota_pagada, 0)) AS cuotas_pagadas,
             c.interes_porcentaje,
             c.mora,
             c.fecha_compra,
@@ -1309,12 +1292,6 @@ router.get("/meses-pendientes", (req, res) => {
                     }
                 });
 
-                // Regla de negocio: la cuota 1 corresponde al enganche.
-                // Al liquidarse totalmente el enganche, el primer mes contractual se considera atendido.
-                if (engancheContrato > 0 && enganchePagado >= (engancheContrato - 0.01) && candidatosMeta.length > 0) {
-                    mesesPagadosSet.add(candidatosMeta[0].mes);
-                }
-
                 // Cuotas pagadas configuradas en el contrato: representan cuotas financiadas
                 // ya atendidas antes del seguimiento puntual en Caja, por lo que se marcan
                 // desde la primera cuota financiada sin alterar el flujo actual del enganche.
@@ -1367,11 +1344,22 @@ router.get("/meses-pendientes", (req, res) => {
                     .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
                     .map((item) => item.mes);
 
+                // Cuando hay enganche (cuota 0), el total de cuotas pactadas NO incluye el mes del enganche
+                // Se calcula únicamente sobre cuotas financiadas (cuota 1, 2, 3, ...)
+                const totalMesesCandidatos = usaCuotaCeroEnganche
+                    ? Math.max(candidatosMeta.length - 1, 0)  // Excluir mes del enganche
+                    : candidatosMeta.length;
+                    
                 totalCuotasContrato = (Number.isInteger(cuotasPactadas) && cuotasPactadas > 0)
                     ? cuotasPactadas
-                    : Math.max(candidatosMeta.length, mesesPagadosOrdenados.length + pendientesMeta.length, 1);
+                    : Math.max(totalMesesCandidatos, mesesPagadosOrdenados.length + pendientesMeta.length, 1);
 
-                cuotasPagadasContrato = Math.min(mesesPagadosOrdenados.length, totalCuotasContrato);
+                // Cuando hay enganche (cuota 0), NO se cuenta en cuotasPagadas. 
+                // Solo se cuentan las cuotas financiadas reales (cuota 1, 2, 3, ...)
+                const mesEngancheContrato = usaCuotaCeroEnganche && candidatosMeta.length > 0 ? candidatosMeta[0].mes : '';
+                const mesesPagadosSinEnganche = mesesPagadosOrdenados.filter((mes) => mes !== mesEngancheContrato);
+                
+                cuotasPagadasContrato = Math.min(mesesPagadosSinEnganche.length, totalCuotasContrato);
                 cuotasPendientesContrato = Math.max(totalCuotasContrato - cuotasPagadasContrato, 0);
             }
 
@@ -1808,18 +1796,7 @@ router.post("/procesar-pago", (req, res) => {
                             WHERE p_cuota.id_contrato = c.id_contrato
                               AND pd_cuota.tipo_concepto = 'cuota_terreno'
                         ), 0)
-                    ) + CASE
-                        WHEN COALESCE(c.enganche, 0) > 0
-                         AND COALESCE((
-                            SELECT SUM(pd_enganche.subtotal)
-                            FROM pagos_detalle pd_enganche
-                            INNER JOIN pagos p_enganche ON p_enganche.id_pago = pd_enganche.id_pago
-                            WHERE p_enganche.id_contrato = c.id_contrato
-                              AND pd_enganche.tipo_concepto = 'enganche'
-                         ), 0) >= (COALESCE(c.enganche, 0) - 0.01)
-                        THEN 1
-                        ELSE 0
-                    END AS cuotas_pagadas,
+                    ) AS cuotas_pagadas,
                     COALESCE(conv.fecha_inicio, c.fecha_compra) AS fecha_compra,
                     c.fecha_firma,
                     c.mes_inicio_pagos,
