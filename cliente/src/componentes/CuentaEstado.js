@@ -18,6 +18,22 @@ const formatoMoneda = (value) => {
 
 const round2 = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
 
+const normalizeImageDataUrl = (value = '') => {
+  const cleaned = String(value || '').trim();
+  if (!cleaned) return '';
+  if (cleaned.startsWith('data:image/')) return cleaned;
+  const mime = cleaned.startsWith('iVBOR') ? 'image/png' : 'image/png';
+  return `data:${mime};base64,${cleaned}`;
+};
+
+const getImageFormatFromDataUrl = (value = '') => {
+  const cleaned = String(value || '').toLowerCase();
+  if (cleaned.startsWith('data:image/png')) return 'PNG';
+  if (cleaned.startsWith('data:image/jpeg') || cleaned.startsWith('data:image/jpg')) return 'JPEG';
+  if (cleaned.startsWith('data:image/webp')) return 'WEBP';
+  return 'PNG';
+};
+
 const construirSimulacionLocal = ({
   capital_restante,
   interes_anual,
@@ -313,19 +329,31 @@ const CuentaEstado = () => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
     const nombreResidente = String(contrato?.nombre_residente || 'SIN-CLIENTE');
+    const nombreProyecto = String(contrato?.nombre_proyecto_pdf || contrato?.nombre_proyecto || 'PROYECTO');
+    const logoProyecto = normalizeImageDataUrl(contrato?.logo_proyecto || '');
     const fecha = new Date().toLocaleDateString('es-GT');
 
-    doc.setFontSize(14);
+    if (logoProyecto) {
+      try {
+        doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), 14, 10, 24, 20, `logo-proyecto-${Date.now()}`, 'FAST');
+      } catch {
+        // no-op
+      }
+    }
+
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
     doc.setTextColor(23, 42, 69);
-    doc.text('Liquidacion a Capital - Tabla de Amortizacion Pendiente', 14, 14);
+    doc.text('TABLA DE AMORTIZACIÓN', pageWidth / 2, 18, { align: 'center' });
     doc.setFontSize(10);
     doc.setTextColor(60, 60, 60);
-    doc.text(`Contrato: ${codigoContrato}`, 14, 20);
-    doc.text(`Cliente: ${nombreResidente}`, 14, 25);
-    doc.text(`Fecha: ${fecha}`, pageWidth - 14, 20, { align: 'right' });
+    doc.text(`${nombreProyecto}`, pageWidth / 2, 25, { align: 'center' });
+    doc.text(`Contrato: ${codigoContrato}`, 14, 35);
+    doc.text(`Cliente: ${nombreResidente}`, 14, 40);
+    doc.text(`Fecha: ${fecha}`, pageWidth - 14, 35, { align: 'right' });
 
     autoTable(doc, {
-      startY: 30,
+      startY: 46,
       head: [[
         'Cuota',
         'Saldo Inicial',
@@ -350,13 +378,13 @@ const CuentaEstado = () => {
       margin: { left: 12, right: 12 }
     });
 
-    const lastY = (doc.lastAutoTable?.finalY || 45) + 8;
+    const lastY = (doc.lastAutoTable?.finalY || 46) + 8;
     doc.setFontSize(10);
     doc.setTextColor(18, 84, 44);
     doc.text(`Total liquidacion estimada: ${formatoMoneda(simulacion.total_liquidacion)}`, 14, lastY);
     doc.text(`Interes total pendiente: ${formatoMoneda(simulacion.interes_total_pendiente)}`, 14, lastY + 5);
 
-    doc.save(`Liquidacion_${codigoContrato}.pdf`);
+    doc.save(`Tabla_Amortizacion_${codigoContrato}.pdf`);
   };
 
   const exportarTablaExcel = () => {
@@ -411,8 +439,8 @@ const CuentaEstado = () => {
     <div className="container-fluid p-4">
       <div className="card shadow-sm">
         <div className="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-          <h4 className="mb-0">Liquidacion a Capital con Interes Pendiente</h4>
-          <span className="badge bg-light text-dark">Modulo de simulacion financiera</span>
+          <h4 className="mb-0">Tabla de Amortización</h4>
+          <span className="badge bg-light text-dark">Módulo de simulación financiera</span>
         </div>
 
         <div className="card-body">
@@ -572,7 +600,7 @@ const CuentaEstado = () => {
 
           {simulacion && (
             <div className="card mt-3 border-success">
-              <div className="card-header bg-success text-white">Resultado de liquidacion a capital</div>
+              <div className="card-header bg-success text-white">Resultado de tabla de amortización</div>
               <div className="card-body">
                 <div className="d-flex flex-wrap gap-2 mb-3">
                   <button type="button" className="btn btn-outline-danger btn-sm" onClick={exportarTablaPDF}>

@@ -26,7 +26,7 @@ const PERMISOS_MODULOS = [
   'Pagos',
   'Detalle Pagos',
   'Reporte de Facturas',
-  'Cuenta Estado Capital',
+  'Tabla de Amortización',
   'Asignar Correlativos',
   'Resoluciones Facturas',
   'Bitácora',

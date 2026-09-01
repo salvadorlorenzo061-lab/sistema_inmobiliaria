@@ -196,7 +196,7 @@ export const modulesConfig = [
   },
   {
     id: 'cuenta_estado_capital',
-    label: 'Cuenta Estado Capital',
+    label: 'Tabla de Amortización',
     icon: '🧮',
     path: '/cuenta_estado_capital',
     component: CuentaEstado,

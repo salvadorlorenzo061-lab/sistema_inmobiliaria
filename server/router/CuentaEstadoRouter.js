@@ -221,6 +221,8 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             c.interes_porcentaje,
             c.cuotas_pactadas,
             c.plazo_meses,
+            c.id_proyecto,
+            c.id_empresa_marca,
             r.nombre AS nombre_residente,
             COALESCE(conv.id_convenio, 0) AS id_convenio_activo,
             conv.fecha_inicio AS convenio_fecha_inicio,
@@ -230,9 +232,17 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             conv.monto_cuota AS convenio_monto_cuota,
             COALESCE(pagos_resumen.cuotas_pagadas, 0) AS cuotas_pagadas_reales,
             COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
-            COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado_total
+            COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado_total,
+            p.nombre AS nombre_proyecto,
+            COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
+            COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
+            COALESCE(p.nombre, ep.nombre_empresa, em.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf
         FROM contratos_residentes c
         INNER JOIN residentes r ON r.id_residente = c.id_residente
+        LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
+        LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
+        LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
+        LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
         LEFT JOIN (
             ${ULTIMO_CONVENIO_ACTIVO_SUBQUERY}
         ) conv ON conv.id_contrato = c.id_contrato
@@ -304,6 +314,9 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             id_residente: contrato.id_residente,
             codigo_contrato: contrato.codigo_contrato,
             nombre_residente: contrato.nombre_residente,
+            nombre_proyecto: contrato.nombre_proyecto || contrato.nombre_proyecto_pdf || null,
+            nombre_proyecto_pdf: contrato.nombre_proyecto_pdf || contrato.nombre_proyecto || null,
+            logo_proyecto: contrato.logo_proyecto || null,
             fecha_firma: contrato.fecha_firma,
             id_convenio_activo: Number(contrato.id_convenio_activo || 0),
             precio_total_terreno: precioTerreno,
