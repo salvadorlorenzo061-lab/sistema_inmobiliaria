@@ -558,6 +558,11 @@ const ensureVentasPropiedadSchema = (callback = () => {}) => {
             precio_venta DECIMAL(12,2) NOT NULL,
             enganche DECIMAL(12,2) NOT NULL DEFAULT 0,
             saldo_pendiente DECIMAL(12,2) NOT NULL,
+            mes_inicio_pagos INT NULL,
+            anio_inicio_pagos INT NULL,
+            cuotas_pactadas INT NULL,
+            monto_cuota DECIMAL(12,2) NULL,
+            fecha_inicio_financiado DATE NULL,
             estado_venta VARCHAR(20) NOT NULL DEFAULT 'vigente',
             observaciones TEXT NULL,
             UNIQUE KEY uk_ventas_propiedad_contrato (id_contrato)
@@ -566,34 +571,52 @@ const ensureVentasPropiedadSchema = (callback = () => {}) => {
 
     db.query(createSql, (createErr) => {
         if (createErr) return callback(createErr);
+
+        const columnasNecesarias = [
+            ['mes_inicio_pagos', 'INT NULL'],
+            ['anio_inicio_pagos', 'INT NULL'],
+            ['cuotas_pactadas', 'INT NULL'],
+            ['monto_cuota', 'DECIMAL(12,2) NULL'],
+            ['fecha_inicio_financiado', 'DATE NULL']
+        ];
+
         db.query(`
-            SELECT COUNT(*) AS total
+            SELECT COLUMN_NAME AS column_name
             FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = DATABASE()
               AND TABLE_NAME = 'ventas_propiedad'
-              AND COLUMN_NAME = 'id_contrato'
         `, (columnErr, rows) => {
             if (columnErr) return callback(columnErr);
-            const ensureIndex = () => db.query(`
-                SELECT COUNT(*) AS total
-                FROM information_schema.STATISTICS
-                WHERE TABLE_SCHEMA = DATABASE()
-                  AND TABLE_NAME = 'ventas_propiedad'
-                  AND INDEX_NAME = 'uk_ventas_propiedad_contrato'
-            `, (indexErr, indexes) => {
-                if (indexErr) return callback(indexErr);
-                if ((indexes?.[0]?.total || 0) > 0) return callback(null);
-                db.query(
-                    'ALTER TABLE ventas_propiedad ADD UNIQUE INDEX uk_ventas_propiedad_contrato (id_contrato)',
-                    callback
-                );
-            });
 
-            if ((rows?.[0]?.total || 0) > 0) return ensureIndex();
-            db.query('ALTER TABLE ventas_propiedad ADD COLUMN id_contrato INT NULL AFTER id_venta', (alterErr) => {
-                if (alterErr) return callback(alterErr);
-                return ensureIndex();
-            });
+            const existentes = new Set((rows || []).map((row) => row.column_name));
+            const faltantes = columnasNecesarias.filter(([nombre]) => !existentes.has(nombre));
+
+            const aplicarSiguienteColumna = () => {
+                if (!faltantes.length) {
+                    return db.query(`
+                        SELECT COUNT(*) AS total
+                        FROM information_schema.STATISTICS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'ventas_propiedad'
+                          AND INDEX_NAME = 'uk_ventas_propiedad_contrato'
+                    `, (indexErr, indexes) => {
+                        if (indexErr) return callback(indexErr);
+                        if ((indexes?.[0]?.total || 0) > 0) return callback(null);
+                        return db.query(
+                            'ALTER TABLE ventas_propiedad ADD UNIQUE INDEX uk_ventas_propiedad_contrato (id_contrato)',
+                            callback
+                        );
+                    });
+                }
+
+                const [nombre, definition] = faltantes.shift();
+                db.query(`ALTER TABLE ventas_propiedad ADD COLUMN ${nombre} ${definition}`, (alterErr) => {
+                    if (alterErr) return callback(alterErr);
+                    return aplicarSiguienteColumna();
+                });
+            };
+
+            return aplicarSiguienteColumna();
         });
     });
 };
@@ -611,13 +634,24 @@ const sincronizarVentaPropiedad = (idContrato, datos = {}, callback = () => {}) 
         ? JSON.stringify(datos.datos_propiedad)
         : null;
     const lote = normalizarIdLote(datos.numero_lote);
+    const fechaInicioFinanciado = datos.fecha_inicio_financiado
+        ? datos.fecha_inicio_financiado
+        : null;
+    const mesInicioPagos = Number.isInteger(Number(datos.mes_inicio_pagos)) ? Number(datos.mes_inicio_pagos) : null;
+    const anioInicioPagos = Number.isInteger(Number(datos.anio_inicio_pagos)) ? Number(datos.anio_inicio_pagos) : null;
+    const cuotasPactadas = Number.isInteger(Number(datos.cuotas_pactadas)) ? Number(datos.cuotas_pactadas) : null;
+    const montoCuota = Number.isFinite(Number(datos.monto_cuota)) ? Number(datos.monto_cuota) : null;
+
     const sql = `
         INSERT INTO ventas_propiedad
             (id_contrato, id_residente, id_lote, fecha_compra, precio_venta,
-             enganche, saldo_pendiente, estado_venta, observaciones)
+             enganche, saldo_pendiente, mes_inicio_pagos, anio_inicio_pagos,
+             cuotas_pactadas, monto_cuota, fecha_inicio_financiado,
+             estado_venta, observaciones)
         SELECT c.id_contrato, c.id_residente, ?, COALESCE(c.fecha_compra, c.fecha_firma, CURDATE()),
                COALESCE(c.monto_total, 0), COALESCE(c.enganche, 0),
                COALESCE(c.saldo_pendiente, 0),
+               ?, ?, ?, ?, ?,
                CASE WHEN LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'vigente') THEN 'vigente'
                     ELSE LOWER(COALESCE(c.estado, 'vigente')) END,
                ?
@@ -630,10 +664,15 @@ const sincronizarVentaPropiedad = (idContrato, datos = {}, callback = () => {}) 
             precio_venta = VALUES(precio_venta),
             enganche = VALUES(enganche),
             saldo_pendiente = VALUES(saldo_pendiente),
+            mes_inicio_pagos = COALESCE(VALUES(mes_inicio_pagos), mes_inicio_pagos),
+            anio_inicio_pagos = COALESCE(VALUES(anio_inicio_pagos), anio_inicio_pagos),
+            cuotas_pactadas = COALESCE(VALUES(cuotas_pactadas), cuotas_pactadas),
+            monto_cuota = COALESCE(VALUES(monto_cuota), monto_cuota),
+            fecha_inicio_financiado = COALESCE(VALUES(fecha_inicio_financiado), fecha_inicio_financiado),
             estado_venta = VALUES(estado_venta),
             observaciones = COALESCE(VALUES(observaciones), observaciones)
     `;
-    db.query(sql, [lote, observaciones, idContratoSeguro], callback);
+    db.query(sql, [lote, mesInicioPagos, anioInicioPagos, cuotasPactadas, montoCuota, fechaInicioFinanciado, observaciones, idContratoSeguro], callback);
 };
 
 const backfillVentasPropiedad = () => {
@@ -820,15 +859,12 @@ const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {
     }
 
     const sql = `
-        SELECT COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago)) AS cuotas_pagadas_reales
+        SELECT MAX(COALESCE(pd.numero_cuota_afectada, 0)) AS cuotas_pagadas_reales
         FROM pagos p
         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE p.id_contrato = ?
           AND pd.tipo_concepto = 'cuota_terreno'
-          AND (
-              COALESCE(pd.numero_cuota_afectada, 0) > 0
-              OR COALESCE(pd.numero_cuota_afectada, 0) = 0
-          )
+          AND COALESCE(pd.numero_cuota_afectada, 0) > 0
     `;
 
     db.query(sql, [idContratoSeguro], (err, rows) => {
@@ -853,13 +889,14 @@ const sincronizarCuotasPagadasContrato = (idContrato = null, callback = () => {}
         UPDATE contratos_residentes c
         LEFT JOIN (
             SELECT p.id_contrato,
-                   COUNT(DISTINCT COALESCE(pd.numero_cuota_afectada, p.id_pago)) AS cuotas_reales
+                   MAX(COALESCE(pd.numero_cuota_afectada, 0)) AS ultima_cuota_pagada
             FROM pagos p
             INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             WHERE pd.tipo_concepto = 'cuota_terreno'
+              AND COALESCE(pd.numero_cuota_afectada, 0) > 0
             GROUP BY p.id_contrato
         ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
-        SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.cuotas_reales, 0), COALESCE(c.cuotas_pagadas, 0))
+        SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.ultima_cuota_pagada, 0), COALESCE(c.cuotas_pagadas, 0))
         ${condicional}
     `;
 
