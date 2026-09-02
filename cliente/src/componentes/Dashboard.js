@@ -152,34 +152,34 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="container-fluid py-4" style={{ background: 'linear-gradient(180deg, #f4f7fb 0%, #edf3ff 100%)', minHeight: '100vh' }}>
-      <div className="mb-4 card border-0 shadow-sm" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 100%)', borderRadius: 20, padding: '1.5rem 1.5rem 1.1rem' }}>
-        <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div className="container-fluid py-3" style={{ background: '#f3f5f9', minHeight: '100vh' }}>
+      <div className="mb-3 card border-0 shadow-sm" style={{ background: '#f8fafc', borderRadius: 12, padding: '0.9rem 1rem' }}>
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div>
-            <div className="text-uppercase small fw-bold" style={{ letterSpacing: '0.14em', color: '#3b82f6' }}>Operación financiera</div>
-            <h1 className="mb-1 mt-2 fw-bold" style={{ fontSize: '2.2rem', color: '#0f172a' }}>Dashboard financiero</h1>
-            <div className="text-secondary" style={{ fontSize: '0.96rem' }}>
+            <div className="text-uppercase fw-bold" style={{ letterSpacing: '0.08em', fontSize: '0.72rem', color: '#2563eb' }}>Operación financiera</div>
+            <h1 className="mb-0 mt-1 fw-bold" style={{ fontSize: '1.7rem', lineHeight: 1.2, color: '#0f172a' }}>Dashboard financiero</h1>
+            <div className="text-secondary" style={{ fontSize: '0.8rem' }}>
               {data ? data.rango.etiqueta : 'Cargando indicadores...'}
             </div>
           </div>
 
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            <div className="btn-group" role="group" style={{ boxShadow: '0 8px 18px rgba(59,130,246,0.12)' }}>
+            <div className="btn-group" role="group" style={{ boxShadow: '0 4px 12px rgba(59,130,246,0.08)' }}>
               {PERIOD_OPTIONS.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   className={`btn btn-sm px-3 ${periodo === option.value ? 'btn-primary' : 'btn-outline-primary'}`}
                   onClick={() => setPeriodo(option.value)}
-                  style={{ borderRadius: '10px', marginRight: '2px', fontWeight: 600 }}
+                  style={{ borderRadius: '8px', marginRight: '2px', fontWeight: 600, fontSize: '0.78rem' }}
                 >
                   {option.label}
                 </button>
               ))}
             </div>
 
-            <button className="btn btn-success btn-sm px-3" onClick={exportarExcel} style={{ borderRadius: '10px', fontWeight: 600 }}>Exportar Excel</button>
-            <button className="btn btn-danger btn-sm px-3" onClick={exportarPDF} style={{ borderRadius: '10px', fontWeight: 600 }}>Exportar PDF</button>
+            <button className="btn btn-success btn-sm px-3" onClick={exportarExcel} style={{ borderRadius: '8px', fontWeight: 600, fontSize: '0.78rem' }}>Exportar Excel</button>
+            <button className="btn btn-danger btn-sm px-3" onClick={exportarPDF} style={{ borderRadius: '8px', fontWeight: 600, fontSize: '0.78rem' }}>Exportar PDF</button>
           </div>
         </div>
       </div>
@@ -187,52 +187,52 @@ const Dashboard = () => {
       {loading && !data ? (
         <div className="text-center py-5">
           <div className="spinner-border text-primary" role="status" />
-          <div className="mt-3 text-secondary">Generando indicadores...</div>
+          <div className="mt-3 text-secondary" style={{ fontSize: '0.82rem' }}>Generando indicadores...</div>
         </div>
       ) : (
         <>
-          <div className="row g-3 mb-4">
+          <div className="row g-2 mb-3">
             {kpis.map((kpi, index) => (
               <div className="col-xl-3 col-md-6" key={kpi.label}>
-                <div className="card border-0 h-100 shadow-sm" style={{ borderRadius: 18, background: '#ffffff', overflow: 'hidden' }}>
-                  <div className="card-body p-3">
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <span className="text-muted small fw-semibold">{kpi.label}</span>
-                      <span className="badge rounded-pill" style={{ backgroundColor: kpi.color, color: '#fff', fontSize: '0.7rem' }}>
+                <div className="card border-0 h-100 shadow-sm" style={{ borderRadius: 12, background: '#ffffff', overflow: 'hidden' }}>
+                  <div className="card-body p-2 px-3">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-muted fw-semibold" style={{ fontSize: '0.73rem' }}>{kpi.label}</span>
+                      <span className="badge rounded-pill" style={{ backgroundColor: kpi.color, color: '#fff', fontSize: '0.62rem' }}>
                         {index + 1}
                       </span>
                     </div>
-                    <div className="fw-bold" style={{ color: kpi.color, fontSize: '1.9rem', lineHeight: 1.2 }}>{kpi.value}</div>
-                    <div className="small text-secondary mt-2">{kpi.helper}</div>
+                    <div className="fw-bold" style={{ color: kpi.color, fontSize: '1.35rem', lineHeight: 1.2 }}>{kpi.value}</div>
+                    <div className="text-secondary mt-1" style={{ fontSize: '0.7rem' }}>{kpi.helper}</div>
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="row g-4 mb-4">
+          <div className="row g-3 mb-3">
             <div className="col-xl-5">
-              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 18, background: '#ffffff' }}>
-                <div className="card-header border-0 bg-white pt-3 pb-0 px-3">
-                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a' }}>Receptoras con mayor cobro</h5>
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#ffffff' }}>
+                <div className="card-header border-0 bg-white pt-2 pb-0 px-3">
+                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a', fontSize: '0.95rem' }}>Receptoras con mayor cobro</h5>
                 </div>
-                <div className="card-body px-3 py-3">
+                <div className="card-body px-3 py-2">
                   {data.top_cobradores.length === 0 ? (
-                    <p className="text-muted mb-0">Sin datos para este período.</p>
+                    <p className="text-muted mb-0" style={{ fontSize: '0.8rem' }}>Sin datos para este período.</p>
                   ) : (
                     <div className="d-flex flex-column gap-2">
                       {data.top_cobradores.map((item, index) => (
                         <div key={`${item.nombre}-${index}`} className="d-flex justify-content-between align-items-center px-2 py-2 rounded-3" style={{ background: index % 2 === 0 ? '#f8fafc' : '#ffffff', border: '1px solid #edf2f7' }}>
-                          <div className="d-flex align-items-center gap-3">
-                            <span className="rounded-circle text-white d-flex align-items-center justify-content-center" style={{ width: 35, height: 35, background: BAR_COLORS[index % BAR_COLORS.length], fontSize: 12, fontWeight: 700 }}>
+                          <div className="d-flex align-items-center gap-2">
+                            <span className="rounded-circle text-white d-flex align-items-center justify-content-center" style={{ width: 28, height: 28, background: BAR_COLORS[index % BAR_COLORS.length], fontSize: 11, fontWeight: 700 }}>
                               {item.nombre?.slice(0, 1)?.toUpperCase() || 'U'}
                             </span>
                             <div>
-                              <div className="fw-semibold" style={{ color: '#111827' }}>{item.nombre}</div>
-                              <small className="text-muted">{item.cuotas_financiadas} cuotas</small>
+                              <div className="fw-semibold" style={{ color: '#111827', fontSize: '0.8rem' }}>{item.nombre}</div>
+                              <small className="text-muted" style={{ fontSize: '0.68rem' }}>{item.cuotas_financiadas} cuotas</small>
                             </div>
                           </div>
-                          <strong style={{ color: '#0f172a', fontSize: '0.95rem' }}>{currency(item.total_recaudado)}</strong>
+                          <strong style={{ color: '#0f172a', fontSize: '0.8rem' }}>{currency(item.total_recaudado)}</strong>
                         </div>
                       ))}
                     </div>
@@ -242,29 +242,29 @@ const Dashboard = () => {
             </div>
 
             <div className="col-xl-4">
-              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 18, background: '#ffffff' }}>
-                <div className="card-header border-0 bg-white pt-3 pb-0 px-3">
-                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a' }}>Facturas por cajero / receptor</h5>
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#ffffff' }}>
+                <div className="card-header border-0 bg-white pt-2 pb-0 px-3">
+                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a', fontSize: '0.95rem' }}>Facturas por cajero / receptor</h5>
                 </div>
-                <div className="card-body px-3 py-3">
+                <div className="card-body px-3 py-2">
                   {data.facturas_por_usuario.length === 0 ? (
-                    <p className="text-muted mb-0">Sin facturas en este período.</p>
+                    <p className="text-muted mb-0" style={{ fontSize: '0.8rem' }}>Sin facturas en este período.</p>
                   ) : (
-                    <div className="d-flex flex-column gap-3">
+                    <div className="d-flex flex-column gap-2">
                       {data.facturas_por_usuario.map((item, index) => (
                         <div key={`${item.nombre}-${index}`}>
-                          <div className="d-flex justify-content-between align-items-center mb-2">
-                            <span className="fw-semibold" style={{ color: '#111827' }}>{item.nombre}</span>
-                            <small className="text-muted">{item.emitidas} / {item.anuladas}</small>
+                          <div className="d-flex justify-content-between align-items-center mb-1">
+                            <span className="fw-semibold" style={{ color: '#111827', fontSize: '0.78rem' }}>{item.nombre}</span>
+                            <small className="text-muted" style={{ fontSize: '0.68rem' }}>{item.emitidas} / {item.anuladas}</small>
                           </div>
-                          <div className="progress" style={{ height: 12, borderRadius: 8, background: '#edf2f7' }}>
+                          <div className="progress" style={{ height: 10, borderRadius: 8, background: '#edf2f7' }}>
                             <div
                               className="progress-bar"
                               role="progressbar"
                               style={{ width: `${Math.min((item.emitidas / Math.max(item.total_facturas || 1, 1)) * 100, 100)}%`, background: BAR_COLORS[index % BAR_COLORS.length], borderRadius: 8 }}
                             />
                           </div>
-                          <div className="d-flex justify-content-between mt-1 text-muted small">
+                          <div className="d-flex justify-content-between mt-1 text-muted" style={{ fontSize: '0.68rem' }}>
                             <span>{item.total_facturas} total</span>
                             <span>{currency(item.monto_emitido)}</span>
                           </div>
@@ -277,58 +277,58 @@ const Dashboard = () => {
             </div>
 
             <div className="col-xl-3">
-              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 18, background: '#ffffff' }}>
-                <div className="card-header border-0 bg-white pt-3 pb-0 px-3">
-                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a' }}>Resumen operativo</h5>
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#ffffff' }}>
+                <div className="card-header border-0 bg-white pt-2 pb-0 px-3">
+                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a', fontSize: '0.95rem' }}>Resumen operativo</h5>
                 </div>
-                <div className="card-body px-3 py-3">
-                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                <div className="card-body px-3 py-2">
+                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom" style={{ fontSize: '0.76rem' }}>
                     <span className="text-secondary">Total cobrado</span>
-                    <strong style={{ color: '#0f172a' }}>{currency(data.resumen.total_cobrado)}</strong>
+                    <strong style={{ color: '#0f172a', fontSize: '0.76rem' }}>{currency(data.resumen.total_cobrado)}</strong>
                   </div>
-                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom" style={{ fontSize: '0.76rem' }}>
                     <span className="text-secondary">Mora</span>
-                    <strong style={{ color: '#e11d48' }}>{currency(data.resumen.total_mora)}</strong>
+                    <strong style={{ color: '#e11d48', fontSize: '0.76rem' }}>{currency(data.resumen.total_mora)}</strong>
                   </div>
-                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom" style={{ fontSize: '0.76rem' }}>
                     <span className="text-secondary">Cuotas</span>
-                    <strong style={{ color: '#0f172a' }}>{formatNumber(data.resumen.cuotas_financiadas_cobradas)}</strong>
+                    <strong style={{ color: '#0f172a', fontSize: '0.76rem' }}>{formatNumber(data.resumen.cuotas_financiadas_cobradas)}</strong>
                   </div>
-                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom" style={{ fontSize: '0.76rem' }}>
                     <span className="text-secondary">Emitidas</span>
-                    <strong style={{ color: '#0f172a' }}>{formatNumber(data.resumen.total_facturas_emitidas)}</strong>
+                    <strong style={{ color: '#0f172a', fontSize: '0.76rem' }}>{formatNumber(data.resumen.total_facturas_emitidas)}</strong>
                   </div>
-                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                  <div className="d-flex justify-content-between align-items-center py-2 border-bottom" style={{ fontSize: '0.76rem' }}>
                     <span className="text-secondary">Anuladas</span>
-                    <strong style={{ color: '#f59e0b' }}>{formatNumber(data.resumen.total_facturas_anuladas)}</strong>
+                    <strong style={{ color: '#f59e0b', fontSize: '0.76rem' }}>{formatNumber(data.resumen.total_facturas_anuladas)}</strong>
                   </div>
-                  <div className="d-flex justify-content-between align-items-center py-2">
+                  <div className="d-flex justify-content-between align-items-center py-2" style={{ fontSize: '0.76rem' }}>
                     <span className="text-secondary">Activos</span>
-                    <strong style={{ color: '#0f172a' }}>{formatNumber(data.resumen.contratos_activos)}</strong>
+                    <strong style={{ color: '#0f172a', fontSize: '0.76rem' }}>{formatNumber(data.resumen.contratos_activos)}</strong>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="row g-4">
+          <div className="row g-3">
             <div className="col-lg-6">
-              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 18, background: '#ffffff' }}>
-                <div className="card-header border-0 bg-white pt-3 pb-0 px-3">
-                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a' }}>Clientes</h5>
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#ffffff' }}>
+                <div className="card-header border-0 bg-white pt-2 pb-0 px-3">
+                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a', fontSize: '0.95rem' }}>Clientes</h5>
                 </div>
-                <div className="card-body px-3 py-3">
-                  <div className="d-flex flex-column gap-3">
+                <div className="card-body px-3 py-2">
+                  <div className="d-flex flex-column gap-2">
                     {data.chart_clientes.map((item) => (
                       <div key={item.label}>
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <span className="small fw-semibold text-secondary">{item.label}</span>
-                          <strong style={{ color: '#111827' }}>{formatNumber(item.value)}</strong>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <span className="small fw-semibold text-secondary" style={{ fontSize: '0.72rem' }}>{item.label}</span>
+                          <strong style={{ color: '#111827', fontSize: '0.76rem' }}>{formatNumber(item.value)}</strong>
                         </div>
-                        <div className="progress" style={{ height: 10, borderRadius: 10, background: '#edf2f7' }}>
+                        <div className="progress" style={{ height: 8, borderRadius: 8, background: '#edf2f7' }}>
                           <div
                             className="progress-bar"
-                            style={{ width: `${getWidth(item.value, maxClientChart)}%`, background: item.color, borderRadius: 10 }}
+                            style={{ width: `${getWidth(item.value, maxClientChart)}%`, background: item.color, borderRadius: 8 }}
                           />
                         </div>
                       </div>
@@ -339,22 +339,22 @@ const Dashboard = () => {
             </div>
 
             <div className="col-lg-6">
-              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 18, background: '#ffffff' }}>
-                <div className="card-header border-0 bg-white pt-3 pb-0 px-3">
-                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a' }}>Contratos</h5>
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#ffffff' }}>
+                <div className="card-header border-0 bg-white pt-2 pb-0 px-3">
+                  <h5 className="fw-bold mb-0" style={{ color: '#0f172a', fontSize: '0.95rem' }}>Contratos</h5>
                 </div>
-                <div className="card-body px-3 py-3">
-                  <div className="d-flex flex-column gap-3">
+                <div className="card-body px-3 py-2">
+                  <div className="d-flex flex-column gap-2">
                     {data.chart_contratos.map((item) => (
                       <div key={item.label}>
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <span className="small fw-semibold text-secondary">{item.label}</span>
-                          <strong style={{ color: '#111827' }}>{formatNumber(item.value)}</strong>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <span className="small fw-semibold text-secondary" style={{ fontSize: '0.72rem' }}>{item.label}</span>
+                          <strong style={{ color: '#111827', fontSize: '0.76rem' }}>{formatNumber(item.value)}</strong>
                         </div>
-                        <div className="progress" style={{ height: 10, borderRadius: 10, background: '#edf2f7' }}>
+                        <div className="progress" style={{ height: 8, borderRadius: 8, background: '#edf2f7' }}>
                           <div
                             className="progress-bar"
-                            style={{ width: `${getWidth(item.value, maxContractChart)}%`, background: item.color, borderRadius: 10 }}
+                            style={{ width: `${getWidth(item.value, maxContractChart)}%`, background: item.color, borderRadius: 8 }}
                           />
                         </div>
                       </div>
