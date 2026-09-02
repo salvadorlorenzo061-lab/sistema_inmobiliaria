@@ -19,7 +19,8 @@ const MODULE_PERMISSION_ALIASES = {
   caja_ingresos: ['caja ingresos manual'],
   asignar_correlativo: ['asignar correlativos', 'asignar correlativo', 'cuadre del dia', 'cuadre del mes'],
   proyectos: ['proyecto', 'proyectos', 'catalogo de proyectos', 'catalogo proyectos'],
-  empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa']
+  empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa'],
+  dashboard_financiero: ['dashboard', 'dashboard financiero', 'reportes', 'reporte financiero', 'estadisticas', 'reportes financieros']
 };
 
 const getFallbackPermisosByRole = (rolNormalizado = '') => {
@@ -31,7 +32,10 @@ const getFallbackPermisosByRole = (rolNormalizado = '') => {
       normalizeText('Convenio de Pagos'),
       normalizeText('Tabla de Amortización'),
       normalizeText('Pagos'),
-      normalizeText('Detalle Pagos')
+      normalizeText('Detalle Pagos'),
+      normalizeText('Dashboard Financiero'),
+      normalizeText('Reportes'),
+      normalizeText('Reporte de Facturas')
     ]);
   }
 
