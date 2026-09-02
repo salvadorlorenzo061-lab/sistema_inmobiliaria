@@ -23,6 +23,7 @@ import MenuGeneral from '../componentes/MenuGeneral';
 import AsignarCorrelativo from '../componentes/Asignar_correlativo';
 import Convenio from '../componentes/Convenio';
 import ReporteFacturas from '../componentes/ReporteFacturas';
+import Dashboard from '../componentes/Dashboard';
 
 // Configuración de módulos - Aquí es donde agregas o quitas módulos
 export const modulesConfig = [
@@ -153,6 +154,14 @@ export const modulesConfig = [
     path: '/pagos_detalle',
     component: PagosDetalle,
     category: 'Caja'
+  },
+  {
+    id: 'dashboard_financiero',
+    label: 'Dashboard Financiero',
+    icon: '📈',
+    path: '/dashboard_financiero',
+    component: Dashboard,
+    category: 'Reportes'
   },
   {
     id: 'reporte_facturas',

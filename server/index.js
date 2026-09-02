@@ -51,6 +51,7 @@ const pagosExtraordinariosRouter = require('./router/Pagos_ExtraordinariosRouter
 const estadoCuentaRouter = require('./router/Estado_CuentaRouter');
 const cuentaEstadoRouter = require('./router/CuentaEstadoRouter');
 const convenioRouter = require('./router/ConvenioRouter');
+const dashboardRouter = require('./router/DashboardRouter');
 
 
 // 2. Declarar los prefijos de la API global existentes
@@ -79,6 +80,7 @@ app.use('/api/pagos_extraordinarios', pagosExtraordinariosRouter);
 app.use('/api/estado_cuenta', estadoCuentaRouter);
 app.use('/api/cuenta_estado', cuentaEstadoRouter);
 app.use('/api/convenio', convenioRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 ensurePerformanceIndexes();
 
