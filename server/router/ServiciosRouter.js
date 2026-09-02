@@ -131,7 +131,14 @@ const syncServicioContrato = (idServicio, idsContrato, montoServicio, callback) 
 const REGLAS_AUTOASIGNACION_SERVICIOS = [
     'agua',
     'agua potable',
+    'servicio de agua',
     'drenaje',
+    'servicio de drenaje',
+    'energia electrica',
+    'energia eléctrica',
+    'electricidad',
+    'luz',
+    'servicio electrico',
     'mantenimiento'
 ];
 
