@@ -551,21 +551,41 @@ router.post('/anular-por-correlativo', (req, res) => {
                         if (txErr) return res.status(500).send({ message: 'Error de transacción al anular cobro.' });
 
                         const recalcularContratoTrasAnulacion = (finishCallback) => {
-                            db.query(
-                                `
-                                    UPDATE contratos_residentes c
-                                    LEFT JOIN (
-                                        SELECT p.id_contrato,
-                                               COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                            const sqlRecalculo = `
+                                UPDATE contratos_residentes c
+                                LEFT JOIN (
+                                    SELECT p.id_contrato,
+                                           COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                                    FROM pagos p
+                                    INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                                    GROUP BY p.id_contrato
+                                ) pagos ON pagos.id_contrato = c.id_contrato
+                                SET c.saldo_pendiente = GREATEST(
+                                        COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0),
+                                        0
+                                    ),
+                                    c.cuotas_pagadas = (
+                                        SELECT COUNT(DISTINCT CASE
+                                            WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                                            ELSE NULL
+                                        END)
                                         FROM pagos p
                                         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-                                        GROUP BY p.id_contrato
-                                    ) pagos ON pagos.id_contrato = c.id_contrato
-                                    SET c.saldo_pendiente = GREATEST(
-                                            COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0),
-                                            0
-                                        ),
-                                        c.cuotas_pagadas = (
+                                        WHERE p.id_contrato = c.id_contrato
+                                          AND pd.tipo_concepto = 'cuota_terreno'
+                                    )
+                                WHERE c.id_contrato = ?
+                            `;
+
+                            db.query(sqlRecalculo, [pago.id_contrato], (saldoErr) => {
+                                if (saldoErr) {
+                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
+                                }
+
+                                db.query(
+                                    `
+                                        UPDATE contratos_residentes c
+                                        SET c.cuotas_pagadas = (
                                             SELECT COUNT(DISTINCT CASE
                                                 WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
                                                 ELSE NULL
@@ -575,16 +595,17 @@ router.post('/anular-por-correlativo', (req, res) => {
                                             WHERE p.id_contrato = c.id_contrato
                                               AND pd.tipo_concepto = 'cuota_terreno'
                                         )
-                                    WHERE c.id_contrato = ?
-                                `,
-                                [pago.id_contrato],
-                                (saldoErr) => {
-                                    if (saldoErr) {
-                                        return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
+                                        WHERE c.id_contrato = ?
+                                    `,
+                                    [pago.id_contrato],
+                                    (syncErr) => {
+                                        if (syncErr) {
+                                            return db.rollback(() => res.status(500).send({ message: 'No se pudo recalcular las cuotas pagadas del contrato.' }));
+                                        }
+                                        return finishCallback();
                                     }
-                                    return finishCallback();
-                                }
-                            );
+                                );
+                            });
                         };
 
                         const restaurarConvenio = (callbackRestore) => {
