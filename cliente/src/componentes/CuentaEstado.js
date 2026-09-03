@@ -18,6 +18,24 @@ const formatoMoneda = (value) => {
 
 const round2 = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
 
+const formatearFechaVista = (fecha) => {
+  if (!fecha) return '';
+  const date = new Date(fecha);
+  if (Number.isNaN(date.getTime())) return '';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const construirFechaVencimiento = (numeroCuota, fechaBase) => {
+  if (!numeroCuota && numeroCuota !== 0) return '';
+  const base = fechaBase ? new Date(fechaBase) : new Date();
+  if (Number.isNaN(base.getTime())) return '';
+  const fecha = new Date(base.getFullYear(), base.getMonth() + Number(numeroCuota), 15);
+  return formatearFechaVista(fecha);
+};
+
 const normalizeImageDataUrl = (value = '') => {
   const cleaned = String(value || '').trim();
   if (!cleaned) return '';
@@ -393,27 +411,36 @@ const CuentaEstado = () => {
     autoTable(doc, {
       startY: 66,
       head: [[
+        'No.',
+        'Fecha vencimiento',
         'Cuota',
-        'Saldo Inicial',
-        'Capital Cuota',
-        'Interes Mes',
-        'Cuota Estimada',
-        'Saldo Final',
-        'Interes Acumulado'
+        'Abono extraordinario',
+        'Capital',
+        'Interés',
+        'Saldo capital',
+        'Estado'
       ]],
-      body: tablaAmortizacionPendiente.map((row) => [
-        String(row.numero_cuota),
-        formatoMoneda(row.saldo_inicial),
-        formatoMoneda(row.capital_cuota),
-        formatoMoneda(row.interes_mes),
-        formatoMoneda(row.cuota_estimada),
-        formatoMoneda(row.saldo_final),
-        formatoMoneda(row.interes_acumulado)
-      ]),
+      body: tablaAmortizacionPendiente.map((row, index) => {
+        const cuotaNumero = Number(row.numero_cuota || index + 1);
+        const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
+        const saldoCapital = Number(row.saldo_final ?? 0);
+        const estadoFila = String(row.estado || (saldoCapital <= 0 ? 'PAGADA' : 'PENDIENTE')).toUpperCase();
+
+        return [
+          String(cuotaNumero),
+          fechaVencimiento,
+          formatoMoneda(row.cuota_estimada || row.cuota || 0),
+          'Q 0.00',
+          formatoMoneda(row.capital_cuota || 0),
+          formatoMoneda(row.interes_mes || 0),
+          formatoMoneda(saldoCapital),
+          estadoFila
+        ];
+      }),
       theme: 'grid',
       styles: {
-        fontSize: 8,
-        cellPadding: 1.5,
+        fontSize: 7.2,
+        cellPadding: 1.4,
         lineColor: [196, 196, 196],
         lineWidth: 0.2,
         textColor: [26, 35, 47]
@@ -425,7 +452,17 @@ const CuentaEstado = () => {
         halign: 'center'
       },
       alternateRowStyles: { fillColor: [247, 249, 252] },
-      margin: { left: 12, right: 12 }
+      margin: { left: 10, right: 10 },
+      columnStyles: {
+        0: { cellWidth: 12 },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 24 },
+        7: { cellWidth: 20 }
+      }
     });
 
     const lastY = (doc.lastAutoTable?.finalY || 70) + 8;
@@ -452,31 +489,36 @@ const CuentaEstado = () => {
     }
 
     const encabezados = [
-      'Contrato',
-      'Cliente',
+      'No.',
+      'Fecha vencimiento',
       'Cuota',
-      'Saldo Inicial',
-      'Capital Cuota',
-      'Interes Mes',
-      'Cuota Estimada',
-      'Saldo Final',
-      'Interes Acumulado'
+      'Abono extraordinario',
+      'Capital',
+      'Interes',
+      'Saldo capital',
+      'Estado'
     ];
 
     const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
     const nombreResidente = String(contrato?.nombre_residente || 'SIN-CLIENTE');
 
-    const filas = tablaAmortizacionPendiente.map((row) => ([
-      codigoContrato,
-      nombreResidente,
-      row.numero_cuota,
-      row.saldo_inicial,
-      row.capital_cuota,
-      row.interes_mes,
-      row.cuota_estimada,
-      row.saldo_final,
-      row.interes_acumulado
-    ]));
+    const filas = tablaAmortizacionPendiente.map((row, index) => {
+      const cuotaNumero = Number(row.numero_cuota || index + 1);
+      const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
+      const saldoCapital = Number(row.saldo_final ?? 0);
+      const estadoFila = String(row.estado || (saldoCapital <= 0 ? 'PAGADA' : 'PENDIENTE')).toUpperCase();
+
+      return [
+        cuotaNumero,
+        fechaVencimiento,
+        Number(row.cuota_estimada || row.cuota || 0),
+        0,
+        Number(row.capital_cuota || 0),
+        Number(row.interes_mes || 0),
+        saldoCapital,
+        estadoFila
+      ];
+    });
 
     const csvContent = [encabezados, ...filas]
       .map((linea) => linea.map((valor) => `"${String(valor).replace(/"/g, '""')}"`).join(','))
@@ -701,33 +743,42 @@ const CuentaEstado = () => {
                       <table className="table table-sm table-bordered table-striped align-middle">
                         <thead className="table-dark">
                           <tr>
+                            <th>No.</th>
+                            <th>Fecha vencimiento</th>
                             <th>Cuota</th>
-                            <th>Saldo Inicial</th>
-                            <th>Capital Cuota</th>
-                            <th>Interes Mes</th>
-                            <th>Cuota Estimada</th>
-                            <th>Saldo Final</th>
-                            <th>Interes Acumulado</th>
-                            {contrato && <th>Accion</th>}
+                            <th>Abono extraordinario</th>
+                            <th>Capital</th>
+                            <th>Interés</th>
+                            <th>Saldo capital</th>
+                            <th>Estado</th>
+                            {contrato && <th>Acción</th>}
                           </tr>
                         </thead>
                         <tbody>
-                          {tablaAmortizacionPendiente.map((row) => (
-                            <tr key={row.indice}>
-                              <td className="fw-bold">{row.numero_cuota}</td>
-                              <td>{formatoMoneda(row.saldo_inicial)}</td>
-                              <td>{formatoMoneda(row.capital_cuota)}</td>
-                              <td>{formatoMoneda(row.interes_mes)}</td>
-                              <td>{formatoMoneda(row.cuota_estimada)}</td>
-                              <td>{formatoMoneda(row.saldo_final)}</td>
-                              <td>{formatoMoneda(row.interes_acumulado)}</td>
-                              {contrato && <td>
-                                <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
-                                  Cobrar en Caja
-                                </button>
-                              </td>}
-                            </tr>
-                          ))}
+                          {tablaAmortizacionPendiente.map((row, index) => {
+                            const cuotaNumero = Number(row.numero_cuota || index + 1);
+                            const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
+                            const saldoCapital = Number(row.saldo_final ?? 0);
+                            const estadoFila = String(row.estado || (saldoCapital <= 0 ? 'PAGADA' : 'PENDIENTE')).toUpperCase();
+
+                            return (
+                              <tr key={row.indice ?? cuotaNumero}>
+                                <td className="fw-bold">{cuotaNumero}</td>
+                                <td>{fechaVencimiento || '—'}</td>
+                                <td>{formatoMoneda(row.cuota_estimada || row.cuota || 0)}</td>
+                                <td>Q 0.00</td>
+                                <td>{formatoMoneda(row.capital_cuota || 0)}</td>
+                                <td>{formatoMoneda(row.interes_mes || 0)}</td>
+                                <td>{formatoMoneda(saldoCapital)}</td>
+                                <td>{estadoFila}</td>
+                                {contrato && <td>
+                                  <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
+                                    Cobrar en Caja
+                                  </button>
+                                </td>}
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
