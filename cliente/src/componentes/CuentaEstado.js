@@ -88,7 +88,10 @@ const construirSimulacionLocal = ({
     interes_por_mes: tabla[0]?.interes_mes || 0,
     interes_total_pendiente: interesTotal,
     total_liquidacion: totalPagos,
-    tabla_amortizacion: tabla
+    tabla_amortizacion: tabla.map((fila) => ({
+      ...fila,
+      estado: String(fila?.estado || 'PENDIENTE').toUpperCase()
+    }))
   };
 };
 
@@ -424,7 +427,7 @@ const CuentaEstado = () => {
         const cuotaNumero = Number(row.numero_cuota || index + 1);
         const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
         const saldoCapital = Number(row.saldo_final ?? 0);
-        const estadoFila = String(row.estado || (saldoCapital <= 0 ? 'PAGADA' : 'PENDIENTE')).toUpperCase();
+        const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
         return [
           String(cuotaNumero),
@@ -506,7 +509,7 @@ const CuentaEstado = () => {
       const cuotaNumero = Number(row.numero_cuota || index + 1);
       const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
       const saldoCapital = Number(row.saldo_final ?? 0);
-      const estadoFila = String(row.estado || (saldoCapital <= 0 ? 'PAGADA' : 'PENDIENTE')).toUpperCase();
+      const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
       return [
         cuotaNumero,
@@ -759,7 +762,7 @@ const CuentaEstado = () => {
                             const cuotaNumero = Number(row.numero_cuota || index + 1);
                             const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
                             const saldoCapital = Number(row.saldo_final ?? 0);
-                            const estadoFila = String(row.estado || (saldoCapital <= 0 ? 'PAGADA' : 'PENDIENTE')).toUpperCase();
+                            const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
                             return (
                               <tr key={row.indice ?? cuotaNumero}>
