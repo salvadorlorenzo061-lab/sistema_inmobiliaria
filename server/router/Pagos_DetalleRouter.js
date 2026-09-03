@@ -64,7 +64,39 @@ router.get('/reporte-facturas', (req, res) => {
     const fechaInicio = String(req.query?.fecha_inicio || '').trim();
     const fechaFin = String(req.query?.fecha_fin || '').trim();
     const estado = String(req.query?.estado || 'TODAS').trim().toUpperCase();
-    const filtro = `%${criterio}%`;
+    const params = [];
+    const whereClauses = ['fh.id_pago IS NOT NULL'];
+
+    if (fechaInicio) {
+        whereClauses.push('DATE(fh.fecha_evento) >= ?');
+        params.push(fechaInicio);
+    }
+
+    if (fechaFin) {
+        whereClauses.push('DATE(fh.fecha_evento) <= ?');
+        params.push(fechaFin);
+    }
+
+    if (estado && estado !== 'TODAS') {
+        whereClauses.push('UPPER(fh.estado_factura) = ?');
+        params.push(estado);
+    }
+
+    if (criterio) {
+        const filtro = `%${criterio}%`;
+        whereClauses.push(`(
+            CAST(fh.id_pago AS CHAR) LIKE ?
+            OR CAST(fh.id_residente AS CHAR) LIKE ?
+            OR CAST(fh.id_contrato AS CHAR) LIKE ?
+            OR COALESCE(fh.correlativo, '') LIKE ?
+            OR COALESCE(r.nombre, '') LIKE ?
+            OR COALESCE(r.numero_identificacion, '') LIKE ?
+            OR COALESCE(r.dpi, '') LIKE ?
+            OR COALESCE(c.codigo_contrato, '') LIKE ?
+        )`);
+        params.push(filtro, filtro, filtro, filtro, filtro, filtro, filtro, filtro);
+    }
+
     const query = `
         SELECT
             fh.id_pago,
@@ -84,21 +116,7 @@ router.get('/reporte-facturas', (req, res) => {
         FROM facturas_historial fh
         LEFT JOIN residentes r ON r.id_residente = fh.id_residente
         LEFT JOIN contratos_residentes c ON c.id_contrato = fh.id_contrato
-        WHERE fh.id_pago IS NOT NULL
-                    AND (? = '' OR DATE(fh.fecha_evento) >= ?)
-                    AND (? = '' OR DATE(fh.fecha_evento) <= ?)
-                    AND (? = 'TODAS' OR UPPER(fh.estado_factura) = ?)
-          AND (
-                ? = ''
-                OR CAST(fh.id_pago AS CHAR) LIKE ?
-                OR CAST(fh.id_residente AS CHAR) LIKE ?
-                OR CAST(fh.id_contrato AS CHAR) LIKE ?
-                OR COALESCE(fh.correlativo, '') LIKE ?
-                OR COALESCE(r.nombre, '') LIKE ?
-                OR COALESCE(r.numero_identificacion, '') LIKE ?
-                OR COALESCE(r.dpi, '') LIKE ?
-                OR COALESCE(c.codigo_contrato, '') LIKE ?
-          )
+        WHERE ${whereClauses.join(' AND ')}
         GROUP BY
             fh.id_pago, fh.estado_factura, fh.id_residente, fh.id_contrato,
             r.nombre, r.numero_identificacion, r.dpi, c.codigo_contrato
@@ -108,14 +126,10 @@ router.get('/reporte-facturas', (req, res) => {
         LIMIT 500
     `;
 
-    db.query(query, [
-        fechaInicio, fechaInicio,
-        fechaFin, fechaFin,
-        estado, estado,
-        criterio, filtro, filtro, filtro, filtro, filtro, filtro, filtro, filtro
-    ], (err, rows) => {
+    db.query(query, params, (err, rows) => {
         if (err) {
             console.error('Error al obtener reportería de facturas:', err.message);
+            console.error('SQL report:', query);
             return res.status(500).send({ message: 'No se pudo obtener la reportería de facturas.' });
         }
         return res.status(200).json(rows || []);
