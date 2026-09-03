@@ -58,6 +58,7 @@ const Dashboard = () => {
     if (!data) return [];
     return [
       { label: 'Cobro total', value: currency(data.resumen.total_cobrado), color: '#0d6efd', helper: 'Cuotas y pagos registrados' },
+      { label: 'Intereses', value: currency(data.resumen.total_interes || 0), color: '#8b5cf6', helper: 'Pagos por intereses' },
       { label: 'Mora', value: currency(data.resumen.total_mora), color: '#dc3545', helper: 'Cobros con atraso' },
       { label: 'Facturas emitidas', value: formatNumber(data.resumen.total_facturas_emitidas), color: '#198754', helper: 'Emitidas por receptores' },
       { label: 'Facturas anuladas', value: formatNumber(data.resumen.total_facturas_anuladas), color: '#fd7e14', helper: 'Anulaciones del periodo' }
@@ -81,6 +82,7 @@ const Dashboard = () => {
       ['Métrica', 'Valor'],
       ['Rango', `${data.rango.etiqueta} (${data.rango.inicio} - ${data.rango.fin})`],
       ['Cobro total', data.resumen.total_cobrado],
+      ['Intereses', data.resumen.total_interes || 0],
       ['Mora total', data.resumen.total_mora],
       ['Cuotas financiadas cobradas', data.resumen.cuotas_financiadas_cobradas],
       ['Facturas emitidas', data.resumen.total_facturas_emitidas],
@@ -120,6 +122,7 @@ const Dashboard = () => {
       head: [['Métrica', 'Valor']],
       body: [
         ['Cobro total', currency(data.resumen.total_cobrado)],
+        ['Intereses', currency(data.resumen.total_interes || 0)],
         ['Mora', currency(data.resumen.total_mora)],
         ['Cuotas financiadas cobradas', formatNumber(data.resumen.cuotas_financiadas_cobradas)],
         ['Facturas emitidas', formatNumber(data.resumen.total_facturas_emitidas)],

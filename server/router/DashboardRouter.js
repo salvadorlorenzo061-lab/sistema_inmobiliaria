@@ -60,6 +60,7 @@ router.get('/resumen', async (req, res) => {
       queryAsync(`
         SELECT
           COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END), 0) AS total_cobrado,
+          COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'interes' THEN pd.subtotal ELSE 0 END), 0) AS total_interes,
           COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS total_mora,
           COUNT(DISTINCT CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN p.id_contrato END) AS contratos_con_cobro,
           COUNT(DISTINCT CASE WHEN pd.tipo_concepto = 'cuota_terreno' AND COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN CONCAT(p.id_contrato, '-', pd.numero_cuota_afectada) END) AS cuotas_financiadas_cobradas
@@ -161,6 +162,7 @@ router.get('/resumen', async (req, res) => {
       },
       resumen: {
         total_cobrado: Number(resumen.total_cobrado || 0),
+        total_interes: Number(resumen.total_interes || 0),
         total_mora: Number(resumen.total_mora || 0),
         cuotas_financiadas_cobradas: Number(resumen.cuotas_financiadas_cobradas || 0),
         contratos_con_cobro: Number(resumen.contratos_con_cobro || 0),
