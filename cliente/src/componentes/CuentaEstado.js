@@ -325,35 +325,73 @@ const CuentaEstado = () => {
       return;
     }
 
-    const doc = new jsPDF('l', 'mm', 'letter');
+    const doc = new jsPDF('p', 'mm', 'letter');
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
     const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
     const nombreResidente = String(contrato?.nombre_residente || 'SIN-CLIENTE');
     const nombreProyecto = String(contrato?.nombre_proyecto_pdf || contrato?.nombre_proyecto || 'PROYECTO');
-    const logoProyecto = normalizeImageDataUrl(contrato?.logo_proyecto || '');
+    const lote = String(contrato?.lote || contrato?.manzana || 'N/A');
+    const logoProyecto = normalizeImageDataUrl(
+      contrato?.logo_proyecto || contrato?.logo_empresa_pdf || contrato?.logo_empresa || ''
+    );
+    const cuotaMensual = toNumber(simulacion.cuota_mensual || simulacion.cuota_mensual || 0, 0);
+    const tasaMensual = toNumber(simulacion.tasa_mensual || 0, 0);
+    const interesTotalPendiente = toNumber(simulacion.interes_total_pendiente || 0, 0);
+    const capitalRestante = toNumber(simulacion.capital_restante || 0, 0);
     const fecha = new Date().toLocaleDateString('es-GT');
+    const infoHeaderY = 22;
+
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
     if (logoProyecto) {
       try {
-        doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), 14, 10, 24, 20, `logo-proyecto-${Date.now()}`, 'FAST');
+        const logoWidth = 40;
+        const logoHeight = 26;
+        const logoX = 14;
+        const logoY = 10;
+        doc.addImage(logoProyecto, getImageFormatFromDataUrl(logoProyecto), logoX, logoY, logoWidth, logoHeight, `logo-proyecto-${Date.now()}`, 'FAST');
       } catch {
         // no-op
       }
     }
 
-    doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(23, 42, 69);
-    doc.text('TABLA DE AMORTIZACIÓN', pageWidth / 2, 18, { align: 'center' });
-    doc.setFontSize(10);
-    doc.setTextColor(60, 60, 60);
-    doc.text(`${nombreProyecto}`, pageWidth / 2, 25, { align: 'center' });
-    doc.text(`Contrato: ${codigoContrato}`, 14, 35);
-    doc.text(`Cliente: ${nombreResidente}`, 14, 40);
-    doc.text(`Fecha: ${fecha}`, pageWidth - 14, 35, { align: 'right' });
+    doc.setTextColor(28, 46, 64);
+    doc.setFontSize(18);
+    doc.text('GRUPO DE INVERSIONES', pageWidth / 2, 18, { align: 'center' });
+    doc.setFontSize(14);
+    doc.text('TABLA DE AMORTIZACIÓN', pageWidth / 2, 30, { align: 'center' });
+
+    const headerBoxY = 36;
+    doc.setDrawColor(201, 201, 201);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(12, headerBoxY, pageWidth - 24, 22, 2, 2, 'FD');
+
+    const metaLeftX = 16;
+    const metaRightX = pageWidth / 2 + 8;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(46, 52, 64);
+    doc.setFontSize(8);
+    doc.text(`Cliente`, metaLeftX, headerBoxY + 9);
+    doc.text(`${nombreResidente}`, metaLeftX + 18, headerBoxY + 9);
+    doc.text(`Proyecto`, metaLeftX, headerBoxY + 14);
+    doc.text(`${nombreProyecto}`, metaLeftX + 18, headerBoxY + 14);
+    doc.text(`Lote / Manzana`, metaLeftX, headerBoxY + 19);
+    doc.text(`${lote}`, metaLeftX + 30, headerBoxY + 19);
+
+    doc.text(`ID cliente`, metaRightX, headerBoxY + 9);
+    doc.text(`${String(contrato?.id_residente || 'N/D')}`, metaRightX + 22, headerBoxY + 9);
+    doc.text(`Fecha`, metaRightX, headerBoxY + 14);
+    doc.text(`${fecha}`, metaRightX + 16, headerBoxY + 14);
+    doc.text(`Contrato`, metaRightX, headerBoxY + 19);
+    doc.text(`${codigoContrato}`, metaRightX + 20, headerBoxY + 19);
 
     autoTable(doc, {
-      startY: 46,
+      startY: 66,
       head: [[
         'Cuota',
         'Saldo Inicial',
@@ -363,7 +401,7 @@ const CuentaEstado = () => {
         'Saldo Final',
         'Interes Acumulado'
       ]],
-      body: tablaAmortizacionPendiente.map((row) => ([
+      body: tablaAmortizacionPendiente.map((row) => [
         String(row.numero_cuota),
         formatoMoneda(row.saldo_inicial),
         formatoMoneda(row.capital_cuota),
@@ -371,18 +409,38 @@ const CuentaEstado = () => {
         formatoMoneda(row.cuota_estimada),
         formatoMoneda(row.saldo_final),
         formatoMoneda(row.interes_acumulado)
-      ])),
-      theme: 'striped',
-      styles: { fontSize: 8, cellPadding: 1.6 },
-      headStyles: { fillColor: [36, 99, 235] },
+      ]),
+      theme: 'grid',
+      styles: {
+        fontSize: 8,
+        cellPadding: 1.5,
+        lineColor: [196, 196, 196],
+        lineWidth: 0.2,
+        textColor: [26, 35, 47]
+      },
+      headStyles: {
+        fillColor: [25, 44, 80],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      alternateRowStyles: { fillColor: [247, 249, 252] },
       margin: { left: 12, right: 12 }
     });
 
-    const lastY = (doc.lastAutoTable?.finalY || 46) + 8;
+    const lastY = (doc.lastAutoTable?.finalY || 70) + 8;
+    const summaryX = 12;
+    doc.setDrawColor(180, 180, 180);
+    doc.line(summaryX, lastY, pageWidth - 12, lastY);
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.setTextColor(18, 84, 44);
-    doc.text(`Total liquidacion estimada: ${formatoMoneda(simulacion.total_liquidacion)}`, 14, lastY);
-    doc.text(`Interes total pendiente: ${formatoMoneda(simulacion.interes_total_pendiente)}`, 14, lastY + 5);
+    doc.setTextColor(13, 64, 44);
+    doc.text(`Capital restante: ${formatoMoneda(capitalRestante)}`, summaryX, lastY + 8);
+    doc.text(`Intereses anual: ${Number(simulacion.interes_anual || 0).toFixed(2)}%`, summaryX + 62, lastY + 8);
+    doc.text(`Tasa mensual: ${Number(tasaMensual || 0).toFixed(4)}%`, summaryX + 126, lastY + 8);
+    doc.text(`Cuota mensual fija: ${formatoMoneda(cuotaMensual)}`, summaryX + 178, lastY + 8);
+    doc.text(`Interés total pendiente: ${formatoMoneda(interesTotalPendiente)}`, summaryX, lastY + 16);
+    doc.text(`Total liquidación (capital + intereses): ${formatoMoneda(simulacion.total_liquidacion)}`, summaryX + 68, lastY + 16);
 
     doc.save(`Tabla_Amortizacion_${codigoContrato}.pdf`);
   };
