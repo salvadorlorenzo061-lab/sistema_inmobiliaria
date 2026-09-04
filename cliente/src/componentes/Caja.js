@@ -579,7 +579,7 @@ const Caja = () => {
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
         const esEnganchePorNumero = Number.isInteger(cuotaRealNumero) && cuotaRealNumero === 0;
         if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
-            return 'Cuota 0 - Enganche';
+            return 'Enganche / Cuota 0';
         }
 
         const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);

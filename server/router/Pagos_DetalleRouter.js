@@ -293,8 +293,8 @@ router.get('/documento/:id_pago', (req, res) => {
             return {
                 tipo_concepto: tipoConceptoNormalizado,
                 id_concepto_servicio: item.id_concepto_servicio,
-                nombre_concepto: tipoConceptoNormalizado === 'enganche' ? 'Enganche' : (item.nombre_concepto || evidenciaDetalle?.detalle?.nombre_concepto || item.tipo_concepto),
-                mes_pagado: tipoConceptoNormalizado === 'enganche' ? 'Cuota 0 - Enganche' : (item.mes_pagado || evidenciaDetalle?.detalle?.mes_pagado || ''),
+                nombre_concepto: tipoConceptoNormalizado === 'enganche' ? 'Enganche / Cuota 0' : (item.nombre_concepto || evidenciaDetalle?.detalle?.nombre_concepto || item.tipo_concepto),
+                mes_pagado: tipoConceptoNormalizado === 'enganche' ? 'Enganche / Cuota 0' : (item.mes_pagado || evidenciaDetalle?.detalle?.mes_pagado || ''),
                 numero_cuota_afectada: tipoConceptoNormalizado === 'enganche' ? 0 : (item.numero_cuota_afectada ? Number(item.numero_cuota_afectada) : null),
                 subtotal: Number(item.subtotal || 0)
             };

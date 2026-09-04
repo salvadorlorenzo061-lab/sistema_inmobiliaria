@@ -97,8 +97,8 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
       return {
         orden: index,
         tipo: esEnganche ? 'enganche' : tipoOriginal,
-        conceptoOriginal: esEnganche ? 'Enganche' : nombreBase,
-        mes: esEnganche ? 'Cuota 0 - Enganche' : mesBase,
+        conceptoOriginal: esEnganche ? 'Enganche / Cuota 0' : nombreBase,
+        mes: esEnganche ? 'Enganche / Cuota 0' : mesBase,
         cuotaReal: esEnganche ? 0 : cuotaBase,
         monto: Number(item?.subtotal ?? item?.total ?? 0)
       };
@@ -114,7 +114,7 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   let cuotasSinNumero = 0;
 
   const obtenerEtiquetaCuota = (cuotaReal, esEnganche = false) => {
-    if (esEnganche) return 'Cuota 0 Enganche';
+    if (esEnganche) return 'Enganche / Cuota 0';
 
     // El número de cuota guardado ya es el de la cuota financiada real (cuota 1 = primer
     // mes de pagos pactado), así que se imprime tal cual: sin corrimientos por enganche.
@@ -170,7 +170,7 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
       const fila = asegurarFila(`enganche:${item.mes || item.orden}`, {
         orden: item.orden,
         concepto: obtenerEtiquetaCuota(0, true),
-        mes: 'Cuota 0 - Enganche',
+        mes: 'Enganche / Cuota 0',
         cuotaNumero: 0
       });
       fila.total = Number((fila.total + item.monto).toFixed(2));

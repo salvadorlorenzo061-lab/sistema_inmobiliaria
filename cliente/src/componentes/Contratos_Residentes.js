@@ -1445,7 +1445,7 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={monto_total} onChange={e => { setMonto_total(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
+                  <label className="form-label fw-bold">Enganche / Cuota 0 (Q):</label>
                   <input type="number" className="form-control" value={enganche} onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
@@ -1747,7 +1747,7 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={monto_total} onChange={e => { setMonto_total(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
-                  <label className="form-label fw-bold">Enganche / 1ra Cuota (Q):</label>
+                  <label className="form-label fw-bold">Enganche / Cuota 0 (Q):</label>
                   <input
                     type="number"
                     className="form-control"
