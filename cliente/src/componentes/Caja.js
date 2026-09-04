@@ -478,6 +478,14 @@ const Caja = () => {
             : Math.max(Number(enganchePendienteValor || 0), 0);
         if (!(engancheActual > 0)) return false;
 
+        const etiquetaInicioFinanciado = obtenerEtiquetaInicioFinanciadoContrato();
+        if (etiquetaInicioFinanciado && mesEtiqueta === etiquetaInicioFinanciado) {
+            // El enganche y la primera cuota financiada pueden compartir el mismo mes
+            // calendario cuando el contrato inicia en enero. En ese caso, ambos deben
+            // mostrarse por separado: cuota 0 (enganche) y cuota 1 (financiada).
+            return false;
+        }
+
         const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
         if (mesEngancheActual) {
             return mesEtiqueta === mesEngancheActual;
@@ -513,6 +521,20 @@ const Caja = () => {
             mes: normalizarMesClave(limpio),
             anio: null
         };
+    };
+
+    const obtenerEtiquetaInicioFinanciadoContrato = () => {
+        const mesInicioContrato = Number(datosDeuda?.mes_inicio_pagos || 0);
+        const anioInicioContrato = Number(datosDeuda?.anio_inicio_pagos || 0);
+        if (!Number.isInteger(mesInicioContrato) || mesInicioContrato < 1 || mesInicioContrato > 12) {
+            return null;
+        }
+        if (!Number.isInteger(anioInicioContrato) || anioInicioContrato < 1900) {
+            return null;
+        }
+
+        const fechaInicio = new Date(anioInicioContrato, mesInicioContrato - 1, 1);
+        return etiquetaMesDesdeFecha(fechaInicio);
     };
 
     const esMesVencidoParaMoraLocal = (mesTexto = '', fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5) => {
