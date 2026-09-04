@@ -764,6 +764,26 @@ function Contratos_Residentes() {
     }
   };
 
+  const parseFechaCalendario = (valor) => {
+    if (!valor) return null;
+    const raw = String(valor).trim();
+    const matchYmd = raw.match(/^\d{4}-\d{2}-\d{2}/);
+    if (matchYmd) {
+      const [anio, mes, dia] = matchYmd[0].split('-').map((parte) => Number(parte));
+      if (Number.isFinite(anio) && Number.isFinite(mes) && Number.isFinite(dia)) {
+        return new Date(anio, mes - 1, dia);
+      }
+    }
+    const fechaDate = new Date(raw);
+    return Number.isNaN(fechaDate.getTime()) ? null : fechaDate;
+  };
+
+  const formatearFechaContrato = (valor) => {
+    const fecha = parseFechaCalendario(valor);
+    if (!fecha) return '-';
+    return fecha.toLocaleDateString('es-GT');
+  };
+
   const obtenerNombreDocumentoContrato = (valorDocumento = '') => {
     const raw = String(valorDocumento || '').trim();
     if (!raw) return '';
@@ -1064,9 +1084,9 @@ function Contratos_Residentes() {
     // contrato sea la misma que cobra Caja (contratos antiguos podian traer 36 cuotas / 60 meses).
     setCuotas_pactadas(val.cuotas_pactadas || val.plazo_meses || '');
     setDia_pago_limite(val.dia_pago_limite);
-    setFecha_firma(val.fecha_firma.split('T')[0]);
-    setFecha_compra(val.fecha_compra ? val.fecha_compra.split('T')[0] : '');
-    setFecha_fin(val.fecha_fin ? val.fecha_fin.split('T')[0] : '');
+    setFecha_firma(parseFechaCalendario(val.fecha_firma)?.toISOString().slice(0, 10) || '');
+    setFecha_compra(val.fecha_compra ? (parseFechaCalendario(val.fecha_compra)?.toISOString().slice(0, 10) || '') : '');
+    setFecha_fin(val.fecha_fin ? (parseFechaCalendario(val.fecha_fin)?.toISOString().slice(0, 10) || '') : '');
     setEnganche(val.enganche ?? '20000');
     setEnganchePagadoContrato(false);
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
@@ -1272,9 +1292,9 @@ function Contratos_Residentes() {
                 <td className="text-center" style={tdCompacto}>{val.cuotas_pactadas}</td>
                 <td className="text-success fw-bold" style={tdCompacto}>Q {parseFloat(val.monto_cuota).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                 <td className="text-center fw-bold text-danger" style={tdCompacto}>{val.dia_pago_limite} días de gracia</td>
-                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_firma ? new Date(val.fecha_firma).toLocaleDateString('es-GT') : '-'}</td>
-                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_compra ? new Date(val.fecha_compra).toLocaleDateString('es-GT') : <span className="text-info fw-bold">-</span>}</td>
-                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_fin ? new Date(val.fecha_fin).toLocaleDateString('es-GT') : <span className="text-warning fw-bold">Indefinida</span>}</td>
+                <td className="text-center text-muted" style={tdCompacto}>{formatearFechaContrato(val.fecha_firma)}</td>
+                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_compra ? formatearFechaContrato(val.fecha_compra) : <span className="text-info fw-bold">-</span>}</td>
+                <td className="text-center text-muted" style={tdCompacto}>{val.fecha_fin ? formatearFechaContrato(val.fecha_fin) : <span className="text-warning fw-bold">Indefinida</span>}</td>
                 <td style={tdCompacto}>
                   <span className={`badge ${val.estado === 'activo' ? 'bg-success' : val.estado === 'finalizado' ? 'bg-secondary' : 'bg-warning'}`}>
                     {val.estado.toUpperCase()}
