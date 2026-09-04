@@ -386,122 +386,158 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
         }
 
         const pago = rows[0];
-        db.query(
-            `
-                SELECT
-                    pd.id_pago_detalle,
-                    pd.tipo_concepto,
-                    pd.id_concepto_servicio,
-                    pd.mes_pagado,
-                    pd.numero_cuota_afectada,
-                    pd.subtotal,
-                    s.nombre_servicio
-                FROM pagos_detalle pd
-                LEFT JOIN servicios s ON s.id_servicio = pd.id_concepto_servicio
-                WHERE pd.id_pago = ?
-                ORDER BY pd.id_pago_detalle ASC
-            `,
-            [pago.id_pago],
-            (detailErr, detailRows) => {
-                if (detailErr) return callback(detailErr);
-
-                const sqlExtrasHistorial = `
-                    SELECT evidencia_json
-                    FROM facturas_historial
-                    WHERE id_pago = ?
-                      AND estado_factura = 'EMITIDA'
-                      AND tipo_concepto = 'extraordinario'
-                    ORDER BY id_historial ASC
-                `;
-
-                db.query(sqlExtrasHistorial, [pago.id_pago], (histErr, histRows) => {
-                    if (histErr && String(histErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
-                        return callback(histErr);
+        const obtenerDetalleDeFacturaEmitida = (onDetalle) => {
+            db.query(
+                `
+                    SELECT
+                        fh.id_historial AS id_pago_detalle,
+                        fh.tipo_concepto,
+                        fh.id_concepto_servicio,
+                        fh.mes_pagado,
+                        fh.numero_cuota_afectada,
+                        fh.subtotal,
+                        fh.nombre_concepto,
+                        fh.evidencia_json
+                    FROM facturas_historial fh
+                    WHERE fh.id_pago = ?
+                      AND COALESCE(fh.estado_factura, 'EMITIDA') = 'EMITIDA'
+                    ORDER BY fh.id_historial ASC
+                `,
+                [pago.id_pago],
+                (detailErr, facturasEmitidas) => {
+                    if (detailErr) {
+                        return onDetalle(detailErr, null);
                     }
 
-                    const extrasHistorialIds = (histRows || []).map((row) => {
-                        try {
-                            const evidencia = JSON.parse(row.evidencia_json || '{}');
-                            const idExtra = Number(
-                                evidencia?.detalle?.id_pago_extra
-                                || evidencia?.detalle?.id_concepto_servicio
-                                || 0
-                            );
-                            return Number.isInteger(idExtra) && idExtra > 0 ? idExtra : null;
-                        } catch {
-                            return null;
-                        }
-                    }).filter((value) => value != null);
+                    if (facturasEmitidas && facturasEmitidas.length) {
+                        return onDetalle(null, facturasEmitidas);
+                    }
 
-                    let idxExtraHistorial = 0;
-                    const obtenerCuotaFinanciadaCorrecta = (mesPagado, numeroGuardado) => {
-                        const mesInicio = Number(pago.mes_inicio_pagos || 0);
-                        const anioInicio = Number(pago.anio_inicio_pagos || 0);
-                        const match = String(mesPagado || '').trim().match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
-                        if (!match || mesInicio < 1 || mesInicio > 12 || anioInicio < 1900) {
-                            return numeroGuardado ? Number(numeroGuardado) : null;
-                        }
+                    db.query(
+                        `
+                            SELECT
+                                pd.id_pago_detalle,
+                                pd.tipo_concepto,
+                                pd.id_concepto_servicio,
+                                pd.mes_pagado,
+                                pd.numero_cuota_afectada,
+                                pd.subtotal,
+                                s.nombre_servicio
+                            FROM pagos_detalle pd
+                            LEFT JOIN servicios s ON s.id_servicio = pd.id_concepto_servicio
+                            WHERE pd.id_pago = ?
+                            ORDER BY pd.id_pago_detalle ASC
+                        `,
+                        [pago.id_pago],
+                        (fallbackErr, fallbackRows) => onDetalle(fallbackErr, fallbackRows || [])
+                    );
+                }
+            );
+        };
 
-                        const nombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-                        const nombreMes = match[1].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                        const indiceMes = nombres.indexOf(nombreMes);
-                        if (indiceMes < 0) return numeroGuardado ? Number(numeroGuardado) : null;
+        obtenerDetalleDeFacturaEmitida((detailErr, detailRows) => {
+            if (detailErr) return callback(detailErr);
 
-                        const diferencia = ((Number(match[2]) - anioInicio) * 12) + (indiceMes - (mesInicio - 1));
-                        return diferencia >= 0 ? diferencia + 1 : (numeroGuardado ? Number(numeroGuardado) : null);
+            const sqlExtrasHistorial = `
+                SELECT evidencia_json
+                FROM facturas_historial
+                WHERE id_pago = ?
+                  AND estado_factura = 'EMITIDA'
+                  AND tipo_concepto = 'extraordinario'
+                ORDER BY id_historial ASC
+            `;
+
+            db.query(sqlExtrasHistorial, [pago.id_pago], (histErr, histRows) => {
+                if (histErr && String(histErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                    return callback(histErr);
+                }
+
+                const extrasHistorialIds = (histRows || []).map((row) => {
+                    try {
+                        const evidencia = JSON.parse(row.evidencia_json || '{}');
+                        const idExtra = Number(
+                            evidencia?.detalle?.id_pago_extra
+                            || evidencia?.detalle?.id_concepto_servicio
+                            || 0
+                        );
+                        return Number.isInteger(idExtra) && idExtra > 0 ? idExtra : null;
+                    } catch {
+                        return null;
+                    }
+                }).filter((value) => value != null);
+
+                let idxExtraHistorial = 0;
+                const obtenerCuotaFinanciadaCorrecta = (mesPagado, numeroGuardado) => {
+                    const mesInicio = Number(pago.mes_inicio_pagos || 0);
+                    const anioInicio = Number(pago.anio_inicio_pagos || 0);
+                    const match = String(mesPagado || '').trim().match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
+                    if (!match || mesInicio < 1 || mesInicio > 12 || anioInicio < 1900) {
+                        return numeroGuardado ? Number(numeroGuardado) : null;
+                    }
+
+                    const nombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+                    const nombreMes = match[1].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    const indiceMes = nombres.indexOf(nombreMes);
+                    if (indiceMes < 0) return numeroGuardado ? Number(numeroGuardado) : null;
+
+                    const diferencia = ((Number(match[2]) - anioInicio) * 12) + (indiceMes - (mesInicio - 1));
+                    return diferencia >= 0 ? diferencia + 1 : (numeroGuardado ? Number(numeroGuardado) : null);
+                };
+
+                const detalle_cobro = (detailRows || []).map((row) => {
+                    const tipoConcepto = String(row.tipo_concepto || '').toLowerCase();
+                    const esCuotaCeroEnganche = tipoConcepto === 'cuota_terreno' && Number(row.numero_cuota_afectada || 0) <= 0;
+                    const tipoConceptoNormalizado = esCuotaCeroEnganche ? 'enganche' : tipoConcepto;
+                    let idConceptoServicio = row.id_concepto_servicio ? Number(row.id_concepto_servicio) : null;
+                    const numeroCuotaCorregido = tipoConceptoNormalizado === 'cuota_terreno'
+                        ? obtenerCuotaFinanciadaCorrecta(row.mes_pagado, row.numero_cuota_afectada)
+                        : (row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null);
+
+                    if (tipoConcepto === 'extraordinario' && !idConceptoServicio) {
+                        idConceptoServicio = extrasHistorialIds[idxExtraHistorial] || null;
+                        idxExtraHistorial += 1;
+                    }
+
+                    const nombreConcepto = String(row.nombre_concepto || '').trim();
+                    const conceptoBase = tipoConceptoNormalizado === 'cuota_terreno'
+                        ? `Cuota de Terreno No. ${numeroCuotaCorregido || ''}`.trim()
+                        : tipoConceptoNormalizado === 'enganche'
+                            ? 'Enganche'
+                        : tipoConceptoNormalizado === 'abono_capital'
+                            ? 'Abono a capital (sin interes)'
+                        : tipoConceptoNormalizado === 'mora'
+                            ? `Mora ${row.mes_pagado || ''}`.trim()
+                        : tipoConceptoNormalizado === 'extraordinario'
+                            ? 'Cargo extraordinario'
+                        : (nombreConcepto || `Servicio: ${row.nombre_servicio || `ID ${idConceptoServicio || 'N/A'}`}`);
+
+                    return {
+                        id_pago_detalle: Number(row.id_pago_detalle),
+                        tipo_concepto: tipoConceptoNormalizado,
+                        id_concepto_servicio: idConceptoServicio,
+                        mes_pagado: row.mes_pagado || '',
+                        numero_cuota_afectada: numeroCuotaCorregido,
+                        subtotal: Number(row.subtotal || 0),
+                        concepto: conceptoBase
                     };
-                    const detalle_cobro = (detailRows || []).map((row) => {
-                        const tipoConcepto = String(row.tipo_concepto || '').toLowerCase();
-                        const esCuotaCeroEnganche = tipoConcepto === 'cuota_terreno' && Number(row.numero_cuota_afectada || 0) <= 0;
-                        const tipoConceptoNormalizado = esCuotaCeroEnganche ? 'enganche' : tipoConcepto;
-                        let idConceptoServicio = row.id_concepto_servicio ? Number(row.id_concepto_servicio) : null;
-                        const numeroCuotaCorregido = tipoConceptoNormalizado === 'cuota_terreno'
-                            ? obtenerCuotaFinanciadaCorrecta(row.mes_pagado, row.numero_cuota_afectada)
-                            : (row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null);
-
-                        if (tipoConcepto === 'extraordinario' && !idConceptoServicio) {
-                            idConceptoServicio = extrasHistorialIds[idxExtraHistorial] || null;
-                            idxExtraHistorial += 1;
-                        }
-
-                        return {
-                            id_pago_detalle: Number(row.id_pago_detalle),
-                            tipo_concepto: tipoConceptoNormalizado,
-                            id_concepto_servicio: idConceptoServicio,
-                            mes_pagado: row.mes_pagado || '',
-                            numero_cuota_afectada: numeroCuotaCorregido,
-                            subtotal: Number(row.subtotal || 0),
-                            concepto: tipoConceptoNormalizado === 'cuota_terreno'
-                                ? `Cuota de Terreno No. ${numeroCuotaCorregido || ''}`.trim()
-                                : tipoConceptoNormalizado === 'enganche'
-                                    ? 'Enganche'
-                                : tipoConceptoNormalizado === 'abono_capital'
-                                    ? 'Abono a capital (sin interes)'
-                                : tipoConceptoNormalizado === 'mora'
-                                    ? `Mora ${row.mes_pagado || ''}`.trim()
-                                : tipoConceptoNormalizado === 'extraordinario'
-                                    ? 'Cargo extraordinario'
-                                : `Servicio: ${row.nombre_servicio || `ID ${idConceptoServicio || 'N/A'}`}`
-                        };
-                    });
-
-                    const mesesUnicos = [];
-                    detalle_cobro.forEach((item) => {
-                        const mes = String(item.mes_pagado || '').trim();
-                        if (mes && !mesesUnicos.includes(mes)) {
-                            mesesUnicos.push(mes);
-                        }
-                    });
-
-                    return callback(null, {
-                        ...pago,
-                        rol_usuario_emisor: pago.rol_usuario_emisor_historico || pago.rol_usuario_cobro_actual || null,
-                        meses_pagados: mesesUnicos.join(', '),
-                        detalle_cobro
-                    });
                 });
-            }
-        );
+
+                const mesesUnicos = [];
+                detalle_cobro.forEach((item) => {
+                    const mes = String(item.mes_pagado || '').trim();
+                    if (mes && !mesesUnicos.includes(mes)) {
+                        mesesUnicos.push(mes);
+                    }
+                });
+
+                return callback(null, {
+                    ...pago,
+                    rol_usuario_emisor: pago.rol_usuario_emisor_historico || pago.rol_usuario_cobro_actual || null,
+                    meses_pagados: mesesUnicos.join(', '),
+                    detalle_cobro
+                });
+            });
+        });
     });
 };
 
