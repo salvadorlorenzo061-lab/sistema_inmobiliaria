@@ -437,11 +437,12 @@ router.post('/crear', (req, res) => {
                           AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin
                           AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
                           AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                          AND (? IS NULL OR COALESCE(rf.id_empresa, ac.id_empresa) = ?)
                         LIMIT 1
                         FOR UPDATE
                     `;
 
-                    db.query(activeEquivalentQuery, [id_usuario, numeroResolucionNorm, serieNorm], (activeEqErr, activeEqRows) => {
+                    db.query(activeEquivalentQuery, [id_usuario, numeroResolucionNorm, serieNorm, idEmpresaSeleccionada, idEmpresaSeleccionada], (activeEqErr, activeEqRows) => {
                         if (activeEqErr) {
                             return rollback(500, 'No se pudo validar asignaciones activas equivalentes.', activeEqErr);
                         }
@@ -456,9 +457,10 @@ router.post('/crear', (req, res) => {
                             WHERE rf.id_usuario = ?
                               AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
                               AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                              AND (? IS NULL OR rf.id_empresa = ?)
                         `;
 
-                        db.query(maxCorrEqQuery, [id_usuario, numeroResolucionNorm, serieNorm], (maxErr, maxRows) => {
+                        db.query(maxCorrEqQuery, [id_usuario, numeroResolucionNorm, serieNorm, idEmpresaSeleccionada, idEmpresaSeleccionada], (maxErr, maxRows) => {
                             if (maxErr) {
                                 return rollback(500, 'No se pudo validar el correlativo compartido de la resolución.', maxErr);
                             }
@@ -478,6 +480,7 @@ router.post('/crear', (req, res) => {
                                 WHERE rf.id_usuario = ?
                                   AND UPPER(TRIM(COALESCE(rf.numero_resolucion, ''))) = ?
                                   AND UPPER(TRIM(COALESCE(rf.serie, ''))) = ?
+                                  AND (? IS NULL OR COALESCE(rf.id_empresa, ac.id_empresa) = ?)
                                   AND (
                                         (? BETWEEN ac.correlativo_inicio AND ac.correlativo_fin)
                                         OR (? BETWEEN ac.correlativo_inicio AND ac.correlativo_fin)
@@ -490,7 +493,7 @@ router.post('/crear', (req, res) => {
 
                             db.query(
                                 overlapQuery,
-                                [id_usuario, numeroResolucionNorm, serieNorm, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin],
+                                [id_usuario, numeroResolucionNorm, serieNorm, idEmpresaSeleccionada, idEmpresaSeleccionada, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin, correlativoInicio, correlativoFin],
                                 (overlapErr, overlapRows) => {
                             if (overlapErr) {
                                 return rollback(500, 'No se pudo validar la unicidad de correlativos.', overlapErr);
