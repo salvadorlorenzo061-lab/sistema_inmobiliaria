@@ -83,7 +83,7 @@ app.use('/api/cuenta_estado', cuentaEstadoRouter);
 app.use('/api/convenio', convenioRouter);
 app.use('/api/dashboard', dashboardRouter);
 
-ensureSchema;
+ensureSchema();
 ensurePerformanceIndexes();
 
 // 3. Inicialización del servidor central

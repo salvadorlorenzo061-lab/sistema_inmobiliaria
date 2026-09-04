@@ -49,85 +49,110 @@ const ensureColumn = ({ tableName, columnName, columnSql }) => {
     );
 };
 
-ensureTable({
-    tableName: 'pagos_detalle',
-    logLabel: 'Esquema',
-    createSql: `
-        CREATE TABLE IF NOT EXISTS pagos_detalle (
-            id_pago_detalle INT NOT NULL AUTO_INCREMENT,
-            id_pago INT NULL,
-            tipo_concepto VARCHAR(80) NULL,
-            id_concepto_servicio INT NULL,
-            mes_pagado VARCHAR(80) NULL,
-            numero_cuota_afectada INT NULL,
-            subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
-            PRIMARY KEY (id_pago_detalle),
-            INDEX idx_pagos_detalle_pago (id_pago),
-            INDEX idx_pagos_detalle_tipo (tipo_concepto),
-            INDEX idx_pagos_detalle_mes (mes_pagado)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-    `
-});
+const initializeSchema = () => {
+    ensureTable({
+        tableName: 'pagos_detalle',
+        logLabel: 'Esquema',
+        createSql: `
+            CREATE TABLE IF NOT EXISTS pagos_detalle (
+                id_pago_detalle INT NOT NULL AUTO_INCREMENT,
+                id_pago INT NULL,
+                tipo_concepto VARCHAR(80) NULL,
+                id_concepto_servicio INT NULL,
+                mes_pagado VARCHAR(80) NULL,
+                numero_cuota_afectada INT NULL,
+                subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
+                PRIMARY KEY (id_pago_detalle),
+                INDEX idx_pagos_detalle_pago (id_pago),
+                INDEX idx_pagos_detalle_tipo (tipo_concepto),
+                INDEX idx_pagos_detalle_mes (mes_pagado)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+        `
+    });
 
-ensureTable({
-    tableName: 'facturas_historial',
-    logLabel: 'Esquema',
-    createSql: `
-        CREATE TABLE IF NOT EXISTS facturas_historial (
-            id_historial BIGINT NOT NULL AUTO_INCREMENT,
-            id_pago INT NULL,
-            id_pago_detalle INT NULL,
-            id_contrato INT NULL,
-            id_residente INT NULL,
-            id_usuario INT NULL,
-            rol_usuario_emisor VARCHAR(80) NULL,
-            correlativo VARCHAR(80) NULL,
-            estado_factura VARCHAR(20) NOT NULL DEFAULT 'EMITIDA',
-            tipo_concepto VARCHAR(60) NULL,
-            id_concepto_servicio INT NULL,
-            nombre_concepto VARCHAR(255) NULL,
-            mes_pagado VARCHAR(80) NULL,
-            numero_cuota_afectada INT NULL,
-            subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
-            fecha_evento DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            evidencia_json LONGTEXT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id_historial),
-            INDEX idx_historial_pago (id_pago),
-            INDEX idx_historial_estado (estado_factura),
-            INDEX idx_historial_correlativo (correlativo)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-    `
-});
+    ensureTable({
+        tableName: 'facturas_historial',
+        logLabel: 'Esquema',
+        createSql: `
+            CREATE TABLE IF NOT EXISTS facturas_historial (
+                id_historial BIGINT NOT NULL AUTO_INCREMENT,
+                id_pago INT NULL,
+                id_pago_detalle INT NULL,
+                id_contrato INT NULL,
+                id_residente INT NULL,
+                id_usuario INT NULL,
+                rol_usuario_emisor VARCHAR(80) NULL,
+                correlativo VARCHAR(80) NULL,
+                estado_factura VARCHAR(20) NOT NULL DEFAULT 'EMITIDA',
+                tipo_concepto VARCHAR(60) NULL,
+                id_concepto_servicio INT NULL,
+                nombre_concepto VARCHAR(255) NULL,
+                mes_pagado VARCHAR(80) NULL,
+                numero_cuota_afectada INT NULL,
+                subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
+                fecha_evento DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                evidencia_json LONGTEXT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id_historial),
+                INDEX idx_historial_pago (id_pago),
+                INDEX idx_historial_estado (estado_factura),
+                INDEX idx_historial_correlativo (correlativo)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+        `
+    });
 
-ensureColumn({
-    tableName: 'anulacion_deuda',
-    columnName: 'id_pago',
-    columnSql: 'INT NULL'
-});
+    ensureTable({
+        tableName: 'anulacion_deuda',
+        logLabel: 'Esquema',
+        createSql: `
+            CREATE TABLE IF NOT EXISTS anulacion_deuda (
+                id_anulacion BIGINT NOT NULL AUTO_INCREMENT,
+                id_morosidad INT NULL,
+                id_contrato INT NULL,
+                id_usuario_autoriza INT NULL,
+                monto_anulado DECIMAL(12,2) NOT NULL DEFAULT 0,
+                motivo LONGTEXT NULL,
+                id_pago INT NULL,
+                correlativo VARCHAR(80) NULL,
+                estado_factura VARCHAR(20) NOT NULL DEFAULT 'ANULADA',
+                fecha_anulacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id_anulacion),
+                INDEX idx_anulacion_pago (id_pago),
+                INDEX idx_anulacion_contrato (id_contrato),
+                INDEX idx_anulacion_correlativo (correlativo)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+        `
+    });
 
-ensureColumn({
-    tableName: 'anulacion_deuda',
-    columnName: 'correlativo',
-    columnSql: 'VARCHAR(80) NULL'
-});
+    ensureColumn({
+        tableName: 'anulacion_deuda',
+        columnName: 'id_pago',
+        columnSql: 'INT NULL'
+    });
 
-ensureColumn({
-    tableName: 'anulacion_deuda',
-    columnName: 'estado_factura',
-    columnSql: 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"'
-});
+    ensureColumn({
+        tableName: 'anulacion_deuda',
+        columnName: 'correlativo',
+        columnSql: 'VARCHAR(80) NULL'
+    });
 
-ensureColumn({
-    tableName: 'facturas_historial',
-    columnName: 'rol_usuario_emisor',
-    columnSql: 'VARCHAR(80) NULL'
-});
+    ensureColumn({
+        tableName: 'anulacion_deuda',
+        columnName: 'estado_factura',
+        columnSql: 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"'
+    });
 
-ensureColumn({
-    tableName: 'facturas_historial',
-    columnName: 'estado_factura',
-    columnSql: 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"'
-});
+    ensureColumn({
+        tableName: 'facturas_historial',
+        columnName: 'rol_usuario_emisor',
+        columnSql: 'VARCHAR(80) NULL'
+    });
 
-module.exports = true;
+    ensureColumn({
+        tableName: 'facturas_historial',
+        columnName: 'estado_factura',
+        columnSql: 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"'
+    });
+};
+
+module.exports = initializeSchema;
