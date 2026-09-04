@@ -1433,7 +1433,11 @@ router.get("/meses-pendientes", (req, res) => {
                 // el mes del enganche puede ser el mismo de la cuota 1 y esa cuota se cobra igual.
                 const enganchePendienteContratoFinal = Math.max(engancheContrato - enganchePagado, 0);
                 const mesEngancheContratoFinal = usaCuotaCeroEnganche
-                    ? etiquetaMesDesdeFecha(new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1))
+                    ? (
+                        inicioConfiguradoValido
+                            ? etiquetaMesDesdeFecha(new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1))
+                            : etiquetaMesDesdeFecha(new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1))
+                    )
                     : null;
 
                 const mesesPendientes = pendientesMetaUnicas.map((item) => item.mes);
