@@ -1378,16 +1378,14 @@ router.get("/meses-pendientes", (req, res) => {
                         ? candidatosMeta[0].mes
                         : null;
 
+                    // Si el enganche ya fue cobrado, debe quedar incluido en los meses ya pagados.
+                    // No se debe eliminarlo de la lista de pagados ni volverlo a volver un mes pendiente.
                     if (enganchePendienteContrato <= 0 && mesEngancheContrato) {
                         mesesPagadosSet.add(mesEngancheContrato);
                     }
 
-                    // Normalizar: el enganche nunca debe dejarse dentro de la lista de cuotas financiadas pagadas.
-                    if (mesEngancheContrato) {
-                        mesesPagadosSet.delete(mesEngancheContrato);
-                    }
-
-                    // Filtrar: solo retornar meses que NO estén en pagados
+                    // Filtrar: solo retornar meses que NO estén en pagados.
+                    // El enganche ya cobrado queda en la parte "pagados" y no reaparece en pendientes.
                     pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
 
                     // Si hay saldo pendiente, asegurar que existan meses pendientes suficientes para poder cobrar.
@@ -1477,11 +1475,8 @@ router.get("/meses-pendientes", (req, res) => {
                         es_enganche: Boolean(mesEngancheContratoFinal && item.mes === mesEngancheContratoFinal)
                     }));
 
-                if (mesEngancheContratoFinal && enganchePendienteContratoFinal <= 0) {
-                    const mesEngancheKey = String(mesEngancheContratoFinal || '').trim();
-                    mesesPagadosOrdenados = mesesPagadosOrdenados.filter((mes) => String(mes || '').trim() !== mesEngancheKey);
-                }
-
+                // Si el enganche ya fue pagado, debe permanecer dentro de los meses ya cobrados.
+                // No se elimina del historial de meses pagados porque eso volvía a mostrarlo como pendiente.
                 return res.status(200).json({
                     meses: mesesPendientes,
                     meses_detalle: mesesPendientesDetalle,

@@ -105,6 +105,70 @@ const ensureFacturasHistorialRolColumn = () => {
 ensureFacturasHistorialTable();
 ensureFacturasHistorialRolColumn();
 
+const ensureAnulacionDeudaTable = () => {
+    db.query("SHOW TABLES LIKE 'anulacion_deuda'", (showErr, rows) => {
+        if (showErr) {
+            console.error('Error verificando tabla anulacion_deuda:', showErr.message);
+            return;
+        }
+
+        if (rows && rows.length > 0) {
+            const ensureColumns = () => {
+                const columnsToAdd = [
+                    ['id_pago', 'INT NULL'],
+                    ['correlativo', 'VARCHAR(80) NULL'],
+                    ['estado_factura', 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"']
+                ];
+
+                columnsToAdd.forEach(([columnName, sqlType]) => {
+                    db.query(
+                        `SELECT COUNT(*) AS existe FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'anulacion_deuda' AND COLUMN_NAME = ?`,
+                        [columnName],
+                        (checkErr, columnRows) => {
+                            if (checkErr) return;
+                            if (Number(columnRows?.[0]?.existe || 0) > 0) return;
+
+                            db.query(`ALTER TABLE anulacion_deuda ADD COLUMN ${columnName} ${sqlType}`, (alterErr) => {
+                                if (alterErr) {
+                                    console.error(`No se pudo crear columna ${columnName} en anulacion_deuda:`, alterErr.message);
+                                }
+                            });
+                        }
+                    );
+                });
+            };
+
+            ensureColumns();
+            return;
+        }
+
+        db.query(`
+            CREATE TABLE IF NOT EXISTS anulacion_deuda (
+                id_anulacion BIGINT NOT NULL AUTO_INCREMENT,
+                id_morosidad INT NULL,
+                id_contrato INT NULL,
+                id_usuario_autoriza INT NULL,
+                monto_anulado DECIMAL(12,2) NOT NULL DEFAULT 0,
+                motivo LONGTEXT NULL,
+                id_pago INT NULL,
+                correlativo VARCHAR(80) NULL,
+                estado_factura VARCHAR(20) NOT NULL DEFAULT 'ANULADA',
+                fecha_anulacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id_anulacion),
+                INDEX idx_anulacion_pago (id_pago),
+                INDEX idx_anulacion_contrato (id_contrato),
+                INDEX idx_anulacion_correlativo (correlativo)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+        `, (createErr) => {
+            if (createErr) {
+                console.error('No se pudo crear anulacion_deuda:', createErr.message);
+            }
+        });
+    });
+};
+
+ensureAnulacionDeudaTable();
+
 const registrarHistorialAnulacion = ({
     pago,
     correlativoFinal,
