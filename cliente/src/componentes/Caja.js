@@ -994,11 +994,15 @@ const Caja = () => {
                 }
             });
             const mesEngancheApi = String(res?.data?.mes_enganche || '').trim();
+            const mesInicioPagosApi = Number(res?.data?.mes_inicio_pagos ?? residenteActualizado?.mes_inicio_pagos ?? 0);
+            const anioInicioPagosApi = Number(res?.data?.anio_inicio_pagos ?? residenteActualizado?.anio_inicio_pagos ?? 0);
             setMesesPendientes(meses);
             setMesesDetalleMap(mapaMeses);
             setMesEngancheContrato(mesEngancheApi);
             setDatosDeuda((prev) => ({
                 ...(prev || residenteActualizado),
+                mes_inicio_pagos: Number.isInteger(mesInicioPagosApi) && mesInicioPagosApi >= 1 && mesInicioPagosApi <= 12 ? mesInicioPagosApi : (prev?.mes_inicio_pagos ?? residenteActualizado?.mes_inicio_pagos ?? null),
+                anio_inicio_pagos: Number.isInteger(anioInicioPagosApi) && anioInicioPagosApi >= 1900 ? anioInicioPagosApi : (prev?.anio_inicio_pagos ?? residenteActualizado?.anio_inicio_pagos ?? null),
                 cuotas_pagadas: Number(res?.data?.cuotas_pagadas || 0),
                 cuotas_pendientes: Number(res?.data?.cuotas_pendientes || 0)
             }));

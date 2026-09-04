@@ -1455,6 +1455,8 @@ router.get("/meses-pendientes", (req, res) => {
                     siguiente_mes_pendiente: mesesPendientes[0] || null,
                     usa_cuota_cero_enganche: usaCuotaCeroEnganche,
                     mes_enganche: mesEngancheContratoFinal,
+                    mes_inicio_pagos: mesInicioConfigurado > 0 ? mesInicioConfigurado : null,
+                    anio_inicio_pagos: anioInicioConfigurado > 0 ? anioInicioConfigurado : null,
                     enganche: engancheContrato,
                     enganche_pagado: enganchePagado,
                     enganche_pendiente: enganchePendienteContratoFinal
