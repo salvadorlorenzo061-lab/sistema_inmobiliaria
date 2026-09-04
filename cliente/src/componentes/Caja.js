@@ -576,7 +576,9 @@ const Caja = () => {
     };
 
     const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
-        if (esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
+        const cuotaRealNumero = Number(numeroCuotaReal || 0);
+        const esEnganchePorNumero = Number.isInteger(cuotaRealNumero) && cuotaRealNumero === 0;
+        if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
             return 'Cuota 0 - Enganche';
         }
 
@@ -585,7 +587,9 @@ const Caja = () => {
     };
 
     const getValorCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
-        if (esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
+        const cuotaRealNumero = Number(numeroCuotaReal || 0);
+        const esEnganchePorNumero = Number.isInteger(cuotaRealNumero) && cuotaRealNumero === 0;
+        if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
             return '0';
         }
 

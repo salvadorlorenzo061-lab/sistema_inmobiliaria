@@ -93,7 +93,13 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
       monto: Number(item?.subtotal ?? item?.total ?? 0)
     }))
     .filter((item) => Number.isFinite(item.monto) && item.monto > 0)
-    .filter((item) => !(item.tipo === 'cuota_terreno' && Number(item.cuotaReal || 0) <= 0));
+    .filter((item) => !(item.tipo === 'cuota_terreno' && Number(item.cuotaReal || 0) <= 0))
+    .map((item) => ({
+      ...item,
+      tipo: item.tipo === 'cuota_terreno' && String(item.conceptoOriginal || '').toLowerCase().includes('enganche') ? 'enganche' : item.tipo,
+      conceptoOriginal: item.tipo === 'cuota_terreno' && String(item.conceptoOriginal || '').toLowerCase().includes('enganche') ? 'Enganche' : item.conceptoOriginal,
+      mes: item.tipo === 'enganche' ? 'Cuota 0 - Enganche' : item.mes
+    }));
 
   if (!normalizados.length) {
     return [['Pago aplicado', 'N/A', 'Q 0.00']];
