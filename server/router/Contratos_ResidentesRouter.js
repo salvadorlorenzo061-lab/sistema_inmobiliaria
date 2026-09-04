@@ -790,7 +790,7 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
                 WHERE pd.tipo_concepto = 'cuota_terreno'
                 GROUP BY p.id_contrato
             ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
-            SET c.cuotas_pagadas = GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.cuotas_reales, 0))
+            SET c.cuotas_pagadas = COALESCE(pagos_resumen.cuotas_reales, COALESCE(c.cuotas_pagadas, 0))
             WHERE c.id_contrato = ?
         `, [idContratoSeguro], (syncErr) => {
             if (syncErr) {
@@ -903,7 +903,7 @@ const sincronizarCuotasPagadasContrato = (idContrato = null, callback = () => {}
             WHERE pd.tipo_concepto = 'cuota_terreno'
             GROUP BY p.id_contrato
         ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
-        SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.cuotas_pagadas_reales, 0), COALESCE(c.cuotas_pagadas, 0))
+        SET c.cuotas_pagadas = COALESCE(pagos_resumen.cuotas_pagadas_reales, COALESCE(c.cuotas_pagadas, 0))
         ${condicional}
     `;
 

@@ -566,8 +566,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                         COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0),
                                         0
                                     ),
-                                    c.cuotas_pagadas = GREATEST(
-                                        0,
+                                    c.cuotas_pagadas = COALESCE(
                                         (
                                             SELECT COUNT(DISTINCT CASE
                                                 WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
@@ -577,7 +576,8 @@ router.post('/anular-por-correlativo', (req, res) => {
                                             INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                             WHERE p.id_contrato = c.id_contrato
                                               AND pd.tipo_concepto = 'cuota_terreno'
-                                        )
+                                        ),
+                                        0
                                     )
                                 WHERE c.id_contrato = ?
                             `;
@@ -590,8 +590,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                 db.query(
                                     `
                                         UPDATE contratos_residentes c
-                                        SET c.cuotas_pagadas = GREATEST(
-                                            0,
+                                        SET c.cuotas_pagadas = COALESCE(
                                             (
                                                 SELECT COUNT(DISTINCT CASE
                                                     WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
@@ -601,7 +600,8 @@ router.post('/anular-por-correlativo', (req, res) => {
                                                 INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                                 WHERE p.id_contrato = c.id_contrato
                                                   AND pd.tipo_concepto = 'cuota_terreno'
-                                            )
+                                            ),
+                                            0
                                         )
                                         WHERE c.id_contrato = ?
                                     `,
