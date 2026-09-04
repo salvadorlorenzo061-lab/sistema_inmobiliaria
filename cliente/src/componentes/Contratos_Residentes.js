@@ -85,12 +85,12 @@ function Contratos_Residentes() {
       return { mes: String(hoy.getMonth() + 1), anio: String(hoy.getFullYear()) };
     }
 
-    const primerPago = new Date(parsed.getFullYear(), parsed.getMonth() + 1, 1);
+    // El primer cobro debe respetar el mes de inicio pactado en el contrato. Si el
+    // contrato se firma o compra en enero, la primera cuota financiada debe mostrarse
+    // como enero y seguir en secuencia mensual desde ahí, sin saltarse un mes.
+    const primerPago = new Date(parsed.getFullYear(), parsed.getMonth(), 1);
     return {
-      // "Mes Inicio de Pagos" en este formulario representa el inicio del plan de pagos:
-      // la primera cuota financiada siempre arranca en 1. El mes calendario real para el
-      // contrato/PDF se deriva desde fecha_compra/fecha_firma para no afectar Caja.
-      mes: '1',
+      mes: String(primerPago.getMonth() + 1),
       anio: String(primerPago.getFullYear())
     };
   };

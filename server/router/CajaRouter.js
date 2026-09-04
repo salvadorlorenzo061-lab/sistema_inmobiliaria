@@ -1110,7 +1110,7 @@ router.get("/meses-pendientes", (req, res) => {
             ? new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1)
             : new Date(
                 fechaInicioBase.getFullYear(),
-                fechaInicioBase.getMonth() + (usaCuotaCeroEnganche ? 1 : 0),
+                fechaInicioBase.getMonth(),
                 1
             );
         let cursor = new Date(fechaInicioFinanciado.getFullYear(), fechaInicioFinanciado.getMonth(), 1);
