@@ -427,11 +427,7 @@ const Caja = () => {
             return null;
         }
 
-        if (!usaCuotaCeroEnganche) {
-            return numero;
-        }
-
-        return Math.max(numero - 1, 0);
+        return numero;
     };
 
     const normalizarMesClave = (valor = '') => String(valor || '')
@@ -800,9 +796,7 @@ const Caja = () => {
         const obtenerNumeroCuotaMes = (mesEtiqueta = '') => {
             const mapNumero = Number(mesesDetalleMap?.[mesEtiqueta] || 0);
             if (Number.isInteger(mapNumero) && mapNumero > 0) {
-                return (!tieneConvenioActivo && Math.max(Number(residenteActual?.enganche || 0), 0) > 0)
-                    ? Math.max(mapNumero - 1, 0)
-                    : mapNumero;
+                return mapNumero;
             }
 
             const idx = (mesesPendientes || []).indexOf(mesEtiqueta);
