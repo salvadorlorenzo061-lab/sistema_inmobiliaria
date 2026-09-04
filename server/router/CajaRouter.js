@@ -1455,22 +1455,36 @@ router.get("/meses-pendientes", (req, res) => {
                     mesPendienteVisto.add(item.mes);
                     pendientesMetaUnicas.push(item);
                 });
-                const mesesPendientes = pendientesMetaUnicas.map((item) => item.mes);
 
-                // El enganche (cuota 0) esta anclado al mes de compra/firma del contrato, no al
-                // primer mes pendiente. Caja lo necesita explicito para pintarlo siempre igual.
+                // El enganche (cuota 0) está anclado al mes de compra/firma del contrato.
+                // Si ya fue cobrado, no debe aparecer en la lista de pendientes aunque siga
+                // siendo el mes base del flujo pactado.
                 const enganchePendienteContratoFinal = Math.max(engancheContrato - enganchePagado, 0);
                 const mesEngancheContratoFinal = (usaCuotaCeroEnganche && candidatosMeta.length)
                     ? candidatosMeta[0].mes
                     : null;
 
-                return res.status(200).json({
-                    meses: mesesPendientes,
-                    meses_detalle: pendientesMetaUnicas.map((item) => ({
+                const mesesPendientesBase = pendientesMetaUnicas.map((item) => item.mes);
+                const mesesPendientes = mesEngancheContratoFinal && enganchePendienteContratoFinal <= 0
+                    ? mesesPendientesBase.filter((mes) => String(mes || '').trim() !== String(mesEngancheContratoFinal || '').trim())
+                    : mesesPendientesBase;
+
+                const mesesPendientesDetalle = pendientesMetaUnicas
+                    .filter((item) => !(mesEngancheContratoFinal && enganchePendienteContratoFinal <= 0 && String(item.mes || '').trim() === String(mesEngancheContratoFinal || '').trim()))
+                    .map((item) => ({
                         mes: item.mes,
                         numero_cuota: item.numero_cuota,
                         es_enganche: Boolean(mesEngancheContratoFinal && item.mes === mesEngancheContratoFinal)
-                    })),
+                    }));
+
+                if (mesEngancheContratoFinal && enganchePendienteContratoFinal <= 0) {
+                    const mesEngancheKey = String(mesEngancheContratoFinal || '').trim();
+                    mesesPagadosOrdenados = mesesPagadosOrdenados.filter((mes) => String(mes || '').trim() !== mesEngancheKey);
+                }
+
+                return res.status(200).json({
+                    meses: mesesPendientes,
+                    meses_detalle: mesesPendientesDetalle,
                     meses_pagados: mesesPagadosOrdenados,
                     total_cuotas: totalCuotasContrato,
                     cuotas_pagadas: cuotasPagadasContrato,
