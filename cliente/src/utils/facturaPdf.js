@@ -84,22 +84,24 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   const usarCuotaCeroEnganche = Boolean(options?.usarCuotaCeroEnganche);
   const numeroCuotaInicio = Math.max(Number(options?.numeroCuotaInicio || 0), 0);
   const normalizados = (Array.isArray(detalles) ? detalles : [])
-    .map((item, index) => ({
-      orden: index,
-      tipo: inferirTipoConcepto(item),
-      conceptoOriginal: texto(item?.nombre_concepto || item?.concepto || item?.tipo_concepto || 'Pago aplicado'),
-      mes: texto(item?.mes_pagado || item?.mes, ''),
-      cuotaReal: Number(item?.numero_cuota_afectada || item?.numero_cuota || 0) || null,
-      monto: Number(item?.subtotal ?? item?.total ?? 0)
-    }))
-    .filter((item) => Number.isFinite(item.monto) && item.monto > 0)
-    .filter((item) => !(item.tipo === 'cuota_terreno' && Number(item.cuotaReal || 0) <= 0))
-    .map((item) => ({
-      ...item,
-      tipo: item.tipo === 'cuota_terreno' && String(item.conceptoOriginal || '').toLowerCase().includes('enganche') ? 'enganche' : item.tipo,
-      conceptoOriginal: item.tipo === 'cuota_terreno' && String(item.conceptoOriginal || '').toLowerCase().includes('enganche') ? 'Enganche' : item.conceptoOriginal,
-      mes: item.tipo === 'enganche' ? 'Cuota 0 - Enganche' : item.mes
-    }));
+    .map((item, index) => {
+      const tipoOriginal = inferirTipoConcepto(item);
+      const nombreBase = texto(item?.nombre_concepto || item?.concepto || item?.tipo_concepto || 'Pago aplicado');
+      const mesBase = texto(item?.mes_pagado || item?.mes, '');
+      const cuotaBase = Number(item?.numero_cuota_afectada || item?.numero_cuota || 0) || null;
+      const esEnganche = tipoOriginal === 'cuota_terreno'
+        && (Number(cuotaBase || 0) <= 0 || normalizarConcepto(nombreBase).includes('enganche'));
+
+      return {
+        orden: index,
+        tipo: esEnganche ? 'enganche' : tipoOriginal,
+        conceptoOriginal: esEnganche ? 'Enganche' : nombreBase,
+        mes: esEnganche ? 'Cuota 0 - Enganche' : mesBase,
+        cuotaReal: esEnganche ? 0 : cuotaBase,
+        monto: Number(item?.subtotal ?? item?.total ?? 0)
+      };
+    })
+    .filter((item) => Number.isFinite(item.monto) && item.monto > 0);
 
   if (!normalizados.length) {
     return [['Pago aplicado', 'N/A', 'Q 0.00']];
@@ -107,7 +109,6 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
 
   const filas = [];
   const filasPorClave = new Map();
-  const ultimaCuotaPorMes = new Map();
   let cuotasSinNumero = 0;
 
   const obtenerEtiquetaCuota = (cuotaReal, esEnganche = false) => {
@@ -137,7 +138,8 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
         cuota: 0,
         interes: 0,
         mora: 0,
-        total: 0
+        total: 0,
+        cuotaNumero: Number(base.cuotaNumero ?? 0) || null
       };
       filasPorClave.set(clave, fila);
       filas.push(fila);
@@ -146,12 +148,30 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
     return filasPorClave.get(clave);
   };
 
+  const obtenerClaveCuotaAdjunta = (item) => {
+    const mesNormalizado = normalizarMesClave(item?.mes || '');
+    const cuotaNumero = Number(item?.cuotaReal || 0);
+
+    for (const [clave, fila] of filasPorClave.entries()) {
+      if (!String(clave).startsWith('cuota:')) continue;
+      const mismoMes = normalizarMesClave(String(fila?.mes || '')) === mesNormalizado;
+      const mismaCuota = Number(fila?.cuotaNumero ?? 0) > 0 && cuotaNumero > 0 && Number(fila.cuotaNumero) === cuotaNumero;
+      if (mismoMes && (mismaCuota || cuotaNumero <= 0)) {
+        return clave;
+      }
+    }
+
+    const primeraCuota = [...filasPorClave.keys()].find((clave) => clave.startsWith('cuota:'));
+    return primeraCuota || null;
+  };
+
   normalizados.forEach((item) => {
     if (item.tipo === 'enganche') {
       const fila = asegurarFila(`enganche:${item.mes || item.orden}`, {
         orden: item.orden,
         concepto: obtenerEtiquetaCuota(0, true),
-        mes: item.mes || 'N/A'
+        mes: 'Cuota 0 - Enganche',
+        cuotaNumero: 0
       });
       fila.total = Number((fila.total + item.monto).toFixed(2));
       return;
@@ -162,14 +182,22 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
       const fila = asegurarFila(clave, {
         orden: item.orden,
         concepto: obtenerEtiquetaCuota(item.cuotaReal, false),
-        mes: item.mes || 'N/A'
+        mes: item.mes || 'N/A',
+        cuotaNumero: item.cuotaReal
       });
       fila.cuota = Number((fila.cuota + item.monto).toFixed(2));
       fila.total = Number((fila.total + item.monto).toFixed(2));
-      if (item.mes) {
-        ultimaCuotaPorMes.set(item.mes, clave);
-      }
       return;
+    }
+
+    if (item.tipo === 'interes') {
+      const claveDestino = obtenerClaveCuotaAdjunta(item);
+      if (claveDestino && filasPorClave.has(claveDestino)) {
+        const fila = filasPorClave.get(claveDestino);
+        fila.interes = Number((fila.interes + item.monto).toFixed(2));
+        fila.total = Number((fila.total + item.monto).toFixed(2));
+        return;
+      }
     }
 
     if (item.tipo === 'mora') {
@@ -179,35 +207,9 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
         concepto: 'Mora',
         mes: item.mes || 'N/A'
       });
+      fila.mora = Number((fila.mora + item.monto).toFixed(2));
       fila.total = Number((fila.total + item.monto).toFixed(2));
       return;
-    }
-
-    if (item.tipo === 'interes') {
-      const clavesCuota = [...filasPorClave.keys()].filter((clave) => clave.startsWith('cuota:'));
-      const claveCuotaExacta = item.mes
-        ? clavesCuota.find((clave) => {
-            const fila = filasPorClave.get(clave);
-            return normalizarMesClave(fila?.mes) === normalizarMesClave(item.mes);
-          })
-        : null;
-      const claveCuotaBase = item.mes && !claveCuotaExacta
-        ? clavesCuota.find((clave) => {
-            const fila = filasPorClave.get(clave);
-            return obtenerClaveMesBase(fila?.mes) === obtenerClaveMesBase(item.mes);
-          })
-        : null;
-      const primeraCuotaFinanciada = !claveCuotaExacta && !claveCuotaBase
-        ? clavesCuota[0]
-        : null;
-      const claveDestino = claveCuotaExacta || claveCuotaBase || primeraCuotaFinanciada;
-
-      if (claveDestino && filasPorClave.has(claveDestino)) {
-        const fila = filasPorClave.get(claveDestino);
-        fila[item.tipo] = Number((fila[item.tipo] + item.monto).toFixed(2));
-        fila.total = Number((fila.total + item.monto).toFixed(2));
-        return;
-      }
     }
 
     if (item.tipo === 'servicio') {
