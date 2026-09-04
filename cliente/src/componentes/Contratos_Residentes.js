@@ -1068,7 +1068,7 @@ function Contratos_Residentes() {
     setFecha_compra(val.fecha_compra ? val.fecha_compra.split('T')[0] : '');
     setFecha_fin(val.fecha_fin ? val.fecha_fin.split('T')[0] : '');
     setEnganche(val.enganche ?? '20000');
-    setEnganchePagadoContrato(Number(val.enganche_pagado || 0) > 0.009);
+    setEnganchePagadoContrato(false);
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
@@ -1752,11 +1752,9 @@ function Contratos_Residentes() {
                     type="number"
                     className="form-control"
                     value={enganche}
-                    disabled={enganchePagadoContrato}
-                    title={enganchePagadoContrato ? 'El enganche ya tiene pagos registrados y no puede modificarse.' : ''}
                     onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }}
                   />
-                  {enganchePagadoContrato && <small className="text-muted">Bloqueado porque el enganche ya fue pagado total o parcialmente.</small>}
+                  <small className="text-muted">El enganche se gestiona como la cuota 0 y no como una cuota financiada normal.</small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
