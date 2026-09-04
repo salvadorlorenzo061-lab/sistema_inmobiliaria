@@ -324,6 +324,23 @@ const ensureFacturasHistorialRolColumn = () => {
     });
 };
 
+const normalizarCuotaCeroComoEnganche = () => {
+    const sqls = [
+        `UPDATE pagos_detalle SET tipo_concepto = 'enganche', numero_cuota_afectada = NULL WHERE tipo_concepto = 'cuota_terreno' AND COALESCE(numero_cuota_afectada, 0) <= 0`,
+        `UPDATE facturas_historial SET tipo_concepto = 'enganche', numero_cuota_afectada = NULL WHERE tipo_concepto = 'cuota_terreno' AND COALESCE(numero_cuota_afectada, 0) <= 0`,
+        `UPDATE pagos_detalle SET numero_cuota_afectada = NULL WHERE tipo_concepto = 'enganche' AND COALESCE(numero_cuota_afectada, 0) <= 0`,
+        `UPDATE facturas_historial SET numero_cuota_afectada = NULL WHERE tipo_concepto = 'enganche' AND COALESCE(numero_cuota_afectada, 0) <= 0`
+    ];
+
+    sqls.forEach((sql) => {
+        db.query(sql, (err) => {
+            if (err && String(err?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                console.error('Error normalizando cuota 0 como enganche en base de datos:', err.message);
+            }
+        });
+    });
+};
+
 const ensureInteresPorcentajeContratoColumn = () => {
     db.query("SHOW COLUMNS FROM contratos_residentes LIKE 'interes_porcentaje'", (err, rows) => {
         if (err) {
@@ -633,6 +650,7 @@ ensureContratosServiciosTable();
 ensureConvenioPagosTable();
 ensureFacturasHistorialTable();
 ensureFacturasHistorialRolColumn();
+normalizarCuotaCeroComoEnganche();
 ensureInteresPorcentajeContratoColumn();
 
 const resolverIdUsuarioValido = (idUsuario, callback) => {

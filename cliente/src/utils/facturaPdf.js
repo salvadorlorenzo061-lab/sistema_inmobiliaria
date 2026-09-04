@@ -92,7 +92,8 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
       cuotaReal: Number(item?.numero_cuota_afectada || item?.numero_cuota || 0) || null,
       monto: Number(item?.subtotal ?? item?.total ?? 0)
     }))
-    .filter((item) => Number.isFinite(item.monto) && item.monto > 0);
+    .filter((item) => Number.isFinite(item.monto) && item.monto > 0)
+    .filter((item) => !(item.tipo === 'cuota_terreno' && Number(item.cuotaReal || 0) <= 0));
 
   if (!normalizados.length) {
     return [['Pago aplicado', 'N/A', 'Q 0.00']];

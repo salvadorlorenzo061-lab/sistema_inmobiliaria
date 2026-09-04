@@ -283,12 +283,16 @@ router.get('/documento/:id_pago', (req, res) => {
                 evidenciaDetalle = {};
             }
 
+            const tipoConcepto = String(item.tipo_concepto || '').toLowerCase();
+            const numeroCuota = Number(item.numero_cuota_afectada || 0);
+            const tipoConceptoNormalizado = tipoConcepto === 'cuota_terreno' && numeroCuota <= 0 ? 'enganche' : tipoConcepto;
+
             return {
-                tipo_concepto: item.tipo_concepto,
+                tipo_concepto: tipoConceptoNormalizado,
                 id_concepto_servicio: item.id_concepto_servicio,
-                nombre_concepto: item.nombre_concepto || evidenciaDetalle?.detalle?.nombre_concepto || item.tipo_concepto,
+                nombre_concepto: tipoConceptoNormalizado === 'enganche' ? 'Enganche' : (item.nombre_concepto || evidenciaDetalle?.detalle?.nombre_concepto || item.tipo_concepto),
                 mes_pagado: item.mes_pagado || evidenciaDetalle?.detalle?.mes_pagado || '',
-                numero_cuota_afectada: item.numero_cuota_afectada,
+                numero_cuota_afectada: tipoConceptoNormalizado === 'cuota_terreno' ? numeroCuota : (item.numero_cuota_afectada ? Number(item.numero_cuota_afectada) : null),
                 subtotal: Number(item.subtotal || 0)
             };
         });

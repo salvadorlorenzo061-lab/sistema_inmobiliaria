@@ -387,8 +387,10 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
                     };
                     const detalle_cobro = (detailRows || []).map((row) => {
                         const tipoConcepto = String(row.tipo_concepto || '').toLowerCase();
+                        const esCuotaCeroEnganche = tipoConcepto === 'cuota_terreno' && Number(row.numero_cuota_afectada || 0) <= 0;
+                        const tipoConceptoNormalizado = esCuotaCeroEnganche ? 'enganche' : tipoConcepto;
                         let idConceptoServicio = row.id_concepto_servicio ? Number(row.id_concepto_servicio) : null;
-                        const numeroCuotaCorregido = tipoConcepto === 'cuota_terreno'
+                        const numeroCuotaCorregido = tipoConceptoNormalizado === 'cuota_terreno'
                             ? obtenerCuotaFinanciadaCorrecta(row.mes_pagado, row.numero_cuota_afectada)
                             : (row.numero_cuota_afectada ? Number(row.numero_cuota_afectada) : null);
 
@@ -399,20 +401,20 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
 
                         return {
                             id_pago_detalle: Number(row.id_pago_detalle),
-                            tipo_concepto: row.tipo_concepto,
+                            tipo_concepto: tipoConceptoNormalizado,
                             id_concepto_servicio: idConceptoServicio,
                             mes_pagado: row.mes_pagado || '',
                             numero_cuota_afectada: numeroCuotaCorregido,
                             subtotal: Number(row.subtotal || 0),
-                            concepto: tipoConcepto === 'cuota_terreno'
+                            concepto: tipoConceptoNormalizado === 'cuota_terreno'
                                 ? `Cuota de Terreno No. ${numeroCuotaCorregido || ''}`.trim()
-                                : tipoConcepto === 'enganche'
+                                : tipoConceptoNormalizado === 'enganche'
                                     ? 'Enganche'
-                                : tipoConcepto === 'abono_capital'
+                                : tipoConceptoNormalizado === 'abono_capital'
                                     ? 'Abono a capital (sin interes)'
-                                : tipoConcepto === 'mora'
+                                : tipoConceptoNormalizado === 'mora'
                                     ? `Mora ${row.mes_pagado || ''}`.trim()
-                                : tipoConcepto === 'extraordinario'
+                                : tipoConceptoNormalizado === 'extraordinario'
                                     ? 'Cargo extraordinario'
                                 : `Servicio: ${row.nombre_servicio || `ID ${idConceptoServicio || 'N/A'}`}`
                         };
