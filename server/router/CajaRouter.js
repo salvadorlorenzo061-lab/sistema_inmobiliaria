@@ -1355,11 +1355,16 @@ router.get("/meses-pendientes", (req, res) => {
                     // Si el contrato dice que hay 4 cuotas pagadas, Caja debe completar hasta 4
                     // aunque faltara esa huella en los pagos historicos; pero nunca rebaja un
                     // historial real mayor al valor del contrato.
-                    const cuotasPagadasManual = Math.max(Number(contratoResult[0]?.cuotas_pagadas_manual || 0), 0);
+                    const cuotasPagadasManualBruta = Math.max(Number(contratoResult[0]?.cuotas_pagadas_manual || 0), 0);
                     const cuotasPagadasHistoricas = mesesPagadosSet.size;
-                    const cuotasObjetivoMinimas = Math.max(cuotasPagadasManual, cuotasPagadasHistoricas);
+                    const cuotasPagadasManual = cuotasPagadasHistoricas > 0
+                        ? Math.max(cuotasPagadasManualBruta, cuotasPagadasHistoricas)
+                        : 0;
+                    const cuotasObjetivoMinimas = cuotasPagadasManual;
                     if (candidatosMeta.length > 0 && cuotasObjetivoMinimas > 0) {
                         // candidatosMeta[0] ya es la cuota 1 financiada: el enganche no ocupa lugar.
+                        // Un historial manual viejo no debe reabrir meses pagados si ya desaparecieron
+                        // de los registros vivos del cobro, especialmente tras una anulación.
                         for (let indice = 0; indice < cuotasObjetivoMinimas; indice += 1) {
                             const cuotaHistorica = candidatosMeta[indice];
                             if (!cuotaHistorica) break;

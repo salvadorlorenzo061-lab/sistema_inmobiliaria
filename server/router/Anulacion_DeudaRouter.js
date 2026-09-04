@@ -789,6 +789,18 @@ router.post('/anular-por-correlativo', (req, res) => {
                                           AND pd.tipo_concepto = 'cuota_terreno'
                                     ),
                                     0
+                                ),
+                                c.saldo_pendiente = GREATEST(
+                                    COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(
+                                        (
+                                            SELECT SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END)
+                                            FROM pagos p
+                                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                                            WHERE p.id_contrato = c.id_contrato
+                                        ),
+                                        0
+                                    ),
+                                    0
                                 )
                                 WHERE c.id_contrato = ?
                             `,
