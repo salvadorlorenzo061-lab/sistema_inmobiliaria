@@ -1102,8 +1102,9 @@ router.get("/meses-pendientes", (req, res) => {
             && mesInicioConfigurado >= 1 && mesInicioConfigurado <= 12
             && Number.isInteger(anioInicioConfigurado) && anioInicioConfigurado >= 1900;
 
-        // La fecha de compra conserva la cuota 0 (enganche), pero las cuotas
-        // financiadas deben iniciar exactamente en el mes/año pactado.
+        // El enganche es la cuota 0 y está anclado al mes de compra/firma, pero NO consume
+        // un mes del flujo financiado: es un cargo aparte del contrato. Las cuotas
+        // financiadas van 1..N desde el mes/año pactado de inicio de pagos.
         const usaCuotaCeroEnganche = !tieneConvenioActivo && engancheContrato > 0;
         const fechaInicioFinanciado = (!tieneConvenioActivo && inicioConfiguradoValido)
             ? new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1)
@@ -1143,17 +1144,16 @@ router.get("/meses-pendientes", (req, res) => {
             candidatos.push(etiqueta);
         };
 
-        // === CUOTA 0 = ENGANCHE ===
-        // Cuando el contrato tiene enganche, el mes de compra/firma cobra el enganche (cuota 0)
-        // y las cuotas financiadas arrancan el mes siguiente (cuota 1 ... cuota N). Por eso el
-        // flujo necesita un mes extra: sin el, la ultima cuota pactada nunca queda cobrable.
+        // === CUOTA 0 = ENGANCHE (cargo aparte, sin mes propio en el flujo) ===
+        // El flujo cobrable son exactamente las cuotas financiadas pactadas: cuota 1 en el
+        // mes de inicio de pagos, cuota 2 el mes siguiente, y así hasta la cuota N. El
+        // enganche se cobra como cuota 0 y se informa por separado (mes_enganche); antes se
+        // registraba como un mes más del flujo y, cuando el mes de compra coincidía con el
+        // mes de inicio de pagos, la deduplicación por etiqueta desplazaba todas las cuotas
+        // financiadas un mes hacia adelante (se cobraba Febrero al pedir Enero).
         const mesesFlujoContrato = (Number.isInteger(cuotasBaseContrato) && cuotasBaseContrato > 0)
-            ? cuotasBaseContrato + (usaCuotaCeroEnganche ? 1 : 0)
+            ? cuotasBaseContrato
             : 0;
-
-        if (usaCuotaCeroEnganche) {
-            registrarCandidato(new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1));
-        }
 
         if (fechaFinMes) {
             while (
@@ -1359,27 +1359,17 @@ router.get("/meses-pendientes", (req, res) => {
                     const cuotasPagadasHistoricas = mesesPagadosSet.size;
                     const cuotasObjetivoMinimas = Math.max(cuotasPagadasManual, cuotasPagadasHistoricas);
                     if (candidatosMeta.length > 0 && cuotasObjetivoMinimas > 0) {
-                        const offsetInicioFinanciado = usaCuotaCeroEnganche ? 1 : 0;
+                        // candidatosMeta[0] ya es la cuota 1 financiada: el enganche no ocupa lugar.
                         for (let indice = 0; indice < cuotasObjetivoMinimas; indice += 1) {
-                            const cuotaHistorica = candidatosMeta[offsetInicioFinanciado + indice];
+                            const cuotaHistorica = candidatosMeta[indice];
                             if (!cuotaHistorica) break;
                             mesesPagadosSet.add(cuotaHistorica.mes);
                         }
                     }
 
-                    const enganchePendienteContrato = Math.max(engancheContrato - enganchePagado, 0);
-                    const mesEngancheContrato = (usaCuotaCeroEnganche && candidatosMeta.length)
-                        ? candidatosMeta[0].mes
-                        : null;
-
-                    // Si el enganche ya fue cobrado, debe quedar incluido en los meses ya pagados.
-                    // No se debe eliminarlo de la lista de pagados ni volverlo a volver un mes pendiente.
-                    if (enganchePendienteContrato <= 0 && mesEngancheContrato) {
-                        mesesPagadosSet.add(mesEngancheContrato);
-                    }
-
-                    // Filtrar: solo retornar meses que NO estén en pagados.
-                    // El enganche ya cobrado queda en la parte "pagados" y no reaparece en pendientes.
+                    // Filtrar: solo retornar meses que NO estén en pagados. El estado del
+                    // enganche (cuota 0) no altera esta lista, porque su mes puede coincidir
+                    // con el de la cuota 1 y esa cuota debe seguir siendo cobrable.
                     pendientesMeta = candidatosMeta.filter((item) => !mesesPagadosSet.has(item.mes));
 
                     // Si hay saldo pendiente, asegurar que existan meses pendientes suficientes para poder cobrar.
@@ -1418,22 +1408,12 @@ router.get("/meses-pendientes", (req, res) => {
                         .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
                         .map((item) => item.mes);
 
-                    // Cuando hay enganche (cuota 0), el total de cuotas pactadas NO incluye el mes del enganche
-                    // Se calcula únicamente sobre cuotas financiadas (cuota 1, 2, 3, ...)
-                    const totalMesesCandidatos = usaCuotaCeroEnganche
-                        ? Math.max(candidatosMeta.length - 1, 0)
-                        : candidatosMeta.length;
-
+                    // candidatosMeta ya son solo cuotas financiadas (1..N): el enganche no cuenta.
                     totalCuotasContrato = (Number.isInteger(cuotasPactadas) && cuotasPactadas > 0)
                         ? cuotasPactadas
-                        : Math.max(totalMesesCandidatos, mesesPagadosOrdenados.length + pendientesMeta.length, 1);
+                        : Math.max(candidatosMeta.length, mesesPagadosOrdenados.length + pendientesMeta.length, 1);
 
-                    // Cuando hay enganche (cuota 0), NO se cuenta en cuotasPagadas.
-                    // Solo se cuentan las cuotas financiadas reales (cuota 1, 2, 3, ...)
-                    const mesEngancheContratoBase = usaCuotaCeroEnganche && candidatosMeta.length > 0 ? candidatosMeta[0].mes : '';
-                    const mesesPagadosSinEnganche = mesesPagadosOrdenados.filter((mes) => mes !== mesEngancheContratoBase);
-
-                    cuotasPagadasContrato = Math.min(mesesPagadosSinEnganche.length, totalCuotasContrato);
+                    cuotasPagadasContrato = Math.min(mesesPagadosOrdenados.length, totalCuotasContrato);
                     cuotasPendientesContrato = Math.max(totalCuotasContrato - cuotasPagadasContrato, 0);
                 }
 
@@ -1448,26 +1428,20 @@ router.get("/meses-pendientes", (req, res) => {
                     pendientesMetaUnicas.push(item);
                 });
 
-                // El enganche (cuota 0) está anclado al mes de compra/firma del contrato.
-                // Si ya fue cobrado, no debe aparecer en la lista de pendientes aunque siga
-                // siendo el mes base del flujo pactado.
+                // El enganche (cuota 0) está anclado al mes de compra/firma del contrato y se
+                // informa por separado. No se filtra ningún mes del flujo por su estado:
+                // el mes del enganche puede ser el mismo de la cuota 1 y esa cuota se cobra igual.
                 const enganchePendienteContratoFinal = Math.max(engancheContrato - enganchePagado, 0);
-                const mesEngancheContratoFinal = (usaCuotaCeroEnganche && candidatosMeta.length)
-                    ? candidatosMeta[0].mes
+                const mesEngancheContratoFinal = usaCuotaCeroEnganche
+                    ? etiquetaMesDesdeFecha(new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1))
                     : null;
 
-                const mesesPendientesBase = pendientesMetaUnicas.map((item) => item.mes);
-                const mesesPendientes = mesEngancheContratoFinal && enganchePendienteContratoFinal <= 0
-                    ? mesesPendientesBase.filter((mes) => String(mes || '').trim() !== String(mesEngancheContratoFinal || '').trim())
-                    : mesesPendientesBase;
-
-                const mesesPendientesDetalle = pendientesMetaUnicas
-                    .filter((item) => !(mesEngancheContratoFinal && enganchePendienteContratoFinal <= 0 && String(item.mes || '').trim() === String(mesEngancheContratoFinal || '').trim()))
-                    .map((item) => ({
-                        mes: item.mes,
-                        numero_cuota: item.numero_cuota,
-                        es_enganche: Boolean(mesEngancheContratoFinal && item.mes === mesEngancheContratoFinal)
-                    }));
+                const mesesPendientes = pendientesMetaUnicas.map((item) => item.mes);
+                const mesesPendientesDetalle = pendientesMetaUnicas.map((item) => ({
+                    mes: item.mes,
+                    numero_cuota: item.numero_cuota,
+                    es_enganche: false
+                }));
 
                 // Si el enganche ya fue pagado, debe permanecer dentro de los meses ya cobrados.
                 // No se elimina del historial de meses pagados porque eso volvía a mostrarlo como pendiente.
@@ -2040,6 +2014,7 @@ router.post("/procesar-pago", (req, res) => {
                 ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
             const tieneConvenioActivoContrato = Number(saldoRows[0]?.id_convenio_activo || 0) > 0;
+            const usaCuotaCeroEngancheContrato = !tieneConvenioActivoContrato && engancheContrato > 0;
 
             // === PLAN FINANCIERO PACTADO EN EL CONTRATO ===
             // Caja no puede inventar su propio plan: debe cobrar exactamente la cuota que
@@ -2145,18 +2120,17 @@ router.post("/procesar-pago", (req, res) => {
             };
 
             const primerMesSeleccionado = mesesAProcesar[0] || '';
-            // El enganche (cuota 0) corresponde al mes de compra/firma del contrato. Ese mes no
-            // cobra cuota de terreno; si no hay fecha base, se conserva la regla anterior
-            // (primer mes seleccionado) para no romper contratos historicos sin fechas.
-            const mesEngancheContrato = enganchePendienteContrato > 0
-                ? (fechaInicioContrato ? etiquetaMesDesdeFecha(fechaInicioContrato) : primerMesSeleccionado)
-                : '';
-            const mesesTerrenoProcesar = montoTerrenoTotal > 0
-                ? mesesAProcesar.filter((mes) => !(mesEngancheContrato && mes === mesEngancheContrato))
-                : [];
+            // El enganche (cuota 0) es un cargo aparte anclado al mes de compra/firma y llega
+            // en monto_enganche_pagar, no como un mes seleccionado. Por eso todos los meses
+            // recibidos son cuotas financiadas y se cobran tal cual fueron seleccionados: si
+            // el cajero marca la cuota 1 (Enero), se cobra Enero y no el mes siguiente.
+            const mesEngancheContrato = (usaCuotaCeroEngancheContrato && fechaInicioContrato)
+                ? etiquetaMesDesdeFecha(fechaInicioContrato)
+                : primerMesSeleccionado;
+            const mesesTerrenoProcesar = montoTerrenoTotal > 0 ? [...mesesAProcesar] : [];
 
             if (montoTerrenoTotal > 0 && !mesesTerrenoProcesar.length) {
-                return db.rollback(() => res.status(400).send('Debe liquidar primero la cuota de enganche antes de cobrar cuota de terreno.'));
+                return db.rollback(() => res.status(400).send('Debe seleccionar al menos una cuota financiada para cobrar cuota de terreno.'));
             }
 
             const cuotasInteresSolicitadas = montoTerrenoTotal > 0
@@ -2556,7 +2530,7 @@ router.post("/procesar-pago", (req, res) => {
                                         lastIdPago,
                                         'enganche',
                                         null,
-                                        mesesAProcesar[0] || '',
+                                        mesEngancheContrato || mesesAProcesar[0] || '',
                                         null,
                                         redondear2(montoEngancheTotal),
                                         null
@@ -2699,6 +2673,8 @@ router.post("/procesar-pago", (req, res) => {
                                                             const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);
                                                             detalleCobro.push({
                                                                 concepto: `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
+                                                                tipo_concepto: 'cuota_terreno',
+                                                                numero_cuota_afectada: cuotasTerrenoCalculadas[index] || (index + 1),
                                                                 mes,
                                                                 monto_base: desgloseTerreno.subtotal,
                                                                 iva: desgloseTerreno.iva,
@@ -2752,7 +2728,8 @@ router.post("/procesar-pago", (req, res) => {
                                                         const desgloseEnganche = calcularComponentesFiscalmente(montoEngancheTotal);
                                                         detalleCobro.push({
                                                             concepto: 'Enganche',
-                                                            mes: mesesAProcesar[0] || '',
+                                                            tipo_concepto: 'enganche',
+                                                            mes: mesEngancheContrato || mesesAProcesar[0] || '',
                                                             monto_base: desgloseEnganche.subtotal,
                                                             iva: desgloseEnganche.iva,
                                                             total: desgloseEnganche.total
@@ -2776,6 +2753,8 @@ router.post("/procesar-pago", (req, res) => {
                                                             if (montoInteresConcepto <= 0) return;
                                                             detalleCobro.push({
                                                                 concepto: `Interés ${interesPorcentajeContrato.toFixed(2)}%`,
+                                                                tipo_concepto: 'interes',
+                                                                numero_cuota_afectada: cuotasMesesConTerreno[index] || null,
                                                                 mes,
                                                                 monto_base: montoInteresConcepto,
                                                                 iva: 0,
@@ -2784,18 +2763,8 @@ router.post("/procesar-pago", (req, res) => {
                                                         });
                                                     }
 
-                                                    serviciosSolicitados
-                                                        .filter((servicio) => servicio.es_cobro_unico)
-                                                        .forEach((servicio) => {
-                                                            const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
-                                                            detalleCobro.push({
-                                                                concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
-                                                                mes: mesesAProcesar[0],
-                                                                monto_base: desgloseServicio.subtotal,
-                                                                iva: desgloseServicio.iva,
-                                                                total: desgloseServicio.total
-                                                            });
-                                                        });
+                                                    // Los servicios de cobro único ya se agregaron arriba como
+                                                    // "Servicio único"; repetirlos aquí duplicaba su importe en la factura.
 
                                                     if (serviciosMesInicial.length > 0) {
                                                         const fechaCompra = saldoRows[0]?.fecha_compra ? new Date(saldoRows[0].fecha_compra) : null;

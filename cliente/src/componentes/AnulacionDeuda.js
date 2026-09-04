@@ -360,9 +360,7 @@ function AnulacionDeuda() {
       const totalDetalle = detallesDoc.reduce((acc, item) => acc + Number(item?.subtotal || 0), 0);
       const totalAnulado = totalDetalle > 0 ? totalDetalle : Math.abs(montoAnulado);
       const logoFactura = normalizeImageDataUrl(documento?.empresa?.logo_empresa || "") || logoEmpresa;
-      const filasFactura = buildConsolidatedInvoiceRows(detallesDoc, {
-        usarCuotaCeroEnganche: Number(documento?.contrato?.enganche || 0) > 0
-      });
+      const filasFactura = buildConsolidatedInvoiceRows(detallesDoc);
 
       renderFacturaComprobante(doc, {
         logo: logoFactura,

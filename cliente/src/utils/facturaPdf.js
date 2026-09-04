@@ -81,7 +81,6 @@ const normalizarMesClave = (valor = '') => String(valor || '')
 const obtenerClaveMesBase = (valor = '') => normalizarMesClave(String(valor || '').split(' ')[0] || '');
 
 export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
-  const usarCuotaCeroEnganche = Boolean(options?.usarCuotaCeroEnganche);
   const numeroCuotaInicio = Math.max(Number(options?.numeroCuotaInicio || 0), 0);
   const normalizados = (Array.isArray(detalles) ? detalles : [])
     .map((item, index) => {
@@ -89,8 +88,11 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
       const nombreBase = texto(item?.nombre_concepto || item?.concepto || item?.tipo_concepto || 'Pago aplicado');
       const mesBase = texto(item?.mes_pagado || item?.mes, '');
       const cuotaBase = Number(item?.numero_cuota_afectada || item?.numero_cuota || 0) || null;
-      const esEnganche = tipoOriginal === 'cuota_terreno'
-        && (Number(cuotaBase || 0) <= 0 || normalizarConcepto(nombreBase).includes('enganche'));
+      // Solo es enganche cuando el concepto lo dice. Antes bastaba con que la cuota no
+      // trajera número para marcarla como enganche, y toda cuota financiada del recibo
+      // salía rotulada "Cuota 0 Enganche" (con el interés en una fila suelta aparte).
+      const esEnganche = tipoOriginal === 'enganche'
+        || (tipoOriginal === 'cuota_terreno' && normalizarConcepto(nombreBase).includes('enganche'));
 
       return {
         orden: index,
@@ -114,15 +116,13 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
   const obtenerEtiquetaCuota = (cuotaReal, esEnganche = false) => {
     if (esEnganche) return 'Cuota 0 Enganche';
 
+    // El número de cuota guardado ya es el de la cuota financiada real (cuota 1 = primer
+    // mes de pagos pactado), así que se imprime tal cual: sin corrimientos por enganche.
     let cuotaVisual = Number(cuotaReal || 0);
     if (!Number.isInteger(cuotaVisual) || cuotaVisual <= 0) {
       cuotaVisual = numeroCuotaInicio > 0 ? numeroCuotaInicio + cuotasSinNumero : 0;
       cuotasSinNumero += 1;
       return cuotaVisual > 0 ? `Cuota ${cuotaVisual}` : 'Cuota';
-    }
-
-    if (usarCuotaCeroEnganche) {
-      cuotaVisual = Math.max(cuotaVisual - 1, 1);
     }
 
     return `Cuota ${cuotaVisual}`;

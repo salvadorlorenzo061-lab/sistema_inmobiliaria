@@ -49,7 +49,90 @@ const ensureColumnInAnulacion = (columnName, sqlType) => {
 
 ensureColumnInAnulacion('id_pago', 'INT NULL');
 ensureColumnInAnulacion('correlativo', 'VARCHAR(80) NULL');
-ensureColumnInAnulacion('estado_factura', 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"');
+ensureColumnInAnulacion('estado_factura', "VARCHAR(20) NOT NULL DEFAULT 'ANULADA'");
+
+// Columnas que solo existen si la migracion de arranque pudo ejecutarse. En bases
+// gestionadas (Aiven) el usuario puede no tener permiso de ALTER, por lo que el
+// INSERT de anulacion debe armarse con las columnas que realmente existen; de lo
+// contrario todo el modulo se cae con "Unknown column ... in field list".
+const COLUMNAS_ANULACION_OPCIONALES = ['id_pago', 'correlativo', 'estado_factura'];
+let columnasAnulacionDisponibles = null;
+
+const resolverColumnasAnulacion = (callback) => {
+    if (Array.isArray(columnasAnulacionDisponibles)) {
+        return callback(columnasAnulacionDisponibles);
+    }
+
+    db.query(
+        `
+            SELECT COLUMN_NAME AS columna
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'anulacion_deuda'
+        `,
+        (err, rows) => {
+            if (err) {
+                console.error('No se pudieron leer las columnas de anulacion_deuda:', err.message);
+                // Sin introspeccion se asume el esquema minimo garantizado.
+                columnasAnulacionDisponibles = [];
+                return callback(columnasAnulacionDisponibles);
+            }
+
+            const existentes = new Set((rows || []).map((row) => String(row.columna || '').toLowerCase()));
+            columnasAnulacionDisponibles = COLUMNAS_ANULACION_OPCIONALES.filter((columna) => existentes.has(columna));
+            return callback(columnasAnulacionDisponibles);
+        }
+    );
+};
+
+const insertarAnulacionDeuda = ({ pago, idUsuarioAutoriza, montoAnulado, motivo, correlativo }, callback) => {
+    resolverColumnasAnulacion((columnasOpcionales) => {
+        // Degradacion progresiva: primero con todas las columnas detectadas, luego sin
+        // estado_factura (la unica que suele faltar) y por ultimo con el esquema minimo.
+        // Asi nunca se pierde el vinculo id_pago/correlativo por un fallo de esquema.
+        const intentos = [
+            columnasOpcionales,
+            columnasOpcionales.filter((columna) => columna !== 'estado_factura'),
+            []
+        ].filter((lista, indice, todas) => indice === 0 || JSON.stringify(lista) !== JSON.stringify(todas[indice - 1]));
+
+        const ejecutarIntento = (indice) => {
+            const columnasUsadas = intentos[indice] || [];
+            const permitirReintento = indice < (intentos.length - 1);
+            const columnas = ['id_morosidad', 'id_contrato', 'id_usuario_autoriza', 'monto_anulado', 'motivo'];
+            const valores = [null, pago.id_contrato, idUsuarioAutoriza, montoAnulado, motivo];
+
+            columnasUsadas.forEach((columna) => {
+                columnas.push(columna);
+                if (columna === 'id_pago') valores.push(pago.id_pago);
+                if (columna === 'correlativo') valores.push(correlativo);
+                if (columna === 'estado_factura') valores.push('ANULADA');
+            });
+
+            const sql = `
+                INSERT INTO anulacion_deuda (${columnas.join(', ')})
+                VALUES (${columnas.map(() => '?').join(', ')})
+            `;
+
+            db.query(sql, valores, (err, result) => {
+                if (err) {
+                    const codigo = String(err?.code || '').toUpperCase();
+                    if (permitirReintento && ['ER_BAD_FIELD_ERROR', 'ER_NO_SUCH_COLUMN'].includes(codigo)) {
+                        console.warn('anulacion_deuda no acepta una columna extendida; se reintenta con menos columnas:', err.message);
+                        columnasAnulacionDisponibles = intentos[indice + 1] || [];
+                        return ejecutarIntento(indice + 1);
+                    }
+                    return callback(err, null);
+                }
+
+                columnasAnulacionDisponibles = columnasUsadas;
+                return callback(null, result);
+            });
+        };
+
+        ejecutarIntento(0);
+    });
+};
 
 const ensureFacturasHistorialTable = () => {
     const sql = `
@@ -117,7 +200,7 @@ const ensureAnulacionDeudaTable = () => {
                 const columnsToAdd = [
                     ['id_pago', 'INT NULL'],
                     ['correlativo', 'VARCHAR(80) NULL'],
-                    ['estado_factura', 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"']
+                    ['estado_factura', "VARCHAR(20) NOT NULL DEFAULT 'ANULADA'"]
                 ];
 
                 columnsToAdd.forEach(([columnName, sqlType]) => {
@@ -796,15 +879,26 @@ router.post('/anular-por-correlativo', (req, res) => {
                         motivo: motivoCompleto,
                         callback: (histErr) => {
                             if (histErr) {
-                                return db.rollback(() => res.status(500).send({ message: 'No se pudo guardar la evidencia historica de anulacion.' }));
+                                console.error('[anulacion] Error al guardar facturas_historial:', histErr.code, histErr.message);
+                                return db.rollback(() => res.status(500).send({
+                                    message: `No se pudo guardar la evidencia historica de anulacion: ${histErr.message}`
+                                }));
                             }
 
-                            db.query(
-                                'INSERT INTO anulacion_deuda (id_morosidad, id_contrato, id_usuario_autoriza, monto_anulado, motivo, id_pago, correlativo, estado_factura) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                                [null, pago.id_contrato, id_usuario_autoriza, principalAnular, motivoCompleto, pago.id_pago, correlativoFinal, 'ANULADA'],
+                            insertarAnulacionDeuda(
+                                {
+                                    pago,
+                                    idUsuarioAutoriza: id_usuario_autoriza,
+                                    montoAnulado: principalAnular,
+                                    motivo: motivoCompleto,
+                                    correlativo: correlativoFinal
+                                },
                                 (insertErr, insertResult) => {
                                     if (insertErr) {
-                                        return db.rollback(() => res.status(500).send({ message: 'No se pudo registrar la anulación de deuda.' }));
+                                        console.error('[anulacion] Error al registrar anulacion_deuda:', insertErr.code, insertErr.message);
+                                        return db.rollback(() => res.status(500).send({
+                                            message: `No se pudo registrar la anulación de deuda: ${insertErr.message}`
+                                        }));
                                     }
 
                                     db.commit((commitErr) => {

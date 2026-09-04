@@ -307,9 +307,7 @@ function PagosDetalle() {
         doc.setTextColor(0, 0, 0);
       }
     } else {
-      const filasFactura = buildConsolidatedInvoiceRows(detallesFactura, {
-        usarCuotaCeroEnganche: Number(documento?.contrato?.enganche || 0) > 0
-      });
+      const filasFactura = buildConsolidatedInvoiceRows(detallesFactura);
 
       renderFacturaComprobante(doc, {
         logo: empresaLogo,
