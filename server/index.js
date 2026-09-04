@@ -3,6 +3,7 @@ const cors = require('cors');
 const app = express();
 const { auditRequestMiddleware } = require('./auditingMiddleware');
 const ensurePerformanceIndexes = require('./ensurePerformanceIndexes');
+const ensureSchema = require('./ensureSchema');
 
 process.on('uncaughtException', (error) => {
     console.error('Excepcion no controlada en servidor:', error);
@@ -82,6 +83,7 @@ app.use('/api/cuenta_estado', cuentaEstadoRouter);
 app.use('/api/convenio', convenioRouter);
 app.use('/api/dashboard', dashboardRouter);
 
+ensureSchema;
 ensurePerformanceIndexes();
 
 // 3. Inicialización del servidor central
