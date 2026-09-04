@@ -49,6 +49,7 @@ const ensureColumnInAnulacion = (columnName, sqlType) => {
 
 ensureColumnInAnulacion('id_pago', 'INT NULL');
 ensureColumnInAnulacion('correlativo', 'VARCHAR(80) NULL');
+ensureColumnInAnulacion('estado_factura', 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"');
 
 const ensureFacturasHistorialTable = () => {
     const sql = `
@@ -524,9 +525,10 @@ router.post('/anular-por-correlativo', (req, res) => {
         }
 
         db.query(
-            `SELECT id_anulacion, id_pago
+            `SELECT id_anulacion, id_pago, estado_factura
              FROM anulacion_deuda
              WHERE UPPER(COALESCE(correlativo, '')) = UPPER(?)
+               AND COALESCE(estado_factura, 'ANULADA') = 'ANULADA'
              LIMIT 1`,
             [correlativoFinal],
             (duplicadoErr, duplicadoRows) => {
@@ -540,7 +542,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                     });
                 }
 
-                db.query('SELECT id_anulacion FROM anulacion_deuda WHERE id_pago = ? LIMIT 1', [pago.id_pago], (checkErr, checkRows) => {
+                db.query('SELECT id_anulacion FROM anulacion_deuda WHERE id_pago = ? AND COALESCE(estado_factura, "ANULADA") = "ANULADA" LIMIT 1', [pago.id_pago], (checkErr, checkRows) => {
                     if (checkErr) {
                         return res.status(500).send({ message: 'No fue posible validar si el correlativo ya fue anulado.' });
                     }
@@ -696,8 +698,8 @@ router.post('/anular-por-correlativo', (req, res) => {
                                     }
 
                                     db.query(
-                                        'INSERT INTO anulacion_deuda (id_morosidad, id_contrato, id_usuario_autoriza, monto_anulado, motivo, id_pago, correlativo) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                                        [null, pago.id_contrato, id_usuario_autoriza, principalAnular, motivoCompleto, pago.id_pago, correlativoFinal],
+                                        'INSERT INTO anulacion_deuda (id_morosidad, id_contrato, id_usuario_autoriza, monto_anulado, motivo, id_pago, correlativo, estado_factura) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                                        [null, pago.id_contrato, id_usuario_autoriza, principalAnular, motivoCompleto, pago.id_pago, correlativoFinal, 'ANULADA'],
                                         (insertErr, insertResult) => {
                                             if (insertErr) {
                                                 return db.rollback(() => res.status(500).send({ message: 'No se pudo registrar la anulación de deuda.' }));
