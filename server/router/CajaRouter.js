@@ -2010,7 +2010,7 @@ router.post("/procesar-pago", (req, res) => {
                 : (fechaInicioContrato
                     ? new Date(
                         fechaInicioContrato.getFullYear(),
-                        fechaInicioContrato.getMonth() + (engancheContrato > 0 ? 1 : 0),
+                        fechaInicioContrato.getMonth(),
                         1
                     )
                     : null);
@@ -2124,12 +2124,15 @@ router.post("/procesar-pago", (req, res) => {
             };
 
             const primerMesSeleccionado = mesesAProcesar[0] || '';
-            // El enganche (cuota 0) es un cargo aparte anclado al mes de compra/firma y llega
-            // en monto_enganche_pagar, no como un mes seleccionado. Por eso todos los meses
-            // recibidos son cuotas financiadas y se cobran tal cual fueron seleccionados: si
-            // el cajero marca la cuota 1 (Enero), se cobra Enero y no el mes siguiente.
-            const mesEngancheContrato = (usaCuotaCeroEngancheContrato && fechaInicioContrato)
-                ? etiquetaMesDesdeFecha(fechaInicioContrato)
+            // El enganche (cuota 0) es un cargo aparte y debe respetar la referencia contractual
+            // de inicio de pagos. Si el contrato define mes/año de inicio, ese es el origen de verdad;
+            // si no viene definido, usamos la fecha de compra/firma como respaldo.
+            const mesEngancheContrato = (usaCuotaCeroEngancheContrato && (inicioFinanciadoConfiguradoValido || fechaInicioContrato))
+                ? etiquetaMesDesdeFecha(
+                    inicioFinanciadoConfiguradoValido
+                        ? new Date(anioInicioPagosContrato, mesInicioPagosContrato - 1, 1)
+                        : new Date(fechaInicioContrato.getFullYear(), fechaInicioContrato.getMonth(), 1)
+                )
                 : primerMesSeleccionado;
             const mesesTerrenoProcesar = montoTerrenoTotal > 0 ? [...mesesAProcesar] : [];
 
