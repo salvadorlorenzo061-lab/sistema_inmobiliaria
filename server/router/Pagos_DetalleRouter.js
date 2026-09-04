@@ -109,7 +109,10 @@ router.get('/reporte-facturas', (req, res) => {
             r.numero_identificacion,
             r.dpi,
             c.codigo_contrato,
-            GROUP_CONCAT(DISTINCT NULLIF(TRIM(fh.mes_pagado), '') ORDER BY fh.numero_cuota_afectada ASC SEPARATOR ', ') AS meses_pagados,
+            GROUP_CONCAT(DISTINCT CASE
+                WHEN COALESCE(fh.numero_cuota_afectada, 0) > 0 THEN NULLIF(TRIM(fh.mes_pagado), '')
+                ELSE NULL
+            END ORDER BY fh.numero_cuota_afectada ASC SEPARATOR ', ') AS meses_pagados,
             MIN(CASE WHEN fh.numero_cuota_afectada > 0 THEN fh.numero_cuota_afectada END) AS cuota_inicio,
             MAX(CASE WHEN fh.numero_cuota_afectada > 0 THEN fh.numero_cuota_afectada END) AS cuota_fin,
             SUM(fh.subtotal) AS total_documento

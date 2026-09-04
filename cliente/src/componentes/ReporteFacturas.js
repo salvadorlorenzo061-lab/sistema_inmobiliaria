@@ -202,10 +202,13 @@ const ReporteFacturas = () => {
               {facturas.map((factura, index) => {
                 const claveDocumento = `${factura.id_pago}-${String(factura.estado_factura || 'EMITIDA').toUpperCase()}`;
                 const descargando = documentoDescargando === claveDocumento;
+                const cuotaEtiqueta = Number.isFinite(Number(factura?.cuota_inicio)) && Number(factura.cuota_inicio) > 0
+                  ? `Cuota ${factura.cuota_inicio}`
+                  : 'Enganche';
                 return (
                 <tr key={`${claveDocumento}-${factura.fecha_evento || index}`}>
                   <td>
-                    {factura.cuota_inicio != null ? `Cuota ${factura.cuota_inicio}` : 'Cuota 0'}
+                    {cuotaEtiqueta}
                     <div className="small text-muted">{factura.meses_pagados || 'Sin mes registrado'}</div>
                   </td>
                   <td>{factura.correlativo || `Pago #${factura.id_pago}`}</td>
