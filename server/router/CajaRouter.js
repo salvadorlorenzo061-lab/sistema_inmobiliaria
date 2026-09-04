@@ -1338,10 +1338,16 @@ router.get("/meses-pendientes", (req, res) => {
                     // Cuotas pagadas configuradas en el contrato: representan cuotas financiadas
                     // ya atendidas antes del seguimiento puntual en Caja, por lo que se marcan
                     // desde la primera cuota financiada sin alterar el flujo actual del enganche.
+                    // Importante: la cantidad del contrato debe servir como piso de consistencia.
+                    // Si el contrato dice que hay 4 cuotas pagadas, Caja debe completar hasta 4
+                    // aunque faltara esa huella en los pagos historicos; pero nunca rebaja un
+                    // historial real mayor al valor del contrato.
                     const cuotasPagadasManual = Math.max(Number(contratoResult[0]?.cuotas_pagadas_manual || 0), 0);
-                    if (cuotasPagadasManual > 0 && mesesPagadosSet.size === 0 && candidatosMeta.length > 0) {
+                    const cuotasPagadasHistoricas = mesesPagadosSet.size;
+                    const cuotasObjetivoMinimas = Math.max(cuotasPagadasManual, cuotasPagadasHistoricas);
+                    if (candidatosMeta.length > 0 && cuotasObjetivoMinimas > 0) {
                         const offsetInicioFinanciado = usaCuotaCeroEnganche ? 1 : 0;
-                        for (let indice = 0; indice < cuotasPagadasManual; indice += 1) {
+                        for (let indice = 0; indice < cuotasObjetivoMinimas; indice += 1) {
                             const cuotaHistorica = candidatosMeta[offsetInicioFinanciado + indice];
                             if (!cuotaHistorica) break;
                             mesesPagadosSet.add(cuotaHistorica.mes);
