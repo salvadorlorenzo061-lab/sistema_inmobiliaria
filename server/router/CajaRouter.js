@@ -1287,16 +1287,10 @@ router.get("/meses-pendientes", (req, res) => {
                     }
                 });
 
-                if (cuotasPagadasRealPorNumero.size > 0) {
-                    const cuotasOrdenadas = [...cuotasPagadasRealPorNumero].sort((a, b) => a - b);
-                    const cuotaMasAltaPagada = cuotasOrdenadas[cuotasOrdenadas.length - 1];
-                    candidatosMeta.forEach((item) => {
-                        const numeroCuota = Number(item.numero_cuota || 0);
-                        if (numeroCuota > 0 && numeroCuota <= cuotaMasAltaPagada) {
-                            mesesPagadosSet.add(item.mes);
-                        }
-                    });
-                }
+                // Importante: no se debe marcar un bloque completo de meses como pagados solo porque
+                // se detectó la cuota financiada más alta del historial. Eso provoca el salto artificial
+                // de marzo a abril cuando solo hay una cuota real cobrada.
+                // La fuente de verdad sigue siendo cada mes pagado exacto y la cuota real asociada.
 
                 let pendientesMeta = [];
                 let mesesPagadosOrdenados = [];

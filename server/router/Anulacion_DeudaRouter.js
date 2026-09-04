@@ -588,314 +588,342 @@ router.post('/anular-por-correlativo', (req, res) => {
             return res.status(400).send({ message: 'El correlativo no tiene detalle válido para reversar el cargo.' });
         }
 
-        db.query(
-            `SELECT id_anulacion, id_pago, estado_factura
-             FROM anulacion_deuda
-             WHERE UPPER(COALESCE(correlativo, '')) = UPPER(?)
-               AND COALESCE(estado_factura, 'ANULADA') = 'ANULADA'
-             LIMIT 1`,
-            [correlativoFinal],
-            (duplicadoErr, duplicadoRows) => {
-                if (duplicadoErr) {
-                    return res.status(500).send({ message: 'No se pudo validar si el correlativo ya fue anulado.' });
+        const validarDuplicadoAnulacion = (finalCallback) => {
+            db.query("SHOW TABLES LIKE 'anulacion_deuda'", (showErr, tablas) => {
+                if (showErr || !tablas || !tablas.length) {
+                    return finalCallback(null, []);
                 }
 
-                if (duplicadoRows && duplicadoRows.length) {
-                    return res.status(409).send({
-                        message: `El correlativo ${correlativoFinal} ya fue anulado (anulación #${duplicadoRows[0].id_anulacion}).`
-                    });
-                }
+                db.query(
+                    `SELECT id_anulacion, id_pago, estado_factura
+                     FROM anulacion_deuda
+                     WHERE UPPER(COALESCE(correlativo, '')) = UPPER(?)
+                       AND COALESCE(estado_factura, 'ANULADA') = 'ANULADA'
+                     LIMIT 1`,
+                    [correlativoFinal],
+                    (duplicadoErr, duplicadoRows) => {
+                        if (duplicadoErr) {
+                            const codigo = String(duplicadoErr?.code || '').toUpperCase();
+                            if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR', 'ER_NO_SUCH_COLUMN'].includes(codigo)) {
+                                return finalCallback(null, []);
+                            }
+                            return finalCallback(duplicadoErr, null);
+                        }
 
-                db.query('SELECT id_anulacion FROM anulacion_deuda WHERE id_pago = ? AND COALESCE(estado_factura, "ANULADA") = "ANULADA" LIMIT 1', [pago.id_pago], (checkErr, checkRows) => {
-                    if (checkErr) {
-                        return res.status(500).send({ message: 'No fue posible validar si el correlativo ya fue anulado.' });
+                        return finalCallback(null, duplicadoRows || []);
                     }
+                );
+            });
+        };
 
-                    if (checkRows && checkRows.length) {
-                        return res.status(409).send({ message: `El correlativo ya fue anulado (anulación #${checkRows[0].id_anulacion}).` });
-                    }
+        const continuarTrasValidacion = () => {
+            db.beginTransaction((txErr) => {
+                if (txErr) return res.status(500).send({ message: 'Error de transacción al anular cobro.' });
 
-                    db.beginTransaction((txErr) => {
-                        if (txErr) return res.status(500).send({ message: 'Error de transacción al anular cobro.' });
-
-                        const recalcularContratoTrasAnulacion = (finishCallback) => {
-                            const sqlRecalculo = `
-                                UPDATE contratos_residentes c
-                                LEFT JOIN (
-                                    SELECT p.id_contrato,
-                                           COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                const recalcularContratoTrasAnulacion = (finishCallback) => {
+                    const sqlRecalculo = `
+                        UPDATE contratos_residentes c
+                        LEFT JOIN (
+                            SELECT p.id_contrato,
+                                   COALESCE(SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                            FROM pagos p
+                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                            GROUP BY p.id_contrato
+                        ) pagos ON pagos.id_contrato = c.id_contrato
+                        SET c.saldo_pendiente = GREATEST(
+                                COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0),
+                                0
+                            ),
+                            c.cuotas_pagadas = COALESCE(
+                                (
+                                    SELECT COUNT(DISTINCT CASE
+                                        WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                                        ELSE NULL
+                                    END)
                                     FROM pagos p
                                     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-                                    GROUP BY p.id_contrato
-                                ) pagos ON pagos.id_contrato = c.id_contrato
-                                SET c.saldo_pendiente = GREATEST(
-                                        COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0),
-                                        0
+                                    WHERE p.id_contrato = c.id_contrato
+                                      AND pd.tipo_concepto = 'cuota_terreno'
+                                ),
+                                0
+                            )
+                        WHERE c.id_contrato = ?
+                    `;
+
+                    db.query(sqlRecalculo, [pago.id_contrato], (saldoErr) => {
+                        if (saldoErr) {
+                            return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
+                        }
+
+                        db.query(
+                            `
+                                UPDATE contratos_residentes c
+                                SET c.cuotas_pagadas = COALESCE(
+                                    (
+                                        SELECT COUNT(DISTINCT CASE
+                                            WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                                            ELSE NULL
+                                        END)
+                                        FROM pagos p
+                                        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                                        WHERE p.id_contrato = c.id_contrato
+                                          AND pd.tipo_concepto = 'cuota_terreno'
                                     ),
-                                    c.cuotas_pagadas = COALESCE(
-                                        (
-                                            SELECT COUNT(DISTINCT CASE
-                                                WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
-                                                ELSE NULL
-                                            END)
-                                            FROM pagos p
-                                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-                                            WHERE p.id_contrato = c.id_contrato
-                                              AND pd.tipo_concepto = 'cuota_terreno'
-                                        ),
-                                        0
-                                    )
+                                    0
+                                )
                                 WHERE c.id_contrato = ?
-                            `;
-
-                            db.query(sqlRecalculo, [pago.id_contrato], (saldoErr) => {
-                                if (saldoErr) {
-                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del contrato.' }));
+                            `,
+                            [pago.id_contrato],
+                            (syncErr) => {
+                                if (syncErr) {
+                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo recalcular las cuotas pagadas del contrato.' }));
                                 }
+                                return finishCallback();
+                            }
+                        );
+                    });
+                };
 
-                                db.query(
-                                    `
-                                        UPDATE contratos_residentes c
-                                        SET c.cuotas_pagadas = COALESCE(
-                                            (
-                                                SELECT COUNT(DISTINCT CASE
-                                                    WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
-                                                    ELSE NULL
-                                                END)
-                                                FROM pagos p
-                                                INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-                                                WHERE p.id_contrato = c.id_contrato
-                                                  AND pd.tipo_concepto = 'cuota_terreno'
-                                            ),
-                                            0
-                                        )
-                                        WHERE c.id_contrato = ?
-                                    `,
-                                    [pago.id_contrato],
-                                    (syncErr) => {
-                                        if (syncErr) {
-                                            return db.rollback(() => res.status(500).send({ message: 'No se pudo recalcular las cuotas pagadas del contrato.' }));
-                                        }
-                                        return finishCallback();
-                                    }
-                                );
-                            });
-                        };
+                const restaurarConvenio = (callbackRestore) => {
+                    if (!Number.isFinite(capitalRestaurar) || capitalRestaurar <= 0) {
+                        return callbackRestore();
+                    }
 
-                        const restaurarConvenio = (callbackRestore) => {
-                            if (!Number.isFinite(capitalRestaurar) || capitalRestaurar <= 0) {
+                    const sqlConvenioActivo = `
+                        SELECT id_convenio, monto_original, saldo_actual, estado
+                        FROM convenio_pagos
+                        WHERE id_contrato = ?
+                          AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'cumplido', 'incumplido')
+                        ORDER BY id_convenio DESC
+                        LIMIT 1
+                    `;
+
+                    db.query(sqlConvenioActivo, [pago.id_contrato], (convErr, convRows) => {
+                        if (convErr) {
+                            if (String(convErr?.code || '').toUpperCase() === 'ER_NO_SUCH_TABLE') {
                                 return callbackRestore();
                             }
+                            return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del convenio.' }));
+                        }
 
-                            const sqlConvenioActivo = `
-                                SELECT id_convenio, monto_original, saldo_actual, estado
-                                FROM convenio_pagos
-                                WHERE id_contrato = ?
-                                  AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'cumplido', 'incumplido')
-                                ORDER BY id_convenio DESC
-                                LIMIT 1
-                            `;
+                        if (!convRows || !convRows.length) {
+                            return callbackRestore();
+                        }
 
-                            db.query(sqlConvenioActivo, [pago.id_contrato], (convErr, convRows) => {
-                                if (convErr) {
-                                    if (String(convErr?.code || '').toUpperCase() === 'ER_NO_SUCH_TABLE') {
-                                        return callbackRestore();
+                        const convenio = convRows[0];
+                        const montoOriginalConvenio = Number(convenio.monto_original || 0);
+                        const saldoActualConvenio = Number(convenio.saldo_actual || 0);
+                        const saldoRestaurado = Math.min(
+                            saldoActualConvenio + capitalRestaurar,
+                            montoOriginalConvenio > 0 ? montoOriginalConvenio : saldoActualConvenio + capitalRestaurar
+                        );
+                        const estadoRestaurado = saldoRestaurado > 0 ? 'activo' : String(convenio.estado || 'activo');
+
+                        db.query(
+                            'UPDATE convenio_pagos SET saldo_actual = ?, estado = ? WHERE id_convenio = ?',
+                            [saldoRestaurado, estadoRestaurado, convenio.id_convenio],
+                            (updConvErr) => {
+                                if (updConvErr) {
+                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo actualizar convenio al anular cobro.' }));
+                                }
+                                return callbackRestore();
+                            }
+                        );
+                    });
+                };
+
+                const idsPagoExtraRevertir = [...new Set((pago.detalle_cobro || [])
+                    .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'extraordinario')
+                    .map((item) => Number(item?.id_concepto_servicio || 0))
+                    .filter((id) => Number.isInteger(id) && id > 0))];
+
+                const mesesRevertirMorosidad = [...new Set((pago.detalle_cobro || [])
+                    .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'mora')
+                    .map((item) => String(item?.mes_pagado || '').trim())
+                    .filter((mes) => mes))];
+
+                const mesesBaseMorosidad = [...new Set(
+                    mesesRevertirMorosidad
+                        .map((mes) => String(mes || '').trim().split(/\s+/)[0] || '')
+                        .map((mes) => mes.toLowerCase())
+                        .filter(Boolean)
+                )];
+
+                const continuarTrasExtras = () => {
+                    const detalleMeses = pago.meses_pagados ? ` | Meses: ${pago.meses_pagados}` : '';
+                    const motivoCompleto = `${motivo} | Correlativo: ${correlativoFinal} | Pago #${pago.id_pago}${detalleMeses}`;
+
+                    registrarHistorialAnulacion({
+                        pago,
+                        correlativoFinal,
+                        idUsuarioAutoriza: id_usuario_autoriza,
+                        motivo: motivoCompleto,
+                        callback: (histErr) => {
+                            if (histErr) {
+                                return db.rollback(() => res.status(500).send({ message: 'No se pudo guardar la evidencia historica de anulacion.' }));
+                            }
+
+                            db.query(
+                                'INSERT INTO anulacion_deuda (id_morosidad, id_contrato, id_usuario_autoriza, monto_anulado, motivo, id_pago, correlativo, estado_factura) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                                [null, pago.id_contrato, id_usuario_autoriza, principalAnular, motivoCompleto, pago.id_pago, correlativoFinal, 'ANULADA'],
+                                (insertErr, insertResult) => {
+                                    if (insertErr) {
+                                        return db.rollback(() => res.status(500).send({ message: 'No se pudo registrar la anulación de deuda.' }));
                                     }
-                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el saldo del convenio.' }));
-                                }
 
-                                if (!convRows || !convRows.length) {
-                                    return callbackRestore();
-                                }
-
-                                const convenio = convRows[0];
-                                const montoOriginalConvenio = Number(convenio.monto_original || 0);
-                                const saldoActualConvenio = Number(convenio.saldo_actual || 0);
-                                const saldoRestaurado = Math.min(
-                                    saldoActualConvenio + capitalRestaurar,
-                                    montoOriginalConvenio > 0 ? montoOriginalConvenio : saldoActualConvenio + capitalRestaurar
-                                );
-                                const estadoRestaurado = saldoRestaurado > 0 ? 'activo' : String(convenio.estado || 'activo');
-
-                                db.query(
-                                    'UPDATE convenio_pagos SET saldo_actual = ?, estado = ? WHERE id_convenio = ?',
-                                    [saldoRestaurado, estadoRestaurado, convenio.id_convenio],
-                                    (updConvErr) => {
-                                        if (updConvErr) {
-                                            return db.rollback(() => res.status(500).send({ message: 'No se pudo actualizar convenio al anular cobro.' }));
+                                    db.commit((commitErr) => {
+                                        if (commitErr) {
+                                            return db.rollback(() => res.status(500).send({ message: 'No se pudo confirmar la anulación.' }));
                                         }
-                                        return callbackRestore();
-                                    }
-                                );
-                            });
-                        };
 
-                        const idsPagoExtraRevertir = [...new Set((pago.detalle_cobro || [])
-                            .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'extraordinario')
-                            .map((item) => Number(item?.id_concepto_servicio || 0))
-                            .filter((id) => Number.isInteger(id) && id > 0))];
+                                        registrarAuditoria(
+                                            id_usuario_autoriza,
+                                            req.body?.nombre_usuario || req.headers['x-user-name'] || 'DESCONOCIDO',
+                                            'ANULADO',
+                                            'anulacion_deuda',
+                                            `Cobro anulado por correlativo ${correlativoFinal} (Pago #${pago.id_pago}) | Contrato #${pago.id_contrato} | Monto anulado Q${principalAnular.toFixed(2)} | Capital restaurado Q${capitalRestaurar.toFixed(2)} (terreno Q${principalTerreno.toFixed(2)}, enganche Q${principalEnganche.toFixed(2)}, abono Q${principalAbonoCapital.toFixed(2)})`,
+                                            obtenerIP(req),
+                                            'exitoso'
+                                        );
 
-                        const mesesRevertirMorosidad = [...new Set((pago.detalle_cobro || [])
-                            .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'mora')
-                            .map((item) => String(item?.mes_pagado || '').trim())
-                            .filter((mes) => mes))];
-
-                        const mesesBaseMorosidad = [...new Set(
-                            mesesRevertirMorosidad
-                                .map((mes) => String(mes || '').trim().split(/\s+/)[0] || '')
-                                .map((mes) => mes.toLowerCase())
-                                .filter(Boolean)
-                        )];
-
-                        const continuarTrasExtras = () => {
-                            const detalleMeses = pago.meses_pagados ? ` | Meses: ${pago.meses_pagados}` : '';
-                            const motivoCompleto = `${motivo} | Correlativo: ${correlativoFinal} | Pago #${pago.id_pago}${detalleMeses}`;
-
-                            registrarHistorialAnulacion({
-                                pago,
-                                correlativoFinal,
-                                idUsuarioAutoriza: id_usuario_autoriza,
-                                motivo: motivoCompleto,
-                                callback: (histErr) => {
-                                    if (histErr) {
-                                        return db.rollback(() => res.status(500).send({ message: 'No se pudo guardar la evidencia historica de anulacion.' }));
-                                    }
-
-                                    db.query(
-                                        'INSERT INTO anulacion_deuda (id_morosidad, id_contrato, id_usuario_autoriza, monto_anulado, motivo, id_pago, correlativo, estado_factura) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                                        [null, pago.id_contrato, id_usuario_autoriza, principalAnular, motivoCompleto, pago.id_pago, correlativoFinal, 'ANULADA'],
-                                        (insertErr, insertResult) => {
-                                            if (insertErr) {
-                                                return db.rollback(() => res.status(500).send({ message: 'No se pudo registrar la anulación de deuda.' }));
-                                            }
-
-                                            db.commit((commitErr) => {
-                                                if (commitErr) {
-                                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo confirmar la anulación.' }));
-                                                }
-
-                                                registrarAuditoria(
-                                                    id_usuario_autoriza,
-                                                    req.body?.nombre_usuario || req.headers['x-user-name'] || 'DESCONOCIDO',
-                                                    'ANULADO',
-                                                    'anulacion_deuda',
-                                                    `Cobro anulado por correlativo ${correlativoFinal} (Pago #${pago.id_pago}) | Contrato #${pago.id_contrato} | Monto anulado Q${principalAnular.toFixed(2)} | Capital restaurado Q${capitalRestaurar.toFixed(2)} (terreno Q${principalTerreno.toFixed(2)}, enganche Q${principalEnganche.toFixed(2)}, abono Q${principalAbonoCapital.toFixed(2)})`,
-                                                    obtenerIP(req),
-                                                    'exitoso'
-                                                );
-
-                                                return res.status(200).send({
-                                                    message: 'Cobro anulado correctamente por correlativo.',
-                                                    id_anulacion: insertResult.insertId,
-                                                    id_pago_anulado: pago.id_pago,
-                                                    id_contrato: pago.id_contrato,
-                                                    correlativo: correlativoFinal,
-                                                    monto_restaurado: principalAnular,
-                                                    monto_restaurado_capital: capitalRestaurar,
-                                                    monto_restaurado_terreno: principalTerreno,
-                                                    monto_restaurado_enganche: principalEnganche,
-                                                    monto_restaurado_abono_capital: principalAbonoCapital,
-                                                    monto_revertido_servicios: parseFloat(pago.principal_servicios || 0),
-                                                    residente: pago.nombre_residente || 'N/A',
-                                                    meses: pago.meses_pagados || '',
-                                                    detalle_cobro: pago.detalle_cobro || []
-                                                });
-                                            });
-                                        }
-                                    );
-                                }
-                            });
-                        };
-
-                        const revertirExtras = (callbackExtras) => {
-                            if (!idsPagoExtraRevertir.length) {
-                                return callbackExtras();
-                            }
-
-                            const placeholdersExtra = idsPagoExtraRevertir.map(() => '?').join(', ');
-                            const sqlExtra = `
-                                UPDATE pagos_extraordinarios
-                                SET estado = 'pendiente', fecha_pago = NULL
-                                WHERE id_contrato = ?
-                                  AND id_pago_extra IN (${placeholdersExtra})
-                            `;
-
-                            db.query(sqlExtra, [pago.id_contrato, ...idsPagoExtraRevertir], (extraErr) => {
-                                if (extraErr) {
-                                    const codigoError = String(extraErr?.code || '').toUpperCase();
-                                    console.warn('[anulacion] No se pudo restaurar cargo extraordinario; se continúa con la anulacion.', {
-                                        id_contrato: pago.id_contrato,
-                                        idsPagoExtraRevertir,
-                                        codigoError,
-                                        mensaje: extraErr?.message || ''
-                                    });
-                                    return callbackExtras();
-                                }
-
-                                return callbackExtras();
-                            });
-                        };
-
-                        const restaurarMorosidad = (callbackMora) => {
-                            if (!mesesRevertirMorosidad.length) {
-                                return callbackMora();
-                            }
-
-                            const condicionesMes = [];
-                            const paramsMes = [pago.id_contrato];
-
-                            if (mesesRevertirMorosidad.length) {
-                                const placeholdersMeses = mesesRevertirMorosidad.map(() => '?').join(', ');
-                                condicionesMes.push(`mes_atrasado IN (${placeholdersMeses})`);
-                                paramsMes.push(...mesesRevertirMorosidad);
-                            }
-
-                            if (mesesBaseMorosidad.length) {
-                                const placeholdersMesBase = mesesBaseMorosidad.map(() => '?').join(', ');
-                                condicionesMes.push(`LOWER(TRIM(SUBSTRING_INDEX(mes_atrasado, ' ', 1))) IN (${placeholdersMesBase})`);
-                                paramsMes.push(...mesesBaseMorosidad);
-                            }
-
-                            const sqlMorosidad = `
-                                UPDATE morosidad
-                                SET estado = 'pendiente'
-                                WHERE id_contrato = ?
-                                  AND estado = 'pagado'
-                                  ${condicionesMes.length ? `AND (${condicionesMes.join(' OR ')})` : ''}
-                            `;
-
-                            db.query(sqlMorosidad, paramsMes, (moraErr) => {
-                                if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
-                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el estado de morosidad al anular.' }));
-                                }
-
-                                return callbackMora();
-                            });
-                        };
-
-                        restaurarConvenio(() => {
-                            db.query('DELETE FROM pagos_detalle WHERE id_pago = ?', [pago.id_pago], (delDetalleErr) => {
-                                if (delDetalleErr) {
-                                    return db.rollback(() => res.status(500).send({ message: 'No se pudo eliminar el detalle del cobro.' }));
-                                }
-
-                                db.query('DELETE FROM pagos WHERE id_pago = ?', [pago.id_pago], (delPagoErr) => {
-                                    if (delPagoErr) {
-                                        return db.rollback(() => res.status(500).send({ message: 'No se pudo eliminar el cobro principal.' }));
-                                    }
-
-                                    recalcularContratoTrasAnulacion(() => {
-                                        revertirExtras(() => {
-                                            restaurarMorosidad(() => continuarTrasExtras());
+                                        return res.status(200).send({
+                                            message: 'Cobro anulado correctamente por correlativo.',
+                                            id_anulacion: insertResult.insertId,
+                                            id_pago_anulado: pago.id_pago,
+                                            id_contrato: pago.id_contrato,
+                                            correlativo: correlativoFinal,
+                                            monto_restaurado: principalAnular,
+                                            monto_restaurado_capital: capitalRestaurar,
+                                            monto_restaurado_terreno: principalTerreno,
+                                            monto_restaurado_enganche: principalEnganche,
+                                            monto_restaurado_abono_capital: principalAbonoCapital,
+                                            monto_revertido_servicios: parseFloat(pago.principal_servicios || 0),
+                                            residente: pago.nombre_residente || 'N/A',
+                                            meses: pago.meses_pagados || '',
+                                            detalle_cobro: pago.detalle_cobro || []
                                         });
                                     });
+                                }
+                            );
+                        }
+                    });
+                };
+
+                const revertirExtras = (callbackExtras) => {
+                    if (!idsPagoExtraRevertir.length) {
+                        return callbackExtras();
+                    }
+
+                    const placeholdersExtra = idsPagoExtraRevertir.map(() => '?').join(', ');
+                    const sqlExtra = `
+                        UPDATE pagos_extraordinarios
+                        SET estado = 'pendiente', fecha_pago = NULL
+                        WHERE id_contrato = ?
+                          AND id_pago_extra IN (${placeholdersExtra})
+                    `;
+
+                    db.query(sqlExtra, [pago.id_contrato, ...idsPagoExtraRevertir], (extraErr) => {
+                        if (extraErr) {
+                            const codigoError = String(extraErr?.code || '').toUpperCase();
+                            console.warn('[anulacion] No se pudo restaurar cargo extraordinario; se continúa con la anulacion.', {
+                                id_contrato: pago.id_contrato,
+                                idsPagoExtraRevertir,
+                                codigoError,
+                                mensaje: extraErr?.message || ''
+                            });
+                            return callbackExtras();
+                        }
+
+                        return callbackExtras();
+                    });
+                };
+
+                const restaurarMorosidad = (callbackMora) => {
+                    if (!mesesRevertirMorosidad.length) {
+                        return callbackMora();
+                    }
+
+                    const condicionesMes = [];
+                    const paramsMes = [pago.id_contrato];
+
+                    if (mesesRevertirMorosidad.length) {
+                        const placeholdersMeses = mesesRevertirMorosidad.map(() => '?').join(', ');
+                        condicionesMes.push(`mes_atrasado IN (${placeholdersMeses})`);
+                        paramsMes.push(...mesesRevertirMorosidad);
+                    }
+
+                    if (mesesBaseMorosidad.length) {
+                        const placeholdersMesBase = mesesBaseMorosidad.map(() => '?').join(', ');
+                        condicionesMes.push(`LOWER(TRIM(SUBSTRING_INDEX(mes_atrasado, ' ', 1))) IN (${placeholdersMesBase})`);
+                        paramsMes.push(...mesesBaseMorosidad);
+                    }
+
+                    const sqlMorosidad = `
+                        UPDATE morosidad
+                        SET estado = 'pendiente'
+                        WHERE id_contrato = ?
+                          AND estado = 'pagado'
+                          ${condicionesMes.length ? `AND (${condicionesMes.join(' OR ')})` : ''}
+                    `;
+
+                    db.query(sqlMorosidad, paramsMes, (moraErr) => {
+                        if (moraErr && String(moraErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                            return db.rollback(() => res.status(500).send({ message: 'No se pudo restaurar el estado de morosidad al anular.' }));
+                        }
+
+                        return callbackMora();
+                    });
+                };
+
+                restaurarConvenio(() => {
+                    db.query('DELETE FROM pagos_detalle WHERE id_pago = ?', [pago.id_pago], (delDetalleErr) => {
+                        if (delDetalleErr) {
+                            return db.rollback(() => res.status(500).send({ message: 'No se pudo eliminar el detalle del cobro.' }));
+                        }
+
+                        db.query('DELETE FROM pagos WHERE id_pago = ?', [pago.id_pago], (delPagoErr) => {
+                            if (delPagoErr) {
+                                return db.rollback(() => res.status(500).send({ message: 'No se pudo eliminar el cobro principal.' }));
+                            }
+
+                            recalcularContratoTrasAnulacion(() => {
+                                revertirExtras(() => {
+                                    restaurarMorosidad(() => continuarTrasExtras());
                                 });
                             });
                         });
                     });
                 });
+            });
+        };
+
+        validarDuplicadoAnulacion((duplicadoErr, duplicadoRows) => {
+            if (duplicadoErr) {
+                return res.status(500).send({ message: 'No se pudo validar si el correlativo ya fue anulado.' });
             }
-        );
+
+            if (duplicadoRows && duplicadoRows.length) {
+                return res.status(409).send({
+                    message: `El correlativo ${correlativoFinal} ya fue anulado (anulación #${duplicadoRows[0].id_anulacion}).`
+                });
+            }
+
+            db.query('SELECT id_anulacion FROM anulacion_deuda WHERE id_pago = ? AND COALESCE(estado_factura, "ANULADA") = "ANULADA" LIMIT 1', [pago.id_pago], (checkErr, checkRows) => {
+                if (checkErr) {
+                    const codigo = String(checkErr?.code || '').toUpperCase();
+                    if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR', 'ER_NO_SUCH_COLUMN'].includes(codigo)) {
+                        return continuarTrasValidacion();
+                    }
+                    return res.status(500).send({ message: 'No fue posible validar si el correlativo ya fue anulado.' });
+                }
+
+                if (checkRows && checkRows.length) {
+                    return res.status(409).send({ message: `El correlativo ya fue anulado (anulación #${checkRows[0].id_anulacion}).` });
+                }
+
+                return continuarTrasValidacion();
+            });
+        });
     });
 });
 
