@@ -138,6 +138,14 @@ const BANCOS_GUATEMALA = [
     'Otro'
 ];
 
+const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const etiquetaMesDesdeFecha = (fecha) => {
+    if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) {
+        return '';
+    }
+    return `${NOMBRES_MESES[fecha.getMonth()]} ${fecha.getFullYear()}`;
+};
+
 const PREFILL_CAJA_KEY = 'prefill_caja_desde_cuenta_estado';
 
 const Caja = () => {
