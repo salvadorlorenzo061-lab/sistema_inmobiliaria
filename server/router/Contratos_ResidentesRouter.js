@@ -788,6 +788,12 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
                 FROM pagos p
                 INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                 WHERE pd.tipo_concepto = 'cuota_terreno'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM facturas_historial fh
+                      WHERE fh.id_pago = p.id_pago
+                        AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                  )
                 GROUP BY p.id_contrato
             ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
             SET c.cuotas_pagadas = COALESCE(pagos_resumen.cuotas_reales, COALESCE(c.cuotas_pagadas, 0))
@@ -870,6 +876,12 @@ const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {
         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE p.id_contrato = ?
           AND pd.tipo_concepto = 'cuota_terreno'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM facturas_historial fh
+              WHERE fh.id_pago = p.id_pago
+                AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+          )
     `;
 
     db.query(sql, [idContratoSeguro], (err, rows) => {
@@ -901,6 +913,12 @@ const sincronizarCuotasPagadasContrato = (idContrato = null, callback = () => {}
             FROM pagos p
             INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             WHERE pd.tipo_concepto = 'cuota_terreno'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM facturas_historial fh
+                  WHERE fh.id_pago = p.id_pago
+                    AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+              )
             GROUP BY p.id_contrato
         ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
         SET c.cuotas_pagadas = COALESCE(pagos_resumen.cuotas_pagadas_reales, COALESCE(c.cuotas_pagadas, 0))

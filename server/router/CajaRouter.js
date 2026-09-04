@@ -259,6 +259,12 @@ const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
         END), 0) AS ultima_cuota_pagada
     FROM pagos p
     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM facturas_historial fh
+        WHERE fh.id_pago = p.id_pago
+          AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+    )
     GROUP BY p.id_contrato
 `;
 
@@ -1175,6 +1181,12 @@ router.get("/meses-pendientes", (req, res) => {
               AND pd.tipo_concepto = 'cuota_terreno'
               AND pd.mes_pagado IS NOT NULL
               AND pd.mes_pagado != ''
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM facturas_historial fh
+                  WHERE fh.id_pago = p.id_pago
+                    AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+              )
         `;
 
         db.query(query, [id_contrato], (err2, result) => {
