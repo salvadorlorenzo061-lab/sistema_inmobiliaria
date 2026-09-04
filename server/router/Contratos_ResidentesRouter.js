@@ -790,7 +790,7 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
                 WHERE pd.tipo_concepto = 'cuota_terreno'
                 GROUP BY p.id_contrato
             ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
-            SET c.cuotas_pagadas = GREATEST(COALESCE(pagos_resumen.cuotas_reales, 0), 0)
+            SET c.cuotas_pagadas = GREATEST(COALESCE(c.cuotas_pagadas, 0), COALESCE(pagos_resumen.cuotas_reales, 0))
             WHERE c.id_contrato = ?
         `, [idContratoSeguro], (syncErr) => {
             if (syncErr) {
@@ -878,7 +878,7 @@ const obtenerCuotasPagadasReales = (idContrato, fallback = 0, callback = () => {
         }
 
         const reales = Math.max(parseInt(rows?.[0]?.cuotas_pagadas_reales || 0, 10), 0);
-        return callback(null, reales > 0 ? reales : fallbackSeguro);
+        return callback(null, Math.max(reales, fallbackSeguro));
     });
 };
 
