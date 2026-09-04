@@ -1037,6 +1037,13 @@ router.get("/meses-pendientes", (req, res) => {
                 INNER JOIN pagos p_enganche ON p_enganche.id_pago = pd_enganche.id_pago
                 WHERE p_enganche.id_contrato = c.id_contrato
                   AND pd_enganche.tipo_concepto = 'enganche'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM facturas_historial fh_enganche
+                      WHERE fh_enganche.id_pago = p_enganche.id_pago
+                        AND UPPER(COALESCE(fh_enganche.estado_factura, '')) = 'ANULADA'
+                        AND UPPER(COALESCE(fh_enganche.tipo_concepto, '')) = 'ENGANCHE'
+                  )
             ), 0) AS enganche_pagado
         FROM contratos_residentes c
         LEFT JOIN (
@@ -2526,13 +2533,16 @@ router.post("/procesar-pago", (req, res) => {
 
                                 if (montoTerrenoTotal > 0) {
                                     mesesTerrenoProcesar.forEach((mes, index) => {
+                                        const subtotalCuota = redondear2(
+                                            Number(montosTerrenoPorMes[index] || 0) + Number(montosInteresPorMes[index] || 0)
+                                        );
                                         detalleValues.push([
                                             lastIdPago,
                                             'cuota_terreno',
                                             null,
                                             mes,
                                             cuotasTerrenoCalculadas[index] || null,
-                                            redondear2(montosTerrenoPorMes[index] || 0),
+                                            subtotalCuota,
                                             null
                                         ]);
                                     });
@@ -2562,7 +2572,7 @@ router.post("/procesar-pago", (req, res) => {
                                     ]);
                                 }
 
-                                if (montoInteresTotal > 0 && mesesConTerreno.length) {
+                                if (montoInteresTotal > 0 && mesesConTerreno.length && !montoTerrenoTotal) {
                                     mesesConTerreno.forEach((mes, index) => {
                                         detalleValues.push([
                                             lastIdPago,
