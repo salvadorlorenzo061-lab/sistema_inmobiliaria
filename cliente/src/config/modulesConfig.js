@@ -197,7 +197,7 @@ export const modulesConfig = [
   },
   {
     id: 'estado_cuenta',
-    label: 'Estado de Cuenta',
+    label: 'Detalle de Pagos',
     icon: '📋',
     path: '/estado_cuenta',
     component: EstadoCuenta,

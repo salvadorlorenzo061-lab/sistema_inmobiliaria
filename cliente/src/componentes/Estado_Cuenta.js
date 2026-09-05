@@ -540,88 +540,120 @@ const EstadoCuenta = () => {
         ]);
       });
 
+      const registrosDetalle = Array.isArray(estadoCuenta?.pagos) ? estadoCuenta.pagos : [];
+      const tablaDetallePagos = registrosDetalle.length
+        ? registrosDetalle.map((pago) => {
+            const tipoPagoRaw = String(pago?.tipo_concepto || pago?.concepto || 'CUOTA').trim();
+            const tipoPago = tipoPagoRaw
+              .toUpperCase()
+              .replace(/_/g, ' ')
+              .replace(/CUOTA TERRENO/g, 'CUOTA')
+              .replace(/ABONO CAPITAL/g, 'ABONO CAPITAL')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const fechaCuota = String(pago?.mes_pagado || pago?.mes || '').trim() || 'N/A';
+            const cuota = Number(pago?.numero_cuota_afectada ?? pago?.numero_cuota ?? 0) || 0;
+            const banco = String(pago?.banco || pago?.banco_pago || pago?.forma_pago || 'EFECTIVO').trim() || 'EFECTIVO';
+            const noDeposito = String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || 'N/A';
+            const fechaPago = formatoFecha(pago?.fecha_pago);
+            const monto = Number(pago?.monto_total_pagado ?? pago?.monto_total_detalle ?? pago?.monto_pagado ?? 0);
+            const recibo = String(pago?.correlativo || pago?.id_pago || '').trim() || String(pago?.id_pago || 'N/A');
+
+            return [
+              fechaCuota,
+              tipoPago || 'CUOTA',
+              cuota || '0',
+              banco,
+              noDeposito,
+              fechaPago,
+              formatoMoneda(monto),
+              recibo
+            ];
+          })
+        : [['', '', '', '', '', '', 'Q 0.00', 'Sin pagos registrados']];
+
+      const headerY = 72;
+      if (logoProyecto) {
+        try {
+          doc.addImage(logoProyecto, 'PNG', 18, 12, 34, 24, `logo-proyecto-detalle-${Date.now()}`, 'FAST');
+        } catch (error) {
+          console.warn('No se pudo cargar el logotipo del proyecto:', error);
+        }
+      }
+
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      doc.setTextColor(35, 35, 35);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text('GRUPO DE INVERSIONES', pageWidth / 2, 24, { align: 'center' });
+      doc.setFontSize(18);
+      doc.text('DETALLE DE PAGOS', pageWidth / 2, 40, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text('CLIENTE', 16, headerY);
+      doc.text(nombreCliente.toUpperCase(), 50, headerY);
+      doc.text('PROYECTO', 16, headerY + 9);
+      doc.text(nombreProyecto.toUpperCase(), 50, headerY + 9);
+      doc.text('ID CLIENTE', 120, headerY);
+      doc.text(String(contrato?.id_residente || contrato?.id_cliente || 'N/D'), 160, headerY);
+      doc.text('LOTE / MANZANA', 120, headerY + 9);
+      doc.text(loteContrato, 168, headerY + 9);
+
       autoTable(doc, {
-        startY: 128,
-        margin: { top: 44, bottom: 30, left: 10, right: 10 },
-        head: [
-          [
-            { content: 'FECHA', rowSpan: 2 },
-            { content: 'Forma.P', colSpan: 4 },
-            { content: 'NO.', rowSpan: 2 },
-            { content: 'FECHA DE PAGO', rowSpan: 2 },
-            { content: 'MONTO DEL RECIBO', rowSpan: 2 },
-            { content: 'No.DE CUOTA', rowSpan: 2 },
-            { content: 'RECIBO No.', rowSpan: 2 },
-            { content: 'OBSERVACIONES', rowSpan: 2 }
-          ],
-          ['D', 'T', 'E', 'C']
-        ],
-        body: filas.length ? filas : [['', '', '', '', '', '', '', '', '', '', 'Sin pagos registrados']],
+        startY: headerY + 18,
+        margin: { left: 10, right: 10 },
+        head: [[
+          'Fecha cuota',
+          'Tipo de pago',
+          'Cuota',
+          'Banco',
+          'No. depósito',
+          'Fecha pago',
+          'Monto',
+          'Recibo'
+        ]],
+        body: tablaDetallePagos,
         theme: 'grid',
         styles: {
-          fontSize: 12,
+          fontSize: 8.2,
           halign: 'center',
           valign: 'middle',
           overflow: 'linebreak',
-          lineColor: borderColor,
-          lineWidth: 0.1,
-          cellPadding: 0.9,
+          lineColor: [120, 120, 120],
+          lineWidth: 0.2,
+          cellPadding: 1.7,
           textColor: [20, 20, 20]
         },
         headStyles: {
-          fillColor: [236, 236, 236],
-          textColor: [0, 0, 0],
+          fillColor: [20, 96, 220],
+          textColor: [255, 255, 255],
           fontStyle: 'bold',
-          halign: 'center',
-          valign: 'middle',
-          fontSize: 12
+          halign: 'center'
         },
         alternateRowStyles: {
-          fillColor: [255, 255, 255]
+          fillColor: [245, 247, 250]
         },
         columnStyles: {
           0: { cellWidth: 20 },
-          1: { cellWidth: 7, halign: 'center' },
-          2: { cellWidth: 7, halign: 'center' },
-          3: { cellWidth: 7, halign: 'center' },
-          4: { cellWidth: 7, halign: 'center' },
-          5: { cellWidth: 22, halign: 'center' },
-          6: { cellWidth: 24, halign: 'center' },
-          7: { cellWidth: 25, halign: 'center' },
-          8: { cellWidth: 17, halign: 'center' },
-          9: { cellWidth: 18, halign: 'center' },
-          10: { cellWidth: 40, halign: 'center' }
+          1: { cellWidth: 24 },
+          2: { cellWidth: 14 },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 24 },
+          6: { cellWidth: 21 },
+          7: { cellWidth: 18 }
         },
         didDrawPage: (data) => {
-          dibujarMembrete(data.pageNumber);
-
-          if (data.pageNumber === 1) {
-            if (!obtenerBackgroundFormato()) {
-              doc.setTextColor(...goldColor);
-              doc.setFillColor(...goldColor);
-              doc.rect(0, 40, pageWidth, 4.5, 'F');
-            }
-            doc.setTextColor(45);
-            doc.setFont('times', 'normal');
-            doc.setFontSize(14);
-            doc.text(`Guatemala, ${fechaLarga}`, pageWidth - 14, 50, { align: 'right' });
-
-            const introLines = doc.splitTextToSize(cuerpoIntro, 188);
-            doc.setFontSize(14);
-            doc.text(introLines, 18, 61);
-            dibujarResumenContrato();
-          } else {
-            doc.setFont('times', 'bold');
-            doc.setFontSize(22);
-            doc.setTextColor(160, 160, 160);
-            doc.text('CORPORACION DE', pageWidth / 2, pageHeight / 2 - 8, { align: 'center', angle: 45 });
-            doc.text('INVERSION', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 45 });
-            doc.text('INMOBILIARIA', pageWidth / 2, pageHeight / 2 + 8, { align: 'center', angle: 45 });
-          }
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(90, 90, 90);
+          doc.text(`Página ${data.pageNumber}`, pageWidth - 18, pageHeight - 8, { align: 'right' });
         }
       });
 
-      const fileName = `EstadoCuenta_${estadoCuenta.contrato.codigo_contrato || 'cliente'}.pdf`;
+      const fileName = `DetallePago_${estadoCuenta.contrato.codigo_contrato || 'cliente'}.pdf`;
       doc.save(fileName);
     } catch (error) {
       console.error('Error al exportar PDF:', error);
@@ -633,7 +665,7 @@ const EstadoCuenta = () => {
     <div className="estado-cuenta-view p-4">
       <div className="card w-100 shadow-sm">
         <div className="card-header bg-primary text-white module-header" style={{position: 'sticky', top: 0, zIndex: 100}}>
-          <h3 className="mb-0">📋 Estado de Cuenta de Clientes</h3>
+          <h3 className="mb-0">📋 Detalle de Pagos</h3>
         </div>
 
         <div className="card-body">

@@ -31,7 +31,7 @@ const PERMISOS_MODULOS = [
   'Asignar Correlativos',
   'Resoluciones Facturas',
   'Bitácora',
-  'Estado de Cuenta'
+  'Detalle de Pagos'
 ];
 
 // Se conserva el valor técnico "Residentes" en permisos existentes para no
