@@ -585,53 +585,75 @@ const EstadoCuenta = () => {
         ]);
       });
 
+      const nuevoFormatoFecha = (valor) => {
+        if (!valor) return '';
+        const fecha = new Date(valor);
+        if (Number.isNaN(fecha.getTime())) return '';
+        return fecha.toLocaleDateString('es-GT');
+      };
+
       const detalleBase = Array.isArray(estadoCuenta?.cuotasDetalle) && estadoCuenta.cuotasDetalle.length
         ? estadoCuenta.cuotasDetalle
         : (Array.isArray(estadoCuenta?.pagos) ? estadoCuenta.pagos : []);
 
-      const tablaDetallePagos = detalleBase.length
-        ? detalleBase
-            .map((pago, index) => {
-              const cuotaNumero = Number(pago?.numero_cuota ?? pago?.numero_cuota_afectada ?? 0) || 0;
-              const tipoConcepto = String(pago?.tipo_concepto || pago?.tipos_concepto || '').toLowerCase();
-              const esEnganche = cuotaNumero === 0 || tipoConcepto.includes('enganche') || String(pago?.meses_pagados || '').toLowerCase().includes('enganche');
-              const fechaCuota = String(pago?.meses_pagados || pago?.mes_pagado || '').split(',').map((item) => item.trim()).filter(Boolean)[0] || 'N/A';
-              const tipoPago = esEnganche ? 'ENGANCHE' : 'CUOTA';
-              const cuotaLabel = esEnganche ? 0 : cuotaNumero || index + 1;
-              const banco = String(pago?.forma_pago || pago?.banco || 'EFECTIVO').trim() || 'EFECTIVO';
-              const noDeposito = String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || 'N/A';
-              const fechaPago = formatoFecha(pago?.fecha_pago);
-              const monto = Number(pago?.monto_total_detalle ?? pago?.total_cobrado ?? pago?.monto_cuota ?? 0);
-              const recibo = String(pago?.correlativo || pago?.no_referencia || pago?.id_pago || '').trim() || String(pago?.id_pago || 'N/A');
+      const detallePorCuota = new Map();
+      detalleBase.forEach((pago, index) => {
+        const cuotaNumero = Number(pago?.numero_cuota ?? pago?.numero_cuota_afectada ?? 0) || 0;
+        const tipoConcepto = String(pago?.tipo_concepto || pago?.tipos_concepto || '').toLowerCase();
+        const esEnganche = cuotaNumero === 0 || tipoConcepto.includes('enganche') || String(pago?.meses_pagados || '').toLowerCase().includes('enganche');
+        const key = esEnganche ? 0 : cuotaNumero || index + 1;
 
-              return {
-                cuotaNumero,
-                fechaCuota,
-                tipoPago,
-                cuotaLabel,
-                banco,
-                noDeposito,
-                fechaPago,
-                monto,
-                recibo,
-                esEnganche
-              };
-            })
-            .sort((a, b) => {
-              if (a.esEnganche && !b.esEnganche) return -1;
-              if (!a.esEnganche && b.esEnganche) return 1;
-              return (a.cuotaNumero || 0) - (b.cuotaNumero || 0);
-            })
-            .map((row) => [
-              row.fechaCuota,
-              row.tipoPago,
-              row.cuotaLabel,
-              row.banco,
-              row.noDeposito,
-              row.fechaPago,
-              formatoMoneda(row.monto),
-              row.recibo
-            ])
+        detallePorCuota.set(key, {
+          cuotaNumero: key,
+          fechaCuota: String(pago?.meses_pagados || pago?.mes_pagado || '').split(',').map((item) => item.trim()).filter(Boolean)[0] || 'N/A',
+          tipoPago: esEnganche ? 'ENGANCHE' : 'CUOTA',
+          cuotaLabel: esEnganche ? 0 : cuotaNumero || index + 1,
+          banco: String(pago?.forma_pago || pago?.banco || 'EFECTIVO').trim() || 'EFECTIVO',
+          noDeposito: String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || '',
+          fechaPago: formatoFecha(pago?.fecha_pago),
+          monto: Number(pago?.monto_total_detalle ?? pago?.total_cobrado ?? pago?.monto_cuota ?? 0),
+          recibo: String(pago?.correlativo || pago?.no_referencia || pago?.id_pago || '').trim() || String(pago?.id_pago || ''),
+          esEnganche
+        });
+      });
+
+      const filasReporte = [];
+
+      if (enganches.length) {
+        enganches.forEach((item) => {
+          const monto = Number(item?.monto_total_detalle ?? item?.monto_cuota ?? 0);
+          filasReporte.push([
+            String(item?.meses_pagados || item?.mes_pagado || 'ENGANCHE').trim() || 'ENGANCHE',
+            'ENGANCHE',
+            '0',
+            String(item?.forma_pago || item?.banco || 'EFECTIVO').trim() || 'EFECTIVO',
+            String(item?.no_referencia || item?.no_deposito || item?.numero_referencia || '').trim() || '',
+            nuevoFormatoFecha(item?.fecha_pago),
+            formatoMoneda(monto),
+            String(item?.correlativo || item?.no_referencia || item?.id_pago || '').trim() || ''
+          ]);
+        });
+      }
+
+      const totalCuotas = Math.max(Number(cuotasPactadas || 0), 0);
+      for (let cuota = 1; cuota <= totalCuotas; cuota += 1) {
+        const pagoDetalle = detallePorCuota.get(cuota) || null;
+        const fechaCuota = nuevoFormatoFecha(agregarMeses(contrato?.fecha_firma, cuota));
+
+        filasReporte.push([
+          fechaCuota || '',
+          pagoDetalle ? 'CUOTA' : 'PENDIENTE',
+          String(cuota),
+          pagoDetalle ? pagoDetalle.banco : '',
+          pagoDetalle ? pagoDetalle.noDeposito : '',
+          pagoDetalle ? pagoDetalle.fechaPago : '',
+          pagoDetalle ? formatoMoneda(pagoDetalle.monto) : '',
+          pagoDetalle ? pagoDetalle.recibo : ''
+        ]);
+      }
+
+      const tablaDetallePagos = filasReporte.length
+        ? filasReporte
         : [['', '', '', '', '', '', 'Q 0.00', 'Sin pagos registrados']];
 
       const headerY = 72;
