@@ -617,20 +617,63 @@ const EstadoCuenta = () => {
         });
       });
 
+      const obtenerBancoDisplay = (pago) => {
+        const raw = String(pago?.forma_pago || pago?.banco || pago?.metodo_pago || 'EFECTIVO').trim();
+        if (!raw) return 'EFECTIVO';
+        const texto = raw.toLowerCase();
+
+        if (texto.includes('deposit') || texto.includes('depósito') || texto.includes('deposito')) return 'DEPÓSITO';
+        if (texto.includes('transfer') || texto.includes('tranferencia') || texto.includes('transf')) return 'TRANSFERENCIA';
+        if (texto.includes('efect') || texto.includes('cash')) return 'EFECTIVO';
+        if (texto.includes('cheque')) return 'CHEQUE';
+
+        return raw.toUpperCase();
+      };
+
+      const crearFilaPago = (pago, fechaCuota, tipoEtiqueta, cuotaLabel) => {
+        if (!pago) {
+          return [fechaCuota || '', tipoEtiqueta, String(cuotaLabel), '', '', '', '', ''];
+        }
+
+        const banco = obtenerBancoDisplay(pago);
+        const noDeposito = String(
+          pago.no_referencia || pago.no_deposito || pago.numero_referencia || pago.numero_transaccion || ''
+        ).trim();
+        const fechaPago = nuevoFormatoFecha(pago.fecha_pago);
+        const monto = Number(pago.monto_total_detalle ?? pago.total_cobrado ?? pago.monto_cuota ?? 0);
+        const recibo = String(pago.correlativo || pago.no_referencia || pago.id_pago || '').trim();
+
+        return [
+          fechaCuota || '',
+          tipoEtiqueta,
+          String(cuotaLabel),
+          banco,
+          banco === 'EFECTIVO' ? (noDeposito || '') : (noDeposito || 'N/A'),
+          fechaPago,
+          formatoMoneda(monto),
+          recibo || ''
+        ];
+      };
+
       const filasReporte = [];
 
       if (enganches.length) {
         enganches.forEach((item) => {
           const monto = Number(item?.monto_total_detalle ?? item?.monto_cuota ?? 0);
+          const fechaCuota = nuevoFormatoFecha(item?.fecha_pago) || 'N/A';
+          const banco = obtenerBancoDisplay(item);
+          const noDeposito = String(item?.no_referencia || item?.no_deposito || item?.numero_referencia || item?.numero_transaccion || '').trim();
+          const recibo = String(item?.correlativo || item?.no_referencia || item?.id_pago || '').trim();
+
           filasReporte.push([
-            String(item?.meses_pagados || item?.mes_pagado || 'ENGANCHE').trim() || 'ENGANCHE',
+            fechaCuota,
             'ENGANCHE',
             '0',
-            String(item?.forma_pago || item?.banco || 'EFECTIVO').trim() || 'EFECTIVO',
-            String(item?.no_referencia || item?.no_deposito || item?.numero_referencia || '').trim() || '',
+            banco,
+            banco === 'EFECTIVO' ? (noDeposito || '') : (noDeposito || 'N/A'),
             nuevoFormatoFecha(item?.fecha_pago),
             formatoMoneda(monto),
-            String(item?.correlativo || item?.no_referencia || item?.id_pago || '').trim() || ''
+            recibo || ''
           ]);
         });
       }
@@ -639,17 +682,11 @@ const EstadoCuenta = () => {
       for (let cuota = 1; cuota <= totalCuotas; cuota += 1) {
         const pagoDetalle = detallePorCuota.get(cuota) || null;
         const fechaCuota = nuevoFormatoFecha(agregarMeses(contrato?.fecha_firma, cuota));
-
-        filasReporte.push([
-          fechaCuota || '',
-          pagoDetalle ? 'CUOTA' : 'PENDIENTE',
-          String(cuota),
-          pagoDetalle ? pagoDetalle.banco : '',
-          pagoDetalle ? pagoDetalle.noDeposito : '',
-          pagoDetalle ? pagoDetalle.fechaPago : '',
-          pagoDetalle ? formatoMoneda(pagoDetalle.monto) : '',
-          pagoDetalle ? pagoDetalle.recibo : ''
-        ]);
+        filasReporte.push(
+          pagoDetalle
+            ? crearFilaPago(pagoDetalle, fechaCuota, 'CUOTA', cuota)
+            : [fechaCuota || '', 'PENDIENTE', String(cuota), '', '', '', '', '']
+        );
       }
 
       const tablaDetallePagos = filasReporte.length
