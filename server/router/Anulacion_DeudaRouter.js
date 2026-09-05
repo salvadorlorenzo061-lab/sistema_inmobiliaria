@@ -713,31 +713,44 @@ router.post('/anular-por-correlativo', (req, res) => {
                     return finalCallback(null, []);
                 }
 
-                db.query(
-                    `SELECT id_anulacion, id_pago, estado_factura
-                     FROM anulacion_deuda
-                     WHERE UPPER(COALESCE(correlativo, '')) = UPPER(?)
-                       AND COALESCE(estado_factura, 'ANULADA') = 'ANULADA'
-                     LIMIT 1`,
-                    [correlativoFinal],
-                    (duplicadoErr, duplicadoRows) => {
-                        if (duplicadoErr) {
-                            const codigo = String(duplicadoErr?.code || '').toUpperCase();
-                            if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR', 'ER_NO_SUCH_COLUMN'].includes(codigo)) {
-                                return finalCallback(null, []);
-                            }
-                            return finalCallback(duplicadoErr, null);
-                        }
+                const sqlDetalle = `
+                    SELECT id_anulacion, id_pago, correlativo, estado_factura
+                    FROM anulacion_deuda
+                    WHERE (
+                        (? > 0 AND id_pago = ?)
+                        OR (
+                            ? <> ''
+                            AND UPPER(COALESCE(correlativo, '')) = UPPER(?)
+                            AND (? > 0 AND id_pago IS NULL)
+                        )
+                    )
+                      AND COALESCE(estado_factura, 'ANULADA') = 'ANULADA'
+                    ORDER BY id_anulacion DESC
+                    LIMIT 1
+                `;
 
-                        return finalCallback(null, duplicadoRows || []);
+                const idPagoNumerico = Number(pago?.id_pago || 0);
+                db.query(sqlDetalle, [idPagoNumerico, idPagoNumerico, correlativoFinal, correlativoFinal, idPagoNumerico], (duplicadoErr, duplicadoRows) => {
+                    if (duplicadoErr) {
+                        const codigo = String(duplicadoErr?.code || '').toUpperCase();
+                        if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR', 'ER_NO_SUCH_COLUMN'].includes(codigo)) {
+                            return finalCallback(null, []);
+                        }
+                        return finalCallback(duplicadoErr, null);
                     }
-                );
+
+                    return finalCallback(null, duplicadoRows || []);
+                });
             });
         };
 
         const continuarTrasValidacion = () => {
             db.beginTransaction((txErr) => {
                 if (txErr) return res.status(500).send({ message: 'Error de transacción al anular cobro.' });
+
+                // La validacion anterior se hizo por pago real y correlativo exacto; si hay una
+                // anulación previa del mismo cobro la cancelacion queda bloqueada y no se vuelve a
+                // interpretar un correlativo distinto como una repetición del mismo documento.
 
                 const recalcularContratoTrasAnulacion = (finishCallback) => {
                     const sqlRecalculo = `
