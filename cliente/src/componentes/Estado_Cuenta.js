@@ -226,6 +226,42 @@ const EstadoCuenta = () => {
 
   const planContratoActual = estadoCuenta?.contrato ? construirPlanContrato(estadoCuenta.contrato) : null;
 
+  const construirFilasDetalleVisual = () => {
+    if (!estadoCuenta) return [];
+
+    const detalleBase = Array.isArray(estadoCuenta.cuotasDetalle) && estadoCuenta.cuotasDetalle.length
+      ? estadoCuenta.cuotasDetalle
+      : (Array.isArray(estadoCuenta.pagos) ? estadoCuenta.pagos : []);
+
+    return detalleBase
+      .map((item, index) => {
+        const cuotaNumero = Number(item?.numero_cuota ?? item?.numero_cuota_afectada ?? 0) || 0;
+        const tipoConcepto = String(item?.tipo_concepto || item?.tipos_concepto || '').toLowerCase();
+        const esEnganche = cuotaNumero === 0 || tipoConcepto.includes('enganche') || String(item?.meses_pagados || '').toLowerCase().includes('enganche');
+
+        return {
+          id: `${item?.id_pago || index}-${cuotaNumero}`,
+          numeroCuota: cuotaNumero,
+          nombre: esEnganche ? 'Enganche / Cuota 0' : `Cuota ${cuotaNumero || index + 1}`,
+          fechaPago: item?.fecha_pago || '',
+          mesesPagados: String(item?.meses_pagados || item?.mes_pagado || '').trim(),
+          monto: Number(item?.monto_total_detalle ?? item?.total_cobrado ?? item?.monto_cuota ?? 0),
+          conceptos: String(item?.tipos_concepto || item?.tipo_concepto || '').trim(),
+          correlativo: String(item?.correlativo || item?.no_referencia || '').trim(),
+          formaPago: String(item?.forma_pago || item?.banco || 'EFECTIVO').trim() || 'EFECTIVO',
+          esEnganche
+        };
+      })
+      .filter((fila) => Number.isFinite(fila.monto) && fila.monto >= 0)
+      .sort((a, b) => {
+        if (a.esEnganche && !b.esEnganche) return -1;
+        if (!a.esEnganche && b.esEnganche) return 1;
+        return (a.numeroCuota || 0) - (b.numeroCuota || 0);
+      });
+  };
+
+  const filasDetalleVisual = estadoCuenta ? construirFilasDetalleVisual() : [];
+
   const exportarEstadoCuentaPDF = async () => {
     if (!estadoCuenta) {
       showFadeToast('Primero debes cargar un estado de cuenta.', 'warning');
@@ -549,36 +585,53 @@ const EstadoCuenta = () => {
         ]);
       });
 
-      const registrosDetalle = Array.isArray(estadoCuenta?.pagos) ? estadoCuenta.pagos : [];
-      const tablaDetallePagos = registrosDetalle.length
-        ? registrosDetalle.map((pago) => {
-            const tipoPagoRaw = String(pago?.tipo_concepto || pago?.concepto || 'CUOTA').trim();
-            const tipoPago = tipoPagoRaw
-              .toUpperCase()
-              .replace(/_/g, ' ')
-              .replace(/CUOTA TERRENO/g, 'CUOTA')
-              .replace(/ABONO CAPITAL/g, 'ABONO CAPITAL')
-              .replace(/\s+/g, ' ')
-              .trim();
-            const fechaCuota = String(pago?.mes_pagado || pago?.mes || '').trim() || 'N/A';
-            const cuota = Number(pago?.numero_cuota_afectada ?? pago?.numero_cuota ?? 0) || 0;
-            const banco = String(pago?.banco || pago?.banco_pago || pago?.forma_pago || 'EFECTIVO').trim() || 'EFECTIVO';
-            const noDeposito = String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || 'N/A';
-            const fechaPago = formatoFecha(pago?.fecha_pago);
-            const monto = Number(pago?.monto_total_pagado ?? pago?.monto_total_detalle ?? pago?.monto_pagado ?? 0);
-            const recibo = String(pago?.correlativo || pago?.id_pago || '').trim() || String(pago?.id_pago || 'N/A');
+      const detalleBase = Array.isArray(estadoCuenta?.cuotasDetalle) && estadoCuenta.cuotasDetalle.length
+        ? estadoCuenta.cuotasDetalle
+        : (Array.isArray(estadoCuenta?.pagos) ? estadoCuenta.pagos : []);
 
-            return [
-              fechaCuota,
-              tipoPago || 'CUOTA',
-              cuota || '0',
-              banco,
-              noDeposito,
-              fechaPago,
-              formatoMoneda(monto),
-              recibo
-            ];
-          })
+      const tablaDetallePagos = detalleBase.length
+        ? detalleBase
+            .map((pago, index) => {
+              const cuotaNumero = Number(pago?.numero_cuota ?? pago?.numero_cuota_afectada ?? 0) || 0;
+              const tipoConcepto = String(pago?.tipo_concepto || pago?.tipos_concepto || '').toLowerCase();
+              const esEnganche = cuotaNumero === 0 || tipoConcepto.includes('enganche') || String(pago?.meses_pagados || '').toLowerCase().includes('enganche');
+              const fechaCuota = String(pago?.meses_pagados || pago?.mes_pagado || '').split(',').map((item) => item.trim()).filter(Boolean)[0] || 'N/A';
+              const tipoPago = esEnganche ? 'ENGANCHE' : 'CUOTA';
+              const cuotaLabel = esEnganche ? 0 : cuotaNumero || index + 1;
+              const banco = String(pago?.forma_pago || pago?.banco || 'EFECTIVO').trim() || 'EFECTIVO';
+              const noDeposito = String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || 'N/A';
+              const fechaPago = formatoFecha(pago?.fecha_pago);
+              const monto = Number(pago?.monto_total_detalle ?? pago?.total_cobrado ?? pago?.monto_cuota ?? 0);
+              const recibo = String(pago?.correlativo || pago?.no_referencia || pago?.id_pago || '').trim() || String(pago?.id_pago || 'N/A');
+
+              return {
+                cuotaNumero,
+                fechaCuota,
+                tipoPago,
+                cuotaLabel,
+                banco,
+                noDeposito,
+                fechaPago,
+                monto,
+                recibo,
+                esEnganche
+              };
+            })
+            .sort((a, b) => {
+              if (a.esEnganche && !b.esEnganche) return -1;
+              if (!a.esEnganche && b.esEnganche) return 1;
+              return (a.cuotaNumero || 0) - (b.cuotaNumero || 0);
+            })
+            .map((row) => [
+              row.fechaCuota,
+              row.tipoPago,
+              row.cuotaLabel,
+              row.banco,
+              row.noDeposito,
+              row.fechaPago,
+              formatoMoneda(row.monto),
+              row.recibo
+            ])
         : [['', '', '', '', '', '', 'Q 0.00', 'Sin pagos registrados']];
 
       const headerY = 72;
@@ -825,51 +878,44 @@ const EstadoCuenta = () => {
                   <h6 className="mb-0">📊 Histórico de Pagos</h6>
                 </div>
                 <div className="card-body">
-                  {estadoCuenta.pagos.length > 0 ? (
+                  {filasDetalleVisual.length > 0 ? (
                     <div className="table-responsive">
                       <table className="table table-striped table-hover">
                         <thead className="table-dark">
                           <tr>
+                            <th>Cuota / Enganche</th>
+                            <th>Meses</th>
                             <th>Fecha de Pago</th>
-                            <th>Meses Pagados</th>
-                            <th>Monto Pagado</th>
+                            <th>Monto</th>
                             <th>Conceptos</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {estadoCuenta.pagos.map((pago, idx) => (
-                            <tr key={idx}>
+                          {filasDetalleVisual.map((fila) => (
+                            <tr key={fila.id}>
                               <td>
-                                <strong>
-                                  {new Date(pago.fecha_pago).toLocaleDateString()}
-                                </strong>
+                                <strong>{fila.nombre}</strong>
                               </td>
-                              <td>{pago.meses_pagados}</td>
+                              <td>{fila.mesesPagados || 'N/A'}</td>
+                              <td>{fila.fechaPago ? new Date(fila.fechaPago).toLocaleDateString() : 'N/A'}</td>
                               <td>
                                 <span className="badge bg-success">
-                                  Q{parseFloat(pago.total_cobrado).toFixed(2)}
+                                  Q{Number(fila.monto || 0).toFixed(2)}
                                 </span>
-                                {parseFloat(pago.monto_mora || 0) > 0 && (
-                                  <div className="small text-danger fw-bold mt-1">
-                                    Mora aplicada: Q{parseFloat(pago.monto_mora || 0).toFixed(2)}
-                                  </div>
-                                )}
                               </td>
                               <td>
                                 <div className="d-flex flex-wrap gap-1">
-                                  {String(pago.tipos_concepto || '')
+                                  {String(fila.conceptos || '')
                                     .split(',')
                                     .map((item) => item.trim())
                                     .filter(Boolean)
                                     .map((tipo) => (
-                                      <span key={`${pago.id_pago}-${tipo}`} className={`badge ${tipo === 'mora' ? 'bg-danger' : 'bg-secondary'}`}>
+                                      <span key={`${fila.id}-${tipo}`} className={`badge ${tipo === 'mora' ? 'bg-danger' : 'bg-secondary'}`}>
                                         {tipo.toUpperCase()}
                                       </span>
                                     ))}
-                                  {!String(pago.tipos_concepto || '').trim() && (
-                                    <span className="badge bg-secondary">
-                                      {pago.cantidad_conceptos} concepto(s)
-                                    </span>
+                                  {!String(fila.conceptos || '').trim() && (
+                                    <span className="badge bg-secondary">PAGO</span>
                                   )}
                                 </div>
                               </td>
