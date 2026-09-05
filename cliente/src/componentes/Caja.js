@@ -1216,12 +1216,21 @@ const Caja = () => {
 
     const toggleMesSeleccionado = (mes) => {
         setMesesSeleccionados(prev => {
-            const next = prev.includes(mes) ? prev.filter(item => item !== mes) : [...prev, mes];
-            const siguienteMes = next.length ? next[0] : (mesesPendientes[0] || '');
+            const next = prev.includes(mes)
+                ? prev.filter(item => item !== mes)
+                : [...prev, mes];
+            const ordenado = [...new Set(next)].sort((a, b) => {
+                const indiceA = mesesPendientes.indexOf(a);
+                const indiceB = mesesPendientes.indexOf(b);
+                const ordenA = indiceA >= 0 ? indiceA : Number.MAX_SAFE_INTEGER;
+                const ordenB = indiceB >= 0 ? indiceB : Number.MAX_SAFE_INTEGER;
+                return ordenA - ordenB;
+            });
+            const siguienteMes = ordenado.length ? ordenado[0] : (mesesPendientes[0] || '');
             setMesPagado(siguienteMes);
             setNumCuota(siguienteMes ? getValorCuotaMes(siguienteMes, obtenerNumeroCuotaRealMesVista(siguienteMes)) : '0');
-            actualizarMontoParaSeleccion(next);
-            return next;
+            actualizarMontoParaSeleccion(ordenado);
+            return ordenado;
         });
     };
 
