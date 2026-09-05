@@ -471,11 +471,16 @@ const Caja = () => {
     // La cuota 0 (enganche) es SIEMPRE el mes de compra/firma del contrato que envia el backend.
     // Antes se tomaba "el primer mes pendiente", por eso la etiqueta y el monto cambiaban segun
     // los meses que el cajero marcaba. Ahora depende solo de datos del contrato.
-    const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
+    const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null, numeroCuotaReal = null) => {
         if (Number(datosDeuda?.id_convenio_activo || 0) > 0) {
             return false;
         }
         if (!mesEtiqueta) return false;
+
+        const cuotaRealNumero = Number(numeroCuotaReal || 0);
+        if (Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0) {
+            return false;
+        }
 
         const engancheActual = enganchePendienteValor == null
             ? Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0)
@@ -484,6 +489,11 @@ const Caja = () => {
 
         const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
         if (mesEngancheActual) {
+            const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
+            const hayCuotaFinanciadaEnEseMes = mesesLista.some((mes) => String(mes || '').trim() === String(mesEtiqueta || '').trim());
+            if (hayCuotaFinanciadaEnEseMes) {
+                return false;
+            }
             return mesEtiqueta === mesEngancheActual;
         }
 
@@ -596,7 +606,7 @@ const Caja = () => {
     const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
         const esEnganchePorNumero = Number.isInteger(cuotaRealNumero) && cuotaRealNumero === 0;
-        if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
+        if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase, cuotaRealNumero)) {
             return 'Enganche / Cuota 0';
         }
 
@@ -607,7 +617,7 @@ const Caja = () => {
     const getValorCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
         const esEnganchePorNumero = Number.isInteger(cuotaRealNumero) && cuotaRealNumero === 0;
-        if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
+        if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase, cuotaRealNumero)) {
             return '0';
         }
 
@@ -842,7 +852,9 @@ const Caja = () => {
             : 0;
         const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
             if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
-            return mes !== primerMesConEnganche;
+            if (mes !== primerMesConEnganche) return true;
+            const numeroCuotaMes = Number(mesesDetalleMap?.[mes] || 0);
+            return !Number.isInteger(numeroCuotaMes) || numeroCuotaMes <= 0;
         });
         const mesesTerrenoReales = Math.min(mesesElegiblesTerreno.length, cuotasRestantes);
         const mesesConTerreno = mesesElegiblesTerreno.slice(0, mesesTerrenoReales);

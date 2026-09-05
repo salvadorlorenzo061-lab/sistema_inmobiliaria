@@ -1457,6 +1457,21 @@ router.get("/meses-pendientes", (req, res) => {
                     es_enganche: false
                 }));
 
+                if (usaCuotaCeroEnganche && inicioConfiguradoValido) {
+                    const mesInicioFinanciado = new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1);
+                    const etiquetaInicioFinanciado = etiquetaMesDesdeFecha(mesInicioFinanciado);
+                    const yaExisteMesInicioFinanciado = mesesPendientes.some((mes) => String(mes || '').trim().toLowerCase() === String(etiquetaInicioFinanciado || '').trim().toLowerCase());
+                    const yaFuePagado = mesesPagadosOrdenados.some((mes) => String(mes || '').trim().toLowerCase() === String(etiquetaInicioFinanciado || '').trim().toLowerCase());
+                    if (!yaExisteMesInicioFinanciado && !yaFuePagado && etiquetaInicioFinanciado) {
+                        mesesPendientes.unshift(etiquetaInicioFinanciado);
+                        mesesPendientesDetalle.unshift({
+                            mes: etiquetaInicioFinanciado,
+                            numero_cuota: 1,
+                            es_enganche: false
+                        });
+                    }
+                }
+
                 // Si el enganche ya fue pagado, debe permanecer dentro de los meses ya cobrados.
                 // No se elimina del historial de meses pagados porque eso volvía a mostrarlo como pendiente.
                 return res.status(200).json({
