@@ -482,20 +482,12 @@ const Caja = () => {
             : Math.max(Number(enganchePendienteValor || 0), 0);
         if (!(engancheActual > 0)) return false;
 
-        const etiquetaInicioFinanciado = obtenerEtiquetaInicioFinanciadoContrato();
-        if (etiquetaInicioFinanciado && mesEtiqueta === etiquetaInicioFinanciado) {
-            // El enganche y la primera cuota financiada pueden compartir el mismo mes
-            // calendario cuando el contrato inicia en enero. En ese caso, ambos deben
-            // mostrarse por separado: cuota 0 (enganche) y cuota 1 (financiada).
-            return false;
-        }
-
         const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
         if (mesEngancheActual) {
             return mesEtiqueta === mesEngancheActual;
         }
 
-        // Respaldo para contratos historicos sin fecha base: se conserva la regla anterior.
+        // Respaldo para contratos históricos sin mes de enganche explícito.
         const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
         const primerMesPendiente = mesesLista[0] || '';
         return Boolean(primerMesPendiente) && mesEtiqueta === primerMesPendiente;
@@ -990,6 +982,7 @@ const Caja = () => {
             const mesEngancheApi = String(res?.data?.mes_enganche || '').trim();
             const mesInicioPagosApi = Number(res?.data?.mes_inicio_pagos ?? residenteActualizado?.mes_inicio_pagos ?? 0);
             const anioInicioPagosApi = Number(res?.data?.anio_inicio_pagos ?? residenteActualizado?.anio_inicio_pagos ?? 0);
+            const enganchePendienteApi = Math.max(Number(res?.data?.enganche_pendiente ?? residenteActualizado?.enganche_pendiente ?? 0), 0);
             setMesesPendientes(meses);
             setMesesDetalleMap(mapaMeses);
             setMesEngancheContrato(mesEngancheApi);
@@ -998,11 +991,12 @@ const Caja = () => {
                 mes_inicio_pagos: Number.isInteger(mesInicioPagosApi) && mesInicioPagosApi >= 1 && mesInicioPagosApi <= 12 ? mesInicioPagosApi : (prev?.mes_inicio_pagos ?? residenteActualizado?.mes_inicio_pagos ?? null),
                 anio_inicio_pagos: Number.isInteger(anioInicioPagosApi) && anioInicioPagosApi >= 1900 ? anioInicioPagosApi : (prev?.anio_inicio_pagos ?? residenteActualizado?.anio_inicio_pagos ?? null),
                 cuotas_pagadas: Number(res?.data?.cuotas_pagadas || 0),
-                cuotas_pendientes: Number(res?.data?.cuotas_pendientes || 0)
+                cuotas_pendientes: Number(res?.data?.cuotas_pendientes || 0),
+                enganche_pendiente: enganchePendienteApi
             }));
             
-            const engancheInicial = Math.max(Number(residenteActualizado?.enganche_pendiente || 0), 0);
-            const debePriorizarEnganche = engancheInicial > 0 && (!meses.length || String(mesEngancheApi || '').trim());
+            const engancheInicial = enganchePendienteApi;
+            const debePriorizarEnganche = engancheInicial > 0 && (!meses.length || String(mesEngancheApi || '').trim() || mesInicioPagosApi > 0);
             const mesesASeleccionar = debePriorizarEnganche ? [] : (meses.length > 0 ? [meses[0]] : []);
             setMesesSeleccionados(mesesASeleccionar);
             
