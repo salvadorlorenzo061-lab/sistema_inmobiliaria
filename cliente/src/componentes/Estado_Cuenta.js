@@ -277,12 +277,17 @@ const EstadoCuenta = () => {
       const borderColor = [85, 85, 85];
 
       const contrato = estadoCuenta.contrato || {};
+      const normalizarLogoProyecto = (valor) => {
+        const texto = String(valor || '').trim();
+        if (!texto) return '';
+        if (texto.startsWith('data:image')) return texto;
+        if (texto.startsWith('http://') || texto.startsWith('https://')) return texto;
+        return `data:image/png;base64,${texto}`;
+      };
       const logoProyectoRaw = String(
         contrato?.logo_proyecto || contrato?.logo_empresa_pdf || contrato?.logo_empresa || ''
       ).trim();
-      const logoProyecto = logoProyectoRaw
-        ? (logoProyectoRaw.startsWith('data:image') ? logoProyectoRaw : `data:image/png;base64,${logoProyectoRaw}`)
-        : '';
+      const logoProyecto = normalizarLogoProyecto(logoProyectoRaw);
       const nombreCliente = String(contrato?.nombre || 'CLIENTE').trim() || 'CLIENTE';
       const nombreProyecto = String(contrato?.nombre_proyecto || contrato?.nombre_proyecto_pdf || 'PROYECTO').trim() || 'PROYECTO';
       const loteContrato = String(contrato?.lote || contrato?.manzana || contrato?.codigo_lote || 'N/A').trim() || 'N/A';
@@ -696,7 +701,8 @@ const EstadoCuenta = () => {
       const headerY = 72;
       if (logoProyecto) {
         try {
-          doc.addImage(logoProyecto, 'PNG', 18, 12, 34, 24, `logo-proyecto-detalle-${Date.now()}`, 'FAST');
+          const formatoLogo = logoProyecto.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+          doc.addImage(logoProyecto, formatoLogo, 20, 10, 34, 22, `logo-proyecto-detalle-${Date.now()}`, 'FAST');
         } catch (error) {
           console.warn('No se pudo cargar el logotipo del proyecto:', error);
         }
