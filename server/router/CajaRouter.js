@@ -2565,7 +2565,7 @@ router.post("/procesar-pago", (req, res) => {
                                         'enganche',
                                         null,
                                         mesEngancheContrato || mesesAProcesar[0] || '',
-                                        null,
+                                        0,
                                         redondear2(montoEngancheTotal),
                                         null
                                     ]);
@@ -2763,6 +2763,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         detalleCobro.push({
                                                             concepto: 'Enganche',
                                                             tipo_concepto: 'enganche',
+                                                            numero_cuota_afectada: 0,
                                                             mes: mesEngancheContrato || mesesAProcesar[0] || '',
                                                             monto_base: desgloseEnganche.subtotal,
                                                             iva: desgloseEnganche.iva,

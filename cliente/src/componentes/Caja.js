@@ -543,6 +543,29 @@ const Caja = () => {
         return etiquetaMesDesdeFecha(fechaInicio);
     };
 
+    const asegurarMesInicioFinanciadoEnCaja = (mesesOriginales = [], mesInicioPagos = null, anioInicioPagos = null) => {
+        const mesInicio = Number(mesInicioPagos || 0);
+        const anioInicio = Number(anioInicioPagos || 0);
+        const hayMesInicioValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
+            && Number.isInteger(anioInicio) && anioInicio >= 1900;
+        if (!hayMesInicioValido) {
+            return Array.isArray(mesesOriginales) ? [...mesesOriginales] : [];
+        }
+
+        const etiquetaInicio = etiquetaMesDesdeFecha(new Date(anioInicio, mesInicio - 1, 1));
+        if (!etiquetaInicio) {
+            return Array.isArray(mesesOriginales) ? [...mesesOriginales] : [];
+        }
+
+        const meses = Array.isArray(mesesOriginales) ? [...mesesOriginales] : [];
+        const yaExiste = meses.some((mes) => String(mes || '').trim().toLowerCase() === String(etiquetaInicio || '').trim().toLowerCase());
+        if (!yaExiste) {
+            meses.unshift(etiquetaInicio);
+        }
+
+        return meses;
+    };
+
     const esMesVencidoParaMoraLocal = (mesTexto = '', fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5) => {
         const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
         if (!limpio) return false;
@@ -995,8 +1018,16 @@ const Caja = () => {
             const mesInicioPagosApi = Number(res?.data?.mes_inicio_pagos ?? residenteActualizado?.mes_inicio_pagos ?? 0);
             const anioInicioPagosApi = Number(res?.data?.anio_inicio_pagos ?? residenteActualizado?.anio_inicio_pagos ?? 0);
             const enganchePendienteApi = Math.max(Number(res?.data?.enganche_pendiente ?? residenteActualizado?.enganche_pendiente ?? 0), 0);
-            setMesesPendientes(meses);
-            setMesesDetalleMap(mapaMeses);
+            const mesesOrdenados = asegurarMesInicioFinanciadoEnCaja(meses, mesInicioPagosApi, anioInicioPagosApi);
+            const mapaMesesOrdenado = { ...mapaMeses };
+            if (mesInicioPagosApi >= 1 && mesInicioPagosApi <= 12 && anioInicioPagosApi >= 1900) {
+                const etiquetaInicio = etiquetaMesDesdeFecha(new Date(anioInicioPagosApi, mesInicioPagosApi - 1, 1));
+                if (etiquetaInicio && !mapaMesesOrdenado[etiquetaInicio]) {
+                    mapaMesesOrdenado[etiquetaInicio] = 1;
+                }
+            }
+            setMesesPendientes(mesesOrdenados);
+            setMesesDetalleMap(mapaMesesOrdenado);
             setMesEngancheContrato(mesEngancheApi);
             setDatosDeuda((prev) => ({
                 ...(prev || residenteActualizado),
@@ -1022,12 +1053,12 @@ const Caja = () => {
             const opcionEnganche = engancheInicial > 0
                 ? [{ value: '0', mes: mesEngancheVisible || mesEngancheApi || '', label: 'Enganche / Cuota 0' }]
                 : [];
-            const opcionesMeses = meses.map((mes, index) => {
-                const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
+            const opcionesMeses = mesesOrdenados.map((mes, index) => {
+                const numeroCuotaReal = Number(mapaMesesOrdenado?.[mes] || index + 1);
                 return {
-                    value: getValorCuotaMes(mes, numeroCuotaReal, engancheInicial, meses, mesEngancheApi),
+                    value: getValorCuotaMes(mes, numeroCuotaReal, engancheInicial, mesesOrdenados, mesEngancheApi),
                     mes,
-                    label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, meses, mesEngancheApi)
+                    label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, mesesOrdenados, mesEngancheApi)
                 };
             });
             const opciones = [...opcionEnganche, ...opcionesMeses];
@@ -1382,31 +1413,41 @@ const Caja = () => {
                         }
                     });
                     const mesEngancheActualizado = String(resMeses?.data?.mes_enganche || '').trim();
-                    setMesesPendientes(mesesActualizados);
-                    setMesesDetalleMap(mapaMesesActualizados);
+                    const mesesActualizadosOrdenados = asegurarMesInicioFinanciadoEnCaja(mesesActualizados, Number(resMeses?.data?.mes_inicio_pagos || datosDeuda?.mes_inicio_pagos || 0), Number(resMeses?.data?.anio_inicio_pagos || datosDeuda?.anio_inicio_pagos || 0));
+                    const mapaMesesActualizadosOrdenado = { ...mapaMesesActualizados };
+                    const mesInicioPagosActualizado = Number(resMeses?.data?.mes_inicio_pagos || datosDeuda?.mes_inicio_pagos || 0);
+                    const anioInicioPagosActualizado = Number(resMeses?.data?.anio_inicio_pagos || datosDeuda?.anio_inicio_pagos || 0);
+                    if (mesInicioPagosActualizado >= 1 && mesInicioPagosActualizado <= 12 && anioInicioPagosActualizado >= 1900) {
+                        const etiquetaInicio = etiquetaMesDesdeFecha(new Date(anioInicioPagosActualizado, mesInicioPagosActualizado - 1, 1));
+                        if (etiquetaInicio && !mapaMesesActualizadosOrdenado[etiquetaInicio]) {
+                            mapaMesesActualizadosOrdenado[etiquetaInicio] = 1;
+                        }
+                    }
+                    setMesesPendientes(mesesActualizadosOrdenados);
+                    setMesesDetalleMap(mapaMesesActualizadosOrdenado);
                     setMesEngancheContrato(mesEngancheActualizado);
-                    setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
+                    setMesesSeleccionados(mesesActualizadosOrdenados.length ? [mesesActualizadosOrdenados[0]] : []);
                     const engancheRefrescado = Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
                     const mesEngancheVisibleActualizado = String(mesEngancheActualizado || '').trim() || obtenerEtiquetaInicioFinanciadoContrato() || '';
                     setMontoEngancheContratoSeleccionado(engancheRefrescado);
                     const opcionEngancheActualizada = engancheRefrescado > 0
                         ? [{ value: '0', mes: mesEngancheVisibleActualizado || mesEngancheActualizado || '', label: 'Enganche / Cuota 0' }]
                         : [];
-                    const opcionesMesesActualizadas = mesesActualizados.map((mes, index) => {
-                        const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
+                    const opcionesMesesActualizadas = mesesActualizadosOrdenados.map((mes, index) => {
+                        const numeroCuotaReal = Number(mapaMesesActualizadosOrdenado?.[mes] || index + 1);
                         return {
-                            value: getValorCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados, mesEngancheActualizado),
+                            value: getValorCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizadosOrdenados, mesEngancheActualizado),
                             mes,
-                            label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados, mesEngancheActualizado)
+                            label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizadosOrdenados, mesEngancheActualizado)
                         };
                     });
                     const opcionesActualizadas = [...opcionEngancheActualizada, ...opcionesMesesActualizadas];
                     setOpcionesCuota(opcionesActualizadas.length ? opcionesActualizadas : [{ value: 'sin-cuotas', mes: '', label: 'Sin cuotas pendientes' }]);
                     setNumCuota(opcionesActualizadas[0]?.value || '0');
-                    if (mesesActualizados.length) {
-                        setMesPagado(mesesActualizados[0]);
+                    if (mesesActualizadosOrdenados.length) {
+                        setMesPagado(mesesActualizadosOrdenados[0]);
                     }
-                    const primerMes = mesesActualizados[0] || '';
+                    const primerMes = mesesActualizadosOrdenados[0] || '';
                     const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
                     const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
