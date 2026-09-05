@@ -539,6 +539,7 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('mora', 'DECIMAL(12,2) NULL DEFAULT 0');
     ensureFinancialColumn('plazo_meses', 'INT NULL DEFAULT 0');
     ensureFinancialColumn('cuotas_pagadas', 'INT NULL DEFAULT 0');
+    ensureFinancialColumn('cuotas_pendientes', 'INT NULL DEFAULT 0');
     ensureFinancialColumn('mes_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('anio_inicio_pagos', 'INT NULL DEFAULT 2026');
     ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
