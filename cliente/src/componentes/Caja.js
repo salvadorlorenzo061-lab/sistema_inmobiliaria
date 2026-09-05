@@ -1329,10 +1329,14 @@ const Caja = () => {
                 }, empresaPdf);
                 
                 const montoCuotaFinanciadaCobrada = Math.max(parseFloat(montoTerreno || 0) + parseFloat(montoInteresSeleccionado || 0), 0);
+                const cuotasPagadasActualizadas = Math.max(Number(response?.data?.cuotas_pagadas ?? prev?.cuotas_pagadas ?? 0), 0);
+                const cuotasPendientesActualizadas = Math.max(Number(response?.data?.cuotas_pendientes ?? prev?.cuotas_pendientes ?? 0), 0);
                 setDatosDeuda(prev => ({
                     ...prev,
                     saldo_pendiente: Math.max(parseFloat(prev?.saldo_pendiente || 0) - montoCuotaFinanciadaCobrada, 0),
-                    enganche_pendiente: Math.max(parseFloat(prev?.enganche_pendiente || 0) - parseFloat(montoEngancheContratoAplicado || 0), 0)
+                    enganche_pendiente: Math.max(parseFloat(prev?.enganche_pendiente || 0) - parseFloat(montoEngancheContratoAplicado || 0), 0),
+                    cuotas_pagadas: cuotasPagadasActualizadas,
+                    cuotas_pendientes: cuotasPendientesActualizadas
                 }));
 
                 if (Number(response?.data?.monto_servicios_mes_inicial || 0) > 0) {

@@ -2822,6 +2822,15 @@ router.post("/procesar-pago", (req, res) => {
                                                         }
                                                     }
 
+                                                    const cuotasPagadasDespuesCobro = Math.max(Number(
+                                                        (saldoRows[0]?.cuotas_pagadas || 0) + (montoTerrenoTotal > 0 || montoInteresTotal > 0 || montoAbonoCapitalTotal > 0 ? (mesesAProcesar.length || 1) : 0)
+                                                    ), 0);
+                                                    const cuotasTotalesContrato = Math.max(
+                                                        Number(saldoRows[0]?.cuotas_pactadas || saldoRows[0]?.plazo_meses || cuotasPagadasDespuesCobro || 1),
+                                                        1
+                                                    );
+                                                    const cuotasPendientesDespuesCobro = Math.max(cuotasTotalesContrato - cuotasPagadasDespuesCobro, 0);
+
                                                     res.status(200).json({
                                                         success: true,
                                                         numero_recibo,
@@ -2858,6 +2867,8 @@ router.post("/procesar-pago", (req, res) => {
                                                         numero_cuota_inicio: numeroCuotaInicio,
                                                         numero_cuota_fin: numeroCuotaFin,
                                                         cantidad_cuotas_pagadas: cantidadCuotasPagadas,
+                                                        cuotas_pagadas: cuotasPagadasDespuesCobro,
+                                                        cuotas_pendientes: cuotasPendientesDespuesCobro,
                                                         metodo_pago: metodo_pago,
                                                         banco_pago: banco_pago || '',
                                                         fecha_operacion: fecha_operacion || '',
@@ -2978,9 +2989,45 @@ router.post("/procesar-pago", (req, res) => {
                                                 });
                                             };
 
+                                            const sincronizarCuotasContrato = (callbackSync) => {
+                                                const sqlSincronizarCuotas = `
+                                                    UPDATE contratos_residentes c
+                                                    LEFT JOIN (
+                                                        SELECT p.id_contrato,
+                                                               COUNT(DISTINCT CASE
+                                                                   WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
+                                                                   ELSE NULL
+                                                               END) AS cuotas_reales
+                                                        FROM pagos p
+                                                        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                                                        WHERE pd.tipo_concepto = 'cuota_terreno'
+                                                          AND NOT EXISTS (
+                                                              SELECT 1
+                                                              FROM facturas_historial fh
+                                                              WHERE fh.id_pago = p.id_pago
+                                                                AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                                                          )
+                                                        GROUP BY p.id_contrato
+                                                    ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
+                                                    SET c.cuotas_pagadas = COALESCE(pagos_resumen.cuotas_reales, COALESCE(c.cuotas_pagadas, 0)),
+                                                        c.cuotas_pendientes = GREATEST(
+                                                            COALESCE(c.cuotas_pactadas, c.plazo_meses, 0) - COALESCE(pagos_resumen.cuotas_reales, COALESCE(c.cuotas_pagadas, 0)),
+                                                            0
+                                                        )
+                                                    WHERE c.id_contrato = ?
+                                                `;
+
+                                                db.query(sqlSincronizarCuotas, [id_contrato], (cuotasErr) => {
+                                                    if (cuotasErr) {
+                                                        return db.rollback(() => res.status(500).send('Error al sincronizar cuotas pagadas y pendientes del contrato: ' + cuotasErr.message));
+                                                    }
+                                                    return callbackSync();
+                                                });
+                                            };
+
                                             sincronizarMorosidadPagada(() => {
                                             const descuentoCapital = redondear2(montoTerrenoTotal + montoInteresTotal + montoAbonoCapitalTotal);
-                                            const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, finalizarCommit);
+                                            const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, () => sincronizarCuotasContrato(finalizarCommit));
 
                                             if (descuentoCapital > 0) {
                                                 const sqlRestar = `
@@ -3027,7 +3074,7 @@ router.post("/procesar-pago", (req, res) => {
                                                     });
                                                 });
                                             } else {
-                                                return finalizarConConvenio();
+                                                return sincronizarCuotasContrato(() => finalizarConConvenio());
                                             }
                                             });
                                         };
