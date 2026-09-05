@@ -241,6 +241,15 @@ const EstadoCuenta = () => {
       const borderColor = [85, 85, 85];
 
       const contrato = estadoCuenta.contrato || {};
+      const logoProyectoRaw = String(
+        contrato?.logo_proyecto || contrato?.logo_empresa_pdf || contrato?.logo_empresa || ''
+      ).trim();
+      const logoProyecto = logoProyectoRaw
+        ? (logoProyectoRaw.startsWith('data:image') ? logoProyectoRaw : `data:image/png;base64,${logoProyectoRaw}`)
+        : '';
+      const nombreCliente = String(contrato?.nombre || 'CLIENTE').trim() || 'CLIENTE';
+      const nombreProyecto = String(contrato?.nombre_proyecto || contrato?.nombre_proyecto_pdf || 'PROYECTO').trim() || 'PROYECTO';
+      const loteContrato = String(contrato?.lote || contrato?.manzana || contrato?.codigo_lote || 'N/A').trim() || 'N/A';
       const serviciosContratoNombres = String(contrato.servicios_activos_nombres || '').trim();
       let serviciosCajaNombres = '';
 
