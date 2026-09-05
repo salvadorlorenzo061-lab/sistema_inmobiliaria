@@ -267,23 +267,28 @@ function Contratos_Residentes() {
 
   useEffect(() => {
     const inicioAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
-    const inicioAnterior = ultimoInicioPagosAutoRef.current || { mes: '', anio: '' };
     const mesActual = String(inicioPagosCalculado.mes || '').trim();
     const anioActual = String(inicioPagosCalculado.anio || '').trim();
-    let debeActualizar = false;
+    const mesAutoAnterior = String(ultimoInicioPagosAutoRef.current?.mes || '').trim();
+    const anioAutoAnterior = String(ultimoInicioPagosAutoRef.current?.anio || '').trim();
+
+    const usuarioModificoMes = !!mesAutoAnterior && !!mesActual && mesActual !== mesAutoAnterior;
+    const usuarioModificoAnio = !!anioAutoAnterior && !!anioActual && anioActual !== anioAutoAnterior;
+
+    if (usuarioModificoMes || usuarioModificoAnio) {
+      ultimoInicioPagosAutoRef.current = inicioAutomatico;
+      return;
+    }
+
     const siguienteInicio = { ...inicioPagosCalculado };
-
-    if (!mesActual || mesActual === inicioAnterior.mes) {
+    if (!mesActual || mesActual === mesAutoAnterior) {
       siguienteInicio.mes = inicioAutomatico.mes;
-      debeActualizar = siguienteInicio.mes !== inicioPagosCalculado.mes || debeActualizar;
     }
-
-    if (!anioActual || anioActual === inicioAnterior.anio) {
+    if (!anioActual || anioActual === anioAutoAnterior) {
       siguienteInicio.anio = inicioAutomatico.anio;
-      debeActualizar = siguienteInicio.anio !== inicioPagosCalculado.anio || debeActualizar;
     }
 
-    if (debeActualizar) {
+    if (siguienteInicio.mes !== inicioPagosCalculado.mes || siguienteInicio.anio !== inicioPagosCalculado.anio) {
       setInicioPagosCalculado(siguienteInicio);
     }
 
