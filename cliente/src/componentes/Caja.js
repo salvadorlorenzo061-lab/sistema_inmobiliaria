@@ -1008,7 +1008,8 @@ const Caja = () => {
             }));
             
             const engancheInicial = enganchePendienteApi;
-            const debePriorizarEnganche = engancheInicial > 0 && (!meses.length || String(mesEngancheApi || '').trim() || mesInicioPagosApi > 0);
+            const mesEngancheVisible = String(mesEngancheApi || '').trim() || obtenerEtiquetaInicioFinanciadoContrato() || '';
+            const debePriorizarEnganche = engancheInicial > 0 && (!meses.length || mesEngancheVisible || mesInicioPagosApi > 0);
             const mesesASeleccionar = debePriorizarEnganche ? [] : (meses.length > 0 ? [meses[0]] : []);
             setMesesSeleccionados(mesesASeleccionar);
             
@@ -1019,7 +1020,7 @@ const Caja = () => {
             }
             setMontoEngancheContratoSeleccionado(engancheInicial);
             const opcionEnganche = engancheInicial > 0
-                ? [{ value: '0', mes: mesEngancheApi || '', label: 'Enganche / Cuota 0' }]
+                ? [{ value: '0', mes: mesEngancheVisible || mesEngancheApi || '', label: 'Enganche / Cuota 0' }]
                 : [];
             const opcionesMeses = meses.map((mes, index) => {
                 const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
@@ -1386,9 +1387,10 @@ const Caja = () => {
                     setMesEngancheContrato(mesEngancheActualizado);
                     setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
                     const engancheRefrescado = Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
+                    const mesEngancheVisibleActualizado = String(mesEngancheActualizado || '').trim() || obtenerEtiquetaInicioFinanciadoContrato() || '';
                     setMontoEngancheContratoSeleccionado(engancheRefrescado);
                     const opcionEngancheActualizada = engancheRefrescado > 0
-                        ? [{ value: '0', mes: mesEngancheActualizado || '', label: 'Enganche / Cuota 0' }]
+                        ? [{ value: '0', mes: mesEngancheVisibleActualizado || mesEngancheActualizado || '', label: 'Enganche / Cuota 0' }]
                         : [];
                     const opcionesMesesActualizadas = mesesActualizados.map((mes, index) => {
                         const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
