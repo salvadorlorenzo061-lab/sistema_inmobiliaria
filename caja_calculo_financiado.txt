@@ -1,0 +1,267 @@
+=== ARCHIVO DE REFERENCIA: CALCULO FINANCIADO Y ASIGNACION EN CAJA ===
+
+Ubicacion principal:
+- cliente/src/componentes/Caja.js
+
+1) CALCULO DEL PLAN FINANCIERO DEL CONTRATO
+- Funcion: calcularPlanFinancieroContrato
+- Se define en el archivo Caja.js, cerca de la parte superior del componente.
+- Este bloque calcula:
+  * saldo pendiente
+  * capital financiado
+  * cuota estimada
+  * interes total
+  * tabla de amortizacion
+  * cuotas restantes
+
+Codigo fuente relevante (estructura):
+
+const calcularPlanFinancieroContrato = (contrato = {}) => {
+    const tieneConvenioActivo = Number(contrato?.id_convenio_activo || 0) > 0;
+    const precioOriginal = Math.max(parseFloat(contrato?.monto_total || 0), 0);
+    const enganche = tieneConvenioActivo
+        ? 0
+        : Math.max(parseFloat(contrato?.enganche ?? contrato?.enganche_total ?? 0), 0);
+    const enganchePagado = tieneConvenioActivo ? enganche : Math.max(parseFloat(contrato?.enganche_pagado || 0), 0);
+    const enganchePendiente = tieneConvenioActivo ? 0 : Math.max(parseFloat(contrato?.enganche_pendiente || 0), 0);
+    const cuotaEnganchePagada = !tieneConvenioActivo && enganche > 0 && enganchePagado >= (enganche - 0.01) ? 1 : 0;
+    const cuotasFinanciadasPagadas = Math.max(cuotasPagadas - cuotaEnganchePagada, 0);
+
+    const capitalPendienteFinanciado = tieneConvenioActivo
+        ? Math.max(parseFloat((precioOriginal - enganche).toFixed(2)), 0)
+        : Math.max(parseFloat((precioOriginal - enganche).toFixed(2)), 0);
+
+    const saldoPendiente = tieneConvenioActivo
+        ? Math.max(parseFloat((precioOriginal - enganche).toFixed(2)), 0)
+        : Math.max(parseFloat((precioOriginal - enganche - capitalPagadoTotal).toFixed(2)), 0);
+
+    const totalContratoConInteres = parseFloat(((capitalPendienteFinanciado + enganchePendiente) + interesTotalContrato).toFixed(2));
+
+    return {
+        precioTotalContrato: parseFloat((capitalTotalContrato + enganche).toFixed(2)),
+        enganche,
+        enganchePagado,
+        enganchePendiente,
+        saldoPendiente,
+        capitalBaseInteres,
+        interesTotalContrato,
+        totalContratoConInteres,
+        tablaAmortizacion,
+        cuotasRestantes,
+        interesPorcentaje
+    };
+};
+
+2) ASIGNACION DE ENGANCHE / CUOTA 0 Y CUOTAS FINANCIADAS
+Funciones clave:
+- esMesEngancheVisual
+- getEtiquetaCuotaMes
+- getValorCuotaMes
+- recalcularTotalesCobro
+
+Codigo fuente relevante:
+
+const esMesEngancheVisual = (mesEtiqueta = '', enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
+    if (Number(datosDeuda?.id_convenio_activo || 0) > 0) {
+        return false;
+    }
+    if (!mesEtiqueta) return false;
+
+    const engancheActual = enganchePendienteValor == null
+        ? Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0)
+        : Math.max(Number(enganchePendienteValor || 0), 0);
+    if (!(engancheActual > 0)) return false;
+
+    const etiquetaInicioFinanciado = obtenerEtiquetaInicioFinanciadoContrato();
+    if (etiquetaInicioFinanciado && mesEtiqueta === etiquetaInicioFinanciado) {
+        return false;
+    }
+
+    const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
+    if (mesEngancheActual) {
+        return mesEtiqueta === mesEngancheActual;
+    }
+
+    const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
+    const primerMesPendiente = mesesLista[0] || '';
+    return Boolean(primerMesPendiente) && mesEtiqueta === primerMesPendiente;
+};
+
+const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
+    const cuotaRealNumero = Number(numeroCuotaReal || 0);
+    const esEnganchePorNumero = Number.isInteger(cuotaRealNumero) && cuotaRealNumero === 0;
+    if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
+        return 'Enganche / Cuota 0';
+    }
+
+    const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
+    return `Cuota ${numeroVisual ?? '-'} - ${mesEtiqueta}`;
+};
+
+const getValorCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
+    const cuotaRealNumero = Number(numeroCuotaReal || 0);
+    const esEnganchePorNumero = Number.isInteger(cuotaRealNumero) && cuotaRealNumero === 0;
+    if (esEnganchePorNumero || esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase)) {
+        return '0';
+    }
+
+    const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
+    return Number.isInteger(numeroVisual) && numeroVisual >= 0 ? String(numeroVisual) : '';
+};
+
+3) RECALCULO DEL TOTAL AL SELECCIONAR MES Y ENGANCHE
+
+const recalcularTotalesCobro = (
+    meses = mesesSeleccionados,
+    serviciosIds = serviciosSeleccionados,
+    residenteActual = datosDeuda,
+    serviciosDisponibles = serviciosContrato,
+    engancheOverride = null,
+    engancheContratoOverride = null,
+    mesEngancheOverride = null
+) => {
+    const cantidadMeses = (meses || []).length;
+    const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
+    const tieneConvenioActivo = Number(residenteActual?.id_convenio_activo || 0) > 0;
+    const saldoPendiente = planContrato.saldoPendiente;
+    const tablaAmortizacion = planContrato.tablaAmortizacion || [];
+
+    const enganchePendienteContrato = Math.max(Number(residenteActual?.enganche_pendiente || 0), 0);
+    const abonoManualBase = engancheOverride == null
+        ? parseFloat(montoEngancheSeleccionado || 0)
+        : parseFloat(engancheOverride || 0);
+    const abonoCapitalManualAplicado = Math.max(abonoManualBase, 0);
+    const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos + costoCargosExtra) : 0;
+    const mesesOrdenados = [...(meses || [])].sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
+    const mesEngancheBase = mesEngancheOverride == null ? mesEngancheContrato : mesEngancheOverride;
+    const primerMesConEnganche = (!tieneConvenioActivo && enganchePendienteContrato > 0)
+        ? (mesEngancheBase || (mesesPendientes || [])[0] || '')
+        : '';
+    const engancheContratoBase = engancheContratoOverride == null
+        ? parseFloat(tieneConvenioActivo ? 0 : (montoEngancheContratoSeleccionado || residenteActual?.enganche_pendiente || 0))
+        : parseFloat(engancheContratoOverride || 0);
+    const soloEngancheSeleccionado = String(numCuota || '') === '0' && !mesesOrdenados.length;
+    const engancheContratoAplicado = (enganchePendienteContrato > 0 && (soloEngancheSeleccionado || (primerMesConEnganche && mesesOrdenados.includes(primerMesConEnganche))))
+        ? Math.max(Math.min(engancheContratoBase, enganchePendienteContrato), 0)
+        : 0;
+
+    const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
+        if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
+        return mes !== primerMesConEnganche;
+    });
+
+    const terrenoCalculadoAjustado = mesesConTerreno.reduce((sum, mes) => {
+        return sum + redondear2(obtenerFilaAmortizacionMes(mes)?.capital_cuota || 0);
+    }, 0);
+
+    const interesSeleccionado = parseFloat(
+        mesesConTerreno
+            .reduce((acc, mes) => {
+                return acc + redondear2(obtenerFilaAmortizacionMes(mes)?.interes_mes || 0);
+            }, 0)
+            .toFixed(2)
+    );
+
+    const total = terrenoTotalAjustado + engancheContratoAplicado + abonoCapitalManualAplicado + serviciosTotal + interesSeleccionado;
+
+    setMontoTerrenoSeleccionado(terrenoTotalAjustado);
+    setMontoEngancheContratoAplicado(engancheContratoAplicado);
+    setMontoEngancheSeleccionado(abonoCapitalManualAplicado);
+    setMontoInteresSeleccionado(interesSeleccionado);
+    setMontoTotalSeleccionado(total);
+    setMontoAPagar(String(total.toFixed(2)));
+};
+
+4) SELECCION DE CUOTAS EN EL MODAL DE COBRO
+En el select:
+
+<select 
+    className="form-select" 
+    value={numCuota} 
+    onChange={(e) => {
+        const nuevaCuota = e.target.value;
+        setNumCuota(nuevaCuota);
+
+        const opcionSeleccionada = (opcionesCuota || []).find((opcion) => String(opcion?.value) === String(nuevaCuota));
+        const mesObjetivo = String(opcionSeleccionada?.mes || '').trim();
+        if (!mesObjetivo || String(nuevaCuota) === '0') {
+            setMesesSeleccionados([]);
+            setMesPagado('');
+            recalcularTotalesCobro([], serviciosSeleccionados, datosDeuda, serviciosContrato, null, montoEngancheContratoSeleccionado);
+            return;
+        }
+
+        const mesesASeleccionar = [mesObjetivo];
+        setMesesSeleccionados(mesesASeleccionar);
+        recalcularTotalesCobro(mesesASeleccionar, serviciosSeleccionados, datosDeuda, serviciosContrato, null, montoEngancheContratoSeleccionado);
+        setMesPagado(mesObjetivo);
+    }}
+>
+
+5) DONDE SE CARGA LA LISTA DE MES PENDIENTES
+Este es el origen del arreglo de meses pendientes, usado por Caja para armar la lista:
+
+const res = await axios.get(`${API_BASE_URL}/api/caja/meses-pendientes?id_contrato=${residenteActualizado.id_contrato}`);
+const meses = res?.data?.meses || [];
+const mesesDetalle = Array.isArray(res?.data?.meses_detalle) ? res.data.meses_detalle : [];
+const mapaMeses = {};
+mesesDetalle.forEach((item) => {
+    const mes = String(item?.mes || '').trim();
+    const numero = Number(item?.numero_cuota || 0);
+    if (mes && Number.isInteger(numero) && numero > 0) {
+        mapaMeses[mes] = numero;
+    }
+});
+
+const engancheInicial = Math.max(Number(residenteActualizado?.enganche_pendiente || 0), 0);
+const debePriorizarEnganche = engancheInicial > 0 && (!meses.length || String(mesEngancheApi || '').trim());
+const mesesASeleccionar = debePriorizarEnganche ? [] : (meses.length > 0 ? [meses[0]] : []);
+
+setOpcionesCuota(opciones.length ? opciones : [{ value: 'sin-cuotas', mes: '', label: 'Sin cuotas pendientes' }]);
+setNumCuota(debePriorizarEnganche ? '0' : (opciones[0]?.value || '0'));
+
+6) ORIGEN DEL BACKEND
+El backend que define meses y enganche esta en:
+- server/router/CajaRouter.js
+
+Punto clave:
+
+const usaCuotaCeroEnganche = !tieneConvenioActivo && engancheContrato > 0;
+const mesEngancheContratoFinal = usaCuotaCeroEnganche
+    ? etiquetaMesDesdeFecha(new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1))
+    : null;
+
+return res.status(200).json({
+    meses: mesesPendientes,
+    meses_detalle: mesesPendientesDetalle,
+    mes_enganche: mesEngancheContratoFinal,
+    enganche: engancheContrato,
+    enganche_pagado: enganchePagado,
+    enganche_pendiente: enganchePendienteContratoFinal
+});
+
+Esto hace que Caja sepa que:
+- el enganche es una fila independiente
+- la cuota financiada empieza en el mes de inicio de pagos
+- no debe mezclarse con la cuota 0
+
+7) RESUMEN SIMPLE
+El calculo financiado y la asignacion se hacen en este flujo:
+
+Caja.js
+  -> calcularPlanFinancieroContrato()
+  -> recalcularTotalesCobro()
+  -> esMesEngancheVisual()
+  -> getEtiquetaCuotaMes()
+  -> getValorCuotaMes()
+  -> select de cuotas / modal de pago
+
+Y la fuente de verdad del backend es:
+
+server/router/CajaRouter.js
+  -> /api/caja/meses-pendientes
+  -> mes_enganche
+  -> enganche_pendiente
+  -> meses
+
+Si quieres, te puedo dejar ahora un segundo archivo adicional con el bloque exacto del codigo de Caja.js ya cortado y numerado, listo para copiar/pegar o revisar en una sola pantalla.

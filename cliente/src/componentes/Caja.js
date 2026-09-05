@@ -1001,16 +1001,20 @@ const Caja = () => {
                 cuotas_pendientes: Number(res?.data?.cuotas_pendientes || 0)
             }));
             
-            const mesesASeleccionar = meses.length > 0 ? [meses[0]] : [];
+            const engancheInicial = Math.max(Number(residenteActualizado?.enganche_pendiente || 0), 0);
+            const debePriorizarEnganche = engancheInicial > 0 && (!meses.length || String(mesEngancheApi || '').trim());
+            const mesesASeleccionar = debePriorizarEnganche ? [] : (meses.length > 0 ? [meses[0]] : []);
             setMesesSeleccionados(mesesASeleccionar);
             
-            if (meses.length) {
-                setMesPagado(meses[0]);
+            if (mesesASeleccionar.length) {
+                setMesPagado(mesesASeleccionar[0]);
             } else {
                 setMesPagado('');
             }
-            const engancheInicial = Math.max(Number(residenteActualizado?.enganche_pendiente || 0), 0);
             setMontoEngancheContratoSeleccionado(engancheInicial);
+            const opcionEnganche = engancheInicial > 0
+                ? [{ value: '0', mes: mesEngancheApi || '', label: 'Enganche / Cuota 0' }]
+                : [];
             const opcionesMeses = meses.map((mes, index) => {
                 const numeroCuotaReal = Number(mapaMeses?.[mes] || index + 1);
                 return {
@@ -1019,9 +1023,9 @@ const Caja = () => {
                     label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, meses, mesEngancheApi)
                 };
             });
-            const opciones = [...opcionesMeses];
+            const opciones = [...opcionEnganche, ...opcionesMeses];
             setOpcionesCuota(opciones.length ? opciones : [{ value: 'sin-cuotas', mes: '', label: 'Sin cuotas pendientes' }]);
-            setNumCuota(opciones[0]?.value || '0');
+            setNumCuota(debePriorizarEnganche ? '0' : (opciones[0]?.value || '0'));
 
             const primerMes = mesesASeleccionar[0] || meses[0] || '';
             if (primerMes) {
@@ -1371,6 +1375,9 @@ const Caja = () => {
                     setMesesSeleccionados(mesesActualizados.length ? [mesesActualizados[0]] : []);
                     const engancheRefrescado = Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
                     setMontoEngancheContratoSeleccionado(engancheRefrescado);
+                    const opcionEngancheActualizada = engancheRefrescado > 0
+                        ? [{ value: '0', mes: mesEngancheActualizado || '', label: 'Enganche / Cuota 0' }]
+                        : [];
                     const opcionesMesesActualizadas = mesesActualizados.map((mes, index) => {
                         const numeroCuotaReal = Number(mapaMesesActualizados?.[mes] || index + 1);
                         return {
@@ -1379,7 +1386,7 @@ const Caja = () => {
                             label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheRefrescado, mesesActualizados, mesEngancheActualizado)
                         };
                     });
-                    const opcionesActualizadas = [...opcionesMesesActualizadas];
+                    const opcionesActualizadas = [...opcionEngancheActualizada, ...opcionesMesesActualizadas];
                     setOpcionesCuota(opcionesActualizadas.length ? opcionesActualizadas : [{ value: 'sin-cuotas', mes: '', label: 'Sin cuotas pendientes' }]);
                     setNumCuota(opcionesActualizadas[0]?.value || '0');
                     if (mesesActualizados.length) {
@@ -2100,17 +2107,17 @@ const Caja = () => {
 
                                                 const opcionSeleccionada = (opcionesCuota || []).find((opcion) => String(opcion?.value) === String(nuevaCuota));
                                                 const mesObjetivo = String(opcionSeleccionada?.mes || '').trim();
-                                                if (!mesObjetivo) {
+                                                if (!mesObjetivo || String(nuevaCuota) === '0') {
                                                     setMesesSeleccionados([]);
                                                     setMesPagado('');
-                                                    recalcularTotalesCobro([], serviciosSeleccionados, datosDeuda);
+                                                    recalcularTotalesCobro([], serviciosSeleccionados, datosDeuda, serviciosContrato, null, montoEngancheContratoSeleccionado);
                                                     return;
                                                 }
 
                                                 const mesesASeleccionar = [mesObjetivo];
 
                                                 setMesesSeleccionados(mesesASeleccionar);
-                                                recalcularTotalesCobro(mesesASeleccionar, serviciosSeleccionados, datosDeuda);
+                                                recalcularTotalesCobro(mesesASeleccionar, serviciosSeleccionados, datosDeuda, serviciosContrato, null, montoEngancheContratoSeleccionado);
                                                 setMesPagado(mesObjetivo);
                                             }} 
                                             required
