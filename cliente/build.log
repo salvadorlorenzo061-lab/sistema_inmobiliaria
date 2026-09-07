@@ -1,0 +1,89 @@
+npm notice run cliente@0.1.0 build
+npm notice run react-scripts build
+(node:26596) [DEP0176] DeprecationWarning: fs.F_OK is deprecated, use fs.constants.F_OK instead
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Creating an optimized production build...
+Compiled with warnings.
+
+[eslint] 
+src\componentes\AnulacionDeuda.js
+  Line 52:7:    'fechaLargaGT' is assigned a value but never used      no-unused-vars
+  Line 183:13:  'serieCorrelativo' is assigned a value but never used  no-unused-vars
+
+src\componentes\Asignar_correlativo.js
+  Line 30:7:  'normalizeRole' is assigned a value but never used                                                                            no-unused-vars
+  Line 78:6:  React Hook useMemo has an unnecessary dependency: 'resolucionSeleccionada'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\componentes\Caja.js
+  Line 98:7:     'fechaLargaGT' is assigned a value but never used                                                                          no-unused-vars
+  Line 357:12:   'morasSeleccionadas' is assigned a value but never used                                                                    no-unused-vars
+  Line 391:8:    React Hook useEffect has a missing dependency: 'mesPagado'. Either include it or remove the dependency array               react-hooks/exhaustive-deps
+  Line 429:11:   'usaCuotaCeroEnganche' is assigned a value but never used                                                                  no-unused-vars
+  Line 448:11:   'obtenerClaveMesBase' is assigned a value but never used                                                                   no-unused-vars
+  Line 449:11:   'tieneAnioEnEtiquetaMes' is assigned a value but never used                                                                no-unused-vars
+  Line 1294:8:   React Hook useEffect has a missing dependency: 'obtenerMorasAplicables'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 1551:19:  'abonoExtra' is assigned a value but never used                                                                            no-unused-vars
+  Line 1558:19:  'serie' is assigned a value but never used                                                                                 no-unused-vars
+  Line 1566:19:  'cantidadCuotasPagadas' is assigned a value but never used                                                                 no-unused-vars
+
+src\componentes\Contratos_Residentes.js
+  Line 144:10:  'enganchePagadoContrato' is assigned a value but never used                                                              no-unused-vars
+  Line 296:6:   React Hook useEffect has a missing dependency: 'inicioPagosCalculado'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\componentes\CuentaEstado.js
+  Line 365:11:  'infoHeaderY' is assigned a value but never used      no-unused-vars
+  Line 506:11:  'nombreResidente' is assigned a value but never used  no-unused-vars
+
+src\componentes\Dashboard.js
+  Line 28:7:  'getWidth' is assigned a value but never used                                                                       no-unused-vars
+  Line 55:6:  React Hook useEffect has a missing dependency: 'cargarDashboard'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 68:9:  'maxClientChart' is assigned a value but never used                                                                 no-unused-vars
+  Line 73:9:  'maxContractChart' is assigned a value but never used                                                               no-unused-vars
+
+src\componentes\Estado_Cuenta.js
+  Line 387:13:  'dibujarMembrete' is assigned a value but never used         no-unused-vars
+  Line 414:13:  'dibujarResumenContrato' is assigned a value but never used  no-unused-vars
+  Line 488:13:  'cuerpoIntro' is assigned a value but never used             no-unused-vars
+  Line 490:13:  'fechaLarga' is assigned a value but never used              no-unused-vars
+
+src\componentes\PagosExtraordinarios.js
+  Line 170:6:  React Hook useEffect has a missing dependency: 'cargarExtras'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\componentes\Pagos_detalle.js
+  Line 65:7:    'fechaLargaGT' is assigned a value but never used                                                                                                          no-unused-vars
+  Line 130:11:  'serie' is assigned a value but never used                                                                                                                 no-unused-vars
+  Line 149:11:  'abonoExtra' is assigned a value but never used                                                                                                            no-unused-vars
+  Line 389:6:   React Hook useEffect has missing dependencies: 'generarFacturaDesdeDetalle' and 'parametrosIniciales'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src\componentes\Resoluciones_facturas.js
+  Line 166:9:  The 'usuariosDisponibles' conditional could make the dependencies of useEffect Hook (at line 176) change on every render. To fix this, wrap the initialization of 'usuariosDisponibles' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  Line 626:6:  React Hook useEffect has a missing dependency: 'getResoluciones'. Either include it or remove the dependency array                                                                                                 react-hooks/exhaustive-deps
+
+src\utils\facturaPdf.js
+  Line 81:7:  'obtenerClaveMesBase' is assigned a value but never used  no-unused-vars
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+File sizes after gzip:
+
+  454.55 kB  build\static\js\main.8e6d39fb.js
+  46.34 kB   build\static\js\239.fc3d66bd.chunk.js
+  43.31 kB   build\static\js\455.00e784fa.chunk.js
+  35.24 kB   build\static\css\main.ea1cd071.css
+  10.45 kB   build\static\js\977.c7ddc1c3.chunk.js
+  1.76 kB    build\static\js\453.8a470b1b.chunk.js
+
+The project was built assuming it is hosted at /.
+You can control this with the homepage field in your package.json.
+
+The build folder is ready to be deployed.
+You may serve it with a static server:
+
+  npm install -g serve
+  serve -s build
+
+Find out more about deployment here:
+
+  https://cra.link/deployment
+

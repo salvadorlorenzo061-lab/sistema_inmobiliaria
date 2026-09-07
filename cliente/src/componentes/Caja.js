@@ -495,14 +495,15 @@ const Caja = () => {
             ? String(mesEtiqueta || '').trim() === String(mesEngancheActual || '').trim()
             : false;
 
-        // Si el enganche y la primera cuota financiada comparten el mismo mes, el enganche
-        // debe seguir siendo un concepto diferente y no debe quedar oculto solo por el
-        // número de cuota real de la primera cuota.
+        // Si el enganche y la primera cuota financiada comparten el mismo mes, no se debe
+        // ocultar la cuota real del financiamiento solo porque ambas pertenecen al mismo
+        // periodo calendario. La cuota 0 sigue siendo el enganche; la cuota 1, 2, ...
+        // deben seguir mostrándose como cuotas financiadas independientes.
+        const cuotaRealNumero = Number(numeroCuotaReal || 0);
         if (coincideConMesEnganche) {
-            return true;
+            return !(Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0);
         }
 
-        const cuotaRealNumero = Number(numeroCuotaReal || 0);
         if (Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0) {
             return false;
         }

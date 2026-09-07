@@ -85,10 +85,10 @@ function Contratos_Residentes() {
       return { mes: String(hoy.getMonth() + 1), anio: String(hoy.getFullYear()) };
     }
 
-    // El primer cobro debe respetar el mes de inicio pactado en el contrato. Si el
-    // contrato se firma o compra en enero, la primera cuota financiada debe mostrarse
-    // como enero y seguir en secuencia mensual desde ahí, sin saltarse un mes.
-    const primerPago = new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+    // La cuota 0 (enganche) usa la fecha del contrato. La primera cuota financiada
+    // debe empezar el día siguiente para evitar que se confunda con el enganche,
+    // aunque el mes siga siendo el mismo calendario del contrato.
+    const primerPago = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate() + 1);
     return {
       mes: String(primerPago.getMonth() + 1),
       anio: String(primerPago.getFullYear())
