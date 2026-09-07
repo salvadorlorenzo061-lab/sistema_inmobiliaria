@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const cors = require('cors');
 const app = express();
 const { auditRequestMiddleware } = require('./auditingMiddleware');
@@ -86,9 +88,33 @@ app.use('/api/dashboard', dashboardRouter);
 ensureSchema();
 ensurePerformanceIndexes();
 
+const clientBuildPath = path.join(__dirname, '..', 'cliente', 'build');
+const clientIndexPath = path.join(clientBuildPath, 'index.html');
+const hasClientBuild = fs.existsSync(clientIndexPath);
+
+if (hasClientBuild) {
+    app.use(express.static(clientBuildPath));
+
+    app.get('/health', (req, res) => {
+        res.status(200).json({ ok: true, status: 'healthy' });
+    });
+
+    app.get(/^\/(?!api\/).*/, (req, res) => {
+        res.sendFile(clientIndexPath);
+    });
+} else {
+    app.get('/', (req, res) => {
+        res.status(200).json({
+            ok: true,
+            message: 'API backend running successfully.',
+            frontend: 'not built yet'
+        });
+    });
+}
+
 // 3. Inicialización del servidor central
 const PORT = Number(process.env.PORT || 3001);
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor central corriendo perfectamente en el puerto ${PORT}`);
 });
