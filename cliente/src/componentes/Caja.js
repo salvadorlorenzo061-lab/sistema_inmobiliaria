@@ -1025,7 +1025,10 @@ const Caja = () => {
             const mesEngancheApi = String(res?.data?.mes_enganche || '').trim();
             const mesInicioPagosApi = Number(res?.data?.mes_inicio_pagos ?? residenteActualizado?.mes_inicio_pagos ?? 0);
             const anioInicioPagosApi = Number(res?.data?.anio_inicio_pagos ?? residenteActualizado?.anio_inicio_pagos ?? 0);
-            const enganchePendienteApi = Math.max(Number(res?.data?.enganche_pendiente ?? residenteActualizado?.enganche_pendiente ?? 0), 0);
+            const enganchePendienteApi = Math.max(
+                Number(res?.data?.enganche_pendiente ?? residenteActualizado?.enganche_pendiente ?? residenteActualizado?.enganche ?? 0),
+                0
+            );
             const mesesOrdenados = asegurarMesInicioFinanciadoEnCaja(meses, mesInicioPagosApi, anioInicioPagosApi);
             const mapaMesesOrdenado = { ...mapaMeses };
             if (mesInicioPagosApi >= 1 && mesInicioPagosApi <= 12 && anioInicioPagosApi >= 1900) {
@@ -1043,12 +1046,22 @@ const Caja = () => {
                 anio_inicio_pagos: Number.isInteger(anioInicioPagosApi) && anioInicioPagosApi >= 1900 ? anioInicioPagosApi : (prev?.anio_inicio_pagos ?? residenteActualizado?.anio_inicio_pagos ?? null),
                 cuotas_pagadas: Number(res?.data?.cuotas_pagadas || 0),
                 cuotas_pendientes: Number(res?.data?.cuotas_pendientes || 0),
-                enganche_pendiente: enganchePendienteApi
+                enganche_pendiente: enganchePendienteApi,
+                enganche: Math.max(Number(residenteActualizado?.enganche ?? res?.data?.enganche ?? 0), 0)
             }));
             
             const engancheInicial = enganchePendienteApi;
-            const mesEngancheVisible = String(mesEngancheApi || '').trim() || obtenerEtiquetaInicioFinanciadoContrato() || '';
-            const debePriorizarEnganche = engancheInicial > 0 && (!meses.length || mesEngancheVisible || mesInicioPagosApi > 0);
+            const mesEngancheVisible = String(mesEngancheApi || '').trim()
+                || (mesInicioPagosApi >= 1 && mesInicioPagosApi <= 12 && anioInicioPagosApi >= 1900
+                    ? etiquetaMesDesdeFecha(new Date(anioInicioPagosApi, mesInicioPagosApi - 1, 1))
+                    : '')
+                || obtenerEtiquetaInicioFinanciadoContrato() || '';
+            const debePriorizarEnganche = engancheInicial > 0 && (
+                !meses.length
+                || Boolean(mesEngancheVisible)
+                || mesInicioPagosApi > 0
+                || Number(residenteActualizado?.enganche || 0) > 0
+            );
             const mesesASeleccionar = debePriorizarEnganche ? [] : (meses.length > 0 ? [meses[0]] : []);
             setMesesSeleccionados(mesesASeleccionar);
             

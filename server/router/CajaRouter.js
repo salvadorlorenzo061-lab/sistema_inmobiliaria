@@ -803,6 +803,8 @@ router.get("/residentes-pendientes", (req, res) => {
             COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
+            c.mes_inicio_pagos,
+            c.anio_inicio_pagos,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
             GREATEST(
                 c.enganche - COALESCE(pagos_resumen.enganche_pagado, 0),
@@ -929,6 +931,8 @@ router.get("/buscar-residente", (req, res) => {
             COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
             c.enganche AS enganche_total,
+            c.mes_inicio_pagos,
+            c.anio_inicio_pagos,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
             GREATEST(
                 c.enganche - COALESCE(pagos_resumen.enganche_pagado, 0),
