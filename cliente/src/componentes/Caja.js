@@ -496,12 +496,11 @@ const Caja = () => {
             : false;
 
         // Si el enganche y la primera cuota financiada comparten el mismo mes, la
-        // primera fila corresponde al enganche y el resto de cuotas siguen siendo
-        // financiación real. El slot 1 se reserva para el enganche y no afecta la
-        // secuencia de cuotas financiadas.
+        // primera fila corresponde al enganche y la cuota financiada mantiene su
+        // numeración real (1, 2, 3...). El enganche siempre sigue siendo cuota 0.
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
         if (coincideConMesEnganche) {
-            return !(Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 1);
+            return true;
         }
 
         if (Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0) {
@@ -650,7 +649,7 @@ const Caja = () => {
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
         const esEnganche = esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase, cuotaRealNumero);
         if (esEnganche) {
-            return 'Enganche / Cuota 1';
+            return 'Enganche / Cuota 0';
         }
 
         const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
