@@ -496,9 +496,9 @@ const Caja = () => {
             : false;
 
         // Si el enganche y la primera cuota financiada comparten el mismo mes, la
-        // primera fila debe validarse como el enganche, pero el resto de cuotas sigue
-        // siendo financiación real. En la UI se muestra como Enganche / Cuota 1 para
-        // reflejar la regla del negocio del contrato sin perder la separación real.
+        // primera fila corresponde al enganche y el resto de cuotas siguen siendo
+        // financiación real. El slot 1 se reserva para el enganche y no afecta la
+        // secuencia de cuotas financiadas.
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
         if (coincideConMesEnganche) {
             return !(Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 1);
@@ -648,33 +648,23 @@ const Caja = () => {
 
     const getEtiquetaCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
-        const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
         const esEnganche = esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase, cuotaRealNumero);
         if (esEnganche) {
             return 'Enganche / Cuota 1';
         }
 
-        const numeroVisualBase = obtenerNumeroCuotaVisual(numeroCuotaReal);
-        const tieneEngancheVisible = !!mesEngancheActual && Number(enganchePendienteValor ?? datosDeuda?.enganche_pendiente ?? 0) > 0;
-        const numeroVisual = (tieneEngancheVisible && String(mesEtiqueta || '').trim() !== String(mesEngancheActual || '').trim())
-            ? Number.isInteger(numeroVisualBase) ? numeroVisualBase + 1 : numeroVisualBase
-            : numeroVisualBase;
+        const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
         return `Cuota ${numeroVisual ?? '-'} - ${mesEtiqueta}`;
     };
 
     const getValorCuotaMes = (mesEtiqueta = '', numeroCuotaReal = null, enganchePendienteValor = null, mesesBase = null, mesEngancheBase = null) => {
         const cuotaRealNumero = Number(numeroCuotaReal || 0);
-        const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
         const esEnganche = esMesEngancheVisual(mesEtiqueta, enganchePendienteValor, mesesBase, mesEngancheBase, cuotaRealNumero);
         if (esEnganche) {
             return '0';
         }
 
-        const numeroVisualBase = obtenerNumeroCuotaVisual(numeroCuotaReal);
-        const tieneEngancheVisible = !!mesEngancheActual && Number(enganchePendienteValor ?? datosDeuda?.enganche_pendiente ?? 0) > 0;
-        const numeroVisual = (tieneEngancheVisible && String(mesEtiqueta || '').trim() !== String(mesEngancheActual || '').trim())
-            ? Number.isInteger(numeroVisualBase) ? numeroVisualBase + 1 : numeroVisualBase
-            : numeroVisualBase;
+        const numeroVisual = obtenerNumeroCuotaVisual(numeroCuotaReal);
         return Number.isInteger(numeroVisual) && numeroVisual >= 0 ? String(numeroVisual) : '';
     };
 
