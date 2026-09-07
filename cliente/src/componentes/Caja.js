@@ -369,7 +369,10 @@ const Caja = () => {
     const itemsPerPage = 10;
 
     useEffect(() => {
-        // Evitar que quede un mes inválido seleccionado al cambiar de residente o al recargar pendientes.
+        // Solo inicializar el mes por defecto cuando la pantalla acaba de cargar o
+        // el usuario no ha elegido aún ningún mes válido. Si el cajero eligió otro
+        // mes manualmente, esa decisión debe mantenerse y no debe reescribirse con el
+        // primer mes del flujo.
         if (!Array.isArray(mesesPendientes) || !mesesPendientes.length) {
             if (mesPagado) {
                 setMesPagado('');
@@ -377,10 +380,15 @@ const Caja = () => {
             return;
         }
 
-        if (!mesPagado || !mesesPendientes.includes(mesPagado)) {
+        if (!mesPagado) {
+            setMesPagado(mesesPendientes[0]);
+            return;
+        }
+
+        if (!mesesPendientes.includes(mesPagado) && !mesPagado.startsWith('Enganche')) {
             setMesPagado(mesesPendientes[0]);
         }
-    }, [mesesPendientes, mesPagado]);
+    }, [mesesPendientes]);
 
     const obtenerUsuarioActivo = () => {
         try {
@@ -1226,9 +1234,11 @@ const Caja = () => {
                 const ordenB = indiceB >= 0 ? indiceB : Number.MAX_SAFE_INTEGER;
                 return ordenA - ordenB;
             });
+
             const siguienteMes = ordenado.length ? ordenado[0] : (mesesPendientes[0] || '');
-            setMesPagado(siguienteMes);
-            setNumCuota(siguienteMes ? getValorCuotaMes(siguienteMes, obtenerNumeroCuotaRealMesVista(siguienteMes)) : '0');
+            const mesAUsar = ordenado.length ? siguienteMes : (mesPagado && mesesPendientes.includes(mesPagado) ? mesPagado : siguienteMes);
+            setMesPagado(mesAUsar);
+            setNumCuota(mesAUsar ? getValorCuotaMes(mesAUsar, obtenerNumeroCuotaRealMesVista(mesAUsar)) : '0');
             actualizarMontoParaSeleccion(ordenado);
             return ordenado;
         });
