@@ -485,24 +485,35 @@ const Caja = () => {
         }
         if (!mesEtiqueta) return false;
 
-        const cuotaRealNumero = Number(numeroCuotaReal || 0);
-        if (Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0) {
-            return false;
-        }
-
         const engancheActual = enganchePendienteValor == null
             ? Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0)
             : Math.max(Number(enganchePendienteValor || 0), 0);
         if (!(engancheActual > 0)) return false;
 
         const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
+        const coincideConMesEnganche = mesEngancheActual
+            ? String(mesEtiqueta || '').trim() === String(mesEngancheActual || '').trim()
+            : false;
+
+        // Si el enganche y la primera cuota financiada comparten el mismo mes, el enganche
+        // debe seguir siendo un concepto diferente y no debe quedar oculto solo por el
+        // número de cuota real de la primera cuota.
+        if (coincideConMesEnganche) {
+            return true;
+        }
+
+        const cuotaRealNumero = Number(numeroCuotaReal || 0);
+        if (Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0) {
+            return false;
+        }
+
         if (mesEngancheActual) {
             const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
             const hayCuotaFinanciadaEnEseMes = mesesLista.some((mes) => String(mes || '').trim() === String(mesEtiqueta || '').trim());
             if (hayCuotaFinanciadaEnEseMes) {
                 return false;
             }
-            return mesEtiqueta === mesEngancheActual;
+            return false;
         }
 
         // Respaldo para contratos históricos sin mes de enganche explícito.
