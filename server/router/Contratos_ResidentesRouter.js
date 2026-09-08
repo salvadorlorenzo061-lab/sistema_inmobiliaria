@@ -1341,14 +1341,27 @@ router.put("/actualizar", (req, res, next) => {
         return res.status(400).send({ message: 'Contrato inválido.' });
     }
 
+    if (!Number.isFinite(engancheSolicitado) || engancheSolicitado < 0) {
+        return res.status(400).send({ message: 'El valor del enganche no es válido.' });
+    }
+
     db.query(`
         SELECT c.enganche,
-               COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS enganche_pagado
+               COALESCE((
+                   SELECT SUM(pd.subtotal)
+                   FROM pagos p
+                   INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                   WHERE p.id_contrato = c.id_contrato
+                     AND pd.tipo_concepto = 'enganche'
+                     AND NOT EXISTS (
+                         SELECT 1
+                         FROM facturas_historial fh
+                         WHERE fh.id_pago = p.id_pago
+                           AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                     )
+               ), 0) AS enganche_pagado
         FROM contratos_residentes c
-        LEFT JOIN pagos p ON p.id_contrato = c.id_contrato
-        LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE c.id_contrato = ?
-        GROUP BY c.id_contrato, c.enganche
         LIMIT 1
     `, [idContrato], (err, rows) => {
         if (err) {
@@ -1360,9 +1373,15 @@ router.put("/actualizar", (req, res, next) => {
 
         const engancheActual = Number(rows[0].enganche || 0);
         const enganchePagado = Number(rows[0].enganche_pagado || 0);
-        if (enganchePagado > 0.009 && Math.abs(engancheSolicitado - engancheActual) > 0.009) {
+        const engancheCompletamentePagado = engancheActual > 0.009 && enganchePagado + 0.009 >= engancheActual;
+        if (engancheCompletamentePagado && Math.abs(engancheSolicitado - engancheActual) > 0.009) {
             return res.status(400).send({
-                message: 'El enganche ya tiene pagos registrados y no puede modificarse.'
+                message: 'El enganche ya fue pagado completamente y no puede modificarse.'
+            });
+        }
+        if (engancheSolicitado + 0.009 < enganchePagado) {
+            return res.status(400).send({
+                message: `El enganche no puede ser menor que los Q${enganchePagado.toFixed(2)} ya cobrados.`
             });
         }
         return next();

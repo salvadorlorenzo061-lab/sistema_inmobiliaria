@@ -142,6 +142,7 @@ function Contratos_Residentes() {
   // Datos económicos adicionales (para el PDF)
   const [enganche, setEnganche] = useState("20000");
   const [enganchePagadoContrato, setEnganchePagadoContrato] = useState(false);
+  const [montoEnganchePagadoContrato, setMontoEnganchePagadoContrato] = useState(0);
   const [interes_porcentaje, setInteres_porcentaje] = useState("14");
   const [mora, setMora] = useState("600");
   const [porcentaje_dominio, setPorcentaje_dominio] = useState("80");
@@ -628,6 +629,16 @@ function Contratos_Residentes() {
   };
 
   const actualizarContrato = () => {
+    const engancheSolicitado = Number(enganche || 0);
+    if (engancheSolicitado + 0.009 < montoEnganchePagadoContrato) {
+      Swal.fire({
+        icon: "warning",
+        title: "Enganche inválido",
+        text: `El enganche no puede ser menor que los Q${montoEnganchePagadoContrato.toFixed(2)} ya cobrados.`
+      });
+      return;
+    }
+
     const mensajeValidacion = validarContrato();
     if (mensajeValidacion) {
       Swal.fire({ icon: "warning", title: "CAMPOS INCOMPLETOS", text: mensajeValidacion });
@@ -1105,8 +1116,11 @@ function Contratos_Residentes() {
     setFecha_firma(parseFechaCalendario(val.fecha_firma)?.toISOString().slice(0, 10) || '');
     setFecha_compra(val.fecha_compra ? (parseFechaCalendario(val.fecha_compra)?.toISOString().slice(0, 10) || '') : '');
     setFecha_fin(val.fecha_fin ? (parseFechaCalendario(val.fecha_fin)?.toISOString().slice(0, 10) || '') : '');
+    const engancheContrato = Math.max(Number(val.enganche || 0), 0);
+    const enganchePagado = Math.max(Number(val.enganche_pagado || 0), 0);
     setEnganche(val.enganche ?? '20000');
-    setEnganchePagadoContrato(false);
+    setMontoEnganchePagadoContrato(enganchePagado);
+    setEnganchePagadoContrato(engancheContrato > 0.009 && enganchePagado + 0.009 >= engancheContrato);
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
@@ -1210,6 +1224,7 @@ function Contratos_Residentes() {
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
     setEnganchePagadoContrato(false);
+    setMontoEnganchePagadoContrato(0);
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
     setMonto_cuota_manual("");
     setInicioPagosCalculado({ mes: '', anio: '' });
@@ -1790,9 +1805,17 @@ function Contratos_Residentes() {
                     type="number"
                     className="form-control"
                     value={enganche}
+                    min={montoEnganchePagadoContrato}
+                    disabled={enganchePagadoContrato}
                     onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }}
                   />
-                  <small className="text-muted">El enganche se gestiona como la cuota 0 y no como una cuota financiada normal.</small>
+                  <small className={enganchePagadoContrato ? 'text-success fw-bold' : 'text-muted'}>
+                    {enganchePagadoContrato
+                      ? 'El enganche ya fue pagado completamente; su valor quedó bloqueado.'
+                      : montoEnganchePagadoContrato > 0
+                        ? `Puede editarse mientras esté pendiente, sin bajar de Q${montoEnganchePagadoContrato.toFixed(2)} ya cobrados.`
+                        : 'El enganche se gestiona como la cuota 0 y no como una cuota financiada normal.'}
+                  </small>
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
