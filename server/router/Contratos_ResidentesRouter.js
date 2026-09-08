@@ -1437,16 +1437,25 @@ router.put("/actualizar", (req, res) => {
                     });
 
                     const finalizarRespuestaActualizar = () => {
-                        if (!Array.isArray(servicios_contrato)) {
-                            return res.status(200).send("Contrato actualizado correctamente");
-                        }
-
-                        syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
-                            if (syncErr) {
-                                console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
-                                return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
+                        // No responder hasta que el resumen de la venta refleje los nuevos
+                        // parámetros financieros (incluido enganche cero o modificado).
+                        sincronizarVentaPropiedad(id_contrato, req.body || {}, (ventaErr) => {
+                            if (ventaErr) {
+                                console.error('[contratos][actualizar] error sincronizando venta antes de responder:', ventaErr.message);
+                                return res.status(500).send('Contrato actualizado, pero no fue posible sincronizar los datos de la venta');
                             }
-                            return res.status(200).send("Contrato actualizado correctamente");
+
+                            if (!Array.isArray(servicios_contrato)) {
+                                return res.status(200).send("Contrato actualizado correctamente");
+                            }
+
+                            syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
+                                if (syncErr) {
+                                    console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
+                                    return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
+                                }
+                                return res.status(200).send("Contrato actualizado correctamente");
+                            });
                         });
                     };
 

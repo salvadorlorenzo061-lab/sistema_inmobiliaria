@@ -2650,19 +2650,25 @@ router.post("/procesar-pago", (req, res) => {
 
                                     const serviciosMensuales = serviciosNormales.filter((servicio) => !servicio.es_cobro_unico);
                                     const serviciosUnicos = serviciosNormales.filter((servicio) => servicio.es_cobro_unico);
+                                    // Un pago exclusivo de enganche no contiene meses financiados.
+                                    // Los servicios seleccionados deben quedar asociados una sola vez
+                                    // al mes contractual del enganche, igual que en el total calculado.
+                                    const mesesServicioProcesar = mesesAProcesar.length > 0
+                                        ? mesesAProcesar
+                                        : (montoEngancheTotal > 0 && mesEngancheContrato ? [mesEngancheContrato] : []);
 
-                                    mesesAProcesar.forEach((mes) => {
+                                    mesesServicioProcesar.forEach((mes) => {
                                         serviciosMensuales.forEach((servicio) => {
                                             detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mes, null, servicio.subtotal, null]);
                                         });
                                     });
 
                                     serviciosUnicos.forEach((servicio) => {
-                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesAProcesar[0], null, servicio.subtotal, null]);
+                                        detalleValues.push([lastIdPago, 'servicio', servicio.id_servicio, mesesServicioProcesar[0] || mesEngancheContrato || '', null, servicio.subtotal, null]);
                                     });
 
                                     serviciosExtraordinarios.forEach((servicio) => {
-                                        detalleValues.push([lastIdPago, 'extraordinario', null, mesesAProcesar[0], null, servicio.subtotal, servicio.id_pago_extra || null]);
+                                        detalleValues.push([lastIdPago, 'extraordinario', null, mesesServicioProcesar[0] || mesEngancheContrato || '', null, servicio.subtotal, servicio.id_pago_extra || null]);
                                     });
                                 }
 

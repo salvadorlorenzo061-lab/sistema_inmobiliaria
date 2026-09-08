@@ -903,7 +903,14 @@ const Caja = () => {
             ? parseFloat(montoEngancheSeleccionado || 0)
             : parseFloat(engancheOverride || 0);
         const abonoCapitalManualAplicado = Math.max(abonoManualBase, 0);
-        const serviciosTotal = cantidadMeses > 0 ? ((costoServiciosMensual * cantidadMeses) + costoServiciosUnicos + costoCargosExtra) : 0;
+        // El enganche es un cobro independiente, pero puede llevar servicios seleccionados.
+        // En ese caso los servicios mensuales se cobran una sola vez, usando el mes del enganche.
+        const periodosServicio = cantidadMeses > 0
+            ? cantidadMeses
+            : (enganchePendienteContrato > 0 ? 1 : 0);
+        const serviciosTotal = periodosServicio > 0
+            ? ((costoServiciosMensual * periodosServicio) + costoServiciosUnicos + costoCargosExtra)
+            : 0;
         const mesesOrdenados = [...(meses || [])]
             .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
         // Mes de la cuota 0: viene del contrato (mes de compra/firma), no del primer mes marcado.
@@ -1126,9 +1133,10 @@ const Caja = () => {
             setNumCuota(debePriorizarEnganche ? '0' : (opciones[0]?.value || '0'));
 
             const primerMes = mesesASeleccionar[0] || meses[0] || '';
-            if (primerMes) {
+            const mesParaServicios = primerMes || (engancheInicial > 0 ? mesEngancheVisible : '');
+            if (mesParaServicios) {
                 try {
-                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residenteActualizado.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
+                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residenteActualizado.id_contrato}?mes=${encodeURIComponent(mesParaServicios)}`);
                     const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
 
@@ -1506,8 +1514,11 @@ const Caja = () => {
                     setMesesPendientes(mesesActualizadosOrdenados);
                     setMesesDetalleMap(mapaMesesActualizadosOrdenado);
                     setMesEngancheContrato(mesEngancheActualizado);
-                    setMesesSeleccionados(mesesActualizadosOrdenados.length ? [mesesActualizadosOrdenados[0]] : []);
                     const engancheRefrescado = Math.max(Number((response?.data?.enganche_pendiente_restante ?? datosDeuda?.enganche_pendiente) || 0), 0);
+                    const mesesSeleccionadosActualizados = engancheRefrescado > 0
+                        ? []
+                        : (mesesActualizadosOrdenados.length ? [mesesActualizadosOrdenados[0]] : []);
+                    setMesesSeleccionados(mesesSeleccionadosActualizados);
                     const mesEngancheVisibleActualizado = String(mesEngancheActualizado || '').trim() || obtenerEtiquetaInicioFinanciadoContrato() || '';
                     setMontoEngancheContratoSeleccionado(engancheRefrescado);
                     const opcionEngancheActualizada = engancheRefrescado > 0
@@ -1524,16 +1535,21 @@ const Caja = () => {
                     const opcionesActualizadas = [...opcionEngancheActualizada, ...opcionesMesesActualizadas];
                     setOpcionesCuota(opcionesActualizadas.length ? opcionesActualizadas : [{ value: 'sin-cuotas', mes: '', label: 'Sin cuotas pendientes' }]);
                     setNumCuota(opcionesActualizadas[0]?.value || '0');
-                    if (mesesActualizadosOrdenados.length) {
+                    if (engancheRefrescado > 0) {
+                        setMesPagado('');
+                    } else if (mesesActualizadosOrdenados.length) {
                         setMesPagado(mesesActualizadosOrdenados[0]);
                     }
                     const primerMes = mesesActualizadosOrdenados[0] || '';
-                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(primerMes)}`);
+                    const mesParaServicios = engancheRefrescado > 0
+                        ? mesEngancheVisibleActualizado
+                        : primerMes;
+                    const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(mesParaServicios)}`);
                     const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
                     const serviciosActivos = servicios.filter((s) => !s.ya_pagado_mes).map((s) => s.id_servicio);
                     setServiciosSeleccionados(serviciosActivos);
-                    recalcularTotalesCobro(mesesActualizados.length ? [mesesActualizados[0]] : [], serviciosActivos, {
+                    recalcularTotalesCobro(mesesSeleccionadosActualizados, serviciosActivos, {
                         ...datosDeuda,
                         saldo_pendiente: Math.max(parseFloat(datosDeuda?.saldo_pendiente || 0) - montoTerreno - parseFloat(montoEngancheSeleccionado || 0), 0),
                         enganche_pendiente: engancheRefrescado
@@ -2394,6 +2410,7 @@ const Caja = () => {
                                                                 className="form-check-input me-3"
                                                                 checked={serviciosSeleccionados.includes(servicio.id_servicio)}
                                                                 onChange={() => toggleServicioSeleccionado(servicio.id_servicio)}
+                                                                onClick={(e) => e.stopPropagation()}
                                                                 style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                                                             />
                                                             <div className="flex-grow-1">
@@ -2512,6 +2529,7 @@ const Caja = () => {
                                                                 className="form-check-input me-3"
                                                                 checked={mesesSeleccionados.includes(mes)}
                                                                 onChange={() => toggleMesSeleccionado(mes)}
+                                                                onClick={(e) => e.stopPropagation()}
                                                                 disabled={tieneCuotaCeroPendiente}
                                                                 style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                                                             />
