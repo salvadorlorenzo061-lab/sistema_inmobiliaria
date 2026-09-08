@@ -2602,6 +2602,9 @@ router.post("/procesar-pago", (req, res) => {
                                 const montosInteresPorMes = montoInteresTotal > 0
                                     ? distribuirInteresPorMes(cuotasMesesConTerreno)
                                     : [];
+                                const numeroCuotaAbonoCapital = mesesAProcesar.length > 0
+                                    ? (cuotasMesesConTerreno[0] || obtenerNumeroCuotaParaMes(mesesAProcesar[0], 0) || null)
+                                    : null;
 
                                 if (montoTerrenoTotal > 0) {
                                     mesesTerrenoProcesar.forEach((mes, index) => {
@@ -2638,7 +2641,7 @@ router.post("/procesar-pago", (req, res) => {
                                         'abono_capital',
                                         null,
                                         mesesAProcesar[0] || '',
-                                        null,
+                                        numeroCuotaAbonoCapital,
                                         redondear2(montoAbonoCapitalTotal),
                                         null
                                     ]);
@@ -2852,6 +2855,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         detalleCobro.push({
                                                             concepto: 'Abono a capital (sin interes)',
                                                             tipo_concepto: 'abono_capital',
+                                                            numero_cuota_afectada: numeroCuotaAbonoCapital,
                                                             mes: mesesAProcesar[0] || '',
                                                             monto_base: desgloseAbonoCapital.subtotal,
                                                             iva: desgloseAbonoCapital.iva,
