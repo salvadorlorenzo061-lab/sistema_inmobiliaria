@@ -1015,6 +1015,11 @@ router.get("/", (req, res) => {
                        INNER JOIN pagos_detalle pd_eng ON pd_eng.id_pago = p_eng.id_pago
                        WHERE p_eng.id_contrato = c.id_contrato
                          AND pd_eng.tipo_concepto = 'enganche'
+                         AND NOT EXISTS (
+                             SELECT 1 FROM facturas_historial fh_eng
+                             WHERE fh_eng.id_pago = p_eng.id_pago
+                               AND UPPER(COALESCE(fh_eng.estado_factura, '')) = 'ANULADA'
+                         )
                    ), 0) AS enganche_pagado,
                    CASE
                        WHEN COALESCE((
@@ -1026,6 +1031,11 @@ router.get("/", (req, res) => {
                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                            WHERE p.id_contrato = c.id_contrato
                              AND pd.tipo_concepto = 'cuota_terreno'
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM facturas_historial fh
+                                 WHERE fh.id_pago = p.id_pago
+                                   AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                             )
                        ), 0) > 0 THEN (
                            SELECT COUNT(DISTINCT CASE
                                WHEN COALESCE(pd.numero_cuota_afectada, 0) > 0 THEN pd.numero_cuota_afectada
@@ -1035,6 +1045,11 @@ router.get("/", (req, res) => {
                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                            WHERE p.id_contrato = c.id_contrato
                              AND pd.tipo_concepto = 'cuota_terreno'
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM facturas_historial fh
+                                 WHERE fh.id_pago = p.id_pago
+                                   AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                             )
                        )
                        ELSE c.cuotas_pagadas
                    END AS cuotas_pagadas,
@@ -1045,6 +1060,11 @@ router.get("/", (req, res) => {
                        WHERE p.id_contrato = c.id_contrato
                          AND pd.tipo_concepto = 'cuota_terreno'
                          AND COALESCE(pd.numero_cuota_afectada, 0) > 0
+                         AND NOT EXISTS (
+                             SELECT 1 FROM facturas_historial fh
+                             WHERE fh.id_pago = p.id_pago
+                               AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                         )
                    ), 0) AS ultima_cuota_pagada,
                    c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
                    c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,

@@ -579,27 +579,17 @@ const Caja = () => {
         return etiquetaMesDesdeFecha(fechaInicio);
     };
 
-    const asegurarMesInicioFinanciadoEnCaja = (mesesOriginales = [], mesInicioPagos = null, anioInicioPagos = null) => {
-        const mesInicio = Number(mesInicioPagos || 0);
-        const anioInicio = Number(anioInicioPagos || 0);
-        const hayMesInicioValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
-            && Number.isInteger(anioInicio) && anioInicio >= 1900;
-        if (!hayMesInicioValido) {
-            return Array.isArray(mesesOriginales) ? [...mesesOriginales] : [];
-        }
-
-        const etiquetaInicio = etiquetaMesDesdeFecha(new Date(anioInicio, mesInicio - 1, 1));
-        if (!etiquetaInicio) {
-            return Array.isArray(mesesOriginales) ? [...mesesOriginales] : [];
-        }
-
-        const meses = Array.isArray(mesesOriginales) ? [...mesesOriginales] : [];
-        const yaExiste = meses.some((mes) => String(mes || '').trim().toLowerCase() === String(etiquetaInicio || '').trim().toLowerCase());
-        if (!yaExiste) {
-            meses.unshift(etiquetaInicio);
-        }
-
-        return meses;
+    const asegurarMesInicioFinanciadoEnCaja = (mesesOriginales = []) => {
+        // El backend ya conoce las cuotas pagadas/anuladas y es la fuente de verdad.
+        // El cliente solo deduplica; nunca debe reinsertar la cuota 1 si ya fue pagada.
+        const mesesUnicos = new Map();
+        (Array.isArray(mesesOriginales) ? mesesOriginales : []).forEach((mes) => {
+            const etiqueta = String(mes || '').trim().replace(/\s+/g, ' ');
+            if (!etiqueta) return;
+            const clave = etiqueta.toLowerCase();
+            if (!mesesUnicos.has(clave)) mesesUnicos.set(clave, etiqueta);
+        });
+        return Array.from(mesesUnicos.values());
     };
 
     const esMesVencidoParaMoraLocal = (mesTexto = '', fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5) => {
@@ -689,7 +679,9 @@ const Caja = () => {
             return [];
         }
 
-        const mesesFinanciados = (Array.isArray(mesesLista) ? mesesLista : [])
+        const mesesFinanciados = [...new Set((Array.isArray(mesesLista) ? mesesLista : [])
+            .map((mes) => String(mes || '').trim())
+            .filter(Boolean))]
             .filter((mes) => !esMesEngancheVisual(mes, null, mesesLista, mesEngancheContrato, obtenerNumeroCuotaRealMesVista(mes)));
 
         if (!mesesFinanciados.length) {
@@ -720,7 +712,18 @@ const Caja = () => {
             return mesesFinanciados.some((mesSeleccionado) => compararMesesMoraLocal(mesSeleccionado, mesMora));
         });
 
-        return morasSinExonerar;
+        const morasPorMes = new Map();
+        morasSinExonerar.forEach((mora) => {
+            const clave = obtenerMesKeyLocal(mora?.mes_atrasado);
+            if (!clave) return;
+            const claveUnica = `${clave.anio || 'sin-anio'}:${clave.mes}`;
+            const existente = morasPorMes.get(claveUnica);
+            if (!existente || Number(mora?.id_morosidad || 0) < Number(existente?.id_morosidad || 0)) {
+                morasPorMes.set(claveUnica, mora);
+            }
+        });
+
+        return Array.from(morasPorMes.values());
     };
 
     const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
@@ -911,11 +914,13 @@ const Caja = () => {
         const engancheContratoBase = engancheContratoOverride == null
             ? parseFloat(tieneConvenioActivo ? 0 : (montoEngancheContratoSeleccionado || residenteActual?.enganche_pendiente || 0))
             : parseFloat(engancheContratoOverride || 0);
-        const soloEngancheSeleccionado = String(numCuota || '') === '0' && !mesesOrdenados.length;
+        const soloEngancheSeleccionado = enganchePendienteContrato > 0 && !mesesOrdenados.length;
         const engancheContratoAplicado = (enganchePendienteContrato > 0 && (soloEngancheSeleccionado || (primerMesConEnganche && mesesOrdenados.includes(primerMesConEnganche))))
             ? Math.max(Math.min(engancheContratoBase, enganchePendienteContrato), 0)
             : 0;
-        const mesesElegiblesTerreno = mesesOrdenados.filter((mes) => {
+        const mesesElegiblesTerreno = enganchePendienteContrato > 0
+            ? []
+            : mesesOrdenados.filter((mes) => {
             if (!(enganchePendienteContrato > 0) || !primerMesConEnganche) return true;
             if (mes !== primerMesConEnganche) return true;
             const numeroCuotaMes = Number(mesesDetalleMap?.[mes] || 0);
@@ -1270,6 +1275,10 @@ const Caja = () => {
     };
 
     const toggleMesSeleccionado = (mes) => {
+        if (Number(datosDeuda?.id_convenio_activo || 0) <= 0 && Number(datosDeuda?.enganche_pendiente || 0) > 0.009) {
+            mostrarToast('Debe pagar completamente el Enganche / Cuota 0 antes de seleccionar cuotas financiadas.', 'warning');
+            return;
+        }
         setMesesSeleccionados(prev => {
             const next = prev.includes(mes)
                 ? prev.filter(item => item !== mes)
@@ -1325,11 +1334,14 @@ const Caja = () => {
         const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
         const montoSolicitado = parseFloat(montoAPagar || 0);
         const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
-        const mesesParaPago = (Array.isArray(mesesSeleccionados) && mesesSeleccionados.length)
+        const esCobroEnganche = String(numCuota || '') === '0' && Number(datosDeuda?.enganche_pendiente || 0) > 0;
+        const mesesParaPago = esCobroEnganche
+            ? []
+            : ((Array.isArray(mesesSeleccionados) && mesesSeleccionados.length)
             ? mesesSeleccionados
             : ((Array.isArray(mesesPendientes) && mesesPendientes.length)
                 ? [mesesPendientes[0]]
-                : (mesPagado ? [mesPagado] : []));
+                : (mesPagado ? [mesPagado] : [])));
         const mesesFinanciadosParaPago = mesesParaPago.filter((mes) => !esMesEngancheVisual(mes));
         const morasSeleccionadasPayload = obtenerMorasAplicables(mesesFinanciadosParaPago)
             .map((mora) => ({
@@ -1931,10 +1943,11 @@ const Caja = () => {
     const serviciosUnicosVista = serviciosSeleccionadosDetalleVista
         .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
-    const moraTotalDistribuidaVista = parseFloat((mesesSeleccionados || [])
-        .filter((mes) => !esMesEngancheVisual(mes))
-        .reduce((sum, mes) => sum + Number(obtenerMorasAplicables([mes]).reduce((acc, mora) => acc + Number(mora?.monto_mora || 0), 0)), 0)
-        .toFixed(2));
+    const moraTotalDistribuidaVista = parseFloat(
+        obtenerMorasAplicables(mesesSeleccionados)
+            .reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0)
+            .toFixed(2)
+    );
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
     const tieneEnganchePendiente = enganchePendiente > 0;
     const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
@@ -2226,6 +2239,11 @@ const Caja = () => {
                                             value={numCuota} 
                                             onChange={(e) => {
                                                 const nuevaCuota = e.target.value;
+                                                if (String(nuevaCuota) !== '0' && tieneCuotaCeroPendiente) {
+                                                    mostrarToast('Debe pagar completamente el Enganche / Cuota 0 antes de seleccionar cuotas financiadas.', 'warning');
+                                                    setNumCuota('0');
+                                                    return;
+                                                }
                                                 setNumCuota(nuevaCuota);
 
                                                 const opcionSeleccionada = (opcionesCuota || []).find((opcion) => String(opcion?.value) === String(nuevaCuota));
@@ -2244,10 +2262,16 @@ const Caja = () => {
                                                 setMesPagado(mesObjetivo);
                                             }} 
                                             required
-                                            disabled={!mesesPendientes.length}
+                                            disabled={!opcionesCuota.length}
                                         >
                                             {opcionesCuota.map((opcion) => (
-                                                <option key={opcion.value} value={opcion.value}>{opcion.label}</option>
+                                                <option
+                                                    key={`${opcion.value}-${opcion.mes || 'enganche'}`}
+                                                    value={opcion.value}
+                                                    disabled={tieneCuotaCeroPendiente && String(opcion.value) !== '0'}
+                                                >
+                                                    {opcion.label}
+                                                </option>
                                             ))}
                                         </select>
                                     </div>
@@ -2435,6 +2459,38 @@ const Caja = () => {
                                             </div>
                                         )}
                                         <div className="border rounded-3 p-3 bg-light">
+                                            {tieneCuotaCeroPendiente && (
+                                                <>
+                                                    <div
+                                                        className="d-flex align-items-center p-3 mb-3 border rounded-2 bg-success bg-opacity-10 border-success border-2"
+                                                        style={{ cursor: 'pointer' }}
+                                                        onClick={() => {
+                                                            setNumCuota('0');
+                                                            setMesesSeleccionados([]);
+                                                            setMesPagado('');
+                                                            recalcularTotalesCobro([], serviciosSeleccionados, datosDeuda, serviciosContrato, null, montoEngancheContratoSeleccionado);
+                                                        }}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            className="form-check-input me-3"
+                                                            checked
+                                                            readOnly
+                                                            style={{ cursor: 'pointer', width: '20px', height: '20px' }}
+                                                        />
+                                                        <div className="flex-grow-1">
+                                                            <span className="fw-bold fs-5 text-dark">Enganche / Cuota 0</span>
+                                                        </div>
+                                                        <span className="badge bg-primary fs-6">
+                                                            Q{Math.round(montoEngancheContratoSeleccionado || enganchePendiente)}
+                                                        </span>
+                                                        <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
+                                                    </div>
+                                                    <div className="alert alert-warning py-2 mb-3">
+                                                        Las cuotas financiadas se habilitarán cuando el enganche quede completamente pagado.
+                                                    </div>
+                                                </>
+                                            )}
                                             {mesesPendientes.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">
                                                     {mesesPendientes.map((mes) => (
@@ -2445,7 +2501,10 @@ const Caja = () => {
                                                                     ? 'bg-success bg-opacity-10 border-success border-2' 
                                                                     : 'bg-white border-secondary'
                                                             }`}
-                                                            style={{ cursor: 'pointer' }}
+                                                            style={{
+                                                                cursor: tieneCuotaCeroPendiente ? 'not-allowed' : 'pointer',
+                                                                opacity: tieneCuotaCeroPendiente ? 0.55 : 1
+                                                            }}
                                                             onClick={() => toggleMesSeleccionado(mes)}
                                                         >
                                                             <input
@@ -2453,6 +2512,7 @@ const Caja = () => {
                                                                 className="form-check-input me-3"
                                                                 checked={mesesSeleccionados.includes(mes)}
                                                                 onChange={() => toggleMesSeleccionado(mes)}
+                                                                disabled={tieneCuotaCeroPendiente}
                                                                 style={{ cursor: 'pointer', width: '20px', height: '20px' }}
                                                             />
                                                             <div className="flex-grow-1">

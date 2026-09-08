@@ -335,7 +335,30 @@ const normalizarCuotaCeroComoEnganche = () => {
         `UPDATE pagos_detalle SET tipo_concepto = 'enganche', numero_cuota_afectada = NULL WHERE tipo_concepto = 'cuota_terreno' AND COALESCE(numero_cuota_afectada, 0) <= 0`,
         `UPDATE facturas_historial SET tipo_concepto = 'enganche', numero_cuota_afectada = NULL WHERE tipo_concepto = 'cuota_terreno' AND COALESCE(numero_cuota_afectada, 0) <= 0`,
         `UPDATE pagos_detalle SET numero_cuota_afectada = NULL WHERE tipo_concepto = 'enganche' AND COALESCE(numero_cuota_afectada, 0) <= 0`,
-        `UPDATE facturas_historial SET numero_cuota_afectada = NULL WHERE tipo_concepto = 'enganche' AND COALESCE(numero_cuota_afectada, 0) <= 0`
+        `UPDATE facturas_historial SET numero_cuota_afectada = NULL WHERE tipo_concepto = 'enganche' AND COALESCE(numero_cuota_afectada, 0) <= 0`,
+        `UPDATE contratos_residentes c
+         SET c.cuotas_pagadas = 0,
+             c.cuotas_pendientes = COALESCE(NULLIF(c.cuotas_pactadas, 0), c.plazo_meses, 0)
+         WHERE EXISTS (
+             SELECT 1
+             FROM pagos p_eng
+             INNER JOIN pagos_detalle pd_eng ON pd_eng.id_pago = p_eng.id_pago
+             WHERE p_eng.id_contrato = c.id_contrato
+               AND pd_eng.tipo_concepto = 'enganche'
+         )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM pagos p_cuota
+             INNER JOIN pagos_detalle pd_cuota ON pd_cuota.id_pago = p_cuota.id_pago
+             WHERE p_cuota.id_contrato = c.id_contrato
+               AND pd_cuota.tipo_concepto = 'cuota_terreno'
+               AND COALESCE(pd_cuota.numero_cuota_afectada, 0) > 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM facturas_historial fh_cuota
+                   WHERE fh_cuota.id_pago = p_cuota.id_pago
+                     AND UPPER(COALESCE(fh_cuota.estado_factura, '')) = 'ANULADA'
+               )
+         )`
     ];
 
     sqls.forEach((sql) => {
@@ -1441,15 +1464,9 @@ router.get("/meses-pendientes", (req, res) => {
                 // informa por separado. No se filtra ningún mes del flujo por su estado:
                 // el mes del enganche puede ser el mismo de la cuota 1 y esa cuota se cobra igual.
                 const enganchePendienteContratoFinal = Math.max(engancheContrato - enganchePagado, 0);
-                const mesEngancheBase = (
-                    usaCuotaCeroEnganche && inicioConfiguradoValido
-                        ? new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1)
-                        : (
-                            usaCuotaCeroEnganche
-                                ? new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1)
-                                : null
-                        )
-                );
+                const mesEngancheBase = usaCuotaCeroEnganche
+                    ? new Date(fechaInicioBase.getFullYear(), fechaInicioBase.getMonth(), 1)
+                    : null;
                 const mesEngancheContratoFinal = usaCuotaCeroEnganche && mesEngancheBase
                     ? etiquetaMesDesdeFecha(mesEngancheBase)
                     : null;
@@ -1681,7 +1698,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
             return res.status(500).send({ message: 'No se pudieron obtener las moras pendientes.' });
         }
 
-        const moras = (rows || [])
+        const morasValidas = (rows || [])
         .filter((row) => esMoraContractualVencida(row.mes_atrasado, row.fecha_contrato, row.dias_gracia))
         .map((row) => ({
             id_morosidad: Number(row.id_morosidad || 0),
@@ -1691,6 +1708,19 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
             monto_mora: Number(row.monto_mora || 0),
             estado: String(row.estado || 'pendiente')
         }));
+
+        // Una mora contractual se cobra una sola vez por mes. Bases historicas pueden
+        // contener mas de un registro pendiente para la misma etiqueta de mes.
+        const morasPorMes = new Map();
+        morasValidas.forEach((mora) => {
+            const claveMes = normalizeText(String(mora.mes_atrasado || '').replace(/\s+/g, ' ').trim());
+            if (!claveMes) return;
+            const existente = morasPorMes.get(claveMes);
+            if (!existente || Number(mora.id_morosidad || 0) < Number(existente.id_morosidad || 0)) {
+                morasPorMes.set(claveMes, mora);
+            }
+        });
+        const moras = Array.from(morasPorMes.values());
 
         const totalMoraPendiente = moras.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
 
@@ -1775,7 +1805,7 @@ router.post("/procesar-pago", (req, res) => {
             })
         : [];
 
-    const morasAplicadas = Array.isArray(moras_aplicadas)
+    const morasAplicadasNormalizadas = Array.isArray(moras_aplicadas)
         ? moras_aplicadas
             .map((item) => ({
                 id_morosidad: Number(item?.id_morosidad || 0),
@@ -1791,6 +1821,16 @@ router.post("/procesar-pago", (req, res) => {
                 return !mes || esMesVencidoParaMora(mes);
             })
         : [];
+
+    const morasAplicadasPorMes = new Map();
+    morasAplicadasNormalizadas.forEach((mora) => {
+        const claveMes = normalizeText(String(mora.mes_atrasado || '').replace(/\s+/g, ' ').trim())
+            || `id:${Number(mora.id_morosidad || 0)}`;
+        if (!morasAplicadasPorMes.has(claveMes)) {
+            morasAplicadasPorMes.set(claveMes, mora);
+        }
+    });
+    const morasAplicadas = Array.from(morasAplicadasPorMes.values());
 
     const moraTotalSeleccionada = parseFloat(
         morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
@@ -2160,12 +2200,8 @@ router.post("/procesar-pago", (req, res) => {
             // El enganche (cuota 0) es un cargo aparte y debe respetar la referencia contractual
             // de inicio de pagos. Si el contrato define mes/año de inicio, ese es el origen de verdad;
             // si no viene definido, usamos la fecha de compra/firma como respaldo.
-            const mesEngancheContrato = (usaCuotaCeroEngancheContrato && (inicioFinanciadoConfiguradoValido || fechaInicioContrato))
-                ? etiquetaMesDesdeFecha(
-                    inicioFinanciadoConfiguradoValido
-                        ? new Date(anioInicioPagosContrato, mesInicioPagosContrato - 1, 1)
-                        : new Date(fechaInicioContrato.getFullYear(), fechaInicioContrato.getMonth(), 1)
-                )
+            const mesEngancheContrato = (usaCuotaCeroEngancheContrato && fechaInicioContrato)
+                ? etiquetaMesDesdeFecha(new Date(fechaInicioContrato.getFullYear(), fechaInicioContrato.getMonth(), 1))
                 : primerMesSeleccionado;
             const mesesTerrenoProcesar = montoTerrenoTotal > 0 ? [...mesesAProcesar] : [];
 
@@ -2236,6 +2272,11 @@ router.post("/procesar-pago", (req, res) => {
             };
 
             if (montoTerrenoTotal > 0) {
+                if (!tieneConvenioActivoContrato && enganchePendienteContrato > 0.009) {
+                    return db.rollback(() => res.status(409).send(
+                        'Debe pagar completamente el enganche (Cuota 0) antes de cobrar cuotas financiadas.'
+                    ));
+                }
                 if (!Number.isFinite(saldoActual) || saldoActual <= 0) {
                     return db.rollback(() => res.status(400).send('Este contrato ya está totalmente pagado para cuota de terreno.'));
                 }
