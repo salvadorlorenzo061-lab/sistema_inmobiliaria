@@ -1928,23 +1928,10 @@ const Caja = () => {
             ? 0
             : obtenerMorasAplicables([mesEtiqueta])
                 .reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
-        const mesSeleccionado = (mesesSeleccionados || []).includes(mesEtiqueta);
-        const serviciosMensuales = mesSeleccionado
-            ? serviciosSeleccionadosDetalleVista
-                .filter((servicio) => !servicio.es_extraordinario && !esCobroUnicoServicio(servicio))
-                .reduce((sum, servicio) => sum + Number(servicio.costo_servicio || 0), 0)
-            : 0;
-        const esPrimerMesSeleccionado = mesSeleccionado && mesEtiqueta === primerMesSeleccionado;
-        const serviciosUnicos = esPrimerMesSeleccionado
-            ? serviciosSeleccionadosDetalleVista
-                .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
-                .reduce((sum, servicio) => sum + Number(servicio.costo_servicio || 0), 0)
-            : 0;
-        const cargosExtra = esPrimerMesSeleccionado ? Number(montoCargosExtraSeleccionado || 0) : 0;
-        const abonoCapital = esPrimerMesSeleccionado ? Number(montoEngancheSeleccionado || 0) : 0;
-        return redondear2(
-            cuotaFinanciada + recargoVencido + serviciosMensuales + serviciosUnicos + cargosExtra + abonoCapital
-        );
+        // La tarjeta del mes muestra solamente cuota financiada + mora. Los servicios,
+        // cargos y abonos tienen su propio desglose; agregarlos aquí hacía parecer que
+        // la primera cuota conservaba Q500 de mora aun después de exonerarla.
+        return redondear2(cuotaFinanciada + recargoVencido);
     };
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
     const engancheSeleccionado = parseFloat(montoEngancheContratoAplicado || 0);
@@ -1959,6 +1946,10 @@ const Caja = () => {
     const serviciosUnicosVista = serviciosSeleccionadosDetalleVista
         .filter((servicio) => !servicio.es_extraordinario && esCobroUnicoServicio(servicio))
         .reduce((sum, servicio) => sum + parseFloat(servicio.costo_servicio || 0), 0);
+    const totalEngancheConServiciosVista = redondear2(
+        Math.max(Number(montoEngancheContratoAplicado || montoEngancheContratoSeleccionado || enganchePendienteContrato), 0)
+        + Math.max(Number(montoServiciosSeleccionado || 0), 0)
+    );
     const moraTotalDistribuidaVista = parseFloat(
         obtenerMorasAplicables(mesesSeleccionados)
             .reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0)
@@ -2497,9 +2488,15 @@ const Caja = () => {
                                                         />
                                                         <div className="flex-grow-1">
                                                             <span className="fw-bold fs-5 text-dark">Enganche / Cuota 0</span>
+                                                            {montoServiciosSeleccionado > 0 && (
+                                                                <div className="small text-muted">
+                                                                    Enganche Q{Number(montoEngancheContratoAplicado || montoEngancheContratoSeleccionado || enganchePendienteContrato).toFixed(2)}
+                                                                    {' + '}servicios Q{Number(montoServiciosSeleccionado).toFixed(2)}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <span className="badge bg-primary fs-6">
-                                                            Q{Math.round(montoEngancheContratoSeleccionado || enganchePendiente)}
+                                                            Q{totalEngancheConServiciosVista.toFixed(2)}
                                                         </span>
                                                         <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
                                                     </div>
