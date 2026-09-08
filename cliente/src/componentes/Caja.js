@@ -679,37 +679,31 @@ const Caja = () => {
             return [];
         }
 
-        const mesesExentos = new Set(
-            (Array.isArray(mesesSeleccionados) ? mesesSeleccionados : [])
-                .filter((mes) => !esMesEngancheVisual(mes))
-                .map((mes) => String(mes || '').trim())
-                .filter(Boolean)
-        );
-
         if (quitarMoraTodo) {
             return [];
         }
 
-        return mesesFinanciados.reduce((morasAplicables, mesSeleccionado) => {
-            const mesSeleccionadoNormalizado = String(mesSeleccionado || '').trim();
-            const esMesMarcadoParaPago = mesesExentos.has(mesSeleccionadoNormalizado);
+        const mesesSeleccionadosFinanciados = (Array.isArray(mesesSeleccionados) ? mesesSeleccionados : [])
+            .filter((mes) => !esMesEngancheVisual(mes))
+            .map((mes) => String(mes || '').trim())
+            .filter(Boolean);
 
-            if (quitarMoraMesesSeleccionados && esMesMarcadoParaPago) {
-                return morasAplicables;
+        const morasSinExonerar = morasPendientes.filter((mora) => {
+            const mesMora = String(mora?.mes_atrasado || '').trim();
+            if (!mesMora) return false;
+            if (!esMesVencidoParaMoraLocal(mesMora, datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, datosDeuda?.dia_pago_limite ?? 5)) {
+                return false;
             }
 
-            const moraMes = morasPendientes.find((mora) => {
-                const mesMora = String(mora?.mes_atrasado || '').trim();
-                return mesMora
-                    && esMesVencidoParaMoraLocal(mesMora, datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, datosDeuda?.dia_pago_limite ?? 5)
-                    && compararMesesMoraLocal(mesSeleccionado, mesMora);
-            });
-
-            if (moraMes) {
-                morasAplicables.push(moraMes);
+            const perteneceAMesesSeleccionados = mesesSeleccionadosFinanciados.some((mesSeleccionado) => compararMesesMoraLocal(mesSeleccionado, mesMora));
+            if (quitarMoraMesesSeleccionados && perteneceAMesesSeleccionados) {
+                return false;
             }
-            return morasAplicables;
-        }, []);
+
+            return mesesFinanciados.some((mesSeleccionado) => compararMesesMoraLocal(mesSeleccionado, mesMora));
+        });
+
+        return morasSinExonerar;
     };
 
     const usuarioTienePermisoCobro = (registro = {}) => Number(registro?.permiso_cobro_usuario || 0) === 1;
