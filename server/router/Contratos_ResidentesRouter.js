@@ -673,7 +673,58 @@ const sincronizarVentaPropiedad = (idContrato, datos = {}, callback = () => {}) 
             estado_venta = VALUES(estado_venta),
             observaciones = COALESCE(VALUES(observaciones), observaciones)
     `;
-    db.query(sql, [lote, mesInicioPagos, anioInicioPagos, cuotasPactadas, montoCuota, fechaInicioFinanciado, observaciones, idContratoSeguro], callback);
+    const params = [lote, mesInicioPagos, anioInicioPagos, cuotasPactadas, montoCuota, fechaInicioFinanciado, observaciones, idContratoSeguro];
+    db.query(sql, params, (err, result) => {
+        if (!err) return callback(null, result);
+
+        // Compatibilidad con instalaciones que todavía tienen la versión original de
+        // ventas_propiedad y aún no poseen las columnas financieras extendidas. Los
+        // campos esenciales (incluido el enganche) deben sincronizarse igualmente.
+        if (err.code !== 'ER_BAD_FIELD_ERROR' && err.code !== 'ER_NO_SUCH_TABLE') {
+            return callback(err);
+        }
+
+        const sqlBasicoUpdate = `
+            UPDATE ventas_propiedad vp
+            INNER JOIN contratos_residentes c ON c.id_contrato = vp.id_contrato
+            SET vp.id_residente = c.id_residente,
+                vp.id_lote = CASE WHEN ? > 0 THEN ? ELSE vp.id_lote END,
+                vp.fecha_compra = COALESCE(c.fecha_compra, c.fecha_firma, CURDATE()),
+                vp.precio_venta = COALESCE(c.monto_total, 0),
+                vp.enganche = COALESCE(c.enganche, 0),
+                vp.saldo_pendiente = COALESCE(c.saldo_pendiente, 0),
+                vp.estado_venta = CASE
+                    WHEN LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'vigente') THEN 'vigente'
+                    ELSE LOWER(COALESCE(c.estado, 'vigente'))
+                END,
+                vp.observaciones = COALESCE(?, vp.observaciones)
+            WHERE c.id_contrato = ?
+        `;
+
+        db.query(sqlBasicoUpdate, [lote, lote, observaciones, idContratoSeguro], (updateErr, updateResult) => {
+            if (updateErr) return callback(updateErr);
+            if (Number(updateResult?.affectedRows || 0) > 0) return callback(null, updateResult);
+
+            const sqlBasicoInsert = `
+                INSERT INTO ventas_propiedad
+                    (id_contrato, id_residente, id_lote, fecha_compra, precio_venta,
+                     enganche, saldo_pendiente, estado_venta, observaciones)
+                SELECT c.id_contrato, c.id_residente, ?,
+                       COALESCE(c.fecha_compra, c.fecha_firma, CURDATE()),
+                       COALESCE(c.monto_total, 0), COALESCE(c.enganche, 0),
+                       COALESCE(c.saldo_pendiente, 0),
+                       CASE WHEN LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'vigente') THEN 'vigente'
+                            ELSE LOWER(COALESCE(c.estado, 'vigente')) END,
+                       ?
+                FROM contratos_residentes c
+                WHERE c.id_contrato = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ventas_propiedad vp WHERE vp.id_contrato = c.id_contrato
+                  )
+            `;
+            return db.query(sqlBasicoInsert, [lote, observaciones, idContratoSeguro], callback);
+        });
+    });
 };
 
 const backfillVentasPropiedad = () => {
@@ -1442,11 +1493,14 @@ router.put("/actualizar", (req, res) => {
                         sincronizarVentaPropiedad(id_contrato, req.body || {}, (ventaErr) => {
                             if (ventaErr) {
                                 console.error('[contratos][actualizar] error sincronizando venta antes de responder:', ventaErr.message);
-                                return res.status(500).send('Contrato actualizado, pero no fue posible sincronizar los datos de la venta');
                             }
 
                             if (!Array.isArray(servicios_contrato)) {
-                                return res.status(200).send("Contrato actualizado correctamente");
+                                return res.status(200).send(
+                                    ventaErr
+                                        ? 'Contrato actualizado; sincronización de venta pendiente'
+                                        : 'Contrato actualizado correctamente'
+                                );
                             }
 
                             syncServiciosContrato(id_contrato, servicios_contrato, (syncErr) => {
@@ -1454,7 +1508,11 @@ router.put("/actualizar", (req, res) => {
                                     console.error('Contrato actualizado pero sin sincronizar servicios:', syncErr.message);
                                     return res.status(200).send("Contrato actualizado (servicios pendientes de sincronizar)");
                                 }
-                                return res.status(200).send("Contrato actualizado correctamente");
+                                return res.status(200).send(
+                                    ventaErr
+                                        ? 'Contrato actualizado; sincronización de venta pendiente'
+                                        : 'Contrato actualizado correctamente'
+                                );
                             });
                         });
                     };

@@ -665,7 +665,14 @@ function Contratos_Residentes() {
 
       Swal.fire({ icon: "success", title: "Contrato Actualizado", timer: 2500, showConfirmButton: false });
     })
-    .catch((error) => Swal.fire({ icon: "error", title: "Error al modificar", text: error.response?.data?.message || "No se pudo actualizar el contrato" }));
+    .catch((error) => {
+      const respuesta = error?.response?.data;
+      const mensaje = (typeof respuesta === 'string' ? respuesta : respuesta?.message)
+        || error?.message
+        || "No se pudo actualizar el contrato";
+      console.error('[contratos][actualizar] error:', error);
+      Swal.fire({ icon: "error", title: "Error al modificar", text: mensaje });
+    });
   };
 
   const deleteContrato = (val) => {
