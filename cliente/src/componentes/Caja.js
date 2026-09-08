@@ -592,7 +592,13 @@ const Caja = () => {
         return Array.from(mesesUnicos.values());
     };
 
-    const esMesVencidoParaMoraLocal = (mesTexto = '', fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma, diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5) => {
+    const esMesVencidoParaMoraLocal = (
+        mesTexto = '',
+        fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma,
+        diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5,
+        mesInicioRaw = datosDeuda?.mes_inicio_pagos,
+        anioInicioRaw = datosDeuda?.anio_inicio_pagos
+    ) => {
         const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
         if (!limpio) return false;
 
@@ -605,7 +611,13 @@ const Caja = () => {
         if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return false;
         if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return false;
 
-        const primerMesCuota = new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
+        const mesInicio = Number(mesInicioRaw || 0);
+        const anioInicio = Number(anioInicioRaw || 0);
+        const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
+            && Number.isInteger(anioInicio) && anioInicio >= 1900;
+        const primerMesCuota = inicioConfiguradoValido
+            ? new Date(anioInicio, mesInicio - 1, 1)
+            : new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
         const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
         if (mesEvaluado < primerMesCuota) return false;
 

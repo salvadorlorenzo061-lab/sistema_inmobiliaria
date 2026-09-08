@@ -213,15 +213,15 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
     }
 
     if (item.tipo === 'servicio') {
-      const fila = asegurarFila('servicios', {
+      const nombreServicio = normalizarConcepto(item.conceptoOriginal).startsWith('servicio')
+        ? item.conceptoOriginal
+        : `Servicio: ${item.conceptoOriginal}`;
+      const fila = asegurarFila(`servicio:${item.mes || 'sin-mes'}:${item.conceptoOriginal}:${item.orden}`, {
         orden: item.orden,
-        concepto: 'Total servicios',
+        concepto: nombreServicio,
         mes: item.mes || 'N/A'
       });
       fila.total = Number((fila.total + item.monto).toFixed(2));
-      if (item.mes && fila.mes !== item.mes) {
-        fila.mes = 'Varios';
-      }
       return;
     }
 

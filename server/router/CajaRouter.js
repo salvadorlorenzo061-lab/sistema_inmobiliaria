@@ -155,7 +155,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
     return false;
 };
 
-const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => {
+const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw, mesInicioRaw = null, anioInicioRaw = null) => {
     const matchFecha = String(fechaContratoRaw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     const fechaContrato = matchFecha
         ? new Date(Number(matchFecha[1]), Number(matchFecha[2]) - 1, Number(matchFecha[3]))
@@ -164,7 +164,13 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw) => 
     if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return false;
     if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return false;
 
-    const primerMesCuota = new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
+    const mesInicio = Number(mesInicioRaw || 0);
+    const anioInicio = Number(anioInicioRaw || 0);
+    const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
+        && Number.isInteger(anioInicio) && anioInicio >= 1900;
+    const primerMesCuota = inicioConfiguradoValido
+        ? new Date(anioInicio, mesInicio - 1, 1)
+        : new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
     const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
     if (mesEvaluado < primerMesCuota) return false;
     const hoy = new Date();
@@ -1676,7 +1682,9 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
                              END AS monto_mora,
                                  m.estado,
                                  COALESCE(vp.fecha_compra, c.fecha_compra, c.fecha_firma) AS fecha_contrato,
-                                 COALESCE(c.dia_pago_limite, 5) AS dias_gracia
+                                 COALESCE(c.dia_pago_limite, 5) AS dias_gracia,
+                                 c.mes_inicio_pagos,
+                                 c.anio_inicio_pagos
                 FROM morosidad m
                 INNER JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
                 LEFT JOIN (
@@ -1699,7 +1707,13 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
         }
 
         const morasValidas = (rows || [])
-        .filter((row) => esMoraContractualVencida(row.mes_atrasado, row.fecha_contrato, row.dias_gracia))
+        .filter((row) => esMoraContractualVencida(
+            row.mes_atrasado,
+            row.fecha_contrato,
+            row.dias_gracia,
+            row.mes_inicio_pagos,
+            row.anio_inicio_pagos
+        ))
         .map((row) => ({
             id_morosidad: Number(row.id_morosidad || 0),
             id_contrato: Number(row.id_contrato || 0),
@@ -2753,6 +2767,9 @@ router.post("/procesar-pago", (req, res) => {
                                                     const cantidadCuotasPagadas = cuotasTerrenoCalculadas.length;
                                                     const totalCuotaNormal = redondear2(montosTerrenoPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
                                                     const totalInteres = redondear2(montosInteresPorMes.reduce((sum, item) => sum + Number(item || 0), 0));
+                                                    const mesesServicioDetalle = mesesAProcesar.length > 0
+                                                        ? mesesAProcesar
+                                                        : (montoEngancheTotal > 0 && mesEngancheContrato ? [mesEngancheContrato] : []);
 
                                                     mesesTerrenoProcesar.forEach((mes, index) => {
                                                         if (Number(montosTerrenoPorMes[index] || 0) > 0) {
@@ -2773,10 +2790,12 @@ router.post("/procesar-pago", (req, res) => {
                                                     serviciosSolicitados
                                                         .filter((servicio) => !servicio.es_extraordinario && !servicio.es_cobro_unico)
                                                         .forEach((servicio) => {
-                                                            mesesAProcesar.forEach((mes) => {
+                                                            mesesServicioDetalle.forEach((mes) => {
                                                                 const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
                                                                 detalleCobro.push({
                                                                     concepto: `Servicio: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                    tipo_concepto: 'servicio',
+                                                                    id_concepto_servicio: servicio?.id_servicio || null,
                                                                     mes,
                                                                     monto_base: desgloseServicio.subtotal,
                                                                     iva: desgloseServicio.iva,
@@ -2791,7 +2810,9 @@ router.post("/procesar-pago", (req, res) => {
                                                             const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
                                                             detalleCobro.push({
                                                                 concepto: `Servicio único: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
-                                                                mes: mesesAProcesar[0] || '',
+                                                                tipo_concepto: 'servicio',
+                                                                id_concepto_servicio: servicio?.id_servicio || null,
+                                                                mes: mesesServicioDetalle[0] || '',
                                                                 monto_base: desgloseServicio.subtotal,
                                                                 iva: desgloseServicio.iva,
                                                                 total: desgloseServicio.total
@@ -2804,7 +2825,9 @@ router.post("/procesar-pago", (req, res) => {
                                                             const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
                                                             detalleCobro.push({
                                                                 concepto: `Cargo extraordinario: ${servicio?.nombre_servicio || `ID ${servicio?.id_pago_extra || 'N/A'}`}`,
-                                                                mes: mesesAProcesar[0] || '',
+                                                                tipo_concepto: 'extraordinario',
+                                                                id_concepto_servicio: servicio?.id_pago_extra || null,
+                                                                mes: mesesServicioDetalle[0] || '',
                                                                 monto_base: desgloseServicio.subtotal,
                                                                 iva: desgloseServicio.iva,
                                                                 total: desgloseServicio.total
@@ -2828,6 +2851,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         const desgloseAbonoCapital = calcularComponentesFiscalmente(montoAbonoCapitalTotal);
                                                         detalleCobro.push({
                                                             concepto: 'Abono a capital (sin interes)',
+                                                            tipo_concepto: 'abono_capital',
                                                             mes: mesesAProcesar[0] || '',
                                                             monto_base: desgloseAbonoCapital.subtotal,
                                                             iva: desgloseAbonoCapital.iva,
@@ -2868,6 +2892,8 @@ router.post("/procesar-pago", (req, res) => {
                                                             const desgloseServicio = calcularComponentesFiscalmente(Number(servicio?.subtotal || 0));
                                                             detalleCobro.push({
                                                                 concepto: `Servicio inicial: ${servicio?.nombre_servicio || `ID ${servicio?.id_servicio || 'N/A'}`}`,
+                                                                tipo_concepto: 'servicio',
+                                                                id_concepto_servicio: servicio?.id_servicio || null,
                                                                 mes: mesInicialContrato,
                                                                 monto_base: desgloseServicio.subtotal,
                                                                 iva: desgloseServicio.iva,
@@ -2882,6 +2908,7 @@ router.post("/procesar-pago", (req, res) => {
                                                                 const desgloseMora = calcularComponentesFiscalmente(Number(mora?.monto_mora || 0));
                                                                 detalleCobro.push({
                                                                     concepto: `Mora ${mora?.mes_atrasado || ''}`.trim(),
+                                                                    tipo_concepto: 'mora',
                                                                     mes: mora?.mes_atrasado || (mesesAProcesar[0] || ''),
                                                                     monto_base: desgloseMora.subtotal,
                                                                     iva: desgloseMora.iva,
@@ -2892,6 +2919,7 @@ router.post("/procesar-pago", (req, res) => {
                                                             const desgloseMora = calcularComponentesFiscalmente(moraTotal);
                                                             detalleCobro.push({
                                                                 concepto: 'Mora',
+                                                                tipo_concepto: 'mora',
                                                                 mes: mesesAProcesar[0] || '',
                                                                 monto_base: desgloseMora.subtotal,
                                                                 iva: desgloseMora.iva,
