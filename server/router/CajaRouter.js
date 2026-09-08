@@ -1785,7 +1785,9 @@ router.post("/procesar-pago", (req, res) => {
             .filter((item) => Number.isFinite(item.monto_mora) && item.monto_mora > 0)
             .filter((item) => {
                 const mes = String(item?.mes_atrasado || '').trim();
-                // Solo valida que el mes sea vencido; no exige coincidencia con meses del pago
+                // Solo acepta meses vencidos y registros persistidos como pendientes.
+                // Las moras pagadas, anuladas o re-generadas por edición de contrato nunca deben
+                // re-aplicarse en un nuevo cobro.
                 return !mes || esMesVencidoParaMora(mes);
             })
         : [];

@@ -149,6 +149,19 @@ const parsearMesAtrasado = (label) => {
     return new Date(anio, mes, 1);
 };
 
+const normalizarClaveMesPersistida = (value = '') => {
+    const texto = String(value || '').trim().replace(/\s+/g, ' ');
+    if (!texto) return '';
+
+    const normalizado = texto
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+
+    return normalizado;
+};
+
 router.get('/meses-pendientes', async (req, res) => {
     try {
         const idContrato = Number(req.query?.id_contrato || 0);
@@ -329,6 +342,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     const moraExistenteRows = await queryAsync(`
         SELECT id_contrato, mes_atrasado, estado
         FROM morosidad
+        WHERE LOWER(COALESCE(estado, 'pendiente')) IN ('pendiente', 'pagado')
     `);
 
     const pagosPorContrato = new Map();
@@ -341,10 +355,16 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     const morasExistentesPorContrato = new Map();
     moraExistenteRows.forEach((r) => {
         const key = String(r.id_contrato);
+        const mes = String(r.mes_atrasado || '').trim();
+        const estado = String(r.estado || 'pendiente').trim().toLowerCase();
+
+        if (!mes || estado === 'anulado') return;
         if (!morasExistentesPorContrato.has(key)) morasExistentesPorContrato.set(key, new Set());
-        if (String(r.estado || '').trim().toLowerCase() === 'pagado') {
-            morasExistentesPorContrato.get(key).add(String(r.mes_atrasado || '').trim());
-        }
+
+        // La clave de deduplicación es por contrato + mes con año, no por la etiqueta visual
+        // de la interfaz; eso evita que una edición del contrato genere la misma mora dos veces
+        // con la misma fecha contractual y salve el estado real en BD.
+        morasExistentesPorContrato.get(key).add(normalizarClaveMesPersistida(mes));
     });
 
     const hoy = new Date();
@@ -394,7 +414,8 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             const etiquetaMes = labelMes(fechaVencimiento);
             const vencido = hoy >= fechaInicioMora;
 
-            if (vencido && !pagadosSet.has(etiquetaMes) && !morasSet.has(etiquetaMes)) {
+            const claveMes = normalizarClaveMesPersistida(etiquetaMes);
+            if (vencido && !pagadosSet.has(etiquetaMes) && !morasSet.has(claveMes)) {
                 const msPorDia = 1000 * 60 * 60 * 24;
                 const diasRetraso = Math.max(Math.floor((hoy - fechaVencimiento) / msPorDia), 1);
                 const moraCalculada = moraContrato > 0
@@ -410,7 +431,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
                     'pendiente'
                 ]);
 
-                morasSet.add(etiquetaMes);
+                morasSet.add(claveMes);
             }
 
             numeroCuota += 1;
@@ -429,7 +450,11 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             monto_deuda_original = VALUES(monto_deuda_original),
             monto_mora = VALUES(monto_mora),
             dias_retraso = VALUES(dias_retraso),
-            estado = 'pendiente'
+            estado = CASE
+                WHEN LOWER(COALESCE(estado, 'pendiente')) = 'anulado' THEN 'anulado'
+                WHEN LOWER(COALESCE(estado, 'pendiente')) = 'pagado' THEN 'pagado'
+                ELSE 'pendiente'
+            END
     `, [inserts]);
 
     return { generated: inserts.length, examinedContracts: contratos.length };

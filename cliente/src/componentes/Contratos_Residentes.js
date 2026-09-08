@@ -596,7 +596,13 @@ function Contratos_Residentes() {
       }
 
       try {
-        await Axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`);
+        const contratosRes = await Axios.get(API_URL);
+        const contratos = Array.isArray(contratosRes?.data) ? contratosRes.data : [];
+        const contratoCreado = contratos.find((item) => String(item?.codigo_contrato || '').trim() === String(payload.codigo_contrato || '').trim());
+        const idContrato = contratoCreado?.id_contrato ?? null;
+        if (idContrato) {
+          await Axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`, { id_contrato: idContrato });
+        }
       } catch (moraErr) {
         console.error('No se pudo generar mora automatica tras crear contrato:', moraErr);
       }
@@ -639,7 +645,7 @@ function Contratos_Residentes() {
       });
 
       try {
-        await Axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`);
+        await Axios.post(`${API_BASE_URL}/api/morosidad/generar-automatico`, { id_contrato: payload.id_contrato });
       } catch (moraErr) {
         console.error('No se pudo regenerar mora automatica tras actualizar contrato:', moraErr);
       }

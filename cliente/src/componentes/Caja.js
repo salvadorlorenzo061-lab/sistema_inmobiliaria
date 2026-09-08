@@ -490,17 +490,36 @@ const Caja = () => {
             : Math.max(Number(enganchePendienteValor || 0), 0);
         if (!(engancheActual > 0)) return false;
 
+        const normalizarMes = (valor = '') => String(valor || '').trim().replace(/\s+/g, ' ').toLowerCase();
         const mesEngancheActual = mesEngancheBase == null ? mesEngancheContrato : mesEngancheBase;
+        const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
+
+        const cuotaRealNumero = (() => {
+            const valorExplicito = Number(numeroCuotaReal || 0);
+            if (Number.isInteger(valorExplicito) && valorExplicito > 0) {
+                return valorExplicito;
+            }
+
+            const indiceMes = mesesLista.findIndex((mes) => normalizarMes(mes) === normalizarMes(mesEtiqueta));
+            if (indiceMes >= 0) {
+                const numeroMap = Number(mesesDetalleMap?.[mesesLista[indiceMes]] || 0);
+                if (Number.isInteger(numeroMap) && numeroMap > 0) {
+                    return numeroMap;
+                }
+                return indiceMes + 1;
+            }
+
+            return 0;
+        })();
+
+        // Si el enganche y la primera cuota financiada comparten el mismo mes, la cuota 1
+        // debe seguir siendo cobrable con su numeración real y no debe ocultarse por la etiqueta.
         const coincideConMesEnganche = mesEngancheActual
-            ? String(mesEtiqueta || '').trim() === String(mesEngancheActual || '').trim()
+            ? normalizarMes(mesEtiqueta) === normalizarMes(mesEngancheActual)
             : false;
 
-        // Si el enganche y la primera cuota financiada comparten el mismo mes, el
-        // enganche sigue siendo cuota 0 y la cuota 1 debe seguir cobrable con su
-        // numeración real. No se debe ocultar la cuota 1 solo por compartir etiqueta.
-        const cuotaRealNumero = Number(numeroCuotaReal || 0);
         if (coincideConMesEnganche) {
-            return !Number.isInteger(cuotaRealNumero) || cuotaRealNumero <= 0;
+            return !(Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0);
         }
 
         if (Number.isInteger(cuotaRealNumero) && cuotaRealNumero > 0) {
@@ -508,8 +527,7 @@ const Caja = () => {
         }
 
         if (mesEngancheActual) {
-            const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
-            const hayCuotaFinanciadaEnEseMes = mesesLista.some((mes) => String(mes || '').trim() === String(mesEtiqueta || '').trim());
+            const hayCuotaFinanciadaEnEseMes = mesesLista.some((mes) => normalizarMes(mes) === normalizarMes(mesEtiqueta));
             if (hayCuotaFinanciadaEnEseMes) {
                 return false;
             }
@@ -517,9 +535,8 @@ const Caja = () => {
         }
 
         // Respaldo para contratos históricos sin mes de enganche explícito.
-        const mesesLista = Array.isArray(mesesBase) ? mesesBase : (mesesPendientes || []);
         const primerMesPendiente = mesesLista[0] || '';
-        return Boolean(primerMesPendiente) && mesEtiqueta === primerMesPendiente;
+        return Boolean(primerMesPendiente) && normalizarMes(mesEtiqueta) === normalizarMes(primerMesPendiente);
     };
 
     const obtenerMesKeyLocal = (mesTexto = '') => {
@@ -673,7 +690,7 @@ const Caja = () => {
         }
 
         const mesesFinanciados = (Array.isArray(mesesLista) ? mesesLista : [])
-            .filter((mes) => !esMesEngancheVisual(mes));
+            .filter((mes) => !esMesEngancheVisual(mes, null, mesesLista, mesEngancheContrato, obtenerNumeroCuotaRealMesVista(mes)));
 
         if (!mesesFinanciados.length) {
             return [];
@@ -684,7 +701,7 @@ const Caja = () => {
         }
 
         const mesesSeleccionadosFinanciados = (Array.isArray(mesesSeleccionados) ? mesesSeleccionados : [])
-            .filter((mes) => !esMesEngancheVisual(mes))
+            .filter((mes) => !esMesEngancheVisual(mes, null, mesesLista, mesEngancheContrato, obtenerNumeroCuotaRealMesVista(mes)))
             .map((mes) => String(mes || '').trim())
             .filter(Boolean);
 
