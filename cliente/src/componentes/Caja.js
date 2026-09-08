@@ -671,7 +671,7 @@ const Caja = () => {
         if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
             return [];
         }
-        // Mora solo aplica sobre cuota financiada, no sobre el enganche
+
         const mesesFinanciados = (Array.isArray(mesesLista) ? mesesLista : [])
             .filter((mes) => !esMesEngancheVisual(mes));
 
@@ -679,13 +679,25 @@ const Caja = () => {
             return [];
         }
 
+        const mesesExentos = new Set(
+            (Array.isArray(mesesSeleccionados) ? mesesSeleccionados : [])
+                .filter((mes) => !esMesEngancheVisual(mes))
+                .map((mes) => String(mes || '').trim())
+                .filter(Boolean)
+        );
+
+        if (quitarMoraTodo) {
+            return [];
+        }
+
         return mesesFinanciados.reduce((morasAplicables, mesSeleccionado) => {
-            const esMesMarcadoParaPago = (mesesSeleccionados || [])
-                .some((mesMarcado) => compararMesesMoraLocal(mesSeleccionado, mesMarcado));
-            if (quitarMoraTodo
-                || (quitarMoraMesesSeleccionados && esMesMarcadoParaPago)) {
+            const mesSeleccionadoNormalizado = String(mesSeleccionado || '').trim();
+            const esMesMarcadoParaPago = mesesExentos.has(mesSeleccionadoNormalizado);
+
+            if (quitarMoraMesesSeleccionados && esMesMarcadoParaPago) {
                 return morasAplicables;
             }
+
             const moraMes = morasPendientes.find((mora) => {
                 const mesMora = String(mora?.mes_atrasado || '').trim();
                 return mesMora
@@ -1284,11 +1296,13 @@ const Caja = () => {
         }
 
         const morasAplicables = obtenerMorasAplicables(mesesSeleccionados);
-        setMorasSeleccionadas(morasAplicables.map((mora) => Number(mora.id_morosidad)).filter((id) => Number.isInteger(id) && id > 0));
-
+        const idsSeleccionados = morasAplicables
+            .map((mora) => Number(mora.id_morosidad))
+            .filter((id) => Number.isInteger(id) && id > 0);
         const totalSeleccionado = morasAplicables
             .reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0);
 
+        setMorasSeleccionadas(idsSeleccionados);
         setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
         setMontoAPagar(String((Number(montoTotalSeleccionado || 0) + Number(totalSeleccionado || 0)).toFixed(2)));
     }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado, quitarMoraTodo, quitarMoraMesesSeleccionados]);
@@ -2378,8 +2392,9 @@ const Caja = () => {
                                                         className="form-check-input"
                                                         checked={quitarMoraTodo}
                                                         onChange={(e) => {
-                                                            setQuitarMoraTodo(e.target.checked);
-                                                            if (e.target.checked) setQuitarMoraMesesSeleccionados(false);
+                                                            const checked = e.target.checked;
+                                                            setQuitarMoraTodo(checked);
+                                                            if (checked) setQuitarMoraMesesSeleccionados(false);
                                                         }}
                                                     />
                                                     <label className="form-check-label" htmlFor="quitar-mora-todo">
@@ -2393,7 +2408,11 @@ const Caja = () => {
                                                         className="form-check-input"
                                                         checked={quitarMoraMesesSeleccionados}
                                                         disabled={quitarMoraTodo || mesesSeleccionados.length === 0}
-                                                        onChange={(e) => setQuitarMoraMesesSeleccionados(e.target.checked)}
+                                                        onChange={(e) => {
+                                                            const checked = e.target.checked;
+                                                            setQuitarMoraMesesSeleccionados(checked);
+                                                            if (checked) setQuitarMoraTodo(false);
+                                                        }}
                                                     />
                                                     <label className="form-check-label" htmlFor="quitar-mora-mes">
                                                         Quitar mora de todos los meses seleccionados
