@@ -1545,6 +1545,11 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
                       AND pd.tipo_concepto = 'servicio'
                       AND pd.id_concepto_servicio = base.id_servicio
                       AND pd.mes_pagado = ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM facturas_historial fh
+                          WHERE fh.id_pago = p.id_pago
+                            AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                      )
                 ) THEN 1
                 ELSE 0
             END AS ya_pagado_mes,
@@ -1556,6 +1561,11 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
                     WHERE p.id_contrato = ?
                       AND pd.tipo_concepto = 'servicio'
                       AND pd.id_concepto_servicio = base.id_servicio
+                      AND NOT EXISTS (
+                          SELECT 1 FROM facturas_historial fh
+                          WHERE fh.id_pago = p.id_pago
+                            AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                      )
                 ) THEN 1
                 ELSE 0
             END AS ya_pagado_alguna_vez
@@ -1568,6 +1578,11 @@ router.get('/servicios-contrato/:id_contrato', (req, res) => {
                     WHERE p.id_contrato = ?
                       AND pd.tipo_concepto = 'servicio'
                       AND LOWER(TRIM(s_pagado.nombre_servicio)) = LOWER(TRIM(base.nombre_servicio))
+                      AND NOT EXISTS (
+                          SELECT 1 FROM facturas_historial fh
+                          WHERE fh.id_pago = p.id_pago
+                            AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                      )
                 ) THEN 1
                 ELSE 0
             END AS ya_pagado_por_nombre
@@ -2371,6 +2386,11 @@ router.post("/procesar-pago", (req, res) => {
                                   AND pd.tipo_concepto = 'servicio'
                                   AND pd.id_concepto_servicio = cs.id_servicio
                                   AND pd.mes_pagado = ?
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM facturas_historial fh
+                                      WHERE fh.id_pago = p.id_pago
+                                        AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                                  )
                             ) THEN 1
                             ELSE 0
                         END AS ya_cobrado
@@ -2504,6 +2524,11 @@ router.post("/procesar-pago", (req, res) => {
                           AND pd.tipo_concepto = 'servicio'
                           AND pd.id_concepto_servicio IN (${placeholdersIds})
                           AND pd.mes_pagado IN (${placeholdersMeses})
+                          AND NOT EXISTS (
+                              SELECT 1 FROM facturas_historial fh
+                              WHERE fh.id_pago = p.id_pago
+                                AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                          )
                     `;
 
                     db.query(sqlDuplicados, [id_contrato, ...idsServicios, ...mesesAProcesar], (dupErr, dupRows) => {
@@ -2530,6 +2555,11 @@ router.post("/procesar-pago", (req, res) => {
                               AND pd.tipo_concepto = 'servicio'
                               AND pd.id_concepto_servicio IN (${placeholdersIniciales})
                               AND pd.mes_pagado = ?
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM facturas_historial fh
+                                  WHERE fh.id_pago = p.id_pago
+                                    AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+                              )
                         `;
 
                         db.query(sqlDuplicadosInicial, [id_contrato, ...idsServiciosInicial, mesInicialContrato], (dupIniErr, dupIniRows) => {

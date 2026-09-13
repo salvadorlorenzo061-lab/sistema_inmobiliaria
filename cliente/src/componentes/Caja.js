@@ -919,7 +919,7 @@ const Caja = () => {
         // En ese caso los servicios mensuales se cobran una sola vez, usando el mes del enganche.
         const periodosServicio = cantidadMeses > 0
             ? cantidadMeses
-            : (enganchePendienteContrato > 0 ? 1 : 0);
+            : (serviciosSeleccionadosDetalle.length > 0 || enganchePendienteContrato > 0 ? 1 : 0);
         const serviciosTotal = periodosServicio > 0
             ? ((costoServiciosMensual * periodosServicio) + costoServiciosUnicos + costoCargosExtra)
             : 0;
@@ -1109,6 +1109,10 @@ const Caja = () => {
             }));
             
             const engancheInicial = enganchePendienteApi;
+            const prefillCajaActual = obtenerPrefillCaja();
+            const esPrefillCargoExtra = String(prefillCajaActual?.source || '') === 'cobro_extraordinario'
+                && Number(prefillCajaActual?.id_contrato || 0) === Number(residenteActualizado.id_contrato || 0)
+                && Number(prefillCajaActual?.id_pago_extra || 0) > 0;
             const mesEngancheVisible = String(mesEngancheApi || '').trim()
                 || (mesInicioPagosApi >= 1 && mesInicioPagosApi <= 12 && anioInicioPagosApi >= 1900
                     ? etiquetaMesDesdeFecha(new Date(anioInicioPagosApi, mesInicioPagosApi - 1, 1))
@@ -1120,7 +1124,7 @@ const Caja = () => {
                 || mesInicioPagosApi > 0
                 || Number(residenteActualizado?.enganche || 0) > 0
             );
-            const mesesASeleccionar = debePriorizarEnganche ? [] : (meses.length > 0 ? [meses[0]] : []);
+            const mesesASeleccionar = (debePriorizarEnganche || esPrefillCargoExtra) ? [] : (meses.length > 0 ? [meses[0]] : []);
             setMesesSeleccionados(mesesASeleccionar);
             
             if (mesesASeleccionar.length) {
@@ -1132,6 +1136,9 @@ const Caja = () => {
             const opcionEnganche = engancheInicial > 0
                 ? [{ value: '0', mes: mesEngancheVisible || mesEngancheApi || '', label: 'Enganche / Cuota 0' }]
                 : [];
+            const opcionCargoExtra = esPrefillCargoExtra
+                ? [{ value: 'cargo-extra', mes: '', label: `Cargo extraordinario #${Number(prefillCajaActual.id_pago_extra)}` }]
+                : [];
             const opcionesMeses = mesesOrdenados.map((mes, index) => {
                 const numeroCuotaReal = Number(mapaMesesOrdenado?.[mes] || index + 1);
                 return {
@@ -1140,21 +1147,35 @@ const Caja = () => {
                     label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, mesesOrdenados, mesEngancheApi)
                 };
             });
-            const opciones = [...opcionEnganche, ...opcionesMeses];
+            const opciones = [...opcionCargoExtra, ...opcionEnganche, ...opcionesMeses];
             setOpcionesCuota(opciones.length ? opciones : [{ value: 'sin-cuotas', mes: '', label: 'Sin cuotas pendientes' }]);
-            setNumCuota(debePriorizarEnganche ? '0' : (opciones[0]?.value || '0'));
+            setNumCuota(esPrefillCargoExtra ? 'cargo-extra' : (debePriorizarEnganche ? '0' : (opciones[0]?.value || '0')));
 
             const primerMes = mesesASeleccionar[0] || meses[0] || '';
-            const mesParaServicios = primerMes || (engancheInicial > 0 ? mesEngancheVisible : '');
+            // Los servicios y cargos también deben poder cobrarse cuando el terreno ya
+            // no tiene meses pendientes. El endpoint acepta un mes de referencia para
+            // los servicios mensuales y devuelve igualmente los cobros únicos/extra.
+            const mesParaServicios = primerMes
+                || (engancheInicial > 0 ? mesEngancheVisible : '')
+                || etiquetaMesDesdeFecha(new Date());
             if (mesParaServicios) {
                 try {
                     const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residenteActualizado.id_contrato}?mes=${encodeURIComponent(mesParaServicios)}`);
                     const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
 
-                    const seleccionInicialServicios = servicios
-                        .filter((s) => !s.ya_pagado_mes)
-                        .map((s) => s.id_servicio);
+                    const prefillCaja = obtenerPrefillCaja();
+                    const idPagoExtraObjetivo = String(prefillCaja?.source || '') === 'cobro_extraordinario'
+                        && Number(prefillCaja?.id_contrato || 0) === Number(residenteActualizado.id_contrato || 0)
+                        ? Number(prefillCaja?.id_pago_extra || 0)
+                        : 0;
+                    const seleccionInicialServicios = idPagoExtraObjetivo > 0
+                        ? servicios
+                            .filter((s) => Number(s?.id_pago_extra || 0) === idPagoExtraObjetivo)
+                            .map((s) => s.id_servicio)
+                        : servicios
+                            .filter((s) => !s.ya_pagado_mes)
+                            .map((s) => s.id_servicio);
 
                     setServiciosSeleccionados(seleccionInicialServicios);
                     recalcularTotalesCobro(mesesASeleccionar, seleccionInicialServicios, residenteActualizado, servicios, null, engancheInicial, mesEngancheApi);
@@ -1190,6 +1211,15 @@ const Caja = () => {
             }
             if (saldoPendienteResidente > 0 && meses.length === 0) {
                 mostrarToast('La cuenta ya se encuentra solvente para cuotas de terreno.', 'info');
+            }
+
+            const prefillCaja = obtenerPrefillCaja();
+            if (String(prefillCaja?.source || '') === 'cobro_extraordinario'
+                && Number(prefillCaja?.id_contrato || 0) === Number(residenteActualizado.id_contrato || 0)
+            ) {
+                setShowModalCobro(true);
+                mostrarToast('Cargo extraordinario cargado en Caja. Verifica y confirma el cobro.', 'info');
+                limpiarPrefillCaja();
             }
         } catch (error) {
             console.error('Error al obtener meses pendientes:', error);
@@ -1354,14 +1384,24 @@ const Caja = () => {
         const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
         const montoSolicitado = parseFloat(montoAPagar || 0);
         const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
+        const tieneServicioRegularSeleccionado = (serviciosContrato || []).some((servicio) => (
+            serviciosSeleccionados.includes(servicio.id_servicio) && !servicio.es_extraordinario
+        ));
+        const tieneConceptosAdicionales = parseFloat(montoServiciosSeleccionado || 0) > 0
+            || parseFloat(montoEngancheSeleccionado || 0) > 0;
         const esCobroEnganche = String(numCuota || '') === '0' && Number(datosDeuda?.enganche_pendiente || 0) > 0;
-        const mesesParaPago = esCobroEnganche
-            ? []
-            : ((Array.isArray(mesesSeleccionados) && mesesSeleccionados.length)
-            ? mesesSeleccionados
-            : ((Array.isArray(mesesPendientes) && mesesPendientes.length)
-                ? [mesesPendientes[0]]
-                : (mesPagado ? [mesPagado] : [])));
+        let mesesParaPago = [];
+        if (!esCobroEnganche) {
+            if (Array.isArray(mesesSeleccionados) && mesesSeleccionados.length) {
+                mesesParaPago = mesesSeleccionados;
+            } else if (tieneServicioRegularSeleccionado) {
+                mesesParaPago = [etiquetaMesDesdeFecha(new Date())];
+            } else if (!tieneConceptosAdicionales && Array.isArray(mesesPendientes) && mesesPendientes.length) {
+                mesesParaPago = [mesesPendientes[0]];
+            } else if (mesPagado) {
+                mesesParaPago = [mesPagado];
+            }
+        }
         const mesesFinanciadosParaPago = mesesParaPago.filter((mes) => !esMesEngancheVisual(mes));
         const morasSeleccionadasPayload = obtenerMorasAplicables(mesesFinanciadosParaPago)
             .map((mora) => ({
@@ -1391,7 +1431,8 @@ const Caja = () => {
             && parseFloat(montoServiciosSeleccionado || 0) <= 0
             && parseFloat(montoMora || 0) <= 0;
 
-        if (!mesesParaPago.length && !esSoloAbonoCapital) {
+        const esSoloServiciosOCargos = parseFloat(montoServiciosSeleccionado || 0) > 0 && montoTerreno <= 0;
+        if (!mesesParaPago.length && !esSoloAbonoCapital && !esSoloServiciosOCargos) {
             mostrarToast('Debe seleccionar al menos un mes pendiente para generar el cobro.', 'warning');
             return;
         }
@@ -1434,10 +1475,12 @@ const Caja = () => {
             fecha_operacion: metodoPago === 'Efectivo' ? '' : fechaOperacion,
             no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
             boleta_referencia: metodoPago === 'Efectivo' ? '' : referencia,
-            observaciones: `Pago de cuota de terreno mes de ${mesesParaPago.join(', ') || mesPagado}`,
+            observaciones: mesesParaPago.length
+                ? `Pago de cuota de terreno mes de ${mesesParaPago.join(', ')}`
+                : 'Cobro de servicios/cargos adicionales desde Caja',
             mes_pagado: mesesParaPago[0] || mesPagado,
             meses_pagados: mesesParaPago,
-            numero_cuota: parseInt(numCuota),
+            numero_cuota: Number.isFinite(parseInt(numCuota, 10)) ? parseInt(numCuota, 10) : null,
             servicios_pagados: serviciosPayload,
             moras_aplicadas: morasSeleccionadasPayload
         };

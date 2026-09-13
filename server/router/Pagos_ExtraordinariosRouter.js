@@ -138,9 +138,11 @@ router.get('/buscar-residente', (req, res) => {
 });
 
 router.post("/crear", (req, res) => {
-    const { id_contrato, concepto, monto, estado } = req.body;
+    const { id_contrato, concepto, monto } = req.body;
     const fechaPago = new Date().toISOString().slice(0, 10);
-    const estadoFinal = estado || 'pendiente';
+    // Registrar el cargo no equivale a cobrarlo. Caja es el único módulo que
+    // puede cambiarlo a pagado y generar su factura/correlativo.
+    const estadoFinal = 'pendiente';
 
     db.query(
         'INSERT INTO pagos_extraordinarios (id_contrato, concepto, monto, fecha_pago, estado) VALUES (?, ?, ?, ?, ?)',
@@ -215,6 +217,12 @@ const cambiarEstadoHandler = (req, res) => {
     const estadosValidos = ['pendiente', 'pagado', 'anulado'];
     if (!estadosValidos.includes(String(estado || '').toLowerCase())) {
         return res.status(400).json({ message: 'Estado inválido. Use pendiente, pagado o anulado.' });
+    }
+
+    if (String(estado || '').toLowerCase() === 'pagado') {
+        return res.status(400).json({
+            message: 'Los cargos deben cobrarse desde Caja para generar el pago, correlativo y factura.'
+        });
     }
 
     db.query(

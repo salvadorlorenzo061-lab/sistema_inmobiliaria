@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { API_BASE_URL } from '../config';
 
@@ -32,7 +30,6 @@ function PagosExtraordinarios() {
 
   const API_URL = `${API_BASE_URL}/api/pagos_extraordinarios`;
   const API_SERVICIOS = `${API_BASE_URL}/api/servicios`;
-  const IVA_RATE = 0.12;
 
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -42,114 +39,6 @@ function PagosExtraordinarios() {
       console.error('Error al cargar pagos extraordinarios:', err);
       setExtrasList([]);
     });
-
-  const getImageFormatFromDataUrl = (dataUrl = '') => {
-    const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/i);
-    if (!match) return 'PNG';
-    const rawFormat = match[1].toLowerCase();
-    if (rawFormat === 'jpg' || rawFormat === 'jpeg') return 'JPEG';
-    if (rawFormat === 'webp') return 'WEBP';
-    return 'PNG';
-  };
-
-  const imprimirFacturaExtra = (data) => {
-    try {
-      const doc = new jsPDF();
-      const fechaHora = new Date().toLocaleString();
-      const contratoRelacionado = (contratosList || []).find(c => String(c.id_contrato) === String(data?.id_contrato));
-      const empresaNombre = data?.nombre_empresa || contratoRelacionado?.nombre_empresa_marca || 'INMOBILIARIA ALFA S.A.';
-      const nitEmpresa = data?.nit_empresa || 'N/A';
-      const paisEmpresa = data?.pais || 'Guatemala';
-      const monedaEmpresa = data?.moneda || 'GTQ';
-      const logoEmpresa = data?.logo || contratoRelacionado?.logo_empresa_marca || null;
-      const montoBase = parseFloat(data?.monto || 0);
-      const montoIva = parseFloat((montoBase * IVA_RATE).toFixed(2));
-      const montoTotal = parseFloat((montoBase + montoIva).toFixed(2));
-      const estadoPago = (data?.estado || 'pendiente').toUpperCase();
-
-      if (logoEmpresa) {
-        try {
-          const logoFormat = getImageFormatFromDataUrl(logoEmpresa);
-          doc.addImage(logoEmpresa, logoFormat, 14, 10, 35, 22, `extra-logo-${data?.id_pago_extra || 'tmp'}`, 'FAST');
-        } catch (e) {
-          console.warn('No se pudo renderizar logo en factura extra:', e);
-        }
-      }
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(14);
-      doc.text(empresaNombre, 55, 18);
-
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`NIT: ${nitEmpresa}`, 55, 24);
-      doc.text(`País: ${paisEmpresa}`, 55, 29);
-      doc.text(`Moneda: ${monedaEmpresa}`, 55, 34);
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('FACTURA CONTABLE DE COBRO EXTRAORDINARIO', 104, 16);
-
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`Documento No: EXTRA-${data?.id_pago_extra || 'N/A'}`, 104, 23);
-      doc.text(`Fecha emisión: ${data?.fecha_pago ? new Date(data.fecha_pago).toLocaleDateString() : new Date().toLocaleDateString()}`, 104, 29);
-      doc.text(`Fecha/Hora impresión: ${fechaHora}`, 104, 35);
-
-      doc.line(14, 40, 196, 40);
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('DATOS DEL CLIENTE', 14, 48);
-
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`Nombre: ${data?.nombre_residente || 'N/A'}`, 14, 55);
-      doc.text(`DPI: ${data?.dpi || 'N/A'}`, 14, 61);
-      doc.text(`Clave: ${data?.numero_identificacion || 'N/A'}`, 14, 67);
-      doc.text(`Contrato: ${data?.codigo_contrato || `#${data?.id_contrato || 'N/A'}`}`, 14, 73);
-
-      doc.setFont('Helvetica', 'bold');
-      doc.text('DETALLE CONTABLE DEL COBRO', 14, 85);
-
-      autoTable(doc, {
-        startY: 90,
-        head: [['Concepto', 'Subtotal', 'IVA 12%', 'Total']],
-        body: [[
-          data?.concepto || 'N/A',
-          `Q${montoBase.toFixed(2)}`,
-          `Q${montoIva.toFixed(2)}`,
-          `Q${montoTotal.toFixed(2)}`
-        ]],
-        theme: 'striped',
-        headStyles: { fillColor: [36, 125, 188] },
-        styles: { fontSize: 10 }
-      });
-
-      let finalY = (doc.lastAutoTable?.finalY || 106) + 10;
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text(`Estado del cobro: ${estadoPago}`, 14, finalY);
-
-      finalY += 8;
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(`Subtotal: Q${montoBase.toFixed(2)}`, 135, finalY);
-      doc.text(`IVA (12%): Q${montoIva.toFixed(2)}`, 135, finalY + 7);
-      doc.setTextColor(200, 0, 0);
-      doc.text(`TOTAL FACTURA: Q${montoTotal.toFixed(2)}`, 135, finalY + 14);
-      doc.setTextColor(0, 0, 0);
-
-      doc.setFont('Helvetica', 'italic');
-      doc.setFontSize(9);
-      doc.text('Factura contable generada automáticamente por el módulo de Cobros Extraordinarios.', 14, finalY + 28);
-
-      doc.save(`Factura_Extra_${data?.id_pago_extra || 'sin_id'}.pdf`);
-    } catch (error) {
-      console.error('Error al generar factura extra:', error);
-      Swal.fire('Atención', 'El cobro se guardó, pero no se pudo generar la factura PDF.', 'warning');
-    }
-  };
 
   useEffect(() => {
     cargarExtras();
@@ -243,17 +132,14 @@ function PagosExtraordinarios() {
       }
 
       await recargarExtras(2);
-      if (!esEdicion && response?.data?.detalle) {
-        imprimirFacturaExtra(response.data.detalle);
-      }
       setShowModal(false); limpiar();
       setBusqueda('');
       setCurrentPage(1);
       Swal.fire({
         icon: 'success',
-        title: esEdicion ? 'Registro actualizado' : 'Registro guardado y factura generada',
+        title: esEdicion ? 'Registro actualizado' : 'Cargo enviado a Caja',
         text: !esEdicion && response?.data?.id_pago_extra
-          ? `ID generado: #${response.data.id_pago_extra}`
+          ? `ID generado: #${response.data.id_pago_extra}. Quedó pendiente para cobrar y facturar desde Caja.`
           : '',
         timer: 2200,
         showConfirmButton: false
@@ -302,6 +188,23 @@ function PagosExtraordinarios() {
         text: err.response?.data?.detail || err.response?.data?.message || backendText || 'Error de conexión con el servidor.'
       });
     }
+  };
+
+  const cobrarEnCaja = (item) => {
+    if (!item?.id_contrato || !item?.codigo_contrato) {
+      Swal.fire('Atención', 'El cargo no tiene un contrato válido para enviarlo a Caja.', 'warning');
+      return;
+    }
+
+    localStorage.setItem('prefill_caja_desde_cuenta_estado', JSON.stringify({
+      source: 'cobro_extraordinario',
+      createdAt: new Date().toISOString(),
+      id_contrato: Number(item.id_contrato),
+      codigo_contrato: String(item.codigo_contrato),
+      id_pago_extra: Number(item.id_pago_extra),
+      id_residente: item.id_residente || null
+    }));
+    window.location.href = '/caja';
   };
 
   const abrirEditar = (val) => {
@@ -454,21 +357,28 @@ function PagosExtraordinarios() {
               </td>
               <td>
                 <button className="btn btn-sm btn-warning fw-bold m-1" onClick={() => abrirEditar(val)}>EDITAR</button>
-                <button className="btn btn-sm btn-primary fw-bold m-1" onClick={() => imprimirFacturaExtra(val)}>IMPRIMIR</button>
                 {(val.estado || 'pendiente') !== 'pagado' && (val.estado || 'pendiente') !== 'anulado' && (
                   <button
                     className="btn btn-sm btn-success fw-bold m-1"
-                    onClick={() => cambiarEstadoCobro(val, 'pagado', '¿Generar pago de este cobro extraordinario?')}
+                    onClick={() => cobrarEnCaja(val)}
                   >
-                    GENERAR PAGO
+                    COBRAR EN CAJA
                   </button>
                 )}
-                {(val.estado || 'pendiente') !== 'anulado' && (
+                {(val.estado || 'pendiente') === 'pendiente' && (
                   <button
                     className="btn btn-sm btn-dark fw-bold m-1"
                     onClick={() => cambiarEstadoCobro(val, 'anulado', '¿Anular/Revertir este cobro extraordinario?')}
                   >
                     ANULAR COBRO
+                  </button>
+                )}
+                {(val.estado || 'pendiente') === 'pagado' && (
+                  <button
+                    className="btn btn-sm btn-outline-dark fw-bold m-1"
+                    onClick={() => { window.location.href = '/anulacion_deuda'; }}
+                  >
+                    ANULAR FACTURA
                   </button>
                 )}
                 {(val.estado || 'pendiente') === 'anulado' && (
