@@ -1381,19 +1381,16 @@ router.get("/meses-pendientes", (req, res) => {
                         }
                     });
 
-                    // Cuotas pagadas configuradas en el contrato: representan cuotas financiadas
-                    // ya atendidas antes del seguimiento puntual en Caja, por lo que se marcan
-                    // desde la primera cuota financiada sin alterar el flujo actual del enganche.
-                    // Importante: la cantidad del contrato debe servir como piso de consistencia.
-                    // Si el contrato dice que hay 4 cuotas pagadas, Caja debe completar hasta 4
-                    // aunque faltara esa huella en los pagos historicos; pero nunca rebaja un
-                    // historial real mayor al valor del contrato.
+                    // El detalle vivo de pagos es la fuente de verdad. No completar desde la cuota 1
+                    // usando contratos_residentes.cuotas_pagadas cuando ya existe detalle, porque al
+                    // anular una cuota intermedia ese contador solo conserva la cantidad y volveria a
+                    // marcar como pagado el mes que acaba de ser restaurado. El contador manual queda
+                    // exclusivamente como compatibilidad para contratos antiguos sin detalle.
                     const cuotasPagadasManualBruta = Math.max(Number(contratoResult[0]?.cuotas_pagadas_manual || 0), 0);
                     const cuotasPagadasHistoricas = mesesPagadosSet.size;
-                    const cuotasPagadasManual = cuotasPagadasHistoricas > 0
-                        ? Math.max(cuotasPagadasManualBruta, cuotasPagadasHistoricas)
+                    const cuotasObjetivoMinimas = cuotasPagadasHistoricas === 0
+                        ? cuotasPagadasManualBruta
                         : 0;
-                    const cuotasObjetivoMinimas = cuotasPagadasManual;
                     if (candidatosMeta.length > 0 && cuotasObjetivoMinimas > 0) {
                         // candidatosMeta[0] ya es la cuota 1 financiada: el enganche no ocupa lugar.
                         // Un historial manual viejo no debe reabrir meses pagados si ya desaparecieron
