@@ -1806,10 +1806,10 @@ const Caja = () => {
                 doc.text('Cheque:', filaX + 114, pagosY + 5.6);
                 doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
 
-                const referenciaBase = String(recibo?.no_referencia || '').trim();
-                const boletaValor = metodo.includes('deposit') ? referenciaBase : '';
-                const transferenciaValor = metodo.includes('transfer') ? referenciaBase : '';
-                const chequeValor = metodo.includes('cheque') ? referenciaBase : '';
+                const referenciaBancaria = boletaReferencia;
+                const boletaValor = metodo.includes('deposit') ? referenciaBancaria : '';
+                const transferenciaValor = metodo.includes('transfer') ? referenciaBancaria : '';
+                const chequeValor = metodo.includes('cheque') ? referenciaBancaria : '';
                 const efectivoValor = metodo.includes('efectivo') ? 'X' : '';
                 doc.setFont('Helvetica', 'normal');
                 doc.setFontSize(10.1);

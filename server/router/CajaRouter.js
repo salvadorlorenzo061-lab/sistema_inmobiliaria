@@ -2609,12 +2609,23 @@ router.post("/procesar-pago", (req, res) => {
                     const idEmpresaFacturacion = empresaRows?.[0]?.id_empresa_facturacion || null;
 
                     const continuarConInsertPago = (correlativoAsignado, idResolucionUsada = null, correlativoMeta = {}) => {
-                        const sqlPago = `INSERT INTO pagos (id_contrato, id_usuario, fecha_pago, monto_total_pagado, forma_pago, no_referencia) 
-                                         VALUES (?, ?, NOW(), ?, ?, ?)`;
+                        const sqlPago = `INSERT INTO pagos (
+                                            id_contrato, id_usuario, fecha_pago, monto_total_pagado,
+                                            forma_pago, no_referencia, banco_pago, fecha_operacion, boleta_referencia
+                                         ) VALUES (?, ?, NOW(), ?, ?, ?, ?, NULLIF(?, ''), ?)`;
                         const moraTotal = moraTotalSeleccionada;
                         const totalTransaccion = parseFloat((montoPrincipalTotal + montoInteresTotal + moraTotal).toFixed(2));
 
-                        db.query(sqlPago, [id_contrato, idUsuarioSeguro, totalTransaccion, metodo_pago, correlativoAsignado], (err, resPago) => {
+                        db.query(sqlPago, [
+                            id_contrato,
+                            idUsuarioSeguro,
+                            totalTransaccion,
+                            metodo_pago,
+                            correlativoAsignado,
+                            banco_pago || null,
+                            fecha_operacion || '',
+                            boleta_referencia || null
+                        ], (err, resPago) => {
                             if (err) return db.rollback(() => res.status(500).send("Error en tabla pagos: " + err.message));
 
                             const lastIdPago = resPago.insertId;

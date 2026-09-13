@@ -153,6 +153,26 @@ const initializeSchema = () => {
         columnName: 'estado_factura',
         columnSql: 'VARCHAR(20) NOT NULL DEFAULT "EMITIDA"'
     });
+
+    // Datos bancarios normalizados del cobro. no_referencia conserva el correlativo
+    // fiscal; la boleta o referencia bancaria se guarda por separado.
+    ensureColumn({
+        tableName: 'pagos',
+        columnName: 'banco_pago',
+        columnSql: 'VARCHAR(120) NULL'
+    });
+
+    ensureColumn({
+        tableName: 'pagos',
+        columnName: 'fecha_operacion',
+        columnSql: 'DATE NULL'
+    });
+
+    ensureColumn({
+        tableName: 'pagos',
+        columnName: 'boleta_referencia',
+        columnSql: 'VARCHAR(160) NULL'
+    });
 };
 
 module.exports = initializeSchema;

@@ -381,6 +381,9 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             p.monto_total_pagado,
             p.forma_pago,
             p.no_referencia,
+            p.banco_pago,
+            p.fecha_operacion,
+            p.boleta_referencia,
             c.codigo_contrato,
             c.id_residente,
             c.mes_inicio_pagos,
@@ -400,7 +403,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
         WHERE ${whereSql}
-        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, u.nombre, u.correo, ru.nombre_rol, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, c.codigo_contrato, c.id_residente, c.mes_inicio_pagos, c.anio_inicio_pagos, r.nombre
+        GROUP BY p.id_pago, p.id_contrato, p.id_usuario, u.nombre, u.correo, ru.nombre_rol, p.fecha_pago, p.monto_total_pagado, p.forma_pago, p.no_referencia, p.banco_pago, p.fecha_operacion, p.boleta_referencia, c.codigo_contrato, c.id_residente, c.mes_inicio_pagos, c.anio_inicio_pagos, r.nombre
         ORDER BY p.id_pago DESC
         LIMIT 1
     `;
