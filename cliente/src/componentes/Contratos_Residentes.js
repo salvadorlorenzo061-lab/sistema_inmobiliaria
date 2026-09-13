@@ -159,6 +159,7 @@ function Contratos_Residentes() {
   const [tiposContratoList, setTiposContratoList] = useState([]);
   const [proyectosList, setProyectosList] = useState([]);
   const [busqueda, setBusqueda] = useState("");
+  const [busquedaCliente, setBusquedaCliente] = useState("");
 
   // Modales
   const [showRegModal, setShowRegModal] = useState(false);  
@@ -167,6 +168,26 @@ function Contratos_Residentes() {
   const itemsPerPage = 10; 
 
   const API_URL = `${API_BASE_URL}/api/contratos_residentes`;
+
+  const normalizarBusquedaCliente = (valor) => String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const terminoClienteNormalizado = normalizarBusquedaCliente(busquedaCliente);
+  const residentesFiltrados = residentesList.filter((residente) => {
+    if (!terminoClienteNormalizado) return true;
+    const datosBuscables = [
+      residente.numero_identificacion,
+      residente.codigo,
+      residente.id_residente,
+      residente.nombre,
+      residente.apellido,
+      residente.apellidos
+    ].filter(Boolean).join(' ');
+    return normalizarBusquedaCliente(datosBuscables).includes(terminoClienteNormalizado);
+  });
 
   // Carga inicial de datos relacionales
   const cargarCatalogos = useCallback(async () => {
@@ -562,6 +583,22 @@ function Contratos_Residentes() {
     const aleatorio = String(Math.floor(100 + Math.random() * 900));
     const iniciales = residente ? residente.nombre.trim().split(' ').map(p => p[0].toUpperCase()).join('').slice(0, 3) : 'RES';
     setCodigo_contrato(`CON-${iniciales}-${anio}${mes}-${aleatorio}`);
+  };
+
+  const buscarClienteContrato = (valor) => {
+    setBusquedaCliente(valor);
+    setId_residente('');
+    if (showRegModal) setCodigo_contrato('');
+  };
+
+  const seleccionarClienteBuscado = (idResidente, generarCodigo = false) => {
+    const residente = residentesList.find(r => String(r.id_residente) === String(idResidente));
+    setBusquedaCliente(residente?.nombre || '');
+    if (generarCodigo) {
+      seleccionarResidenteContrato(idResidente);
+    } else {
+      setId_residente(idResidente);
+    }
   };
 
   const addContrato = () => {
@@ -1126,6 +1163,7 @@ function Contratos_Residentes() {
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
     setId_residente(val.id_residente);
+    setBusquedaCliente(val.nombre_residente || '');
     setId_empresa_marca(proyectoResuelto.idEmpresa);
     setId_proyecto(proyectoResuelto.idProyecto);
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
@@ -1223,6 +1261,7 @@ function Contratos_Residentes() {
 
   const limpiarCampos = () => {
     setId_contrato(""); setCodigo_contrato(""); setId_residente("");
+    setBusquedaCliente("");
     setId_empresa_marca(""); setId_proyecto(""); setId_tipo_contrato("");
     // En alta se dejan vacios para no mostrar una cuota "automatica" con 60 meses que el
     // usuario no ha pactado todavia. Edicion sigue cargando los valores reales del contrato.
@@ -1430,11 +1469,20 @@ function Contratos_Residentes() {
                 {/* SECCIÓN 1: DATOS BÁSICOS DEL CONTRATO */}
                 <div className="col-12 mb-2"><h6 className="fw-bold text-primary border-bottom pb-1">📑 DATOS BÁSICOS DEL CONTRATO</h6></div>
                 <div className="col-md-6 mb-3">
-                  <label className="form-label fw-bold">Seleccionar Cliente:</label>
-                  <select className="form-select" value={id_residente} onChange={e => seleccionarResidenteContrato(e.target.value)}>
+                  <label className="form-label fw-bold">Buscar y seleccionar cliente:</label>
+                  <input
+                    type="search"
+                    className="form-control mb-2"
+                    value={busquedaCliente}
+                    onChange={e => buscarClienteContrato(e.target.value)}
+                    placeholder="Escriba código, nombre o apellido"
+                    autoComplete="off"
+                  />
+                  <select className="form-select" value={id_residente} onChange={e => seleccionarClienteBuscado(e.target.value, true)}>
                     <option value="">-- Seleccione un Cliente --</option>
-                    {residentesList.map(r => <option key={r.id_residente} value={r.id_residente}>{r.nombre} {r.numero_identificacion ? `· ${r.numero_identificacion}` : ''}</option>)}
+                    {residentesFiltrados.map(r => <option key={r.id_residente} value={r.id_residente}>{r.numero_identificacion ? `${r.numero_identificacion} · ` : ''}{r.nombre}</option>)}
                   </select>
+                  {terminoClienteNormalizado && residentesFiltrados.length === 0 && <small className="text-danger">No se encontraron clientes.</small>}
                 </div>
                 <div className="col-md-6 mb-3">
                   <label className="form-label fw-bold">Código de Contrato <small className="text-muted fw-normal">(auto-generado)</small>:</label>
@@ -1746,11 +1794,20 @@ function Contratos_Residentes() {
                   <input type="text" className="form-control" value={codigo_contrato} onChange={e => setCodigo_contrato(e.target.value)} />
                 </div>
                 <div className="col-md-6 mb-3">
-                  <label className="form-label fw-bold">Cliente:</label>
-                  <select className="form-select" value={id_residente} onChange={e => setId_residente(e.target.value)}>
+                  <label className="form-label fw-bold">Buscar y seleccionar cliente:</label>
+                  <input
+                    type="search"
+                    className="form-control mb-2"
+                    value={busquedaCliente}
+                    onChange={e => buscarClienteContrato(e.target.value)}
+                    placeholder="Escriba código, nombre o apellido"
+                    autoComplete="off"
+                  />
+                  <select className="form-select" value={id_residente} onChange={e => seleccionarClienteBuscado(e.target.value)}>
                     <option value="">-- Seleccione un Cliente --</option>
-                    {residentesList.map(r => <option key={r.id_residente} value={r.id_residente}>{r.nombre} {r.numero_identificacion ? `· ${r.numero_identificacion}` : ''}</option>)}
+                    {residentesFiltrados.map(r => <option key={r.id_residente} value={r.id_residente}>{r.numero_identificacion ? `${r.numero_identificacion} · ` : ''}{r.nombre}</option>)}
                   </select>
+                  {terminoClienteNormalizado && residentesFiltrados.length === 0 && <small className="text-danger">No se encontraron clientes.</small>}
                 </div>
                 <div className="col-md-6 mb-3">
                   <label className="form-label fw-bold">Tipo de Contrato:</label>
