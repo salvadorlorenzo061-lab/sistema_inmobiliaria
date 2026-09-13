@@ -1060,7 +1060,13 @@ router.get("/meses-pendientes", (req, res) => {
             c.anio_inicio_pagos,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
-            COALESCE(conv.saldo_actual, c.monto_total) AS monto_total,
+            CASE
+                WHEN conv.id_convenio IS NOT NULL THEN GREATEST(
+                    COALESCE(conv.saldo_actual, 0),
+                    COALESCE(c.saldo_pendiente, 0)
+                )
+                ELSE COALESCE(c.saldo_pendiente, c.monto_total, 0)
+            END AS monto_total,
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             c.enganche AS enganche,
             COALESCE(c.cuotas_pagadas, 0) AS cuotas_pagadas_manual,

@@ -837,7 +837,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                         SELECT id_convenio, monto_original, saldo_actual, estado
                         FROM convenio_pagos
                         WHERE id_contrato = ?
-                          AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'cumplido', 'incumplido')
+                          AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pagado', 'cumplido', 'incumplido')
                         ORDER BY id_convenio DESC
                         LIMIT 1
                     `;
