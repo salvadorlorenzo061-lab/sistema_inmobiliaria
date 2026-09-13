@@ -1487,7 +1487,9 @@ router.get("/meses-pendientes", (req, res) => {
                     es_enganche: false
                 }));
 
-                if (usaCuotaCeroEnganche && inicioConfiguradoValido) {
+                // En convenios, pendientesMeta ya contiene el calendario propio del convenio.
+                // No insertar además el mes inicial del contrato original porque duplicaría la cuota.
+                if (usaCuotaCeroEnganche && !tieneConvenioActivo && inicioConfiguradoValido) {
                     const mesInicioFinanciado = new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1);
                     const etiquetaInicioFinanciado = etiquetaMesDesdeFecha(mesInicioFinanciado);
                     const yaExisteMesInicioFinanciado = mesesPendientes.some((mes) => String(mes || '').trim().toLowerCase() === String(etiquetaInicioFinanciado || '').trim().toLowerCase());
