@@ -1144,7 +1144,7 @@ router.get("/meses-pendientes", (req, res) => {
         // El enganche es la cuota 0 y está anclado al mes de compra/firma, pero NO consume
         // un mes del flujo financiado: es un cargo aparte del contrato. Las cuotas
         // financiadas van 1..N desde el mes/año pactado de inicio de pagos.
-        const usaCuotaCeroEnganche = !tieneConvenioActivo && engancheContrato > 0;
+        const usaCuotaCeroEnganche = engancheContrato > 0;
         const fechaInicioFinanciado = (!tieneConvenioActivo && inicioConfiguradoValido)
             ? new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1)
             : new Date(
@@ -2123,7 +2123,7 @@ router.post("/procesar-pago", (req, res) => {
                 ? cuotasContratoBase
                 : Math.max(mesesAProcesar.length, 1);
             const tieneConvenioActivoContrato = Number(saldoRows[0]?.id_convenio_activo || 0) > 0;
-            const usaCuotaCeroEngancheContrato = !tieneConvenioActivoContrato && engancheContrato > 0;
+            const usaCuotaCeroEngancheContrato = engancheContrato > 0;
 
             // === PLAN FINANCIERO PACTADO EN EL CONTRATO ===
             // Caja no puede inventar su propio plan: debe cobrar exactamente la cuota que
@@ -2304,7 +2304,7 @@ router.post("/procesar-pago", (req, res) => {
             };
 
             if (montoTerrenoTotal > 0) {
-                if (!tieneConvenioActivoContrato && enganchePendienteContrato > 0.009) {
+                if (enganchePendienteContrato > 0.009) {
                     return db.rollback(() => res.status(409).send(
                         'Debe pagar completamente el enganche (Cuota 0) antes de cobrar cuotas financiadas.'
                     ));
