@@ -173,6 +173,12 @@ const initializeSchema = () => {
         columnName: 'boleta_referencia',
         columnSql: 'VARCHAR(160) NULL'
     });
+
+    ensureColumn({
+        tableName: 'contratos_residentes',
+        columnName: 'modalidad_pago',
+        columnSql: 'VARCHAR(20) NOT NULL DEFAULT "financiado"'
+    });
 };
 
 module.exports = initializeSchema;

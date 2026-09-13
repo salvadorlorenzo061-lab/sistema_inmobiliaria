@@ -411,6 +411,7 @@ const registrarHistorialFactura = ({
     mesesPagados,
     totalTransaccion,
     montoMora,
+    modalidadPago,
     callback
 }) => {
     const rolSql = `
@@ -455,7 +456,9 @@ const registrarHistorialFactura = ({
 
             let nombreConcepto = tipoConcepto;
             if (tipoConcepto === 'cuota_terreno') {
-                nombreConcepto = `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
+                nombreConcepto = String(modalidadPago || '').toLowerCase() === 'contado'
+                    ? 'Pago total / al contado del inmueble'
+                    : `Cuota de Terreno No. ${numeroCuota || ''}`.trim();
             } else if (tipoConcepto === 'enganche') {
                 nombreConcepto = 'Enganche';
             } else if (tipoConcepto === 'abono_capital') {
@@ -827,7 +830,7 @@ router.get("/residentes-pendientes", (req, res) => {
         const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
-            c.id_contrato, c.codigo_contrato,
+            c.id_contrato, c.codigo_contrato, COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
             COALESCE(c.saldo_pendiente, c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
@@ -872,7 +875,7 @@ router.get("/residentes-pendientes", (req, res) => {
         LEFT JOIN (
             ${RESUMEN_SERVICIOS_ACTIVOS_SUBQUERY}
         ) servicios_resumen ON servicios_resumen.id_contrato = c.id_contrato
-        WHERE c.estado = 'activo'
+        WHERE LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'finalizado')
         ${filtroPermisos}
         ORDER BY CASE WHEN c.monto_total > 0 THEN 0 ELSE 1 END, r.nombre ASC
     `;
@@ -955,7 +958,7 @@ router.get("/buscar-residente", (req, res) => {
         const query = `
         SELECT 
             r.id_residente, r.nombre, r.dpi, r.nit, r.telefono, r.correo, r.direccion_notificacion, r.numero_identificacion,
-            c.id_contrato, c.codigo_contrato,
+            c.id_contrato, c.codigo_contrato, COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
             COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
             COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
@@ -1002,7 +1005,7 @@ router.get("/buscar-residente", (req, res) => {
         LEFT JOIN (
             ${RESUMEN_PAGOS_CONTRATO_SUBQUERY}
         ) pagos_resumen ON pagos_resumen.id_contrato = c.id_contrato
-        WHERE c.estado = 'activo'
+        WHERE LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'finalizado')
         ${filtroPermisos}
         AND (
             r.nombre LIKE ? 
@@ -1058,6 +1061,7 @@ router.get("/meses-pendientes", (req, res) => {
             c.fecha_firma,
             c.mes_inicio_pagos,
             c.anio_inicio_pagos,
+            COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
             CASE
@@ -1510,6 +1514,7 @@ router.get("/meses-pendientes", (req, res) => {
                     meses: mesesPendientes,
                     meses_detalle: mesesPendientesDetalle,
                     meses_pagados: mesesPagadosOrdenados,
+                    modalidad_pago: contratoResult[0].modalidad_pago || 'financiado',
                     total_cuotas: totalCuotasContrato,
                     cuotas_pagadas: cuotasPagadasContrato,
                     cuotas_pendientes: cuotasPendientesContrato,
@@ -1942,6 +1947,7 @@ router.post("/procesar-pago", (req, res) => {
             const sqlContratoCobro = `
                 SELECT
                     c.monto_total AS monto_total,
+                    COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
                     COALESCE(conv.saldo_actual, c.saldo_pendiente, c.monto_total) AS saldo_pendiente,
                     COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
                     c.enganche,
@@ -2825,7 +2831,9 @@ router.post("/procesar-pago", (req, res) => {
                                                             const montoTerrenoConcepto = redondear2(montosTerrenoPorMes[index]);
                                                             const desgloseTerreno = calcularComponentesFiscalmente(montoTerrenoConcepto);
                                                             detalleCobro.push({
-                                                                concepto: `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
+                                                                concepto: String(saldoRows[0]?.modalidad_pago || '').toLowerCase() === 'contado'
+                                                                    ? 'Pago total / al contado del inmueble'
+                                                                    : `Cuota de Terreno No. ${cuotasTerrenoCalculadas[index] || (index + 1)}`,
                                                                 tipo_concepto: 'cuota_terreno',
                                                                 numero_cuota_afectada: cuotasTerrenoCalculadas[index] || (index + 1),
                                                                 mes,
@@ -3282,6 +3290,7 @@ router.post("/procesar-pago", (req, res) => {
                                                 mesesPagados: mesesAProcesar,
                                                 totalTransaccion,
                                                 montoMora: moraTotal,
+                                                modalidadPago: saldoRows[0]?.modalidad_pago || 'financiado',
                                                 callback: (histErr) => {
                                                     if (histErr) {
                                                         return db.rollback(() => res.status(500).send("No se pudo guardar evidencia fiscal inmutable del comprobante."));

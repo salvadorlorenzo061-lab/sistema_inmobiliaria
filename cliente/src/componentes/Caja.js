@@ -1108,6 +1108,7 @@ const Caja = () => {
             }));
             
             const engancheInicial = enganchePendienteApi;
+            const esPagoContado = String(res?.data?.modalidad_pago || residenteActualizado?.modalidad_pago || '').toLowerCase() === 'contado';
             const prefillCajaActual = obtenerPrefillCaja();
             const esPrefillCargoExtra = String(prefillCajaActual?.source || '') === 'cobro_extraordinario'
                 && Number(prefillCajaActual?.id_contrato || 0) === Number(residenteActualizado.id_contrato || 0)
@@ -1143,7 +1144,9 @@ const Caja = () => {
                 return {
                     value: getValorCuotaMes(mes, numeroCuotaReal, engancheInicial, mesesOrdenados, mesEngancheApi),
                     mes,
-                    label: getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, mesesOrdenados, mesEngancheApi)
+                    label: esPagoContado
+                        ? `Pago total / al contado - ${mes}`
+                        : getEtiquetaCuotaMes(mes, numeroCuotaReal, engancheInicial, mesesOrdenados, mesEngancheApi)
                 };
             });
             const opciones = [...opcionCargoExtra, ...opcionEnganche, ...opcionesMeses];

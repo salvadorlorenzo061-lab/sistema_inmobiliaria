@@ -141,6 +141,7 @@ function Contratos_Residentes() {
 
   // Datos económicos adicionales (para el PDF)
   const [enganche, setEnganche] = useState("20000");
+  const [modalidad_pago, setModalidad_pago] = useState("financiado");
   const [enganchePagadoContrato, setEnganchePagadoContrato] = useState(false);
   const [montoEnganchePagadoContrato, setMontoEnganchePagadoContrato] = useState(0);
   const [interes_porcentaje, setInteres_porcentaje] = useState("14");
@@ -312,6 +313,26 @@ function Contratos_Residentes() {
     setAnios_financiamiento(String(redondearMoneda(cuotasNumero / 12)));
   };
 
+  const seleccionarModalidadPago = (valor) => {
+    const modalidad = valor === 'contado' ? 'contado' : 'financiado';
+    setModalidad_pago(modalidad);
+    setMonto_cuota_manual('');
+    setCuotas_pagadas_manual('0');
+
+    if (modalidad === 'contado') {
+      setEnganche('0');
+      setInteres_porcentaje('0');
+      setCuotas_pactadas('1');
+      setPlazo_meses('1');
+      setAnios_financiamiento(String(redondearMoneda(1 / 12)));
+      return;
+    }
+
+    setCuotas_pactadas('');
+    setPlazo_meses('');
+    setAnios_financiamiento('');
+  };
+
   const actualizarPlazoMeses = (valor) => {
     setPlazo_meses(valor);
     setCuotas_pactadas(valor);
@@ -468,6 +489,7 @@ function Contratos_Residentes() {
       id_empresa_marca: id_empresa_marca || null,
       id_proyecto: id_proyecto || null,
       id_tipo_contrato,
+      modalidad_pago,
       monto_total,
       saldo_pendiente: saldoPendienteVisible,
       enganche,
@@ -1109,6 +1131,7 @@ function Contratos_Residentes() {
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
     setId_tipo_contrato(val.id_tipo_contrato);
     setMonto_total(val.monto_total);
+    setModalidad_pago(String(val.modalidad_pago || 'financiado').toLowerCase() === 'contado' ? 'contado' : 'financiado');
     // Las cuotas pactadas manda; el plazo se alinea a ellas para que la cuota que calcula el
     // contrato sea la misma que cobra Caja (contratos antiguos podian traer 36 cuotas / 60 meses).
     setCuotas_pactadas(val.cuotas_pactadas || val.plazo_meses || '');
@@ -1223,6 +1246,7 @@ function Contratos_Residentes() {
     setMedida_norte("15.00"); setMedida_sur("15.00"); setMedida_oriente("15.00"); setMedida_poniente("15.00");
     // Económicos
     setEnganche("20000"); setInteres_porcentaje("14"); setMora("600");
+    setModalidad_pago("financiado");
     setEnganchePagadoContrato(false);
     setMontoEnganchePagadoContrato(0);
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
@@ -1494,16 +1518,24 @@ function Contratos_Residentes() {
                 {/* SECCIÓN 3: TÉRMINOS FINANCIEROS */}
                 <div className="col-12 mb-2"><h6 className="fw-bold text-danger border-bottom pb-1">💰 TÉRMINOS FINANCIEROS (Cláusula Cuarta)</h6></div>
                 <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Modalidad de pago:</label>
+                  <select className="form-select" value={modalidad_pago} onChange={e => seleccionarModalidadPago(e.target.value)}>
+                    <option value="financiado">Cuotas financiadas + enganche</option>
+                    <option value="contado">Pago total / al contado</option>
+                  </select>
+                  <small className="text-muted">Al contado genera una sola cuota por el precio total.</small>
+                </div>
+                <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Precio Total del Inmueble (Q):</label>
                   <input type="number" className="form-control" value={monto_total} onChange={e => { setMonto_total(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Enganche / Cuota 0 (Q):</label>
-                  <input type="number" className="form-control" value={enganche} onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }} />
+                  <input type="number" className="form-control" value={enganche} disabled={modalidad_pago === 'contado'} onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
-                  <input type="number" className="form-control" value={interes_porcentaje} onChange={e => { setInteres_porcentaje(e.target.value); setMonto_cuota_manual(''); }} placeholder="14" />
+                  <input type="number" className="form-control" value={interes_porcentaje} disabled={modalidad_pago === 'contado'} onChange={e => { setInteres_porcentaje(e.target.value); setMonto_cuota_manual(''); }} placeholder="14" />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Saldo pendiente a pagar</label>
@@ -1521,7 +1553,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
+                  <input type="number" className="form-control" value={cuotas_pactadas} disabled={modalidad_pago === 'contado'} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Cuotas pagadas:</label>
@@ -1567,6 +1599,7 @@ function Contratos_Residentes() {
                     step="1"
                     className="form-control text-success fw-bold"
                     value={monto_cuota_manual || montoCuotaCalculado}
+                    disabled={modalidad_pago === 'contado'}
                     onChange={e => setMonto_cuota_manual(e.target.value)}
                   />
                   <small className="text-muted">Automática: Q {montoCuotaCalculado || '0'}. Puede escribir una cuota entera diferente.</small>
@@ -1581,7 +1614,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Plazo Total (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} placeholder="60" />
+                  <input type="number" className="form-control" value={plazo_meses} disabled={modalidad_pago === 'contado'} onChange={e => actualizarPlazoMeses(e.target.value)} placeholder="60" />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Años:</label>
@@ -1591,6 +1624,7 @@ function Contratos_Residentes() {
                     step="0.01"
                     className="form-control"
                     value={anios_financiamiento}
+                    disabled={modalidad_pago === 'contado'}
                     onChange={e => actualizarAniosFinanciamiento(e.target.value)}
                     placeholder="5"
                   />
@@ -1796,6 +1830,14 @@ function Contratos_Residentes() {
                 {/* SECCIÓN 3: TÉRMINOS FINANCIEROS */}
                 <div className="col-12 mb-2"><h6 className="fw-bold text-danger border-bottom pb-1">💰 TÉRMINOS FINANCIEROS</h6></div>
                 <div className="col-md-4 mb-3">
+                  <label className="form-label fw-bold">Modalidad de pago:</label>
+                  <select className="form-select" value={modalidad_pago} onChange={e => seleccionarModalidadPago(e.target.value)}>
+                    <option value="financiado">Cuotas financiadas + enganche</option>
+                    <option value="contado">Pago total / al contado</option>
+                  </select>
+                  <small className="text-muted">Al contado genera una sola cuota por el precio total.</small>
+                </div>
+                <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Precio Total del Inmueble (Q):</label>
                   <input type="number" className="form-control" value={monto_total} onChange={e => { setMonto_total(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
@@ -1806,7 +1848,7 @@ function Contratos_Residentes() {
                     className="form-control"
                     value={enganche}
                     min={montoEnganchePagadoContrato}
-                    disabled={enganchePagadoContrato}
+                    disabled={enganchePagadoContrato || modalidad_pago === 'contado'}
                     onChange={e => { setEnganche(e.target.value); setMonto_cuota_manual(''); }}
                   />
                   <small className={enganchePagadoContrato ? 'text-success fw-bold' : 'text-muted'}>
@@ -1819,7 +1861,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Interés Anual (%):</label>
-                  <input type="number" className="form-control" value={interes_porcentaje} onChange={e => { setInteres_porcentaje(e.target.value); setMonto_cuota_manual(''); }} />
+                  <input type="number" className="form-control" value={interes_porcentaje} disabled={modalidad_pago === 'contado'} onChange={e => { setInteres_porcentaje(e.target.value); setMonto_cuota_manual(''); }} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Saldo pendiente a pagar</label>
@@ -1837,7 +1879,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Número de Cuotas:</label>
-                  <input type="number" className="form-control" value={cuotas_pactadas} onChange={e => actualizarCuotasPactadas(e.target.value)} />
+                  <input type="number" className="form-control" value={cuotas_pactadas} disabled={modalidad_pago === 'contado'} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Cuotas pagadas:</label>
@@ -1874,6 +1916,7 @@ function Contratos_Residentes() {
                     step="1"
                     className="form-control text-success fw-bold"
                     value={monto_cuota_manual || montoCuotaCalculado}
+                    disabled={modalidad_pago === 'contado'}
                     onChange={e => setMonto_cuota_manual(e.target.value)}
                   />
                   <small className="text-muted">Automática: Q {montoCuotaCalculado || '0'}. Puede escribir una cuota entera diferente.</small>
@@ -1888,7 +1931,7 @@ function Contratos_Residentes() {
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Plazo Total (meses):</label>
-                  <input type="number" className="form-control" value={plazo_meses} onChange={e => actualizarPlazoMeses(e.target.value)} />
+                  <input type="number" className="form-control" value={plazo_meses} disabled={modalidad_pago === 'contado'} onChange={e => actualizarPlazoMeses(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Años:</label>
@@ -1898,6 +1941,7 @@ function Contratos_Residentes() {
                     step="0.01"
                     className="form-control"
                     value={anios_financiamiento}
+                    disabled={modalidad_pago === 'contado'}
                     onChange={e => actualizarAniosFinanciamiento(e.target.value)}
                     placeholder="5"
                   />

@@ -543,6 +543,7 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('mes_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('anio_inicio_pagos', 'INT NULL DEFAULT 2026');
     ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
+    ensureFinancialColumn('modalidad_pago', "VARCHAR(20) NOT NULL DEFAULT 'financiado'");
 };
 
 // ventas_propiedad es un resumen de la venta. contratos_residentes continúa siendo
@@ -875,15 +876,25 @@ const obtenerSaldoFinanciadoReal = (idContrato, callback = () => {}) => {
                       * (COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1) / 12))
                    - COALESCE(pagos.total_pagado, 0),
                    0
+               ) + GREATEST(
+                   COALESCE(c.enganche, 0) - COALESCE(pagos.enganche_pagado, 0),
+                   0
                ) AS saldo_financiado
         FROM contratos_residentes c
         LEFT JOIN (
             SELECT p.id_contrato,
                    COALESCE(SUM(CASE
                        WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital')
-                       THEN pd.subtotal ELSE 0 END), 0) AS total_pagado
+                       THEN pd.subtotal ELSE 0 END), 0) AS total_pagado,
+                   COALESCE(SUM(CASE
+                       WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS enganche_pagado
             FROM pagos p
             INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            WHERE NOT EXISTS (
+                SELECT 1 FROM facturas_historial fh
+                WHERE fh.id_pago = p.id_pago
+                  AND UPPER(COALESCE(fh.estado_factura, '')) = 'ANULADA'
+            )
             GROUP BY p.id_contrato
         ) pagos ON pagos.id_contrato = c.id_contrato
         WHERE c.id_contrato = ?
@@ -903,7 +914,7 @@ const validarSolvenciaFiniquito = (req, res, next) => {
         if (saldoFinanciado === null) return res.status(404).send({ message: 'Contrato no encontrado.' });
         if (saldoFinanciado > 0.009) {
             return res.status(409).send({
-                message: `No se puede registrar el finiquito: existe una cuota financiada pendiente de Q ${saldoFinanciado.toFixed(2)}.`,
+                message: `No se puede registrar el finiquito: existe deuda pendiente del inmueble por Q ${saldoFinanciado.toFixed(2)}.`,
                 saldo_financiado: saldoFinanciado
             });
         }
@@ -1119,6 +1130,7 @@ router.get("/", (req, res) => {
                    ), 0) AS ultima_cuota_pagada,
                    c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
                    c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
+                   COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
                    r.nombre AS nombre_residente,
@@ -1179,7 +1191,7 @@ router.post("/crear", (req, res) => {
     const { 
         codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
-        dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, modalidad_pago,
         servicios_contrato, numero_lote, datos_propiedad
     } = req.body;
 
@@ -1200,13 +1212,14 @@ router.post("/crear", (req, res) => {
             return res.status(400).send({ message: "El código de contrato ya se encuentra registrado" });
         }
 
-        const plazoNormalizado = Number(plazo_meses || cuotas_pactadas || 0);
+        const modalidadPagoNormalizada = String(modalidad_pago || 'financiado').toLowerCase() === 'contado' ? 'contado' : 'financiado';
+        const plazoNormalizado = modalidadPagoNormalizada === 'contado' ? 1 : Number(plazo_meses || cuotas_pactadas || 0);
         const cuotasNormalizadas = Number.isFinite(plazoNormalizado) && plazoNormalizado > 0
             ? plazoNormalizado
             : Number(cuotas_pactadas || 0);
         const montoTotalNumerico = Number(monto_total || 0);
-        const engancheNumerico = Number(enganche || 0);
-        const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
+        const engancheNumerico = modalidadPagoNormalizada === 'contado' ? 0 : Number(enganche || 0);
+        const interesPorcentajeNumerico = modalidadPagoNormalizada === 'contado' ? 0 : Number(interes_porcentaje || 0);
         const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
         const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
         const montoCuotaNormalizado = normalizarCuotaContrato(
@@ -1230,8 +1243,8 @@ router.post("/crear", (req, res) => {
         obtenerCuotasPagadasReales(0, cuotasPagadasNormalizadas, (_realErr, cuotasPagadasDefinitivas) => {
             const queryInsert = `
                 INSERT INTO contratos_residentes 
-                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, modalidad_pago, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
             db.query(
                 queryInsert,
@@ -1242,6 +1255,7 @@ router.post("/crear", (req, res) => {
                     id_proyecto || null,
                     id_tipo_contrato,
                     formato_contrato || 'FORMATO_01',
+                    modalidadPagoNormalizada,
                     montoTotalNumerico,
                     saldoPendienteNumerico,
                     engancheNumerico,
@@ -1337,6 +1351,7 @@ router.post("/crear", (req, res) => {
 router.put("/actualizar", (req, res, next) => {
     const idContrato = Number(req.body?.id_contrato || 0);
     const engancheSolicitado = Number(req.body?.enganche || 0);
+    const modalidadSolicitada = String(req.body?.modalidad_pago || 'financiado').toLowerCase() === 'contado' ? 'contado' : 'financiado';
     if (!Number.isInteger(idContrato) || idContrato <= 0) {
         return res.status(400).send({ message: 'Contrato inválido.' });
     }
@@ -1347,6 +1362,16 @@ router.put("/actualizar", (req, res, next) => {
 
     db.query(`
         SELECT c.enganche,
+               COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
+               COALESCE((
+                   SELECT COUNT(*) FROM pagos p_modalidad
+                   WHERE p_modalidad.id_contrato = c.id_contrato
+                     AND NOT EXISTS (
+                         SELECT 1 FROM facturas_historial fh_modalidad
+                         WHERE fh_modalidad.id_pago = p_modalidad.id_pago
+                           AND UPPER(COALESCE(fh_modalidad.estado_factura, '')) = 'ANULADA'
+                     )
+               ), 0) AS pagos_emitidos,
                COALESCE((
                    SELECT SUM(pd.subtotal)
                    FROM pagos p
@@ -1373,6 +1398,12 @@ router.put("/actualizar", (req, res, next) => {
 
         const engancheActual = Number(rows[0].enganche || 0);
         const enganchePagado = Number(rows[0].enganche_pagado || 0);
+        const modalidadActual = String(rows[0].modalidad_pago || 'financiado').toLowerCase() === 'contado' ? 'contado' : 'financiado';
+        if (Number(rows[0].pagos_emitidos || 0) > 0 && modalidadSolicitada !== modalidadActual) {
+            return res.status(409).send({
+                message: 'No se puede cambiar la modalidad porque el contrato ya tiene cobros emitidos.'
+            });
+        }
         const engancheCompletamentePagado = engancheActual > 0.009 && enganchePagado + 0.009 >= engancheActual;
         if (engancheCompletamentePagado && Math.abs(engancheSolicitado - engancheActual) > 0.009) {
             return res.status(400).send({
@@ -1392,7 +1423,7 @@ router.put("/actualizar", (req, res) => {
     const { 
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
-        dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato,
+        dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, modalidad_pago,
         servicios_contrato, numero_lote, datos_propiedad
     } = req.body;
 
@@ -1403,13 +1434,14 @@ router.put("/actualizar", (req, res) => {
         bodyKeys: Object.keys(req.body || {})
     });
     
-    const plazoNormalizado = Number(plazo_meses || cuotas_pactadas || 0);
+    const modalidadPagoNormalizada = String(modalidad_pago || 'financiado').toLowerCase() === 'contado' ? 'contado' : 'financiado';
+    const plazoNormalizado = modalidadPagoNormalizada === 'contado' ? 1 : Number(plazo_meses || cuotas_pactadas || 0);
     const cuotasNormalizadas = Number.isFinite(plazoNormalizado) && plazoNormalizado > 0
         ? plazoNormalizado
         : Number(cuotas_pactadas || 0);
     const montoTotalNumerico = Number(monto_total || 0);
-    const engancheNumerico = Number(enganche || 0);
-    const interesPorcentajeNumerico = Number(interes_porcentaje || 0);
+    const engancheNumerico = modalidadPagoNormalizada === 'contado' ? 0 : Number(enganche || 0);
+    const interesPorcentajeNumerico = modalidadPagoNormalizada === 'contado' ? 0 : Number(interes_porcentaje || 0);
     const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
     const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
     const montoCuotaNormalizado = normalizarCuotaContrato(
@@ -1438,7 +1470,7 @@ router.put("/actualizar", (req, res) => {
 
         const queryUpdate = `
             UPDATE contratos_residentes SET 
-            codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, monto_total=?, saldo_pendiente=?, 
+            codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, modalidad_pago=?, monto_total=?, saldo_pendiente=?,
             enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
             dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
             WHERE id_contrato=?
@@ -1452,6 +1484,7 @@ router.put("/actualizar", (req, res) => {
                 id_proyecto || null,
                 id_tipo_contrato,
                 formato_contrato || 'FORMATO_01',
+                modalidadPagoNormalizada,
                 montoTotalNumerico,
                 saldoPendienteNumerico,
                 engancheNumerico,
