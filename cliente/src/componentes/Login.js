@@ -21,7 +21,7 @@ function Login({ onLoginSuccess }) {
       const response = await Axios.post(`${API_BASE_URL}/api/usuarios/login`, {
         correo: correo.trim(),
         clave: clave.trim()
-      });
+      }, { timeout: 20000 });
 
       const usuario = response.data || {};
       localStorage.setItem('usuario', JSON.stringify(usuario));
@@ -31,10 +31,13 @@ function Login({ onLoginSuccess }) {
         onLoginSuccess(usuario);
       }
     } catch (error) {
+      const mensaje = error.code === 'ECONNABORTED'
+        ? 'El servidor está tardando demasiado en responder. Verifica que la API y la base de datos estén disponibles.'
+        : error.response?.data?.message || 'No se pudo iniciar sesión.';
       Swal.fire({
         icon: 'error',
         title: 'Acceso denegado',
-        text: error.response?.data?.message || 'No se pudo iniciar sesión.'
+        text: mensaje
       });
     } finally {
       setCargando(false);
