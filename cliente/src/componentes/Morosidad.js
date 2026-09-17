@@ -94,6 +94,19 @@ function Morosidad() {
     return coincideBusqueda && coincideEstado;
   });
 
+  const totales = morosidadesFiltradas.reduce((acumulado, mora) => {
+    const estado = normalizarTexto(mora.estado || 'pendiente');
+    const monto = Number(mora.monto_mora || 0);
+
+    if (estado === 'pagado') acumulado.pagado += monto;
+    else if (estado === 'anulado') acumulado.anulado += monto;
+    else acumulado.pendiente += monto;
+
+    return acumulado;
+  }, { pendiente: 0, pagado: 0, anulado: 0 });
+
+  const formatearMonto = (monto) => `Q${Number(monto || 0).toFixed(2)}`;
+
   const cambiarFiltro = (actualizador) => {
     actualizador();
     setCurrentPage(1);
@@ -128,9 +141,13 @@ function Morosidad() {
     doc.text(`Empresa: ${empresa}${nitEmpresa ? ` | NIT: ${nitEmpresa}` : ''}`, 14, 23);
     doc.text(`Fecha: ${fecha}`, 14, 29);
     doc.text(`Filtro: ${busquedaAplicada || 'Todos'} | Estado: ${estadoFiltro === 'todos' ? 'Todos' : estadoFiltro.toUpperCase()}`, 14, 35);
+    doc.setFontSize(9);
+    doc.text(`Total pendiente: ${formatearMonto(totales.pendiente)}`, 14, 41);
+    doc.text(`Total pagado: ${formatearMonto(totales.pagado)}`, 95, 41);
+    doc.text(`Total anulado: ${formatearMonto(totales.anulado)}`, 176, 41);
 
     autoTable(doc, {
-      startY: 41,
+      startY: 47,
       head: [['ID', 'CLIENTE', 'DPI / ID', 'CONTRATO', 'MES ATRASADO', 'DÍAS', 'MONTO', 'ESTADO', 'EMPRESA']],
       body: morosidadesFiltradas.map((mora) => [
         `#${mora.id_morosidad}`,
@@ -206,6 +223,33 @@ function Morosidad() {
           <button type="button" className="btn btn-outline-secondary flex-fill" onClick={limpiarFiltros}>
             🧹 Limpiar
           </button>
+        </div>
+      </div>
+
+      <div className="row g-3 mb-3">
+        <div className="col-md-4">
+          <div className="card border-danger shadow-sm h-100">
+            <div className="card-body py-2">
+              <div className="text-danger fw-bold">TOTAL PENDIENTE</div>
+              <div className="fs-5 fw-bold">{formatearMonto(totales.pendiente)}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-4">
+          <div className="card border-success shadow-sm h-100">
+            <div className="card-body py-2">
+              <div className="text-success fw-bold">TOTAL PAGADO</div>
+              <div className="fs-5 fw-bold">{formatearMonto(totales.pagado)}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-4">
+          <div className="card border-dark shadow-sm h-100">
+            <div className="card-body py-2">
+              <div className="text-dark fw-bold">TOTAL ANULADO</div>
+              <div className="fs-5 fw-bold">{formatearMonto(totales.anulado)}</div>
+            </div>
+          </div>
         </div>
       </div>
       
