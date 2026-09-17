@@ -12,6 +12,7 @@ function Morosidad() {
   const [procesando, setProcesando] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [busqueda, setBusqueda] = useState('');
+  const [busquedaAplicada, setBusquedaAplicada] = useState('');
   const [estadoFiltro, setEstadoFiltro] = useState('todos');
   const itemsPerPage = 10;
 
@@ -77,7 +78,7 @@ function Morosidad() {
     .toLowerCase();
 
   const morosidadesFiltradas = morosidades.filter((mora) => {
-    const termino = normalizarTexto(busqueda.trim());
+    const termino = normalizarTexto(busquedaAplicada.trim());
     const coincideBusqueda = !termino || [
       mora.nombre_residente,
       mora.dpi,
@@ -98,6 +99,18 @@ function Morosidad() {
     setCurrentPage(1);
   };
 
+  const ejecutarBusqueda = () => {
+    setBusquedaAplicada(busqueda.trim());
+    setCurrentPage(1);
+  };
+
+  const limpiarFiltros = () => {
+    setBusqueda('');
+    setBusquedaAplicada('');
+    setEstadoFiltro('todos');
+    setCurrentPage(1);
+  };
+
   const generarPDF = () => {
     if (!morosidadesFiltradas.length) {
       Swal.fire({ icon: 'info', title: 'Sin información', text: 'No hay registros para generar el PDF.' });
@@ -114,7 +127,7 @@ function Morosidad() {
     doc.setFontSize(10);
     doc.text(`Empresa: ${empresa}${nitEmpresa ? ` | NIT: ${nitEmpresa}` : ''}`, 14, 23);
     doc.text(`Fecha: ${fecha}`, 14, 29);
-    doc.text(`Filtro: ${busqueda.trim() || 'Todos'} | Estado: ${estadoFiltro === 'todos' ? 'Todos' : estadoFiltro.toUpperCase()}`, 14, 35);
+    doc.text(`Filtro: ${busquedaAplicada || 'Todos'} | Estado: ${estadoFiltro === 'todos' ? 'Todos' : estadoFiltro.toUpperCase()}`, 14, 35);
 
     autoTable(doc, {
       startY: 41,
@@ -157,8 +170,8 @@ function Morosidad() {
       </div>
       </div>
 
-      <div className="row g-2 my-3">
-        <div className="col-md-8">
+      <div className="row g-2 my-3 align-items-end">
+        <div className="col-md-6">
           <label className="form-label fw-bold" htmlFor="buscar-morosidad">Buscar cliente</label>
           <input
             id="buscar-morosidad"
@@ -166,10 +179,13 @@ function Morosidad() {
             className="form-control"
             placeholder="Nombre, apellido, DPI, ID de cliente, contrato o ID de mora"
             value={busqueda}
-            onChange={(e) => cambiarFiltro(() => setBusqueda(e.target.value))}
+            onChange={(e) => setBusqueda(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') ejecutarBusqueda();
+            }}
           />
         </div>
-        <div className="col-md-4">
+        <div className="col-md-3">
           <label className="form-label fw-bold" htmlFor="estado-morosidad">Estado</label>
           <select
             id="estado-morosidad"
@@ -182,6 +198,14 @@ function Morosidad() {
             <option value="pagado">Pagado</option>
             <option value="anulado">Anulado</option>
           </select>
+        </div>
+        <div className="col-md-3 d-flex gap-2">
+          <button type="button" className="btn btn-primary flex-fill" onClick={ejecutarBusqueda}>
+            🔍 Buscar
+          </button>
+          <button type="button" className="btn btn-outline-secondary flex-fill" onClick={limpiarFiltros}>
+            🧹 Limpiar
+          </button>
         </div>
       </div>
       
