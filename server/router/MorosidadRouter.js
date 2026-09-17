@@ -466,10 +466,16 @@ router.get("/", (req, res) => {
             m.*, 
             c.codigo_contrato,
             r.nombre AS nombre_residente,
-            r.numero_identificacion
+            r.numero_identificacion,
+            r.dpi,
+            r.id_residente,
+            COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_empresa,
+            COALESCE(em.nit, er.nit) AS nit_empresa
         FROM morosidad m
         LEFT JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
+        LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
+        LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
         ORDER BY m.id_morosidad DESC
     `;
 
