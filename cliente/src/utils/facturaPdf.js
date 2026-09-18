@@ -259,6 +259,7 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
     cliente = {},
     contrato = 'N/A',
     pago = {},
+    rolUsuarioCobro = '',
     encabezados = ['Concepto / Cuota', 'Mes Afectado', 'Total'],
     filas = [],
     resumen = [],
@@ -377,6 +378,14 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
     : texto(pago?.referencia || documentoNo);
   doc.text(referenciaPrincipal, 143, y);
   y += 10;
+
+  if (rolUsuarioCobro) {
+    doc.setFont('Helvetica', 'bold');
+    doc.text('Rol que cobra:', 12, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.text(texto(rolUsuarioCobro), 42, y);
+    y += 8;
+  }
 
   const banco = texto(pago?.banco, '');
   const fechaOperacion = texto(pago?.fechaOperacion, '');

@@ -1902,6 +1902,7 @@ const Caja = () => {
                     fechaOperacion,
                     boletaReferencia
                 },
+                rolUsuarioCobro: getUsuarioSesion()?.nombre_rol || 'Sin rol registrado',
                 filas: detalleCobro.length
                     ? buildConsolidatedInvoiceRows(detalleCobro, {
                         usarCuotaCeroEnganche: Math.max(parseFloat(residente?.enganche || 0), 0) > 0,
@@ -2678,6 +2679,33 @@ const Caja = () => {
 
                                     {esUsuarioJuridico && (
                                         <div className="mb-4 border rounded p-3 bg-light">
+                                            <label className="form-label fw-bold">⚠️ Mora pendiente por mes:</label>
+                                            {morasPendientes.length > 0 ? (
+                                                <div className="d-flex flex-column gap-2 mb-3">
+                                                    {morasPendientes.map((mora) => {
+                                                        const mesMora = String(mora?.mes_atrasado || '').trim();
+                                                        const montoMoraMes = Number(mora?.monto_mora || 0);
+                                                        const seleccionado = mesesSeleccionados.some((mes) => compararMesesMoraLocal(mes, mesMora));
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                key={mora.id_morosidad}
+                                                                className={`btn text-start d-flex justify-content-between align-items-center ${seleccionado ? 'btn-warning border-dark' : 'btn-light border-secondary'}`}
+                                                                onClick={() => {
+                                                                    setMesPagado(mesMora);
+                                                                    setMesesSeleccionados([mesMora]);
+                                                                    recalcularTotalesCobro([mesMora], serviciosSeleccionados, datosDeuda, serviciosContrato);
+                                                                }}
+                                                            >
+                                                                <span><strong>{mesMora}</strong><br /><small>Mora pendiente</small></span>
+                                                                <span className="badge bg-danger">Q{montoMoraMes.toFixed(2)}</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <div className="text-muted mb-3">No hay mora pendiente registrada.</div>
+                                            )}
                                             <label className="form-label fw-bold">📅 Mes de referencia del servicio o mora:</label>
                                             <select
                                                 className="form-select"

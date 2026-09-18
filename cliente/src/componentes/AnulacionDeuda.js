@@ -389,6 +389,7 @@ function AnulacionDeuda() {
           fechaOperacion: documento?.fecha_operacion,
           boletaReferencia: documento?.boleta_referencia
         },
+        rolUsuarioCobro: documento?.rol_usuario_cobro || 'Sin rol registrado',
         filas: filasFactura,
         resumen: [
           { label: "Subtotal documento anulado", valor: totalAnulado },

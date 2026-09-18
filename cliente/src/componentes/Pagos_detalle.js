@@ -334,6 +334,7 @@ function PagosDetalle() {
           fechaOperacion,
           boletaReferencia
         },
+        rolUsuarioCobro: documento?.rol_usuario_cobro || 'Sin rol registrado',
         filas: filasFactura,
         resumen: [
           { label: "Subtotal deuda pagada", valor: montoTotal },
