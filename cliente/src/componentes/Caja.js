@@ -1387,7 +1387,8 @@ const Caja = () => {
 
         setMorasSeleccionadas(idsSeleccionados);
         setMontoMora(String(Number(totalSeleccionado).toFixed(2)));
-        setMontoAPagar(String((Number(montoTotalSeleccionado || 0) + Number(totalSeleccionado || 0)).toFixed(2)));
+        const moraIncluidaEnEsteRol = esUsuarioGestorCobros ? 0 : totalSeleccionado;
+        setMontoAPagar(String((Number(montoTotalSeleccionado || 0) + Number(moraIncluidaEnEsteRol || 0)).toFixed(2)));
     }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado, quitarMoraTodo, quitarMoraMesesSeleccionados]);
 
     // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
@@ -2002,7 +2003,7 @@ const Caja = () => {
             cuotaFinanciada = Number(filaFinanciera?.capital_cuota || 0)
                 + Number(filaFinanciera?.interes_mes || 0);
         }
-        const recargoVencido = esCuotaEnganche
+        const recargoVencido = esCuotaEnganche || esUsuarioGestorCobros
             ? 0
             : obtenerMorasAplicables([mesEtiqueta])
                 .reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0);
@@ -2011,6 +2012,10 @@ const Caja = () => {
         // la primera cuota conservaba Q500 de mora aun después de exonerarla.
         return redondear2(cuotaFinanciada + recargoVencido);
     };
+    const obtenerMoraMesVista = (mesEtiqueta = '') => redondear2(
+        obtenerMorasAplicables([mesEtiqueta])
+            .reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0)
+    );
     const capitalSeleccionado = parseFloat(montoTerrenoSeleccionado || 0);
     const engancheSeleccionado = parseFloat(montoEngancheContratoAplicado || 0);
     const abonoCapitalSeleccionado = parseFloat(montoEngancheSeleccionado || 0);
@@ -2032,6 +2037,9 @@ const Caja = () => {
         obtenerMorasAplicables(mesesSeleccionados)
             .reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0)
             .toFixed(2)
+    );
+    const moraPendienteTotalVista = parseFloat(
+        (morasPendientes || []).reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0).toFixed(2)
     );
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
     const tieneEnganchePendiente = enganchePendiente > 0;
@@ -2403,8 +2411,14 @@ const Caja = () => {
                                             Servicios: Q{montoServiciosSeleccionado.toFixed(2)}
                                             {moraTotalDistribuidaVista > 0 && (
                                                 <>
-                                                    <br />
-                                                    Total seleccionado: Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
+                                                    {!esUsuarioGestorCobros && (
+                                                        <>
+                                                            <br />
+                                                            Mora seleccionada: Q{moraTotalDistribuidaVista.toFixed(2)}
+                                                            <br />
+                                                            Total con mora: Q{(montoTotalSeleccionado + moraTotalDistribuidaVista).toFixed(2)}
+                                                        </>
+                                                    )}
                                                 </>
                                             )}
                                         </span>
@@ -2514,6 +2528,12 @@ const Caja = () => {
                                     {/* Selección de meses pendientes como lista de items */}
                                     {!esUsuarioJuridico && <div className="mb-4">
                                         <label className="form-label fw-bold">📅 Cuotas financiadas (seleccione cuáles paga el cliente):</label>
+                                        {esUsuarioGestorCobros && moraPendienteTotalVista > 0 && (
+                                            <div className="alert alert-warning border-warning fw-bold mb-3">
+                                                ⚠️ Existe mora pendiente por <strong>Q{moraPendienteTotalVista.toFixed(2)}</strong>.
+                                                Esta mora no se incluirá en la factura del Gestor de Cobros; debe cobrarla el rol Jurídico.
+                                            </div>
+                                        )}
                                         {morasPendientes.length > 0 && (
                                             <div className="border rounded-3 p-3 mb-3 bg-warning bg-opacity-10">
                                                 <div className="fw-bold mb-2">Opciones de mora para este cobro</div>
@@ -2625,7 +2645,17 @@ const Caja = () => {
                                                                 </span>
                                                             </div>
                                                             <div className="text-end">
-                                                                <span className="badge bg-primary fs-6">Q{Math.round(obtenerCuotaPactadaConRecargoVista(mes))}</span>
+                                                                <div className="small text-muted">
+                                                                    Cuota: Q{Math.round(obtenerCuotaPactadaConRecargoVista(mes) - (esUsuarioGestorCobros ? 0 : obtenerMoraMesVista(mes)))}
+                                                                </div>
+                                                                {!esUsuarioGestorCobros && obtenerMoraMesVista(mes) > 0 && (
+                                                                    <div className="small text-danger fw-bold">
+                                                                        Mora: Q{obtenerMoraMesVista(mes).toFixed(2)}
+                                                                    </div>
+                                                                )}
+                                                                <span className="badge bg-primary fs-6">
+                                                                    Total: Q{Math.round(obtenerCuotaPactadaConRecargoVista(mes))}
+                                                                </span>
                                                             </div>
                                                             {mesesSeleccionados.includes(mes) && (
                                                                 <span className="ms-2 text-success fw-bold">✓ Seleccionado</span>
@@ -2641,7 +2671,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Total seleccionado:</strong> Q{Math.round(montoTotalSeleccionado + moraTotalDistribuidaVista)}
+                                                <strong>Total seleccionado:</strong> Q{Math.round(montoTotalSeleccionado + (esUsuarioGestorCobros ? 0 : moraTotalDistribuidaVista))}
                                             </div>
                                         )}
                                     </div>}
