@@ -27,7 +27,8 @@ const getFallbackPermisosByRole = (rolNormalizado = '') => {
   if (rolNormalizado.includes('jurid') || rolNormalizado.includes('legal')) {
     return new Set([
       normalizeText('Caja (General)'),
-      normalizeText('Mora y Atrasos')
+      normalizeText('Mora y Atrasos'),
+      normalizeText('Anular Cobro')
     ]);
   }
 
@@ -36,6 +37,7 @@ const getFallbackPermisosByRole = (rolNormalizado = '') => {
       normalizeText('Caja (General)'),
       normalizeText('Caja Ingresos Manual'),
       normalizeText('Mora y Atrasos'),
+      normalizeText('Anular Cobro'),
       normalizeText('Convenio de Pagos'),
       normalizeText('Tabla de Amortización'),
       normalizeText('Pagos'),
@@ -288,7 +290,9 @@ function App() {
     const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
     const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
     const fallbackPermisos = getFallbackPermisosByRole(rolNormalizado);
-    const rolTieneAccesoCaja = rolNormalizado.includes('jurid') || rolNormalizado.includes('legal');
+    const rolTieneAccesoCaja = rolNormalizado.includes('jurid')
+      || rolNormalizado.includes('legal')
+      || (rolNormalizado.includes('gestor') && rolNormalizado.includes('cobro'));
     const perfilCaja = permisosNormalizados.size === 0
       && detectarPerfilCaja(rolNormalizado, permisosNormalizados);
     const permisosEfectivos = new Set([

@@ -306,6 +306,10 @@ const Caja = () => {
         });
     };
 
+    const filtrarServiciosPorRol = (servicios = []) => (
+        esUsuarioGestorCobros ? [] : filtrarServiciosMostrables(servicios)
+    );
+
     const esCobroUnicoServicio = (servicio = {}) => {
         if (typeof servicio?.es_cobro_unico === 'boolean') {
             return servicio.es_cobro_unico;
@@ -1170,7 +1174,7 @@ const Caja = () => {
             if (mesParaServicios) {
                 try {
                     const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${residenteActualizado.id_contrato}?mes=${encodeURIComponent(mesParaServicios)}`);
-                    const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
+                    const servicios = filtrarServiciosPorRol(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
 
                     const prefillCaja = obtenerPrefillCaja();
@@ -1619,7 +1623,7 @@ const Caja = () => {
                         ? mesEngancheVisibleActualizado
                         : primerMes;
                     const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(mesParaServicios)}`);
-                    const servicios = filtrarServiciosMostrables(serviciosRes?.data?.servicios || []);
+                    const servicios = filtrarServiciosPorRol(serviciosRes?.data?.servicios || []);
                     setServiciosContrato(servicios);
                     const serviciosActivos = servicios.filter((s) => !s.ya_pagado_mes).map((s) => s.id_servicio);
                     setServiciosSeleccionados(serviciosActivos);
@@ -2323,8 +2327,8 @@ const Caja = () => {
                                         </div>
                                     )}
 
-                                    {/* Qué está pagando */}
-                                    <div className="mb-3">
+                                    {/* Qué está pagando: Jurídico trabaja únicamente con servicios y mora. */}
+                                    {!esUsuarioJuridico && <div className="mb-3">
                                         <label className="form-label fw-bold">¿Qué está pagando?</label>
                                         <select 
                                             className="form-select" 
@@ -2366,10 +2370,10 @@ const Caja = () => {
                                                 </option>
                                             ))}
                                         </select>
-                                    </div>
+                                    </div>}
 
                                     {/* Monto fijo y total a pagar */}
-                                    <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
+                                    {!esUsuarioJuridico && <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
                                             <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{Math.round(capitalPorCuotaRegular)}
                                             <br />
@@ -2404,9 +2408,9 @@ const Caja = () => {
                                                 </>
                                             )}
                                         </span>
-                                    </div>
+                                    </div>}
 
-                                    {tieneCuotaCeroPendiente && (
+                                    {!esUsuarioJuridico && tieneCuotaCeroPendiente && (
                                         <div className="mb-3 border rounded p-3 bg-light">
                                             <label className="form-label fw-bold">Enganche del contrato:</label>
                                             <div className="input-group">
@@ -2429,7 +2433,7 @@ const Caja = () => {
                                         </div>
                                     )}
 
-                                    <div className="mb-3 border rounded p-3 bg-light">
+                                    {!esUsuarioJuridico && <div className="mb-3 border rounded p-3 bg-light">
                                         <label className="form-label fw-bold">Abono a capital (sin interés):</label>
                                         <div className="input-group">
                                             <span className="input-group-text">Q</span>
@@ -2463,11 +2467,11 @@ const Caja = () => {
                                             </button>
                                         </div>
                                         <small className="text-muted">El abono a capital es adicional al enganche: reduce saldo y no genera interés.</small>
-                                    </div>
+                                    </div>}
 
                                     {/* Servicios asignados al contrato */}
-                                    <div className="mb-4">
-                                        <label className="form-label fw-bold">🧾 Servicios del contrato (agua/drenaje y otros activos):</label>
+                                    {!esUsuarioGestorCobros && <div className="mb-4">
+                                        <label className="form-label fw-bold">🧾 Servicios a cobrar (agua, luz, drenaje y otros activos):</label>
                                         <div className="border rounded-3 p-3 bg-light">
                                             {serviciosContrato.length > 0 ? (
                                                 <div className="d-flex flex-column gap-2">
@@ -2505,11 +2509,11 @@ const Caja = () => {
                                                 <div className="text-center py-3 text-muted">No hay servicios activos asignados a este contrato.</div>
                                             )}
                                         </div>
-                                    </div>
+                                    </div>}
 
                                     {/* Selección de meses pendientes como lista de items */}
-                                    <div className="mb-4">
-                                        <label className="form-label fw-bold">📅 Meses a Pagar (seleccione cuáles paga el cliente):</label>
+                                    {!esUsuarioJuridico && <div className="mb-4">
+                                        <label className="form-label fw-bold">📅 Cuotas financiadas (seleccione cuáles paga el cliente):</label>
                                         {morasPendientes.length > 0 && (
                                             <div className="border rounded-3 p-3 mb-3 bg-warning bg-opacity-10">
                                                 <div className="fw-bold mb-2">Opciones de mora para este cobro</div>
@@ -2640,18 +2644,48 @@ const Caja = () => {
                                                 <strong>Total seleccionado:</strong> Q{Math.round(montoTotalSeleccionado + moraTotalDistribuidaVista)}
                                             </div>
                                         )}
-                                    </div>
+                                    </div>}
+
+                                    {esUsuarioJuridico && (
+                                        <div className="mb-4 border rounded p-3 bg-light">
+                                            <label className="form-label fw-bold">📅 Mes de referencia del servicio o mora:</label>
+                                            <select
+                                                className="form-select"
+                                                value={mesPagado}
+                                                onChange={async (e) => {
+                                                    const mesSeleccionado = e.target.value;
+                                                    setMesPagado(mesSeleccionado);
+                                                    setMesesSeleccionados(mesSeleccionado ? [mesSeleccionado] : []);
+                                                    try {
+                                                        const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(mesSeleccionado)}`);
+                                                        const servicios = filtrarServiciosPorRol(serviciosRes?.data?.servicios || []);
+                                                        setServiciosContrato(servicios);
+                                                        const seleccionables = servicios.filter((s) => !s.ya_pagado_mes).map((s) => s.id_servicio);
+                                                        setServiciosSeleccionados(seleccionables);
+                                                        recalcularTotalesCobro([mesSeleccionado], seleccionables, datosDeuda, servicios);
+                                                    } catch (error) {
+                                                        console.error('No se pudieron refrescar servicios por mes:', error);
+                                                    }
+                                                }}
+                                            >
+                                                {(mesesPendientes.length > 0 ? mesesPendientes : [mesPagado || etiquetaMesDesdeFecha(new Date())]).map((mes) => (
+                                                    <option key={mes} value={mes}>{mes}</option>
+                                                ))}
+                                            </select>
+                                            <small className="text-muted">Este mes no representa una cuota financiada; solo identifica el período del servicio o la mora.</small>
+                                        </div>
+                                    )}
 
                                     <div className="row mb-3">
                                         {/* Mes principal */}
-                                        <div className="col-md-6">
+                                        {!esUsuarioJuridico && <div className="col-md-6">
                                             <label className="form-label fw-bold">Mes que se está cobrando:</label>
                                             <select className="form-select" value={mesPagado} onChange={async (e) => {
                                                 const mesSeleccionado = e.target.value;
                                                 setMesPagado(mesSeleccionado);
                                                 try {
                                                     const serviciosRes = await axios.get(`${API_BASE_URL}/api/caja/servicios-contrato/${datosDeuda.id_contrato}?mes=${encodeURIComponent(mesSeleccionado)}`);
-                                                    const servicios = serviciosRes?.data?.servicios || [];
+                                                    const servicios = filtrarServiciosPorRol(serviciosRes?.data?.servicios || []);
                                                     setServiciosContrato(servicios);
                                                     const seleccionables = servicios
                                                         .filter((s) => !s.ya_pagado_mes && serviciosSeleccionados.includes(s.id_servicio))
@@ -2666,7 +2700,7 @@ const Caja = () => {
                                                     <option key={mes} value={mes}>{mes}</option>
                                                 ))}
                                             </select>
-                                        </div>
+                                        </div>}
                                         {/* Monto */}
                                         <div className="col-md-6">
                                             <label className="form-label fw-bold">{mesesSeleccionados.length > 1 ? 'Monto total a abonar (Q):' : 'Monto a abonar (Q):'}</label>
