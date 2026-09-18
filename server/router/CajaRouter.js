@@ -753,6 +753,9 @@ const obtenerContextoPermisosCaja = (idUsuario, callback) => {
             return callback(null, {
                 idUsuario: id,
                 esAdminOGerente: false,
+                nombreRol: '',
+                esJuridico: false,
+                esGestorCobros: false,
                 filtrarPorPermiso: true
             });
         }
@@ -763,6 +766,9 @@ const obtenerContextoPermisosCaja = (idUsuario, callback) => {
         return callback(null, {
             idUsuario: id,
             esAdminOGerente,
+            nombreRol: rol,
+            esJuridico: rol.includes('jurid') || rol.includes('legal'),
+            esGestorCobros: rol.includes('gestor') && rol.includes('cobro'),
             // Regla operativa: cualquier usuario autenticado (incluyendo admin/gerencia)
             // solo debe cobrar dentro de sus empresas asignadas por correlativo/resolucion.
             filtrarPorPermiso: true
@@ -1941,6 +1947,35 @@ router.post("/procesar-pago", (req, res) => {
             return res.status(400).send('No hay usuarios registrados para asociar el cobro. Crea al menos un usuario activo.');
         }
 
+        obtenerContextoPermisosCaja(idUsuarioSeguro, (rolErr, contextoRol) => {
+            if (rolErr) {
+                return res.status(500).send('Error validando el rol del usuario que procesa el cobro.');
+            }
+
+            const montoServiciosSolicitado = serviciosSolicitados.reduce((total, servicio) => total + Number(servicio.subtotal || 0), 0);
+            const tieneMoraSolicitada = moraTotalSeleccionada > 0;
+            const tieneTerrenoSolicitado = montoTerrenoTotalBase > 0;
+            const tieneEngancheSolicitado = montoEngancheSolicitado > 0 || montoAbonoCapitalSolicitado > 0;
+            const tieneInteresSolicitado = montoInteresSolicitado > 0;
+
+            if (contextoRol?.esJuridico && !contextoRol?.esAdminOGerente) {
+                if (tieneTerrenoSolicitado || tieneEngancheSolicitado || tieneInteresSolicitado) {
+                    return res.status(403).send('El rol Jurídico solo puede cobrar servicios, cargos extraordinarios y mora.');
+                }
+                if (montoServiciosSolicitado <= 0 && !tieneMoraSolicitada) {
+                    return res.status(403).send('El rol Jurídico debe seleccionar al menos un servicio, cargo extraordinario o mora.');
+                }
+            }
+
+            if (contextoRol?.esGestorCobros && !contextoRol?.esAdminOGerente) {
+                if (montoServiciosSolicitado > 0 || tieneMoraSolicitada || montoAbonoCapitalSolicitado > 0) {
+                    return res.status(403).send('El rol Gestor de Cobros solo puede cobrar enganche y cuotas financiadas.');
+                }
+                if (!tieneTerrenoSolicitado && montoEngancheSolicitado <= 0 && montoInteresSolicitado <= 0) {
+                    return res.status(403).send('El rol Gestor de Cobros debe seleccionar un enganche o una cuota financiada.');
+                }
+            }
+
         db.beginTransaction((err) => {
             if (err) return res.status(500).send("Error de transacción.");
 
@@ -2348,6 +2383,10 @@ router.post("/procesar-pago", (req, res) => {
             }
 
             const prepararServiciosMesInicial = (callbackPreparar) => {
+                if (contextoRol?.esGestorCobros && !contextoRol?.esAdminOGerente) {
+                    return callbackPreparar();
+                }
+
                 const fechaCompraRaw = saldoRows[0]?.fecha_compra;
                 const fechaFirmaRaw = saldoRows[0]?.fecha_firma;
                 const fechaCompra = fechaCompraRaw ? new Date(fechaCompraRaw) : null;
@@ -3425,6 +3464,7 @@ router.post("/procesar-pago", (req, res) => {
             return validarServiciosYContinuar();
             });
             });
+        });
         });
     });
 });

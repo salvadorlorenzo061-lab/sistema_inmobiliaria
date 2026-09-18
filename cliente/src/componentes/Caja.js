@@ -149,6 +149,13 @@ const etiquetaMesDesdeFecha = (fecha) => {
 const PREFILL_CAJA_KEY = 'prefill_caja_desde_cuenta_estado';
 
 const Caja = () => {
+    const usuarioSesion = getUsuarioSesion();
+    const rolSesion = String(usuarioSesion?.nombre_rol || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    const esUsuarioJuridico = rolSesion.includes('jurid') || rolSesion.includes('legal');
+    const esUsuarioGestorCobros = rolSesion.includes('gestor') && rolSesion.includes('cobro');
     const getNitDisplay = (nit) => (nit && String(nit).trim() ? String(nit).trim() : 'C/F');
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
     const redondear2 = (valor) => parseFloat((Number(valor || 0)).toFixed(2));
@@ -1413,6 +1420,16 @@ const Caja = () => {
             }));
         const montoMoraPayload = parseFloat(morasSeleccionadasPayload.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0).toFixed(2));
 
+        if (esUsuarioJuridico && (montoTerreno > 0 || parseFloat(montoEngancheContratoAplicado || 0) > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0 || parseFloat(montoInteresSeleccionado || 0) > 0)) {
+            mostrarToast('El rol Jurídico solo puede cobrar servicios, cargos extraordinarios y mora.', 'warning');
+            return;
+        }
+
+        if (esUsuarioGestorCobros && (parseFloat(montoServiciosSeleccionado || 0) > 0 || montoMoraPayload > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0)) {
+            mostrarToast('El rol Gestor de Cobros solo puede cobrar enganche y cuotas financiadas.', 'warning');
+            return;
+        }
+
         if (!contratoTieneAsignacionValida(datosDeuda)) {
             mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
             return;
@@ -2068,6 +2085,17 @@ const Caja = () => {
                 </div>
             </div>
             </div>
+
+            {esUsuarioJuridico && (
+                <div className="alert alert-info text-center fw-bold mt-3 mb-3">
+                    ⚖️ Rol Jurídico: puede cobrar servicios, cargos extraordinarios y mora usando la factura de Caja.
+                </div>
+            )}
+            {esUsuarioGestorCobros && (
+                <div className="alert alert-info text-center fw-bold mt-3 mb-3">
+                    💼 Gestor de Cobros: puede cobrar enganche y cuotas financiadas usando la factura de Caja.
+                </div>
+            )}
 
             {/* ✅ Lista inicial de residentes (pendientes y solventes) */}
             {!datosDeuda && !listaResidentes.length && listaResidentesPendientes.length > 0 && (

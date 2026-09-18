@@ -19,6 +19,13 @@ const MODULE_PERMISSION_ALIASES = {
 };
 
 const getFallbackPermisosByRole = (rolNormalizado = '') => {
+  if (rolNormalizado.includes('jurid') || rolNormalizado.includes('legal')) {
+    return new Set([
+      normalizeText('Caja (General)'),
+      normalizeText('Mora y Atrasos')
+    ]);
+  }
+
   if (rolNormalizado.includes('cobro') || rolNormalizado.includes('caja')) {
     return new Set([
       normalizeText('Caja (General)'),
@@ -104,11 +111,12 @@ function MenuGeneral() {
     const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
     const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
     const fallbackPermisos = getFallbackPermisosByRole(rolNormalizado);
+    const rolTieneAccesoCaja = rolNormalizado.includes('jurid') || rolNormalizado.includes('legal');
     const perfilCaja = permisosNormalizados.size === 0
       && detectarPerfilCaja(rolNormalizado, permisosNormalizados);
     const permisosEfectivos = new Set([
       ...permisosNormalizados,
-      ...(perfilCaja ? Array.from(fallbackPermisos) : [])
+      ...((perfilCaja || rolTieneAccesoCaja) ? Array.from(fallbackPermisos) : [])
     ]);
 
     return modulesConfig.filter((modulo) => {
