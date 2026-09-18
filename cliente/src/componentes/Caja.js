@@ -1371,6 +1371,23 @@ const Caja = () => {
         });
     };
 
+    const toggleMoraMesJuridico = (mesMora) => {
+        const mes = String(mesMora || '').trim();
+        if (!mes) return;
+
+        setMesesSeleccionados((prev) => {
+            const siguiente = prev.includes(mes)
+                ? prev.filter((item) => item !== mes)
+                : [...prev, mes];
+            const ordenado = [...new Set(siguiente)];
+            const mesReferencia = ordenado[0] || '';
+
+            setMesPagado(mesReferencia);
+            recalcularTotalesCobro(ordenado, serviciosSeleccionados, datosDeuda, serviciosContrato);
+            return ordenado;
+        });
+    };
+
     useEffect(() => {
         if (!Array.isArray(morasPendientes) || !morasPendientes.length) {
             setMorasSeleccionadas([]);
@@ -2042,6 +2059,10 @@ const Caja = () => {
     const moraPendienteTotalVista = parseFloat(
         (morasPendientes || []).reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0).toFixed(2)
     );
+    const serviciosSeleccionadosTotalVista = Number(montoServiciosSeleccionado || 0);
+    const totalCobroJuridicoVista = esUsuarioJuridico
+        ? Number((serviciosSeleccionadosTotalVista + moraTotalDistribuidaVista).toFixed(2))
+        : Number(montoTotalSeleccionado || 0);
     const tieneMesesPendientesTerreno = saldoTerrenoPendiente > 0;
     const tieneEnganchePendiente = enganchePendiente > 0;
     const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
@@ -2691,13 +2712,9 @@ const Caja = () => {
                                                                 type="button"
                                                                 key={mora.id_morosidad}
                                                                 className={`btn text-start d-flex justify-content-between align-items-center ${seleccionado ? 'btn-warning border-dark' : 'btn-light border-secondary'}`}
-                                                                onClick={() => {
-                                                                    setMesPagado(mesMora);
-                                                                    setMesesSeleccionados([mesMora]);
-                                                                    recalcularTotalesCobro([mesMora], serviciosSeleccionados, datosDeuda, serviciosContrato);
-                                                                }}
+                                                                onClick={() => toggleMoraMesJuridico(mesMora)}
                                                             >
-                                                                <span><strong>{mesMora}</strong><br /><small>Mora pendiente</small></span>
+                                                                <span><strong>{mesMora}</strong><br /><small>{seleccionado ? 'Mora seleccionada' : 'Mora pendiente'}</small></span>
                                                                 <span className="badge bg-danger">Q{montoMoraMes.toFixed(2)}</span>
                                                             </button>
                                                         );
@@ -2706,6 +2723,11 @@ const Caja = () => {
                                             ) : (
                                                 <div className="text-muted mb-3">No hay mora pendiente registrada.</div>
                                             )}
+                                            <div className="alert alert-success py-2 mb-3">
+                                                <div><strong>Servicios seleccionados:</strong> Q{serviciosSeleccionadosTotalVista.toFixed(2)}</div>
+                                                <div><strong>Mora seleccionada:</strong> Q{moraTotalDistribuidaVista.toFixed(2)}</div>
+                                                <div className="fs-5"><strong>Total a cobrar:</strong> Q{totalCobroJuridicoVista.toFixed(2)}</div>
+                                            </div>
                                             <label className="form-label fw-bold">📅 Mes de referencia del servicio o mora:</label>
                                             <select
                                                 className="form-select"
