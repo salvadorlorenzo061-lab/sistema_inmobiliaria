@@ -925,8 +925,8 @@ const Caja = () => {
             ? parseFloat(montoEngancheSeleccionado || 0)
             : parseFloat(engancheOverride || 0);
         const abonoCapitalManualAplicado = Math.max(abonoManualBase, 0);
-        // El enganche es un cobro independiente, pero puede llevar servicios seleccionados.
-        // En ese caso los servicios mensuales se cobran una sola vez, usando el mes del enganche.
+        // Los servicios mensuales se cobran por cada mes seleccionado; los únicos y extraordinarios,
+        // una sola vez dentro del mismo documento.
         const periodosServicio = cantidadMeses > 0
             ? cantidadMeses
             : (serviciosSeleccionadosDetalle.length > 0 || enganchePendienteContrato > 0 ? 1 : 0);
@@ -1505,6 +1505,7 @@ const Caja = () => {
             id_contrato: datosDeuda.id_contrato,
             id_tipo_contrato: datosDeuda.id_tipo_contrato || 1, 
             id_usuario: obtenerUsuarioActivo(), 
+            rol_cobro: esUsuarioJuridico ? 'juridico' : (esUsuarioGestorCobros ? 'gestor_cobros' : ''),
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
             monto_interes: parseFloat(montoInteresSeleccionado || 0),
@@ -2544,6 +2545,23 @@ const Caja = () => {
                                             ) : (
                                                 <div className="text-center py-3 text-muted">No hay servicios activos asignados a este contrato.</div>
                                             )}
+                                            {esUsuarioJuridico && mesesSeleccionados.length > 0 && serviciosSeleccionadosTotalVista > 0 && (
+                                                <div className="mt-3 border-top pt-3">
+                                                    <div className="fw-bold mb-2">📅 Servicios distribuidos por mes:</div>
+                                                    <div className="d-flex flex-column gap-2">
+                                                        {mesesSeleccionados.map((mes, index) => {
+                                                            const serviciosDelMes = serviciosMensualesVista
+                                                                + (index === 0 ? serviciosUnicosVista + montoCargosExtraSeleccionado : 0);
+                                                            return (
+                                                                <div key={`servicios-${mes}`} className="d-flex justify-content-between align-items-center bg-white border rounded px-3 py-2">
+                                                                    <span>{mes}{index === 0 && (serviciosUnicosVista + montoCargosExtraSeleccionado > 0 ? ' (incluye cargos únicos)' : '')}</span>
+                                                                    <strong>Q{serviciosDelMes.toFixed(2)}</strong>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>}
 
@@ -2724,6 +2742,9 @@ const Caja = () => {
                                                 <div className="text-muted mb-3">No hay mora pendiente registrada.</div>
                                             )}
                                             <div className="alert alert-success py-2 mb-3">
+                                                <div><strong>Servicios mensuales por mes:</strong> Q{(serviciosMensualesVista * Math.max(mesesSeleccionados.length, 1)).toFixed(2)}</div>
+                                                <div><strong>Cobros únicos:</strong> Q{serviciosUnicosVista.toFixed(2)}</div>
+                                                <div><strong>Cargos extraordinarios:</strong> Q{Number(montoCargosExtraSeleccionado || 0).toFixed(2)}</div>
                                                 <div><strong>Servicios seleccionados:</strong> Q{serviciosSeleccionadosTotalVista.toFixed(2)}</div>
                                                 <div><strong>Mora seleccionada:</strong> Q{moraTotalDistribuidaVista.toFixed(2)}</div>
                                                 <div className="fs-5"><strong>Total a cobrar:</strong> Q{totalCobroJuridicoVista.toFixed(2)}</div>

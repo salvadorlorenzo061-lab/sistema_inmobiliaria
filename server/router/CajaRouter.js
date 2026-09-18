@@ -1782,7 +1782,7 @@ router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
         monto_pagar, monto_terreno_pagar, monto_enganche_pagar, monto_abono_capital, monto_interes, monto_mora, metodo_pago, no_referencia, banco_pago, fecha_operacion, boleta_referencia, observaciones,
-        mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas
+        mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas, rol_cobro
     } = req.body;
 
     // Normalizar etiquetas de mes preservando el año enviado por la UI.
@@ -1915,7 +1915,8 @@ router.post("/procesar-pago", (req, res) => {
         montoServiciosMensual = serviciosMensuales.reduce((sum, item) => sum + Number(item?.subtotal || 0), 0);
         const montoServiciosUnicos = serviciosUnicos.reduce((sum, item) => sum + Number(item?.subtotal || 0), 0);
         montoServiciosMesInicial = serviciosMesInicial.reduce((sum, item) => sum + Number(item?.subtotal || 0), 0);
-        montoServiciosTotal = parseFloat(((montoServiciosMensual * cantidadMeses) + montoServiciosUnicos + montoServiciosMesInicial).toFixed(2));
+        const periodosServicios = cantidadMeses;
+        montoServiciosTotal = parseFloat(((montoServiciosMensual * periodosServicios) + montoServiciosUnicos + montoServiciosMesInicial).toFixed(2));
 
         if (!Number.isFinite(montoTerrenoSolicitado)) {
             montoTerrenoTotal = parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0) - montoServiciosTotal, 0).toFixed(2));
