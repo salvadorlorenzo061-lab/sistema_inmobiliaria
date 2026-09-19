@@ -2574,47 +2574,6 @@ const Caja = () => {
                                                 Esta mora no se incluirá en la factura del Gestor de Cobros; debe cobrarla el rol Jurídico.
                                             </div>
                                         )}
-                                        {morasPendientes.length > 0 && (
-                                            <div className="border rounded-3 p-3 mb-3 bg-warning bg-opacity-10">
-                                                <div className="fw-bold mb-2">Opciones de mora para este cobro</div>
-                                                <div className="form-check mb-2">
-                                                    <input
-                                                        id="quitar-mora-todo"
-                                                        type="checkbox"
-                                                        className="form-check-input"
-                                                        checked={quitarMoraTodo}
-                                                        onChange={(e) => {
-                                                            const checked = e.target.checked;
-                                                            setQuitarMoraTodo(checked);
-                                                            if (checked) setQuitarMoraMesesSeleccionados(false);
-                                                        }}
-                                                    />
-                                                    <label className="form-check-label" htmlFor="quitar-mora-todo">
-                                                        Quitar mora a todo el cobro
-                                                    </label>
-                                                </div>
-                                                <div className="form-check">
-                                                    <input
-                                                        id="quitar-mora-mes"
-                                                        type="checkbox"
-                                                        className="form-check-input"
-                                                        checked={quitarMoraMesesSeleccionados}
-                                                        disabled={quitarMoraTodo || mesesSeleccionados.length === 0}
-                                                        onChange={(e) => {
-                                                            const checked = e.target.checked;
-                                                            setQuitarMoraMesesSeleccionados(checked);
-                                                            if (checked) setQuitarMoraTodo(false);
-                                                        }}
-                                                    />
-                                                    <label className="form-check-label" htmlFor="quitar-mora-mes">
-                                                        Quitar mora de todos los meses seleccionados
-                                                    </label>
-                                                </div>
-                                                <small className="text-muted">
-                                                    Esta opción solo exonera la mora en este cobro; no elimina el historial del contrato.
-                                                </small>
-                                            </div>
-                                        )}
                                         <div className="border rounded-3 p-3 bg-light">
                                             {tieneCuotaCeroPendiente && (
                                                 <>
@@ -2740,6 +2699,47 @@ const Caja = () => {
                                                 </div>
                                             ) : (
                                                 <div className="text-muted mb-3">No hay mora pendiente registrada.</div>
+                                            )}
+                                            {morasPendientes.length > 0 && (
+                                                <div className="border rounded p-3 mb-3 bg-warning bg-opacity-10">
+                                                    <div className="fw-bold mb-2">Exoneración de mora para este cobro</div>
+                                                    <div className="form-check mb-2">
+                                                        <input
+                                                            id="juridico-quitar-mora-todo"
+                                                            type="checkbox"
+                                                            className="form-check-input"
+                                                            checked={quitarMoraTodo}
+                                                            onChange={(e) => {
+                                                                const checked = e.target.checked;
+                                                                setQuitarMoraTodo(checked);
+                                                                if (checked) setQuitarMoraMesesSeleccionados(false);
+                                                            }}
+                                                        />
+                                                        <label className="form-check-label" htmlFor="juridico-quitar-mora-todo">
+                                                            Quitar mora a todo el cobro
+                                                        </label>
+                                                    </div>
+                                                    <div className="form-check">
+                                                        <input
+                                                            id="juridico-quitar-mora-meses"
+                                                            type="checkbox"
+                                                            className="form-check-input"
+                                                            checked={quitarMoraMesesSeleccionados}
+                                                            disabled={quitarMoraTodo || mesesSeleccionados.length === 0}
+                                                            onChange={(e) => {
+                                                                const checked = e.target.checked;
+                                                                setQuitarMoraMesesSeleccionados(checked);
+                                                                if (checked) setQuitarMoraTodo(false);
+                                                            }}
+                                                        />
+                                                        <label className="form-check-label" htmlFor="juridico-quitar-mora-meses">
+                                                            Quitar mora de los meses seleccionados
+                                                        </label>
+                                                    </div>
+                                                    <small className="text-muted">
+                                                        La mora exonerada no se incluye en esta factura ni se elimina del historial del contrato.
+                                                    </small>
+                                                </div>
                                             )}
                                             <div className="alert alert-success py-2 mb-3">
                                                 <div><strong>Servicios mensuales por mes:</strong> Q{(serviciosMensualesVista * Math.max(mesesSeleccionados.length, 1)).toFixed(2)}</div>
