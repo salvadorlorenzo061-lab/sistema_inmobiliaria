@@ -103,7 +103,7 @@ function AnulacionDeuda() {
   const esUsuarioAutorizador = (usuario = {}) => {
     const rol = String(usuario?.nombre_rol || '').toLowerCase();
     return String(usuario?.estado || '').toLowerCase() === 'activo'
-      && (rol.includes('admin') || rol.includes('administrador') || rol.includes('gerente') || rol.includes('jurid') || rol.includes('legal'));
+      && (rol.includes('admin') || rol.includes('administrador') || rol.includes('gerente') || rol.includes('jurid') || rol.includes('legal') || (rol.includes('gestor') && rol.includes('cobro')));
   };
 
   const cargarDatosRelacionales = useCallback(() => {

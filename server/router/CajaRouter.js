@@ -1936,8 +1936,9 @@ router.post("/procesar-pago", (req, res) => {
         return res.status(400).send('Datos incompletos para procesar el cobro.');
     }
 
-    if (!Number.isFinite(montoPrincipalTotal) || montoPrincipalTotal <= 0) {
-        return res.status(400).send('Debe cobrar al menos un concepto valido (terreno o servicios).');
+    const totalConceptosCobrables = Number(montoPrincipalTotal || 0) + Number(moraTotalSeleccionada || 0);
+    if (!Number.isFinite(totalConceptosCobrables) || totalConceptosCobrables <= 0) {
+        return res.status(400).send('Debe cobrar al menos un concepto valido (terreno, servicios, cargos extraordinarios o mora).');
     }
 
     resolverIdUsuarioValido(id_usuario, (usuarioErr, idUsuarioSeguro) => {
