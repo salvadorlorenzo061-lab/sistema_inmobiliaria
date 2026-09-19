@@ -411,6 +411,7 @@ const registrarHistorialFactura = ({
     mesesPagados,
     totalTransaccion,
     montoMora,
+    morasExoneradas,
     modalidadPago,
     callback
 }) => {
@@ -484,6 +485,7 @@ const registrarHistorialFactura = ({
                 rol_usuario_emisor: rolUsuarioEmisor,
                 monto_total_pagado: Number(totalTransaccion || 0),
                 monto_mora: Number(montoMora || 0),
+                moras_exoneradas: Array.isArray(morasExoneradas) ? morasExoneradas : [],
                 meses_pagados: mesesPagados || [],
                 detalle: {
                     tipo_concepto: tipoConcepto,
@@ -1782,7 +1784,7 @@ router.post("/procesar-pago", (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
         monto_pagar, monto_terreno_pagar, monto_enganche_pagar, monto_abono_capital, monto_interes, monto_mora, metodo_pago, no_referencia, banco_pago, fecha_operacion, boleta_referencia, observaciones,
-        mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas, rol_cobro
+        mes_pagado, meses_pagados, numero_cuota, servicios_pagados, moras_aplicadas, moras_exoneradas, rol_cobro
     } = req.body;
 
     // Normalizar etiquetas de mes preservando el año enviado por la UI.
@@ -1877,6 +1879,10 @@ router.post("/procesar-pago", (req, res) => {
     });
     const morasAplicadas = Array.from(morasAplicadasPorMes.values());
 
+    const morasExoneradas = [...new Set((Array.isArray(moras_exoneradas) ? moras_exoneradas : [])
+        .map((mes) => String(mes || '').trim())
+        .filter(Boolean))];
+
     const moraTotalSeleccionada = parseFloat(
         morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
     );
@@ -1967,6 +1973,10 @@ router.post("/procesar-pago", (req, res) => {
                 if (montoServiciosSolicitado <= 0 && !tieneMoraSolicitada) {
                     return res.status(403).send('El rol Jurídico debe seleccionar al menos un servicio, cargo extraordinario o mora.');
                 }
+            }
+
+            if (morasExoneradas.length && !contextoRol?.esJuridico && !contextoRol?.esAdminOGerente) {
+                return res.status(403).send('Solo el rol Jurídico puede exonerar mora en una factura.');
             }
 
             if (contextoRol?.esGestorCobros && !contextoRol?.esAdminOGerente) {
@@ -3051,6 +3061,7 @@ router.post("/procesar-pago", (req, res) => {
                                                         servicios_cobrados_mes_inicial: serviciosMesInicial,
                                                         monto_mora: moraTotal,
                                                         moras_aplicadas: morasAplicadas,
+                                                        moras_exoneradas: morasExoneradas,
                                                         iva_total: ivaTotal,
                                                         iva_por_mes: ivaPorMes,
                                                         monto_por_mes: montoPorMesTerreno,
@@ -3331,6 +3342,7 @@ router.post("/procesar-pago", (req, res) => {
                                                 mesesPagados: mesesAProcesar,
                                                 totalTransaccion,
                                                 montoMora: moraTotal,
+                                                morasExoneradas,
                                                 modalidadPago: saldoRows[0]?.modalidad_pago || 'financiado',
                                                 callback: (histErr) => {
                                                     if (histErr) {

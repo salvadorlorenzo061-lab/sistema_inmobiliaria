@@ -335,6 +335,9 @@ function PagosDetalle() {
           boletaReferencia
         },
         rolUsuarioCobro: documento?.rol_usuario_cobro || 'Sin rol registrado',
+        notaPie: Array.isArray(documento?.moras_exoneradas) && documento.moras_exoneradas.length
+          ? `Mora exonerada mes de ${documento.moras_exoneradas.join(', ')}.`
+          : undefined,
         filas: filasFactura,
         resumen: [
           { label: "Subtotal deuda pagada", valor: montoTotal },

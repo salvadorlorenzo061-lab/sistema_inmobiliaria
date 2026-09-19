@@ -20,6 +20,9 @@ const getImageFormatFromDataUrl = (dataUrl = '') => {
     return 'PNG';
 };
 
+                notaPie: Array.isArray(recibo?.moras_exoneradas) && recibo.moras_exoneradas.length
+                    ? `Mora exonerada: ${recibo.moras_exoneradas.join(', ')}.`
+                    : undefined,
 const normalizeImageDataUrl = (value = '') => {
     if (!value || typeof value !== 'string') return '';
 
@@ -1441,6 +1444,12 @@ const Caja = () => {
                 monto_mora: Number(mora.monto_mora || 0)
             }));
         const montoMoraPayload = parseFloat(morasSeleccionadasPayload.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0).toFixed(2));
+        const morasExoneradasPayload = esUsuarioJuridico && (quitarMoraTodo || quitarMoraMesesSeleccionados)
+            ? (morasPendientes || [])
+                .filter((mora) => mesesFinanciadosParaPago.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado)))
+                .map((mora) => String(mora?.mes_atrasado || '').trim())
+                .filter(Boolean)
+            : [];
 
         if (esUsuarioJuridico && (montoTerreno > 0 || parseFloat(montoEngancheContratoAplicado || 0) > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0 || parseFloat(montoInteresSeleccionado || 0) > 0)) {
             mostrarToast('El rol Jurídico solo puede cobrar servicios, cargos extraordinarios y mora.', 'warning');
@@ -1524,7 +1533,8 @@ const Caja = () => {
             meses_pagados: mesesParaPago,
             numero_cuota: Number.isFinite(parseInt(numCuota, 10)) ? parseInt(numCuota, 10) : null,
             servicios_pagados: serviciosPayload,
-            moras_aplicadas: morasSeleccionadasPayload
+            moras_aplicadas: morasSeleccionadasPayload,
+            moras_exoneradas: morasExoneradasPayload
         };
 
         try {
@@ -1921,6 +1931,9 @@ const Caja = () => {
                     boletaReferencia
                 },
                 rolUsuarioCobro: getUsuarioSesion()?.nombre_rol || 'Sin rol registrado',
+                notaPie: Array.isArray(recibo?.moras_exoneradas) && recibo.moras_exoneradas.length
+                    ? `Mora exonerada mes de ${recibo.moras_exoneradas.join(', ')}.`
+                    : undefined,
                 filas: detalleCobro.length
                     ? buildConsolidatedInvoiceRows(detalleCobro, {
                         usarCuotaCeroEnganche: Math.max(parseFloat(residente?.enganche || 0), 0) > 0,

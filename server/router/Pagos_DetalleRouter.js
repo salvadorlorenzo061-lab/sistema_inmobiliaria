@@ -330,6 +330,9 @@ router.get('/documento/:id_pago', (req, res) => {
             usuario_cobro: base.usuario_cobro || `Usuario #${base.id_usuario || 'N/A'}`,
             rol_usuario_cobro: base.rol_usuario_emisor || evidenciaCabecera?.rol_usuario_emisor || base.rol_usuario_cobro || null,
             monto_mora: montoMoraCabecera,
+            moras_exoneradas: Array.isArray(evidenciaCabecera?.moras_exoneradas)
+                ? evidenciaCabecera.moras_exoneradas
+                : (Array.isArray(evidenciaEmitidaCabecera?.moras_exoneradas) ? evidenciaEmitidaCabecera.moras_exoneradas : []),
             cliente: {
                 nombre_residente: base.nombre_residente || 'N/A',
                 numero_identificacion: base.numero_identificacion || 'N/A',

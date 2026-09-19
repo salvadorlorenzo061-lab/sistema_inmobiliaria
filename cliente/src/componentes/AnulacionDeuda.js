@@ -390,13 +390,15 @@ function AnulacionDeuda() {
           boletaReferencia: documento?.boleta_referencia
         },
         rolUsuarioCobro: documento?.rol_usuario_cobro || 'Sin rol registrado',
+        notaPie: Array.isArray(documento?.moras_exoneradas) && documento.moras_exoneradas.length
+          ? `Documento anulado. Mora exonerada mes de ${documento.moras_exoneradas.join(', ')} en el comprobante original.`
+          : `Documento anulado. Autoriza: ${getNombreUsuario(autorizadorInfo)}. Motivo: ${String(anulacion.motivo || "Sin motivo registrado")}`.slice(0, 190),
         filas: filasFactura,
         resumen: [
           { label: "Subtotal documento anulado", valor: totalAnulado },
           { label: "Total revertido", valor: totalAnulado, bold: true, rojo: true }
         ],
-        anulada: true,
-        notaPie: `Documento anulado. Autoriza: ${getNombreUsuario(autorizadorInfo)}. Motivo: ${String(anulacion.motivo || "Sin motivo registrado")}`.slice(0, 190)
+        anulada: true
       });
 
       doc.save(`Anulacion_${anulacion.id_anulacion || "sin_id"}_${String(correlativoTexto).replace(/[^A-Za-z0-9_-]/g, "_")}.pdf`);
