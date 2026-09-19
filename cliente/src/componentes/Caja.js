@@ -20,9 +20,6 @@ const getImageFormatFromDataUrl = (dataUrl = '') => {
     return 'PNG';
 };
 
-                notaPie: Array.isArray(recibo?.moras_exoneradas) && recibo.moras_exoneradas.length
-                    ? `Mora exonerada: ${recibo.moras_exoneradas.join(', ')}.`
-                    : undefined,
 const normalizeImageDataUrl = (value = '') => {
     if (!value || typeof value !== 'string') return '';
 
