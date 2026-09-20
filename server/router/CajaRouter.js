@@ -1894,6 +1894,11 @@ router.post("/procesar-pago", (req, res) => {
     const montoEngancheSolicitado = parseFloat(monto_enganche_pagar || 0);
     const montoAbonoCapitalSolicitado = parseFloat(monto_abono_capital || 0);
     const montoInteresSolicitado = parseFloat(monto_interes || 0);
+    const metodoPagoNormalizado = normalizeText(metodo_pago || '');
+    const esPagoBancario = metodoPagoNormalizado.includes('deposit') || metodoPagoNormalizado.includes('transfer');
+    if (esPagoBancario && (!String(banco_pago || '').trim() || !String(fecha_operacion || '').trim() || !String(boleta_referencia || no_referencia || '').trim())) {
+        return res.status(400).send('Para depósito o transferencia debes indicar banco, fecha de operación y número de referencia o boleta.');
+    }
     const montoTerrenoTotalBase = Number.isFinite(montoTerrenoSolicitado)
         ? parseFloat(Math.max(montoTerrenoSolicitado, 0).toFixed(2))
         : parseFloat(Math.max((Number.isFinite(montoSolicitado) ? montoSolicitado : 0), 0).toFixed(2));

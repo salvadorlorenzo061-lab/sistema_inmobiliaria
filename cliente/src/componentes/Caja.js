@@ -1441,6 +1441,16 @@ const Caja = () => {
                 monto_mora: Number(mora.monto_mora || 0)
             }));
         const montoMoraPayload = parseFloat(morasSeleccionadasPayload.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0).toFixed(2));
+        const metodoPagoNormalizado = String(metodoPago || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+        const esPagoBancario = metodoPagoNormalizado.includes('deposit') || metodoPagoNormalizado.includes('transfer');
+
+        if (esPagoBancario && (!bancoPago.trim() || !fechaOperacion || !referencia.trim())) {
+            mostrarToast('Para depósito o transferencia debes indicar banco, fecha de operación y número de referencia o boleta.', 'warning');
+            return;
+        }
         const morasExoneradasPayload = esUsuarioJuridico && (quitarMoraTodo || quitarMoraMesesSeleccionados)
             ? (morasPendientes || [])
                 .filter((mora) => mesesFinanciadosParaPago.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado)))
@@ -1519,10 +1529,10 @@ const Caja = () => {
             monto_enganche_pagar: parseFloat(montoEngancheContratoAplicado || 0),
             monto_abono_capital: parseFloat(montoEngancheSeleccionado || 0),
             metodo_pago: metodoPago,
-            banco_pago: metodoPago === 'Efectivo' ? '' : bancoPago,
-            fecha_operacion: metodoPago === 'Efectivo' ? '' : fechaOperacion,
-            no_referencia: metodoPago === 'Efectivo' ? 'N/A' : referencia, 
-            boleta_referencia: metodoPago === 'Efectivo' ? '' : referencia,
+            banco_pago: esPagoBancario ? bancoPago.trim() : '',
+            fecha_operacion: esPagoBancario ? fechaOperacion : '',
+            no_referencia: esPagoBancario ? referencia.trim() : 'N/A',
+            boleta_referencia: esPagoBancario ? referencia.trim() : '',
             observaciones: mesesParaPago.length
                 ? `Pago de cuota de terreno mes de ${mesesParaPago.join(', ')}`
                 : 'Cobro de servicios/cargos adicionales desde Caja',
@@ -1728,7 +1738,10 @@ const Caja = () => {
                     : String(cuotaInicio))
                 : 'N/A';
             const conceptos = detalleCobro.length ? [...new Set(detalleCobro.map((d) => String(d?.concepto || '').trim()).filter(Boolean))].join(', ') : 'Pago de cuota de financiamiento';
-            const metodo = String(recibo?.metodo_pago || metodoPago || '').toLowerCase();
+            const metodo = String(recibo?.metodo_pago || metodoPago || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase();
             const usuarioActivo = getUsuarioSesion();
             const usarFormatoJuridico = USAR_FORMATO_RECIBO_JURIDICO && esRolJuridico(usuarioActivo);
 
@@ -2839,7 +2852,7 @@ const Caja = () => {
                                                 }}
                                             >
                                                 <option value="Efectivo">Efectivo</option>
-                                                <option value="Depósito">Depósito Bancario</option>
+                                                <option value="Depósito Bancario">Depósito Bancario</option>
                                                 <option value="Transferencia">Transferencia</option>
                                             </select>
                                         </div>

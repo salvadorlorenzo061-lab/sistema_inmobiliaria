@@ -272,7 +272,10 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   const fecha = fechaEmision instanceof Date && !Number.isNaN(fechaEmision.getTime())
     ? fechaEmision
     : new Date();
-  const metodo = String(pago?.metodo || '').toLowerCase();
+  const metodo = String(pago?.metodo || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 
   let y = 12;
   doc.setFillColor(...COLOR_ORO);
