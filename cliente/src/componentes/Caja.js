@@ -933,6 +933,21 @@ const Caja = () => {
         const serviciosTotal = periodosServicio > 0
             ? ((costoServiciosMensual * periodosServicio) + costoServiciosUnicos + costoCargosExtra)
             : 0;
+
+        // Jurídico puede seleccionar meses como referencia para distribuir servicios y mora,
+        // pero esos meses nunca representan una cuota financiera dentro de su cobro.
+        if (esUsuarioJuridico) {
+            setMontoTerrenoSeleccionado(0);
+            setMontoEngancheContratoAplicado(0);
+            setMontoEngancheSeleccionado(0);
+            setMontoServiciosSeleccionado(serviciosTotal);
+            setMontoCargosExtraSeleccionado(costoCargosExtra);
+            setMontoInteresSeleccionado(0);
+            setMontoTotalSeleccionado(serviciosTotal);
+            setMontoAPagar(String(serviciosTotal.toFixed(2)));
+            return;
+        }
+
         const mesesOrdenados = [...(meses || [])]
             .sort((a, b) => (mesesPendientes.indexOf(a) - mesesPendientes.indexOf(b)));
         // Mes de la cuota 0: viene del contrato (mes de compra/firma), no del primer mes marcado.
@@ -1413,8 +1428,13 @@ const Caja = () => {
         e.preventDefault();
 
         const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
-        const montoSolicitado = parseFloat(montoAPagar || 0);
-        const montoTerreno = parseFloat(montoTerrenoSeleccionado || 0);
+        const montoTerreno = esUsuarioJuridico ? 0 : parseFloat(montoTerrenoSeleccionado || 0);
+        const montoEngancheContrato = esUsuarioJuridico ? 0 : parseFloat(montoEngancheContratoAplicado || 0);
+        const montoAbonoCapital = esUsuarioJuridico ? 0 : parseFloat(montoEngancheSeleccionado || 0);
+        const montoInteres = esUsuarioJuridico ? 0 : parseFloat(montoInteresSeleccionado || 0);
+        const montoSolicitado = esUsuarioJuridico
+            ? parseFloat((Number(montoServiciosSeleccionado || 0) + Number(montoMora || 0)).toFixed(2))
+            : parseFloat(montoAPagar || 0);
         const tieneServicioRegularSeleccionado = (serviciosContrato || []).some((servicio) => (
             serviciosSeleccionados.includes(servicio.id_servicio) && !servicio.es_extraordinario
         ));
@@ -1458,12 +1478,7 @@ const Caja = () => {
                 .filter(Boolean)
             : [];
 
-        if (esUsuarioJuridico && (montoTerreno > 0 || parseFloat(montoEngancheContratoAplicado || 0) > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0 || parseFloat(montoInteresSeleccionado || 0) > 0)) {
-            mostrarToast('El rol Jurídico solo puede cobrar servicios, cargos extraordinarios y mora.', 'warning');
-            return;
-        }
-
-        if (esUsuarioGestorCobros && (parseFloat(montoServiciosSeleccionado || 0) > 0 || montoMoraPayload > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0)) {
+        if (esUsuarioGestorCobros && (parseFloat(montoServiciosSeleccionado || 0) > 0 || montoMoraPayload > 0 || montoAbonoCapital > 0)) {
             mostrarToast('El rol Gestor de Cobros solo puede cobrar enganche y cuotas financiadas.', 'warning');
             return;
         }
@@ -1483,7 +1498,7 @@ const Caja = () => {
             return;
         }
 
-        const esSoloAbonoCapital = (parseFloat(montoEngancheContratoAplicado || 0) > 0 || parseFloat(montoEngancheSeleccionado || 0) > 0)
+        const esSoloAbonoCapital = (montoEngancheContrato > 0 || montoAbonoCapital > 0)
             && montoTerreno <= 0
             && parseFloat(montoServiciosSeleccionado || 0) <= 0
             && parseFloat(montoMora || 0) <= 0;
@@ -1524,10 +1539,10 @@ const Caja = () => {
             rol_cobro: esUsuarioJuridico ? 'juridico' : (esUsuarioGestorCobros ? 'gestor_cobros' : ''),
             monto_pagar: montoSolicitado,
             monto_terreno_pagar: montoTerreno,
-            monto_interes: parseFloat(montoInteresSeleccionado || 0),
+            monto_interes: montoInteres,
             monto_mora: montoMoraPayload,
-            monto_enganche_pagar: parseFloat(montoEngancheContratoAplicado || 0),
-            monto_abono_capital: parseFloat(montoEngancheSeleccionado || 0),
+            monto_enganche_pagar: montoEngancheContrato,
+            monto_abono_capital: montoAbonoCapital,
             metodo_pago: metodoPago,
             banco_pago: esPagoBancario ? bancoPago.trim() : '',
             fecha_operacion: esPagoBancario ? fechaOperacion : '',
