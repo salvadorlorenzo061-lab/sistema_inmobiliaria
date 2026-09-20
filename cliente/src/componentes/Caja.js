@@ -1432,6 +1432,7 @@ const Caja = () => {
         const montoEngancheContrato = esUsuarioJuridico ? 0 : parseFloat(montoEngancheContratoAplicado || 0);
         const montoAbonoCapital = esUsuarioJuridico ? 0 : parseFloat(montoEngancheSeleccionado || 0);
         const montoInteres = esUsuarioJuridico ? 0 : parseFloat(montoInteresSeleccionado || 0);
+        const montoServicios = esUsuarioGestorCobros ? 0 : parseFloat(montoServiciosSeleccionado || 0);
         const montoSolicitado = esUsuarioJuridico
             ? parseFloat((Number(montoServiciosSeleccionado || 0) + Number(montoMora || 0)).toFixed(2))
             : parseFloat(montoAPagar || 0);
@@ -1454,12 +1455,14 @@ const Caja = () => {
             }
         }
         const mesesFinanciadosParaPago = mesesParaPago.filter((mes) => !esMesEngancheVisual(mes));
-        const morasSeleccionadasPayload = obtenerMorasAplicables(mesesFinanciadosParaPago)
-            .map((mora) => ({
-                id_morosidad: Number(mora.id_morosidad || 0),
-                mes_atrasado: String(mora.mes_atrasado || ''),
-                monto_mora: Number(mora.monto_mora || 0)
-            }));
+        const morasSeleccionadasPayload = esUsuarioGestorCobros
+            ? []
+            : obtenerMorasAplicables(mesesFinanciadosParaPago)
+                .map((mora) => ({
+                    id_morosidad: Number(mora.id_morosidad || 0),
+                    mes_atrasado: String(mora.mes_atrasado || ''),
+                    monto_mora: Number(mora.monto_mora || 0)
+                }));
         const montoMoraPayload = parseFloat(morasSeleccionadasPayload.reduce((sum, mora) => sum + Number(mora.monto_mora || 0), 0).toFixed(2));
         const metodoPagoNormalizado = String(metodoPago || '')
             .normalize('NFD')
@@ -1478,7 +1481,7 @@ const Caja = () => {
                 .filter(Boolean)
             : [];
 
-        if (esUsuarioGestorCobros && (parseFloat(montoServiciosSeleccionado || 0) > 0 || montoMoraPayload > 0 || montoAbonoCapital > 0)) {
+        if (esUsuarioGestorCobros && (montoServicios > 0 || montoMoraPayload > 0 || montoAbonoCapital > 0)) {
             mostrarToast('El rol Gestor de Cobros solo puede cobrar enganche y cuotas financiadas.', 'warning');
             return;
         }
@@ -1500,10 +1503,10 @@ const Caja = () => {
 
         const esSoloAbonoCapital = (montoEngancheContrato > 0 || montoAbonoCapital > 0)
             && montoTerreno <= 0
-            && parseFloat(montoServiciosSeleccionado || 0) <= 0
+            && montoServicios <= 0
             && parseFloat(montoMora || 0) <= 0;
 
-        const esSoloServiciosOCargos = parseFloat(montoServiciosSeleccionado || 0) > 0 && montoTerreno <= 0;
+        const esSoloServiciosOCargos = montoServicios > 0 && montoTerreno <= 0;
         if (!mesesParaPago.length && !esSoloAbonoCapital && !esSoloServiciosOCargos) {
             mostrarToast('Debe seleccionar al menos un mes pendiente para generar el cobro.', 'warning');
             return;
@@ -1519,7 +1522,7 @@ const Caja = () => {
             return;
         }
 
-        const serviciosPayload = (serviciosContrato || [])
+        const serviciosPayload = (esUsuarioGestorCobros ? [] : (serviciosContrato || []))
             .filter((servicio) => serviciosSeleccionados.includes(servicio.id_servicio))
             .map((servicio) => ({
                 id_servicio: servicio.es_extraordinario ? null : servicio.id_servicio,
