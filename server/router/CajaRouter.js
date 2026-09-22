@@ -764,16 +764,18 @@ const obtenerContextoPermisosCaja = (idUsuario, callback) => {
 
         const rol = normalizeText(rows[0].nombre_rol || '');
         const esAdminOGerente = rol.includes('admin') || rol.includes('gerente');
+        const esJuridico = rol.includes('jurid') || rol.includes('legal');
 
         return callback(null, {
             idUsuario: id,
             esAdminOGerente,
             nombreRol: rol,
-            esJuridico: rol.includes('jurid') || rol.includes('legal'),
+            esJuridico,
             esGestorCobros: rol.includes('gestor') && rol.includes('cobro'),
-            // Regla operativa: cualquier usuario autenticado (incluyendo admin/gerencia)
-            // solo debe cobrar dentro de sus empresas asignadas por correlativo/resolucion.
-            filtrarPorPermiso: true
+            // El rol Juridico es unico en el sistema y opera sobre todos los contratos sin
+            // requerir asignacion de correlativos por empresa. Gestor de Cobros y los demas
+            // roles si dependen de sus correlativos/resoluciones asignados (puede haber varios).
+            filtrarPorPermiso: !esJuridico
         });
     });
 };
@@ -2098,6 +2100,7 @@ router.post("/procesar-pago", (req, res) => {
                 return db.rollback(() => res.status(400).send('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.'));
             }
 
+                        const bypassPermisoJuridico = (contextoRol?.esJuridico && !contextoRol?.esGestorCobros) ? 1 : 0;
                         const sqlPermisoCobroContrato = `
                                 SELECT 1
                                 FROM contratos_residentes c
@@ -2108,7 +2111,8 @@ router.post("/procesar-pago", (req, res) => {
                                     AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
                                     AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
                                     AND (
-                                        EXISTS (
+                                        ? = 1
+                                        OR EXISTS (
                                                 SELECT 1
                                                 FROM asignar_correlativos ac
                                                 INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
@@ -2149,7 +2153,7 @@ router.post("/procesar-pago", (req, res) => {
                                 LIMIT 1
                         `;
 
-                        return db.query(sqlPermisoCobroContrato, [id_contrato, idUsuarioSeguro, idUsuarioSeguro], (permisoErr, permisoRows) => {
+                        return db.query(sqlPermisoCobroContrato, [id_contrato, bypassPermisoJuridico, idUsuarioSeguro, idUsuarioSeguro], (permisoErr, permisoRows) => {
                                 if (permisoErr) {
                                         return db.rollback(() => res.status(500).send('Error validando permisos de cobro del usuario: ' + permisoErr.message));
                                 }

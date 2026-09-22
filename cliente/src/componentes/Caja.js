@@ -1487,9 +1487,19 @@ const Caja = () => {
             }
         }
         const mesesFinanciadosParaPago = mesesParaPago.filter((mes) => !esMesEngancheVisual(mes));
-        const morasSeleccionadasPayload = esUsuarioGestorCobros
+        // Jurídico cobra mora por los meses que el mismo marca en el panel de mora,
+        // independientemente de la lógica de cuotas financiadas usada por otros roles.
+        const mesesMoraDelCobro = esUsuarioJuridico
+            ? (mesesSeleccionados || []).filter((mes) => !esMesEngancheVisual(mes))
+            : mesesFinanciadosParaPago;
+        const morasVencidasDelCobro = (morasPendientes || []).filter((mora) => (
+            mesesMoraDelCobro.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado))
+            && esMesVencidoParaMoraLocal(mora?.mes_atrasado)
+        ));
+        const seExoneraMoraDelCobro = esUsuarioJuridico && (quitarMoraTodo || quitarMoraMesesSeleccionados);
+        const morasSeleccionadasPayload = (esUsuarioGestorCobros || seExoneraMoraDelCobro)
             ? []
-            : obtenerMorasAplicables(mesesFinanciadosParaPago)
+            : morasVencidasDelCobro
                 .map((mora) => ({
                     id_morosidad: Number(mora.id_morosidad || 0),
                     mes_atrasado: String(mora.mes_atrasado || ''),
@@ -1506,11 +1516,8 @@ const Caja = () => {
             mostrarToast('Para depósito o transferencia debes indicar banco, fecha de operación y número de referencia o boleta.', 'warning');
             return;
         }
-        const morasExoneradasPayload = esUsuarioJuridico && (quitarMoraTodo || quitarMoraMesesSeleccionados)
-            ? (morasPendientes || [])
-                .filter((mora) => mesesFinanciadosParaPago.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado)))
-                .map((mora) => String(mora?.mes_atrasado || '').trim())
-                .filter(Boolean)
+        const morasExoneradasPayload = seExoneraMoraDelCobro
+            ? morasVencidasDelCobro.map((mora) => String(mora?.mes_atrasado || '').trim()).filter(Boolean)
             : [];
 
         if (esUsuarioGestorCobros && (montoServicios > 0 || montoMoraPayload > 0 || montoAbonoCapital > 0)) {
