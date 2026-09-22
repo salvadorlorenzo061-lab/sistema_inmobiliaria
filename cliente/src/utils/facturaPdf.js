@@ -38,6 +38,19 @@ export const normalizeImageDataUrl = (value = '') => {
   return `data:${mime};base64,${cleaned}`;
 };
 
+// Construye la leyenda de mora exonerada para el recibo (emitido y anulado).
+// Acepta arreglo de strings (formato legado) u objetos { mes_atrasado }.
+export const formatearNotaMoraExonerada = (lista = []) => {
+  const meses = (Array.isArray(lista) ? lista : [])
+    .map((item) => String(typeof item === 'string' ? item : (item?.mes_atrasado || '')).trim())
+    .filter(Boolean);
+
+  if (!meses.length) return '';
+  if (meses.length === 1) return `Mora exonerada: mes de ${meses[0]}.`;
+  return `Mora exonerada: mes de ${meses[0]} a mes de ${meses[meses.length - 1]}.`;
+};
+
+
 const fechaFmt = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 
 const fechaHoraFmt = (d) => {

@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
+import { buildConsolidatedInvoiceRows, renderFacturaComprobante, formatearNotaMoraExonerada } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
 // La anulacion usa el mismo formato que la factura emitida (RECIBO DE CAJA O COMPROBANTE DE PAGO),
@@ -391,7 +391,7 @@ function AnulacionDeuda() {
         },
         rolUsuarioCobro: documento?.rol_usuario_cobro || 'Sin rol registrado',
         notaPie: Array.isArray(documento?.moras_exoneradas) && documento.moras_exoneradas.length
-          ? `Documento anulado. Mora exonerada mes de ${documento.moras_exoneradas.join(', ')} en el comprobante original.`
+          ? `Documento anulado. ${formatearNotaMoraExonerada(documento.moras_exoneradas)}`
           : `Documento anulado. Autoriza: ${getNombreUsuario(autorizadorInfo)}. Motivo: ${String(anulacion.motivo || "Sin motivo registrado")}`.slice(0, 190),
         filas: filasFactura,
         resumen: [

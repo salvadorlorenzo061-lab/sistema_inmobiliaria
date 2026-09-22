@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
+import { buildConsolidatedInvoiceRows, renderFacturaComprobante, formatearNotaMoraExonerada } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (RECIBO DE CAJA O COMPROBANTE DE PAGO).
@@ -336,7 +336,7 @@ function PagosDetalle() {
         },
         rolUsuarioCobro: documento?.rol_usuario_cobro || 'Sin rol registrado',
         notaPie: Array.isArray(documento?.moras_exoneradas) && documento.moras_exoneradas.length
-          ? `Mora exonerada mes de ${documento.moras_exoneradas.join(', ')}.`
+          ? formatearNotaMoraExonerada(documento.moras_exoneradas)
           : undefined,
         filas: filasFactura,
         resumen: [

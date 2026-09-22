@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { buildConsolidatedInvoiceRows, renderFacturaComprobante } from '../utils/facturaPdf';
+import { buildConsolidatedInvoiceRows, renderFacturaComprobante, formatearNotaMoraExonerada } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
@@ -1492,10 +1492,17 @@ const Caja = () => {
         const mesesMoraDelCobro = esUsuarioJuridico
             ? (mesesSeleccionados || []).filter((mes) => !esMesEngancheVisual(mes))
             : mesesFinanciadosParaPago;
-        const morasVencidasDelCobro = (morasPendientes || []).filter((mora) => (
-            mesesMoraDelCobro.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado))
-            && esMesVencidoParaMoraLocal(mora?.mes_atrasado)
-        ));
+        const morasVencidasDelCobro = (morasPendientes || [])
+            .filter((mora) => (
+                mesesMoraDelCobro.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado))
+                && esMesVencidoParaMoraLocal(mora?.mes_atrasado)
+            ))
+            .sort((a, b) => {
+                const fechaA = parsearEtiquetaMes(a?.mes_atrasado);
+                const fechaB = parsearEtiquetaMes(b?.mes_atrasado);
+                if (fechaA instanceof Date && fechaB instanceof Date) return fechaA - fechaB;
+                return 0;
+            });
         const seExoneraMoraDelCobro = esUsuarioJuridico && (quitarMoraTodo || quitarMoraMesesSeleccionados);
         const morasSeleccionadasPayload = (esUsuarioGestorCobros || seExoneraMoraDelCobro)
             ? []
@@ -1517,7 +1524,12 @@ const Caja = () => {
             return;
         }
         const morasExoneradasPayload = seExoneraMoraDelCobro
-            ? morasVencidasDelCobro.map((mora) => String(mora?.mes_atrasado || '').trim()).filter(Boolean)
+            ? morasVencidasDelCobro
+                .map((mora) => ({
+                    id_morosidad: Number(mora?.id_morosidad || 0),
+                    mes_atrasado: String(mora?.mes_atrasado || '').trim()
+                }))
+                .filter((mora) => mora.mes_atrasado)
             : [];
 
         if (esUsuarioGestorCobros && (montoServicios > 0 || montoMoraPayload > 0 || montoAbonoCapital > 0)) {
@@ -1999,7 +2011,7 @@ const Caja = () => {
                 },
                 rolUsuarioCobro: getUsuarioSesion()?.nombre_rol || 'Sin rol registrado',
                 notaPie: Array.isArray(recibo?.moras_exoneradas) && recibo.moras_exoneradas.length
-                    ? `Mora exonerada mes de ${recibo.moras_exoneradas.join(', ')}.`
+                    ? formatearNotaMoraExonerada(recibo.moras_exoneradas)
                     : undefined,
                 filas: detalleCobro.length
                     ? buildConsolidatedInvoiceRows(detalleCobro, {

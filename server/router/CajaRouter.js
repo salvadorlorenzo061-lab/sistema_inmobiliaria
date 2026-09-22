@@ -1896,9 +1896,19 @@ router.post("/procesar-pago", (req, res) => {
     });
     const morasAplicadas = Array.from(morasAplicadasPorMes.values());
 
-    const morasExoneradas = [...new Set((Array.isArray(moras_exoneradas) ? moras_exoneradas : [])
-        .map((mes) => String(mes || '').trim())
-        .filter(Boolean))];
+    // Acepta arreglo de strings (formato legado) u objetos { id_morosidad, mes_atrasado }.
+    const morasExoneradasNormalizadas = (Array.isArray(moras_exoneradas) ? moras_exoneradas : [])
+        .map((item) => ({
+            id_morosidad: Number(item?.id_morosidad || 0),
+            mes_atrasado: String(typeof item === 'string' ? item : (item?.mes_atrasado || '')).trim()
+        }))
+        .filter((item) => item.mes_atrasado);
+    const morasExoneradas = [...new Set(morasExoneradasNormalizadas.map((item) => item.mes_atrasado))];
+    const idsMorasExoneradas = [...new Set(
+        morasExoneradasNormalizadas
+            .map((item) => item.id_morosidad)
+            .filter((id) => Number.isInteger(id) && id > 0)
+    )];
 
     const moraTotalSeleccionada = parseFloat(
         morasAplicadas.reduce((sum, item) => sum + Number(item?.monto_mora || 0), 0).toFixed(2)
@@ -3179,6 +3189,39 @@ router.post("/procesar-pago", (req, res) => {
                                                 });
                                             };
 
+                                            // La mora exonerada por Juridico deja de ser deuda pendiente: se marca 'anulado'
+                                            // igual que una anulacion, para que ya no aparezca como pendiente ni se recobre.
+                                            const sincronizarMorosidadExonerada = (callbackSync) => {
+                                                if (!idsMorasExoneradas.length && !morasExoneradas.length) {
+                                                    return callbackSync();
+                                                }
+
+                                                let sqlExoneracion = `
+                                                    UPDATE morosidad
+                                                    SET estado = 'anulado'
+                                                    WHERE id_contrato = ?
+                                                      AND estado = 'pendiente'
+                                                `;
+                                                const paramsExoneracion = [id_contrato];
+
+                                                if (idsMorasExoneradas.length) {
+                                                    const placeholdersIds = idsMorasExoneradas.map(() => '?').join(', ');
+                                                    sqlExoneracion += ` AND id_morosidad IN (${placeholdersIds})`;
+                                                    paramsExoneracion.push(...idsMorasExoneradas);
+                                                } else {
+                                                    const placeholdersMeses = morasExoneradas.map(() => '?').join(', ');
+                                                    sqlExoneracion += ` AND mes_atrasado IN (${placeholdersMeses})`;
+                                                    paramsExoneracion.push(...morasExoneradas);
+                                                }
+
+                                                db.query(sqlExoneracion, paramsExoneracion, (exonErr) => {
+                                                    if (exonErr && String(exonErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                                                        return db.rollback(() => res.status(500).send('Error al exonerar mora del contrato: ' + exonErr.message));
+                                                    }
+                                                    return callbackSync();
+                                                });
+                                            };
+
                                             const sincronizarConvenio = (descuentoCapital, callbackSync) => {
                                                 if (!Number.isFinite(descuentoCapital) || descuentoCapital <= 0) {
                                                     return callbackSync();
@@ -3269,7 +3312,7 @@ router.post("/procesar-pago", (req, res) => {
                                                 });
                                             };
 
-                                            sincronizarMorosidadPagada(() => {
+                                            sincronizarMorosidadExonerada(() => sincronizarMorosidadPagada(() => {
                                             const descuentoCapital = redondear2(montoTerrenoTotal + montoInteresTotal + montoAbonoCapitalTotal);
                                             const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, () => sincronizarCuotasContrato(finalizarCommit));
 
@@ -3320,7 +3363,7 @@ router.post("/procesar-pago", (req, res) => {
                                             } else {
                                                 return sincronizarCuotasContrato(() => finalizarConConvenio());
                                             }
-                                            });
+                                            }));
                                         };
 
                                         const marcarExtrasComoPagados = (onSuccess) => {
