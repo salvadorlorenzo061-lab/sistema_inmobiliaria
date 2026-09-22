@@ -33,12 +33,21 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
   let saldo = principal;
   let interesAcumulado = 0;
 
+  // El interes y el capital de cada cuota conservan centavos (redondeo a 2
+  // decimales); solo la cuota fija se maneja en numero entero. Redondear el
+  // interes a un entero (como antes) desalineaba el capital acumulado y el
+  // saldo, generando una diferencia creciente frente a la cuota real pactada.
+  const interesMesFijo = redondearMoneda((principal * (tasa / 100)) / 12);
+
   for (let indice = 1; indice <= plazo; indice += 1) {
-    const interesMes = Math.round(principal * (tasa / 100) / 12);
-    const capitalCuota = Math.max(cuotaFija - interesMes, 0);
-    const pago = Math.round(cuotaFija);
-    const saldoFinal = Math.round(Math.max(saldo - capitalCuota, 0));
-    interesAcumulado = Math.round(interesAcumulado + interesMes);
+    const esUltimaCuota = indice === plazo;
+    const interesMes = interesMesFijo;
+    const capitalCuota = esUltimaCuota
+      ? redondearMoneda(saldo)
+      : redondearMoneda(Math.max(cuotaFija - interesMes, 0));
+    const pago = esUltimaCuota ? redondearMoneda(capitalCuota + interesMes) : Math.round(cuotaFija);
+    const saldoFinal = redondearMoneda(Math.max(saldo - capitalCuota, 0));
+    interesAcumulado = redondearMoneda(interesAcumulado + interesMes);
 
     tabla.push({
       indice,

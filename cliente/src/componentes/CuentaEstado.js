@@ -13,7 +13,7 @@ const toNumber = (value, fallback = 0) => {
 
 const formatoMoneda = (value) => {
   const numero = toNumber(value, 0);
-  return `Q ${Math.round(numero).toLocaleString('es-GT', { maximumFractionDigits: 0 })}`;
+  return `Q ${numero.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 const round2 = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
@@ -57,7 +57,8 @@ const construirSimulacionLocal = ({
   interes_anual,
   cuotas_totales,
   cuotas_pagadas,
-  cuota_objetivo
+  cuota_objetivo,
+  estados_por_cuota = {}
 }) => {
   const capitalRestante = Math.round(Math.max(toNumber(capital_restante, 0), 0));
   const interes = Math.max(toNumber(interes_anual, 0), 0);
@@ -90,7 +91,9 @@ const construirSimulacionLocal = ({
     total_liquidacion: totalPagos,
     tabla_amortizacion: tabla.map((fila) => ({
       ...fila,
-      estado: String(fila?.estado || 'PENDIENTE').toUpperCase()
+      // Solo un contrato real trae estados_por_cuota; la simulacion manual
+      // no tiene pagos que consultar y permanece PENDIENTE.
+      estado: String(estados_por_cuota?.[fila.numero_cuota] || fila?.estado || 'PENDIENTE').toUpperCase()
     }))
   };
 };
@@ -111,6 +114,7 @@ const CuentaEstado = () => {
   const [engancheRegistrado, setEngancheRegistrado] = useState('');
   const [enganchePagado, setEnganchePagado] = useState('');
   const [precioTotal, setPrecioTotal] = useState('');
+  const [estadosPorCuota, setEstadosPorCuota] = useState({});
 
   const showToast = (message, icon = 'info') => {
     Swal.fire({
@@ -137,6 +141,7 @@ const CuentaEstado = () => {
     setEngancheRegistrado('');
     setEnganchePagado('');
     setPrecioTotal('');
+    setEstadosPorCuota({});
   };
 
   const nuevaSimulacion = () => {
@@ -152,6 +157,7 @@ const CuentaEstado = () => {
     setCuotasTotales('96');
     setCuotasPagadas('0');
     setCuotaObjetivo('');
+    setEstadosPorCuota({});
   };
 
   const buscarResidente = async () => {
@@ -187,13 +193,24 @@ const CuentaEstado = () => {
         return;
       }
 
+      const estadosCuotaDetalle = Array.isArray(data?.cuotas_estado_detalle) ? data.cuotas_estado_detalle : [];
+      const mapaEstadosPorCuota = estadosCuotaDetalle.reduce((acumulado, item) => {
+        const numero = Number(item?.numero_cuota || 0);
+        if (Number.isInteger(numero) && numero > 0) {
+          acumulado[numero] = String(item?.estado || '').toUpperCase();
+        }
+        return acumulado;
+      }, {});
+
       setContrato(contratoApi);
+      setEstadosPorCuota(mapaEstadosPorCuota);
       setSimulacion(construirSimulacionLocal({
         capital_restante: contratoApi.capital_restante,
         interes_anual: contratoApi.interes_anual,
         cuotas_totales: contratoApi.cuotas_totales,
         cuotas_pagadas: contratoApi.cuotas_pagadas,
-        cuota_objetivo: null
+        cuota_objetivo: null,
+        estados_por_cuota: mapaEstadosPorCuota
       }));
       setResultados([]);
 
@@ -218,7 +235,8 @@ const CuentaEstado = () => {
       interes_anual: toNumber(interesAnual, 0),
       cuotas_totales: parseInt(cuotasTotales || '0', 10),
       cuotas_pagadas: parseInt(cuotasPagadas || '0', 10),
-      cuota_objetivo: cuotaObjetivo ? parseInt(cuotaObjetivo, 10) : null
+      cuota_objetivo: cuotaObjetivo ? parseInt(cuotaObjetivo, 10) : null,
+      estados_por_cuota: estadosPorCuota
     };
 
     if (payload.capital_restante <= 0) {
@@ -773,7 +791,11 @@ const CuentaEstado = () => {
                                 <td>{formatoMoneda(row.capital_cuota || 0)}</td>
                                 <td>{formatoMoneda(row.interes_mes || 0)}</td>
                                 <td>{formatoMoneda(saldoCapital)}</td>
-                                <td>{estadoFila}</td>
+                                <td>
+                                  <span className={`badge bg-${estadoFila === 'PAGADO' ? 'success' : estadoFila === 'ANULADO' ? 'dark' : 'warning text-dark'}`}>
+                                    {estadoFila}
+                                  </span>
+                                </td>
                                 {contrato && <td>
                                   <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
                                     Cobrar en Caja

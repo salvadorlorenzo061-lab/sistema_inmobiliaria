@@ -253,24 +253,19 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
         LIMIT 1
     `;
 
-    const sqlMesesPendientes = `
+    const sqlCuotasEstadoDetalle = `
         SELECT
-            m.mes,
-            m.numero_cuota
-        FROM (
-            SELECT
-                pd.mes_pagado AS mes,
-                COALESCE(pd.numero_cuota_afectada, 0) AS numero_cuota,
-                MAX(fh.fecha_evento) AS fecha_ref
-            FROM facturas_historial fh
-            LEFT JOIN pagos_detalle pd ON pd.id_pago = fh.id_pago
-            WHERE fh.id_contrato = ?
-              AND fh.estado_factura = 'EMITIDA'
-              AND pd.mes_pagado IS NOT NULL
-              AND pd.mes_pagado <> ''
-            GROUP BY pd.mes_pagado, COALESCE(pd.numero_cuota_afectada, 0)
-        ) m
-        ORDER BY m.fecha_ref DESC
+            COALESCE(fh.numero_cuota_afectada, 0) AS numero_cuota,
+            fh.mes_pagado AS mes,
+            CASE
+                WHEN MAX(CASE WHEN UPPER(COALESCE(fh.estado_factura, '')) = 'EMITIDA' THEN 1 ELSE 0 END) = 1 THEN 'PAGADO'
+                ELSE 'ANULADO'
+            END AS estado
+        FROM facturas_historial fh
+        WHERE fh.id_contrato = ?
+          AND fh.tipo_concepto = 'cuota_terreno'
+          AND COALESCE(fh.numero_cuota_afectada, 0) > 0
+        GROUP BY COALESCE(fh.numero_cuota_afectada, 0), fh.mes_pagado
     `;
 
     db.query(sqlContrato, [idContrato], (err, contratoRows) => {
@@ -342,14 +337,14 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             cuotas_pagadas: payload.cuotas_pagadas
         });
 
-        db.query(sqlMesesPendientes, [idContrato], (mesesErr, mesesRows) => {
+        db.query(sqlCuotasEstadoDetalle, [idContrato], (mesesErr, mesesRows) => {
             if (mesesErr) {
-                console.error('Error consultando meses pagados para cuenta capital:', mesesErr.message);
+                console.error('Error consultando estado de cuotas para cuenta capital:', mesesErr.message);
             }
 
             return res.status(200).json({
                 contrato: payload,
-                meses_pagados_detalle: Array.isArray(mesesRows) ? mesesRows : [],
+                cuotas_estado_detalle: Array.isArray(mesesRows) ? mesesRows : [],
                 simulacion_base: simulacionBase
             });
         });
