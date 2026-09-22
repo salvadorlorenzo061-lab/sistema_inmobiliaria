@@ -651,6 +651,38 @@ const Caja = () => {
         return hoy >= fechaInicioMora;
     };
 
+    // Fecha real de pago (dia contractual) y fecha limite tras los dias de gracia,
+    // para que el cliente vea cuando vencio o vence realmente cada mes.
+    const obtenerFechasVencimientoMes = (mesTexto = '') => {
+        const fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma;
+        const diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5;
+        const fechaContratoMatch = String(fechaContratoRaw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const fechaContrato = fechaContratoMatch
+            ? new Date(Number(fechaContratoMatch[1]), Number(fechaContratoMatch[2]) - 1, Number(fechaContratoMatch[3]))
+            : (fechaContratoRaw ? new Date(fechaContratoRaw) : null);
+        const mesCuota = parsearEtiquetaMes(mesTexto);
+
+        if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return null;
+        if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return null;
+
+        const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
+        const fechaVencimiento = new Date(
+            mesCuota.getFullYear(),
+            mesCuota.getMonth(),
+            Math.min(fechaContrato.getDate(), ultimoDiaMes)
+        );
+        const diasGracia = Math.max(0, Math.min(31, Number(diasGraciaRaw ?? 5)));
+        const fechaLimiteGracia = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), fechaVencimiento.getDate());
+        fechaLimiteGracia.setDate(fechaLimiteGracia.getDate() + diasGracia);
+
+        return { fechaVencimiento, fechaLimiteGracia };
+    };
+
+    const formatearFechaCorta = (fecha) => {
+        if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) return '';
+        return `${String(fecha.getDate()).padStart(2, '0')}/${String(fecha.getMonth() + 1).padStart(2, '0')}/${fecha.getFullYear()}`;
+    };
+
     const compararMesesMoraLocal = (mesA = '', mesB = '') => {
         const keyA = obtenerMesKeyLocal(mesA);
         const keyB = obtenerMesKeyLocal(mesB);
@@ -2683,6 +2715,16 @@ const Caja = () => {
                                                                 <span className="fw-bold fs-5 text-dark">
                                                                     {getEtiquetaCuotaMes(mes, obtenerNumeroCuotaRealMesVista(mes))}
                                                                 </span>
+                                                                {(() => {
+                                                                    const fechas = obtenerFechasVencimientoMes(mes);
+                                                                    if (!fechas) return null;
+                                                                    return (
+                                                                        <div className="small text-muted">
+                                                                            Fecha de pago: {formatearFechaCorta(fechas.fechaVencimiento)}
+                                                                            {' '}| Límite con gracia: {formatearFechaCorta(fechas.fechaLimiteGracia)}
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </div>
                                                             <div className="text-end">
                                                                 <div className="small text-muted">
@@ -2732,7 +2774,23 @@ const Caja = () => {
                                                                 className={`btn text-start d-flex justify-content-between align-items-center ${seleccionado ? 'btn-warning border-dark' : 'btn-light border-secondary'}`}
                                                                 onClick={() => toggleMoraMesJuridico(mesMora)}
                                                             >
-                                                                <span><strong>{mesMora}</strong><br /><small>{seleccionado ? 'Mora seleccionada' : 'Mora pendiente'}</small></span>
+                                                                <span>
+                                                                    <strong>{mesMora}</strong><br />
+                                                                    <small>{seleccionado ? 'Mora seleccionada' : 'Mora pendiente'}</small>
+                                                                    {(() => {
+                                                                        const fechas = obtenerFechasVencimientoMes(mesMora);
+                                                                        if (!fechas) return null;
+                                                                        return (
+                                                                            <>
+                                                                                <br />
+                                                                                <small>
+                                                                                    Fecha de pago: {formatearFechaCorta(fechas.fechaVencimiento)}
+                                                                                    {' '}| Límite con gracia: {formatearFechaCorta(fechas.fechaLimiteGracia)}
+                                                                                </small>
+                                                                            </>
+                                                                        );
+                                                                    })()}
+                                                                </span>
                                                                 <span className="badge bg-danger">Q{montoMoraMes.toFixed(2)}</span>
                                                             </button>
                                                         );
