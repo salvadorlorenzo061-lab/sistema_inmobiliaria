@@ -2106,7 +2106,7 @@ router.post("/procesar-pago", (req, res) => {
             const idProyectoContrato = Number(saldoRows[0]?.id_proyecto || 0);
             const idEmpresaFacturacionContrato = Number(saldoRows[0]?.id_empresa_facturacion || 0);
 
-            if (!Number.isInteger(idProyectoContrato) || idProyectoContrato <= 0 || !Number.isInteger(idEmpresaFacturacionContrato) || idEmpresaFacturacionContrato <= 0) {
+            if (!contextoRol?.esJuridico && (!Number.isInteger(idProyectoContrato) || idProyectoContrato <= 0 || !Number.isInteger(idEmpresaFacturacionContrato) || idEmpresaFacturacionContrato <= 0)) {
                 return db.rollback(() => res.status(400).send('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.'));
             }
 
@@ -2117,12 +2117,15 @@ router.post("/procesar-pago", (req, res) => {
                                 LEFT JOIN residentes r ON r.id_residente = c.id_residente
                                 LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
                                 WHERE c.id_contrato = ?
-                                    AND COALESCE(c.id_proyecto, 0) > 0
-                                    AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
-                                    AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
                                     AND (
                                         ? = 1
-                                        OR EXISTS (
+                                        OR (
+                                            COALESCE(c.id_proyecto, 0) > 0
+                                            AND COALESCE(c.id_empresa_marca, r.id_empresa, 0) > 0
+                                            AND COALESCE(p.id_empresa, COALESCE(c.id_empresa_marca, r.id_empresa)) = COALESCE(c.id_empresa_marca, r.id_empresa)
+                                            AND (
+                                                ? = 1
+                                                OR EXISTS (
                                                 SELECT 1
                                                 FROM asignar_correlativos ac
                                                 INNER JOIN resoluciones_facturas rf_ac ON rf_ac.id_resolucion = ac.id_resolucion
@@ -2158,12 +2161,14 @@ router.post("/procesar-pago", (req, res) => {
                                                                 rf_directa.id_empresa = COALESCE(c.id_empresa_marca, r.id_empresa)
                                                                 OR UPPER(TRIM(COALESCE(e_directa.nombre_empresa, ''))) = UPPER(TRIM(COALESCE(e_contrato.nombre_empresa, '')))
                                                             )
+                                                )
+                                            )
                                         )
                                     )
                                 LIMIT 1
                         `;
 
-                        return db.query(sqlPermisoCobroContrato, [id_contrato, bypassPermisoJuridico, idUsuarioSeguro, idUsuarioSeguro], (permisoErr, permisoRows) => {
+                        return db.query(sqlPermisoCobroContrato, [id_contrato, bypassPermisoJuridico, bypassPermisoJuridico, idUsuarioSeguro, idUsuarioSeguro], (permisoErr, permisoRows) => {
                                 if (permisoErr) {
                                         return db.rollback(() => res.status(500).send('Error validando permisos de cobro del usuario: ' + permisoErr.message));
                                 }

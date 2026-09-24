@@ -437,6 +437,9 @@ const Caja = () => {
         return Number.isInteger(idProyecto) && idProyecto > 0 && Number.isInteger(idEmpresaFacturacion) && idEmpresaFacturacion > 0;
     };
 
+    const puedeCobrarContrato = (registro = {}) => esUsuarioJuridico
+        || (contratoTieneAsignacionValida(registro) && usuarioTienePermisoCobro(registro));
+
     const usaCuotaCeroEnganche = Number(datosDeuda?.id_convenio_activo || 0) <= 0
         && Math.max(parseFloat(datosDeuda?.enganche || 0), 0) > 0;
 
@@ -1537,12 +1540,12 @@ const Caja = () => {
             return;
         }
 
-        if (!contratoTieneAsignacionValida(datosDeuda)) {
+        if (!esUsuarioJuridico && !contratoTieneAsignacionValida(datosDeuda)) {
             mostrarToast('No se puede generar cobro: el contrato no tiene empresa y/o proyecto asignado.', 'warning');
             return;
         }
 
-        if (!usuarioTienePermisoCobro(datosDeuda)) {
+        if (!esUsuarioJuridico && !usuarioTienePermisoCobro(datosDeuda)) {
             mostrarToast('No se puede generar cobro: este contrato no pertenece a tus correlativos asignados.', 'warning');
             return;
         }
@@ -2160,7 +2163,9 @@ const Caja = () => {
     const tieneEnganchePendiente = enganchePendiente > 0;
     const tienePermisoCobroSeleccion = usuarioTienePermisoCobro(datosDeuda || {});
     const tieneServiciosPendientes = (serviciosContrato || []).some((s) => !s.ya_pagado_mes);
-    const puedeGenerarCobro = !!datosDeuda && (tieneMesesPendientesTerreno || tieneServiciosPendientes || tieneEnganchePendiente) && tienePermisoCobroSeleccion;
+    const puedeGenerarCobro = !!datosDeuda
+        && (tieneMesesPendientesTerreno || tieneServiciosPendientes || tieneEnganchePendiente)
+        && puedeCobrarContrato(datosDeuda);
     const financiamientoSolvente = !!datosDeuda && saldoTerrenoPendiente <= 0;
     const posibleCobroServiciosIniciales =
         !!datosDeuda
@@ -2247,13 +2252,13 @@ const Caja = () => {
                                     <span className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</span>
                                     <br />
                                     <span className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</span>
-                                    {!tieneAsignacion && (
+                                    {!esUsuarioJuridico && !tieneAsignacion && (
                                         <>
                                             <br />
                                             <span className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</span>
                                         </>
                                     )}
-                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
+                                    {!esUsuarioJuridico && tieneAsignacion && !usuarioTienePermisoCobro(r) && (
                                         <>
                                             <br />
                                             <span className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</span>
@@ -2304,21 +2309,21 @@ const Caja = () => {
                                     <small className="text-muted">DPI: {r.dpi} | Contrato: {r.codigo_contrato}</small>
                                     <br />
                                     <small className="text-muted">Proyecto: {r.nombre_proyecto || 'Sin proyecto'} | Empresa: {r.nombre_marca_pdf || 'Sin empresa'}</small>
-                                    {!tieneAsignacion && (
+                                    {!esUsuarioJuridico && !tieneAsignacion && (
                                         <>
                                             <br />
                                             <small className="text-danger fw-bold">Sin asignacion de empresa/proyecto: visible para control, cobro bloqueado.</small>
                                         </>
                                     )}
-                                    {tieneAsignacion && !usuarioTienePermisoCobro(r) && (
+                                    {!esUsuarioJuridico && tieneAsignacion && !usuarioTienePermisoCobro(r) && (
                                         <>
                                             <br />
                                             <small className="text-warning fw-bold">Sin correlativo asignado para esta empresa: puede ver, no cobrar.</small>
                                         </>
                                     )}
                                 </div>
-                                <span className={`badge ${!tieneAsignacion ? 'bg-danger' : usuarioTienePermisoCobro(r) ? 'bg-secondary' : 'bg-warning text-dark'}`}>
-                                    {!tieneAsignacion ? 'Solo consulta' : usuarioTienePermisoCobro(r) ? 'Seleccionar' : 'Ver sin cobro'}
+                                <span className={`badge ${esUsuarioJuridico || usuarioTienePermisoCobro(r) ? 'bg-secondary' : 'bg-warning text-dark'}`}>
+                                    {esUsuarioJuridico || usuarioTienePermisoCobro(r) ? 'Seleccionar' : 'Ver sin cobro'}
                                 </span>
                             </li>
                                 );
@@ -2364,21 +2369,21 @@ const Caja = () => {
                                 ℹ️ Terreno solvente. Puede cobrar únicamente servicios (agua/drenaje u otros asignados).
                             </div>
                         )}
-                        {!contratoTieneAsignacionValida(datosDeuda) && (
+                        {!esUsuarioJuridico && !contratoTieneAsignacionValida(datosDeuda) && (
                             <div className="alert alert-warning text-center fw-bold mb-3">
                                 ⚠️ Este contrato no tiene empresa y/o proyecto asignado. Puede consultarse, pero no se permite generar cobro.
                             </div>
                         )}
-                        {contratoTieneAsignacionValida(datosDeuda) && !tienePermisoCobroSeleccion && (
+                        {!esUsuarioJuridico && contratoTieneAsignacionValida(datosDeuda) && !tienePermisoCobroSeleccion && (
                             <div className="alert alert-warning text-center fw-bold mb-3">
                                 ⚠️ Este contrato no está dentro de tus correlativos asignados. Puedes verlo en Caja, pero no generar cobro.
                             </div>
                         )}
                         <div className="d-flex justify-content-end">
-                            <button
+                                <button
                                 className="btn btn-success fw-bold"
                                 onClick={abrirModalCobroConDatosActualizados}
-                                disabled={!puedeGenerarCobro || !contratoTieneAsignacionValida(datosDeuda) || !tienePermisoCobroSeleccion}
+                                    disabled={!puedeGenerarCobro}
                             >
                                 💳 Generar Cobro
                             </button>
