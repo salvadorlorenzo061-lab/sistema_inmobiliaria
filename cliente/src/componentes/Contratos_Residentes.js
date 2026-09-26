@@ -9,7 +9,23 @@ import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfG
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 
 function Contratos_Residentes() {
- const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '', dia: '' });
+  const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '', dia: '' });
+
+  const fechaInicioPagosCalendario = (() => {
+    const anio = Number(inicioPagosCalculado.anio || 0);
+    const mes = Number(inicioPagosCalculado.mes || 0);
+    const dia = Number(inicioPagosCalculado.dia || 0);
+    if (!Number.isInteger(anio) || anio < 1900 || !Number.isInteger(mes) || mes < 1 || mes > 12 || !Number.isInteger(dia) || dia < 1) return '';
+    const ultimoDia = new Date(anio, mes, 0).getDate();
+    return `${anio}-${String(mes).padStart(2, '0')}-${String(Math.min(dia, ultimoDia)).padStart(2, '0')}`;
+  })();
+
+  const actualizarFechaInicioPagos = (valor = '') => {
+    const match = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    setInicioPagosCalculado(match
+      ? { anio: match[1], mes: String(Number(match[2])), dia: String(Number(match[3])) }
+      : { anio: '', mes: '', dia: '' });
+  };
   const calcularMontoCuotaContrato = (montoTotalValue, engancheValue, interesValue, cuotasValue, plazoValue) => {
     const montoTotalNumero = Number(montoTotalValue || 0);
     const engancheNumero = Number(engancheValue || 0);
@@ -1690,38 +1706,10 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} placeholder="80" />
                 </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    className="form-control"
-                    value={inicioPagosCalculado.mes}
-                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, mes: e.target.value })}
-                  />
-                </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
-                  <input
-                    type="number"
-                    min="2000"
-                    className="form-control"
-                    value={inicioPagosCalculado.anio}
-                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
-                  />
-                </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Día Inicio de Pagos:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    className="form-control"
-                    value={inicioPagosCalculado.dia}
-                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, dia: e.target.value })}
-                    placeholder="Ej. 2"
-                  />
+                <div className="col-md-6 mb-3">
+                  <label className="form-label fw-bold">Fecha de inicio de pagos:</label>
+                  <input type="date" className="form-control" value={fechaInicioPagosCalendario} onChange={(e) => actualizarFechaInicioPagos(e.target.value)} />
+                  <small className="text-muted">La cuota 1 inicia en esta fecha; las siguientes conservan su número y avanzan un mes.</small>
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Ultima Cuota:</label>
@@ -2028,38 +2016,10 @@ function Contratos_Residentes() {
                   <label className="form-label fw-bold">% Reserva Dominio:</label>
                   <input type="number" className="form-control" value={porcentaje_dominio} onChange={e => setPorcentaje_dominio(e.target.value)} />
                 </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Mes Inicio de Pagos:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    className="form-control"
-                    value={inicioPagosCalculado.mes}
-                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, mes: e.target.value })}
-                  />
-                </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Año Inicio de Pagos:</label>
-                  <input
-                    type="number"
-                    min="2000"
-                    className="form-control"
-                    value={inicioPagosCalculado.anio}
-                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
-                  />
-                </div>
-                <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Día Inicio de Pagos:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    className="form-control"
-                    value={inicioPagosCalculado.dia}
-                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, dia: e.target.value })}
-                    placeholder="Ej. 2"
-                  />
+                <div className="col-md-6 mb-3">
+                  <label className="form-label fw-bold">Fecha de inicio de pagos:</label>
+                  <input type="date" className="form-control" value={fechaInicioPagosCalendario} onChange={(e) => actualizarFechaInicioPagos(e.target.value)} />
+                  <small className="text-muted">Editable. Al guardar se conserva esta fecha contractual para Caja y el cronograma.</small>
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Ultima Cuota:</label>

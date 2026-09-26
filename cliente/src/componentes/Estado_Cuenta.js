@@ -171,12 +171,18 @@ const EstadoCuenta = () => {
     })}`;
   };
 
-  const agregarMeses = (fechaBase, meses) => {
-    const base = new Date(fechaBase);
-    if (Number.isNaN(base.getTime())) return null;
-    const nueva = new Date(base);
-    nueva.setMonth(nueva.getMonth() + meses);
-    return nueva;
+  const obtenerFechaCuotaContrato = (contrato = {}, numeroCuota = 1) => {
+    const respaldo = contrato?.fecha_compra || contrato?.fecha_firma;
+    const base = respaldo ? new Date(respaldo) : null;
+    const anio = Number(contrato?.anio_inicio_pagos || base?.getFullYear() || 0);
+    const mes = Number(contrato?.mes_inicio_pagos || (base ? base.getMonth() + 1 : 0));
+    const dia = Math.max(1, Math.min(31, Number(contrato?.dia_inicio_pagos || base?.getDate() || 1)));
+    if (!Number.isInteger(anio) || anio < 1900 || !Number.isInteger(mes) || mes < 1 || mes > 12) return null;
+    const indiceMes = (mes - 1) + Math.max(Number(numeroCuota || 1) - 1, 0);
+    const anioDestino = anio + Math.floor(indiceMes / 12);
+    const mesDestino = ((indiceMes % 12) + 12) % 12;
+    const ultimoDia = new Date(anioDestino, mesDestino + 1, 0).getDate();
+    return new Date(anioDestino, mesDestino, Math.min(dia, ultimoDia));
   };
 
   const construirPlanContrato = (contrato = {}) => {
@@ -188,12 +194,14 @@ const EstadoCuenta = () => {
     const tablaAmortizacion = generarTablaAmortizacion(capitalFinanciado, interesAnualContrato, cuotasPactadas);
     const montoCuota = Number(contrato.monto_cuota || 0) || calcularCuotaFija(capitalFinanciado, interesAnualContrato, cuotasPactadas);
     const ultimaCuota = Number(tablaAmortizacion[tablaAmortizacion.length - 1]?.cuota_estimada || montoCuota || 0);
+    const totalConIntereses = Number(tablaAmortizacion.reduce((total, fila) => total + Number(fila?.cuota_estimada || 0), engancheContrato).toFixed(2));
 
     return {
       cuotasPactadas,
       montoCuota,
       ultimaCuota,
-      montoTotalContrato
+      montoTotalContrato,
+      totalConIntereses
     };
   };
 
@@ -598,7 +606,7 @@ const EstadoCuenta = () => {
 
       for (let i = 1; i <= cuotasPactadas; i += 1) {
         const detalle = detallesPorCuota.get(i);
-        const fechaProgramada = agregarMeses(contrato.fecha_firma, i);
+        const fechaProgramada = obtenerFechaCuotaContrato(contrato, i);
         const mesCuotaEtiqueta = etiquetaMesCaja(fechaProgramada);
         const estaPendienteEnCaja = Boolean(mesCuotaEtiqueta && pendientesCajaSet.has(mesCuotaEtiqueta));
         if (!detalle && !estaPendienteEnCaja) {
@@ -774,7 +782,7 @@ const EstadoCuenta = () => {
       const totalCuotas = Math.max(Number(cuotasPactadas || 0), 0);
       for (let cuota = 1; cuota <= totalCuotas; cuota += 1) {
         const pagoDetalle = detallePorCuota.get(cuota) || null;
-        const fechaCuota = nuevoFormatoFecha(agregarMeses(contrato?.fecha_firma, cuota));
+        const fechaCuota = nuevoFormatoFecha(obtenerFechaCuotaContrato(contrato, cuota));
         filasReporte.push(
           pagoDetalle
             ? crearFilaPago(pagoDetalle, fechaCuota, 'CUOTA', cuota)
@@ -786,7 +794,9 @@ const EstadoCuenta = () => {
         ? filasReporte
         : [['', '', '', '', '', '', 'Q 0.00', 'Sin pagos registrados']];
 
-      const headerY = 72;
+      const headerY = 58;
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
       if (logoProyecto) {
         try {
           const formatoLogo = logoProyecto.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
@@ -796,8 +806,6 @@ const EstadoCuenta = () => {
         }
       }
 
-      doc.setFillColor(255, 255, 255);
-      doc.rect(0, 0, pageWidth, pageHeight, 'F');
       doc.setTextColor(35, 35, 35);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(18);
@@ -809,15 +817,23 @@ const EstadoCuenta = () => {
       doc.setFontSize(9);
       doc.text('CLIENTE', 16, headerY);
       doc.text(nombreCliente.toUpperCase(), 50, headerY);
-      doc.text('PROYECTO', 16, headerY + 9);
-      doc.text(nombreProyecto.toUpperCase(), 50, headerY + 9);
       doc.text('ID CLIENTE', 120, headerY);
-      doc.text(String(contrato?.id_residente || contrato?.id_cliente || 'N/D'), 160, headerY);
-      doc.text('LOTE / MANZANA', 120, headerY + 9);
-      doc.text(loteContrato, 168, headerY + 9);
+      doc.text(String(contrato?.numero_identificacion || contrato?.id_residente || 'N/D'), 160, headerY);
+      doc.text('DPI', 16, headerY + 7);
+      doc.text(String(contrato?.dpi || 'N/D'), 50, headerY + 7);
+      doc.text('FECHA CONTRATO', 120, headerY + 7);
+      doc.text(nuevoFormatoFecha(contrato?.fecha_firma) || 'N/D', 160, headerY + 7);
+      doc.text('PROYECTO', 16, headerY + 14);
+      doc.text(nombreProyecto.toUpperCase(), 50, headerY + 14);
+      doc.text('LOTE / MANZANA', 120, headerY + 14);
+      doc.text(`${loteContrato}${contrato?.manzana ? ` / ${contrato.manzana}` : ''}`, 160, headerY + 14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('TOTAL DEUDA CON INTERESES', 16, headerY + 21);
+      doc.text(formatoMoneda(planContratoActual?.totalConIntereses || contrato?.monto_total || 0), 67, headerY + 21);
+      doc.setFont('helvetica', 'normal');
 
       autoTable(doc, {
-        startY: headerY + 18,
+        startY: headerY + 27,
         margin: { left: 10, right: 10 },
         head: [[
           'Fecha cuota',
