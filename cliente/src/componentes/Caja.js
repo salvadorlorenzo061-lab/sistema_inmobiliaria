@@ -611,7 +611,8 @@ const Caja = () => {
         fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma,
         diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5,
         mesInicioRaw = datosDeuda?.mes_inicio_pagos,
-        anioInicioRaw = datosDeuda?.anio_inicio_pagos
+        anioInicioRaw = datosDeuda?.anio_inicio_pagos,
+        diaInicioRaw = datosDeuda?.dia_inicio_pagos
     ) => {
         const limpio = String(mesTexto || '').trim().replace(/\s+/g, ' ');
         if (!limpio) return false;
@@ -629,11 +630,13 @@ const Caja = () => {
         const anioInicio = Number(anioInicioRaw || 0);
         const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
             && Number.isInteger(anioInicio) && anioInicio >= 1900;
+        const diaInicio = Math.max(1, Math.min(31, Number(diaInicioRaw || fechaContrato.getDate() || 1)));
         const primerMesCuota = inicioConfiguradoValido
-            ? new Date(anioInicio, mesInicio - 1, 1)
+            ? new Date(anioInicio, mesInicio - 1, diaInicio)
             : new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
         const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
-        if (mesEvaluado < primerMesCuota) return false;
+        const primerMesEvaluado = new Date(primerMesCuota.getFullYear(), primerMesCuota.getMonth(), 1);
+        if (mesEvaluado < primerMesEvaluado) return false;
 
         const hoy = new Date();
         const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -641,11 +644,15 @@ const Caja = () => {
         // transcurrido el dia contractual. Se evalua a partir del mes siguiente.
         if (mesEvaluado >= mesActual) return false;
 
-        const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
+        // El periodo iniciado en el mes de la cuota vence el mismo dia del mes siguiente.
+        const mesVencimiento = inicioConfiguradoValido
+            ? new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 1)
+            : mesCuota;
+        const ultimoDiaMesVencimiento = new Date(mesVencimiento.getFullYear(), mesVencimiento.getMonth() + 1, 0).getDate();
         const fechaVencimiento = new Date(
-            mesCuota.getFullYear(),
-            mesCuota.getMonth(),
-            Math.min(fechaContrato.getDate(), ultimoDiaMes)
+            mesVencimiento.getFullYear(),
+            mesVencimiento.getMonth(),
+            Math.min(diaInicio, ultimoDiaMesVencimiento)
         );
         const diasGracia = Math.max(0, Math.min(31, Number(diasGraciaRaw ?? 5)));
         const fechaInicioMora = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), fechaVencimiento.getDate());
@@ -659,6 +666,9 @@ const Caja = () => {
     const obtenerFechasVencimientoMes = (mesTexto = '') => {
         const fechaContratoRaw = datosDeuda?.fecha_compra || datosDeuda?.fecha_firma;
         const diasGraciaRaw = datosDeuda?.dia_pago_limite ?? 5;
+        const mesInicioRaw = datosDeuda?.mes_inicio_pagos;
+        const anioInicioRaw = datosDeuda?.anio_inicio_pagos;
+        const diaInicioRaw = datosDeuda?.dia_inicio_pagos;
         const fechaContratoMatch = String(fechaContratoRaw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
         const fechaContrato = fechaContratoMatch
             ? new Date(Number(fechaContratoMatch[1]), Number(fechaContratoMatch[2]) - 1, Number(fechaContratoMatch[3]))
@@ -668,11 +678,19 @@ const Caja = () => {
         if (!(fechaContrato instanceof Date) || Number.isNaN(fechaContrato.getTime())) return null;
         if (!(mesCuota instanceof Date) || Number.isNaN(mesCuota.getTime())) return null;
 
-        const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
+        const mesInicio = Number(mesInicioRaw || 0);
+        const anioInicio = Number(anioInicioRaw || 0);
+        const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
+            && Number.isInteger(anioInicio) && anioInicio >= 1900;
+        const diaInicio = Math.max(1, Math.min(31, Number(diaInicioRaw || fechaContrato.getDate() || 1)));
+        const mesVencimiento = inicioConfiguradoValido
+            ? new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 1)
+            : mesCuota;
+        const ultimoDiaMes = new Date(mesVencimiento.getFullYear(), mesVencimiento.getMonth() + 1, 0).getDate();
         const fechaVencimiento = new Date(
-            mesCuota.getFullYear(),
-            mesCuota.getMonth(),
-            Math.min(fechaContrato.getDate(), ultimoDiaMes)
+            mesVencimiento.getFullYear(),
+            mesVencimiento.getMonth(),
+            Math.min(diaInicio, ultimoDiaMes)
         );
         const diasGracia = Math.max(0, Math.min(31, Number(diasGraciaRaw ?? 5)));
         const fechaLimiteGracia = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), fechaVencimiento.getDate());

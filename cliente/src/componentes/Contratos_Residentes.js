@@ -9,7 +9,7 @@ import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfG
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 
 function Contratos_Residentes() {
- const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '' });
+ const [inicioPagosCalculado, setInicioPagosCalculado] = useState({ mes: '', anio: '', dia: '' });
   const calcularMontoCuotaContrato = (montoTotalValue, engancheValue, interesValue, cuotasValue, plazoValue) => {
     const montoTotalNumero = Number(montoTotalValue || 0);
     const engancheNumero = Number(engancheValue || 0);
@@ -477,6 +477,13 @@ function Contratos_Residentes() {
     return String(Math.max(2000, numero));
   };
 
+  const normalizarDiaInicioPagos = (valor) => {
+    const numero = parseInt(String(valor || '').trim(), 10);
+    const respaldo = parseInt(String(fecha_compra ? new Date(fecha_compra).getDate() : (fecha_firma ? new Date(fecha_firma).getDate() : '1')).trim(), 10) || 1;
+    if (!Number.isFinite(numero)) return String(respaldo);
+    return String(Math.max(1, Math.min(31, numero)));
+  };
+
 
   
   const validarContrato = () => {
@@ -522,6 +529,7 @@ function Contratos_Residentes() {
       plazo_meses: plazoEnvio,
       mes_inicio_pagos: normalizarMesInicioPagos(inicioPagosCalculado.mes),
       anio_inicio_pagos: normalizarAnioInicioPagos(inicioPagosCalculado.anio),
+      dia_inicio_pagos: normalizarDiaInicioPagos(inicioPagosCalculado.dia),
       dia_pago_limite,
       fecha_firma,
       fecha_compra: fecha_compra || null,
@@ -1201,7 +1209,8 @@ function Contratos_Residentes() {
     );
     setInicioPagosCalculado({
       mes: String(val.mes_inicio_pagos ?? ''),
-      anio: String(val.anio_inicio_pagos ?? '')
+      anio: String(val.anio_inicio_pagos ?? ''),
+      dia: String(val.dia_inicio_pagos ?? '')
     });
     ultimoInicioPagosAutoRef.current = obtenerInicioPagosAutomatico(
       val.fecha_compra ? val.fecha_compra.split('T')[0] : '',
@@ -1290,7 +1299,7 @@ function Contratos_Residentes() {
     setMontoEnganchePagadoContrato(0);
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
     setMonto_cuota_manual("");
-    setInicioPagosCalculado({ mes: '', anio: '' });
+    setInicioPagosCalculado({ mes: '', anio: '', dia: '' });
     ultimoInicioPagosAutoRef.current = { mes: '', anio: '' };
   };
 
@@ -1703,6 +1712,18 @@ function Contratos_Residentes() {
                   />
                 </div>
                 <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Día Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    className="form-control"
+                    value={inicioPagosCalculado.dia}
+                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, dia: e.target.value })}
+                    placeholder="Ej. 2"
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Ultima Cuota:</label>
                   <input
                     type="text"
@@ -2026,6 +2047,18 @@ function Contratos_Residentes() {
                     className="form-control"
                     value={inicioPagosCalculado.anio}
                     onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, anio: e.target.value })}
+                  />
+                </div>
+                <div className="col-md-3 mb-3">
+                  <label className="form-label fw-bold">Día Inicio de Pagos:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    className="form-control"
+                    value={inicioPagosCalculado.dia}
+                    onChange={(e) => setInicioPagosCalculado({ ...inicioPagosCalculado, dia: e.target.value })}
+                    placeholder="Ej. 2"
                   />
                 </div>
                 <div className="col-md-3 mb-3">

@@ -105,6 +105,13 @@ const normalizeAnioInicioPagos = (value, fallback = new Date().getFullYear()) =>
     return Math.max(2000, numero);
 };
 
+const normalizeDiaInicioPagos = (value, fallback = 1) => {
+    const numero = parseInt(value, 10);
+    const respaldo = Math.max(1, Math.min(31, parseInt(fallback, 10) || 1));
+    if (!Number.isFinite(numero)) return respaldo;
+    return Math.max(1, Math.min(31, numero));
+};
+
 router.use(cors());
 router.use(express.json());
 
@@ -542,6 +549,7 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('cuotas_pendientes', 'INT NULL DEFAULT 0');
     ensureFinancialColumn('mes_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('anio_inicio_pagos', 'INT NULL DEFAULT 2026');
+    ensureFinancialColumn('dia_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
     ensureFinancialColumn('modalidad_pago', "VARCHAR(20) NOT NULL DEFAULT 'financiado'");
 };
@@ -1129,7 +1137,7 @@ router.get("/", (req, res) => {
                          )
                    ), 0) AS ultima_cuota_pagada,
                    c.monto_cuota, c.interes_porcentaje, c.mora, c.plazo_meses,
-                   c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_pago_limite,
+                   c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_inicio_pagos, c.dia_pago_limite,
                    COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
                    c.estado, c.formato_contrato, c.documento_contrato,
                    c.id_empresa_marca, c.id_proyecto,
@@ -1191,7 +1199,7 @@ router.post("/crear", (req, res) => {
     const { 
         codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
-        dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, modalidad_pago,
+        dia_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, modalidad_pago,
         servicios_contrato, numero_lote, datos_propiedad
     } = req.body;
 
@@ -1243,8 +1251,8 @@ router.post("/crear", (req, res) => {
         obtenerCuotasPagadasReales(0, cuotasPagadasNormalizadas, (_realErr, cuotasPagadasDefinitivas) => {
             const queryInsert = `
                 INSERT INTO contratos_residentes 
-                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, modalidad_pago, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, modalidad_pago, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
             db.query(
                 queryInsert,
@@ -1267,6 +1275,7 @@ router.post("/crear", (req, res) => {
                     cuotasNormalizadas,
                     normalizeMesInicioPagos(mes_inicio_pagos, 1),
                     normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
+                    normalizeDiaInicioPagos(dia_inicio_pagos, 1),
                     Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
                     fecha_firma,
                     fecha_compra || null,
@@ -1423,7 +1432,7 @@ router.put("/actualizar", (req, res) => {
     const { 
         id_contrato, codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, monto_total, saldo_pendiente,
         enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos,
-        dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, modalidad_pago,
+        dia_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, modalidad_pago,
         servicios_contrato, numero_lote, datos_propiedad
     } = req.body;
 
@@ -1472,7 +1481,7 @@ router.put("/actualizar", (req, res) => {
             UPDATE contratos_residentes SET 
             codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, modalidad_pago=?, monto_total=?, saldo_pendiente=?,
             enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
-            dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
+            dia_inicio_pagos=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
             WHERE id_contrato=?
         `;
         db.query(
@@ -1496,6 +1505,7 @@ router.put("/actualizar", (req, res) => {
                 cuotasNormalizadas,
                 normalizeMesInicioPagos(mes_inicio_pagos, 1),
                 normalizeAnioInicioPagos(anio_inicio_pagos, new Date().getFullYear()),
+                normalizeDiaInicioPagos(dia_inicio_pagos, 1),
                 Math.max(0, Math.min(31, Number(dia_pago_limite ?? 5))),
                 fecha_firma,
                 fecha_compra || null,

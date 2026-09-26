@@ -262,6 +262,94 @@ const EstadoCuenta = () => {
 
   const filasDetalleVisual = estadoCuenta ? construirFilasDetalleVisual() : [];
 
+  const obtenerBancoDisplayVisual = (pago = {}) => {
+    const raw = String(pago?.forma_pago || pago?.banco || pago?.metodo_pago || 'EFECTIVO').trim();
+    if (!raw) return 'EFECTIVO';
+    const texto = raw.toLowerCase();
+    if (texto.includes('deposit')) return 'DEPÓSITO';
+    if (texto.includes('transf')) return 'TRANSFERENCIA';
+    if (texto.includes('efect') || texto.includes('cash')) return 'EFECTIVO';
+    if (texto.includes('cheque')) return 'CHEQUE';
+    return raw.toUpperCase();
+  };
+
+  // Cronograma completo (enganche + cuotas financiadas), mostrando tambien las
+  // pendientes de pago con banco/no. referencia/recibo vacios hasta que se cobren.
+  const construirFilasCronogramaVisual = () => {
+    if (!estadoCuenta) return [];
+    const contrato = estadoCuenta.contrato || {};
+    const { cuotasPactadas, montoCuota, ultimaCuota } = construirPlanContrato(contrato);
+    const detalleRaw = Array.isArray(estadoCuenta.cuotasDetalle) && estadoCuenta.cuotasDetalle.length
+      ? estadoCuenta.cuotasDetalle
+      : (Array.isArray(estadoCuenta.pagos) ? estadoCuenta.pagos : []);
+
+    const enganches = detalleRaw.filter((item) => {
+      const cuotaNumero = Number(item?.numero_cuota ?? item?.numero_cuota_afectada ?? -1);
+      const tipoConcepto = String(item?.tipo_concepto || item?.tipos_concepto || '').toLowerCase();
+      return cuotaNumero === 0 || tipoConcepto.includes('enganche');
+    });
+    const detallePorCuota = new Map();
+    detalleRaw.forEach((item) => {
+      const cuota = Number(item?.numero_cuota ?? item?.numero_cuota_afectada ?? 0);
+      if (cuota > 0 && !detallePorCuota.has(cuota)) detallePorCuota.set(cuota, item);
+    });
+
+    const construirFilaPagada = (item, nombre, montoFallback) => ({
+      nombre,
+      fechaPago: item?.fecha_pago || '',
+      banco: obtenerBancoDisplayVisual(item),
+      noReferencia: String(item?.no_referencia || item?.no_deposito || item?.numero_referencia || '').trim(),
+      monto: Number(item?.monto_total_detalle ?? item?.total_cobrado ?? item?.monto_cuota ?? montoFallback ?? 0),
+      recibo: String(item?.correlativo || item?.no_referencia || item?.id_pago || '').trim(),
+      estado: 'PAGADO'
+    });
+
+    const filas = [];
+    const engancheTotal = Math.max(Number(contrato?.enganche || 0), 0);
+    if (engancheTotal > 0) {
+      if (enganches.length) {
+        enganches.forEach((item, idx) => {
+          filas.push({ id: `enganche-${idx}`, ...construirFilaPagada(item, 'Enganche / Cuota 0', engancheTotal) });
+        });
+      } else {
+        filas.push({
+          id: 'enganche-pendiente',
+          nombre: 'Enganche / Cuota 0',
+          fechaPago: '',
+          banco: '',
+          noReferencia: '',
+          monto: engancheTotal,
+          recibo: '',
+          estado: 'PENDIENTE'
+        });
+      }
+    }
+
+    const totalCuotas = Math.max(Number(cuotasPactadas || 0), 0);
+    for (let cuota = 1; cuota <= totalCuotas; cuota += 1) {
+      const detalle = detallePorCuota.get(cuota);
+      const montoProgramado = (cuota === totalCuotas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
+      if (detalle) {
+        filas.push({ id: `cuota-${cuota}`, ...construirFilaPagada(detalle, `Cuota ${cuota}`, montoProgramado) });
+      } else {
+        filas.push({
+          id: `cuota-${cuota}`,
+          nombre: `Cuota ${cuota}`,
+          fechaPago: '',
+          banco: '',
+          noReferencia: '',
+          monto: montoProgramado,
+          recibo: '',
+          estado: 'PENDIENTE'
+        });
+      }
+    }
+
+    return filas;
+  };
+
+  const filasCronogramaVisual = estadoCuenta ? construirFilasCronogramaVisual() : [];
+
   const exportarEstadoCuentaPDF = async () => {
     if (!estadoCuenta) {
       showFadeToast('Primero debes cargar un estado de cuenta.', 'warning');
@@ -934,6 +1022,53 @@ const EstadoCuenta = () => {
                       </p>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* ENGANCHE Y CUOTAS FINANCIADAS (PAGADAS / PENDIENTES) */}
+              <div className="card mt-3">
+                <div className="card-header bg-primary text-white">
+                  <h6 className="mb-0">🧾 Enganche y Cuotas Financiadas</h6>
+                </div>
+                <div className="card-body">
+                  {filasCronogramaVisual.length > 0 ? (
+                    <div className="table-responsive">
+                      <table className="table table-striped table-hover">
+                        <thead className="table-dark">
+                          <tr>
+                            <th>Cuota / Enganche</th>
+                            <th>Banco</th>
+                            <th>No. Depósito/Transferencia</th>
+                            <th>Fecha de Pago</th>
+                            <th>Monto</th>
+                            <th>Recibo/Factura</th>
+                            <th>Estado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filasCronogramaVisual.map((fila) => (
+                            <tr key={fila.id}>
+                              <td><strong>{fila.nombre}</strong></td>
+                              <td>{fila.banco || 'N/A'}</td>
+                              <td>{fila.noReferencia || 'N/A'}</td>
+                              <td>{fila.fechaPago ? new Date(fila.fechaPago).toLocaleDateString() : 'N/A'}</td>
+                              <td>Q{Number(fila.monto || 0).toFixed(2)}</td>
+                              <td>{fila.recibo || 'N/A'}</td>
+                              <td>
+                                <span className={`badge ${fila.estado === 'PAGADO' ? 'bg-success' : 'bg-warning text-dark'}`}>
+                                  {fila.estado}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="alert alert-warning mb-0">
+                      ⚠️ No hay cronograma disponible para este cliente.
+                    </div>
+                  )}
                 </div>
               </div>
 

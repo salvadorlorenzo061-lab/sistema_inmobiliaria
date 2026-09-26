@@ -155,7 +155,7 @@ const esMesVencidoParaMora = (mesTexto = '') => {
     return false;
 };
 
-const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw, mesInicioRaw = null, anioInicioRaw = null) => {
+const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw, mesInicioRaw = null, anioInicioRaw = null, diaInicioRaw = null) => {
     const matchFecha = String(fechaContratoRaw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     const fechaContrato = matchFecha
         ? new Date(Number(matchFecha[1]), Number(matchFecha[2]) - 1, Number(matchFecha[3]))
@@ -168,22 +168,29 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw, mes
     const anioInicio = Number(anioInicioRaw || 0);
     const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
         && Number.isInteger(anioInicio) && anioInicio >= 1900;
+    const diaInicio = Math.max(1, Math.min(31, Number(diaInicioRaw || fechaContrato.getDate() || 1)));
     const primerMesCuota = inicioConfiguradoValido
-        ? new Date(anioInicio, mesInicio - 1, 1)
+        ? new Date(anioInicio, mesInicio - 1, diaInicio)
         : new Date(fechaContrato.getFullYear(), fechaContrato.getMonth() + 1, 1);
     const mesEvaluado = new Date(mesCuota.getFullYear(), mesCuota.getMonth(), 1);
-    if (mesEvaluado < primerMesCuota) return false;
+    const primerMesEvaluado = new Date(primerMesCuota.getFullYear(), primerMesCuota.getMonth(), 1);
+    if (mesEvaluado < primerMesEvaluado) return false;
     const hoy = new Date();
     const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     // El mes calendario actual nunca genera mora. Solo se cobran cuotas de
     // meses anteriores que ya agotaron todos sus dias de gracia.
     if (mesEvaluado >= mesActual) return false;
 
-    const ultimoDiaMes = new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 0).getDate();
+    // El periodo iniciado en el mes de la cuota vence el mismo dia del mes siguiente
+    // (ej. inicio 2/01 -> vencimiento 2/02), no dentro del mismo mes de la cuota.
+    const mesVencimiento = inicioConfiguradoValido
+        ? new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 1)
+        : mesCuota;
+    const ultimoDiaMesVencimiento = new Date(mesVencimiento.getFullYear(), mesVencimiento.getMonth() + 1, 0).getDate();
     const fechaVencimiento = new Date(
-        mesCuota.getFullYear(),
-        mesCuota.getMonth(),
-        Math.min(fechaContrato.getDate(), ultimoDiaMes)
+        mesVencimiento.getFullYear(),
+        mesVencimiento.getMonth(),
+        Math.min(diaInicio, ultimoDiaMesVencimiento)
     );
     const diasGracia = Math.max(0, Math.min(31, Number(diasGraciaRaw ?? 5)));
     const fechaInicioMora = new Date(
@@ -847,6 +854,7 @@ router.get("/residentes-pendientes", (req, res) => {
             c.enganche AS enganche_total,
             c.mes_inicio_pagos,
             c.anio_inicio_pagos,
+            c.dia_inicio_pagos,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
             GREATEST(
                 c.enganche - COALESCE(pagos_resumen.enganche_pagado, 0),
@@ -975,6 +983,7 @@ router.get("/buscar-residente", (req, res) => {
             c.enganche AS enganche_total,
             c.mes_inicio_pagos,
             c.anio_inicio_pagos,
+            c.dia_inicio_pagos,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado,
             GREATEST(
                 c.enganche - COALESCE(pagos_resumen.enganche_pagado, 0),
@@ -1071,6 +1080,7 @@ router.get("/meses-pendientes", (req, res) => {
             c.fecha_firma,
             c.mes_inicio_pagos,
             c.anio_inicio_pagos,
+            c.dia_inicio_pagos,
             COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
@@ -1151,6 +1161,7 @@ router.get("/meses-pendientes", (req, res) => {
 
         const mesInicioConfigurado = Number(contratoResult[0].mes_inicio_pagos || 0);
         const anioInicioConfigurado = Number(contratoResult[0].anio_inicio_pagos || 0);
+        const diaInicioConfigurado = Math.max(1, Math.min(31, Number(contratoResult[0].dia_inicio_pagos || fechaInicioBase.getDate() || 1)));
         const inicioConfiguradoValido = Number.isInteger(mesInicioConfigurado)
             && mesInicioConfigurado >= 1 && mesInicioConfigurado <= 12
             && Number.isInteger(anioInicioConfigurado) && anioInicioConfigurado >= 1900;
@@ -1160,7 +1171,7 @@ router.get("/meses-pendientes", (req, res) => {
         // financiadas van 1..N desde el mes/año pactado de inicio de pagos.
         const usaCuotaCeroEnganche = engancheContrato > 0;
         const fechaInicioFinanciado = (!tieneConvenioActivo && inicioConfiguradoValido)
-            ? new Date(anioInicioConfigurado, mesInicioConfigurado - 1, 1)
+            ? new Date(anioInicioConfigurado, mesInicioConfigurado - 1, diaInicioConfigurado)
             : new Date(
                 fechaInicioBase.getFullYear(),
                 fechaInicioBase.getMonth(),
@@ -1533,6 +1544,7 @@ router.get("/meses-pendientes", (req, res) => {
                     mes_enganche: mesEngancheContratoFinal,
                     mes_inicio_pagos: mesInicioConfigurado > 0 ? mesInicioConfigurado : null,
                     anio_inicio_pagos: anioInicioConfigurado > 0 ? anioInicioConfigurado : null,
+                    dia_inicio_pagos: diaInicioConfigurado > 0 ? diaInicioConfigurado : null,
                     enganche: engancheContrato,
                     enganche_pagado: enganchePagado,
                     enganche_pendiente: enganchePendienteContratoFinal
@@ -1734,7 +1746,8 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
                                  COALESCE(vp.fecha_compra, c.fecha_compra, c.fecha_firma) AS fecha_contrato,
                                  COALESCE(c.dia_pago_limite, 5) AS dias_gracia,
                                  c.mes_inicio_pagos,
-                                 c.anio_inicio_pagos
+                                 c.anio_inicio_pagos,
+                                 c.dia_inicio_pagos
                 FROM morosidad m
                 INNER JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
                 LEFT JOIN (
@@ -1762,7 +1775,8 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
             row.fecha_contrato,
             row.dias_gracia,
             row.mes_inicio_pagos,
-            row.anio_inicio_pagos
+            row.anio_inicio_pagos,
+            row.dia_inicio_pagos
         ))
         .map((row) => ({
             id_morosidad: Number(row.id_morosidad || 0),
@@ -2071,6 +2085,7 @@ router.post("/procesar-pago", (req, res) => {
                     c.fecha_firma,
                     c.mes_inicio_pagos,
                     c.anio_inicio_pagos,
+                    c.dia_inicio_pagos,
                     COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
                     COALESCE(conv.cuotas_pactadas, c.plazo_meses, c.cuotas_pactadas) AS plazo_meses,
                     COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
@@ -2201,11 +2216,12 @@ router.post("/procesar-pago", (req, res) => {
                     : null);
             const mesInicioPagosContrato = Number(saldoRows[0]?.mes_inicio_pagos || 0);
             const anioInicioPagosContrato = Number(saldoRows[0]?.anio_inicio_pagos || 0);
+            const diaInicioPagosContrato = Math.max(1, Math.min(31, Number(saldoRows[0]?.dia_inicio_pagos || fechaCompraContrato?.getDate() || fechaFirmaContrato?.getDate() || 1)));
             const inicioFinanciadoConfiguradoValido = Number.isInteger(mesInicioPagosContrato)
                 && mesInicioPagosContrato >= 1 && mesInicioPagosContrato <= 12
                 && Number.isInteger(anioInicioPagosContrato) && anioInicioPagosContrato >= 1900;
             const fechaInicioFinanciadoContrato = inicioFinanciadoConfiguradoValido
-                ? new Date(anioInicioPagosContrato, mesInicioPagosContrato - 1, 1)
+                ? new Date(anioInicioPagosContrato, mesInicioPagosContrato - 1, diaInicioPagosContrato)
                 : (fechaInicioContrato
                     ? new Date(
                         fechaInicioContrato.getFullYear(),
