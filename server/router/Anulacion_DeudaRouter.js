@@ -885,7 +885,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                     .filter((id) => Number.isInteger(id) && id > 0))];
 
                 const mesesRevertirMorosidad = [...new Set((pago.detalle_cobro || [])
-                    .filter((item) => String(item?.tipo_concepto || '').toLowerCase() === 'mora')
+                    .filter((item) => ['mora', 'mora_exonerada'].includes(String(item?.tipo_concepto || '').toLowerCase()))
                     .map((item) => String(item?.mes_pagado || '').trim())
                     .filter((mes) => mes))];
 
@@ -1020,7 +1020,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                         UPDATE morosidad
                         SET estado = 'pendiente'
                         WHERE id_contrato = ?
-                          AND estado = 'pagado'
+                          AND LOWER(TRIM(COALESCE(estado, ''))) IN ('pagado', 'anulado')
                           ${condicionesMes.length ? `AND (${condicionesMes.join(' OR ')})` : ''}
                     `;
 

@@ -473,6 +473,8 @@ const registrarHistorialFactura = ({
                 nombreConcepto = 'Abono a capital (sin interes)';
             } else if (tipoConcepto === 'mora') {
                 nombreConcepto = `Mora ${mesPagado || ''}`.trim();
+            } else if (tipoConcepto === 'mora_exonerada') {
+                nombreConcepto = `Mora exonerada ${mesPagado || ''}`.trim();
             } else if (tipoConcepto === 'servicio') {
                 nombreConcepto = serviciosPorId.get(idConceptoServicio) || `Servicio #${idConceptoServicio || 'N/A'}`;
             } else if (tipoConcepto === 'extraordinario') {
@@ -2897,6 +2899,21 @@ router.post("/procesar-pago", (req, res) => {
                                         detalleValues.push([lastIdPago, 'mora', null, mesesAProcesar[0] || '', null, moraTotal, null]);
                                     }
                                 }
+
+                                // La exoneración no incrementa el total facturado, pero debe
+                                // quedar ligada al comprobante para mostrarla en Detalle de
+                                // Pagos y restaurarla si posteriormente se anula el cobro.
+                                morasExoneradasNormalizadas.forEach((mora) => {
+                                    detalleValues.push([
+                                        lastIdPago,
+                                        'mora_exonerada',
+                                        null,
+                                        mora.mes_atrasado,
+                                        null,
+                                        0,
+                                        null
+                                    ]);
+                                });
 
                                 const placeholders = detalleValues.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
                                 const flatValues = detalleValues.map((detalle) => detalle.slice(0, 6)).flat();

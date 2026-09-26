@@ -1513,11 +1513,12 @@ const Caja = () => {
         const mesesMoraDelCobro = esUsuarioJuridico
             ? (mesesSeleccionados || []).filter((mes) => !esMesEngancheVisual(mes))
             : mesesFinanciadosParaPago;
+        // `morasPendientes` ya fue validado por el backend. No se debe volver a
+        // descartar aquí por la fecha local del navegador: esa segunda validación
+        // podía dejar vacío el payload de exoneración aunque Jurídico hubiera
+        // seleccionado el mes visible en el panel.
         const morasVencidasDelCobro = (morasPendientes || [])
-            .filter((mora) => (
-                mesesMoraDelCobro.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado))
-                && esMesVencidoParaMoraLocal(mora?.mes_atrasado)
-            ))
+            .filter((mora) => mesesMoraDelCobro.some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado)))
             .sort((a, b) => {
                 const fechaA = parsearEtiquetaMes(a?.mes_atrasado);
                 const fechaB = parsearEtiquetaMes(b?.mes_atrasado);

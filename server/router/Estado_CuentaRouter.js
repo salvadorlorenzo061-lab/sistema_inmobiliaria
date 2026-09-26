@@ -290,11 +290,15 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                                 p.fecha_pago,
                                 p.forma_pago,
                                 p.no_referencia,
-                                COALESCE(
-                                    NULLIF(TRIM(s.nombre_servicio), ''),
-                                    NULLIF(TRIM(pd.tipo_concepto), ''),
-                                    'Otro pago'
-                                ) AS concepto,
+                                CASE
+                                    WHEN pd.tipo_concepto = 'mora' THEN CONCAT('Mora cobrada', IF(TRIM(COALESCE(pd.mes_pagado, '')) = '', '', CONCAT(' - ', pd.mes_pagado)))
+                                    WHEN pd.tipo_concepto = 'mora_exonerada' THEN CONCAT('Mora exonerada', IF(TRIM(COALESCE(pd.mes_pagado, '')) = '', '', CONCAT(' - ', pd.mes_pagado)))
+                                    ELSE COALESCE(
+                                        NULLIF(TRIM(s.nombre_servicio), ''),
+                                        NULLIF(TRIM(pd.tipo_concepto), ''),
+                                        'Otro pago'
+                                    )
+                                END AS concepto,
                                 pd.tipo_concepto,
                                 pd.mes_pagado,
                                 pd.subtotal AS monto,
