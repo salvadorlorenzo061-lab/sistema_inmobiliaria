@@ -1757,6 +1757,20 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
                 ) vp ON vp.id_contrato = c.id_contrato
                 WHERE m.id_contrato = ?
                     AND LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM pagos p_mora
+                        INNER JOIN pagos_detalle pd_mora ON pd_mora.id_pago = p_mora.id_pago
+                        WHERE p_mora.id_contrato = m.id_contrato
+                          AND pd_mora.tipo_concepto = 'mora'
+                          AND LOWER(TRIM(COALESCE(pd_mora.mes_pagado, ''))) = LOWER(TRIM(COALESCE(m.mes_atrasado, '')))
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM facturas_historial fh_mora
+                              WHERE fh_mora.id_pago = p_mora.id_pago
+                                AND UPPER(TRIM(COALESCE(fh_mora.estado_factura, ''))) = 'ANULADA'
+                          )
+                    )
         ORDER BY m.id_morosidad ASC
     `;
 
@@ -3188,18 +3202,23 @@ router.post("/procesar-pago", (req, res) => {
                                                     UPDATE morosidad
                                                     SET estado = 'pagado'
                                                     WHERE id_contrato = ?
-                                                      AND estado = 'pendiente'
+                                                      AND LOWER(TRIM(COALESCE(estado, 'pendiente'))) = 'pendiente'
                                                 `;
                                                 const paramsMorosidad = [id_contrato];
 
+                                                const condicionesMorosidad = [];
                                                 if (idsMorosidad.length) {
                                                     const placeholdersIds = idsMorosidad.map(() => '?').join(', ');
-                                                    sqlMorosidad += ` AND id_morosidad IN (${placeholdersIds})`;
+                                                    condicionesMorosidad.push(`id_morosidad IN (${placeholdersIds})`);
                                                     paramsMorosidad.push(...idsMorosidad);
-                                                } else if (mesesMora.length) {
+                                                }
+                                                if (mesesMora.length) {
                                                     const placeholdersMeses = mesesMora.map(() => '?').join(', ');
-                                                    sqlMorosidad += ` AND mes_atrasado IN (${placeholdersMeses})`;
-                                                    paramsMorosidad.push(...mesesMora);
+                                                    condicionesMorosidad.push(`LOWER(TRIM(mes_atrasado)) IN (${placeholdersMeses})`);
+                                                    paramsMorosidad.push(...mesesMora.map((mes) => String(mes).trim().toLowerCase()));
+                                                }
+                                                if (condicionesMorosidad.length) {
+                                                    sqlMorosidad += ` AND (${condicionesMorosidad.join(' OR ')})`;
                                                 }
 
                                                 db.query(sqlMorosidad, paramsMorosidad, (moraErr) => {
@@ -3221,18 +3240,23 @@ router.post("/procesar-pago", (req, res) => {
                                                     UPDATE morosidad
                                                     SET estado = 'anulado'
                                                     WHERE id_contrato = ?
-                                                      AND estado = 'pendiente'
+                                                      AND LOWER(TRIM(COALESCE(estado, 'pendiente'))) = 'pendiente'
                                                 `;
                                                 const paramsExoneracion = [id_contrato];
 
+                                                const condicionesExoneracion = [];
                                                 if (idsMorasExoneradas.length) {
                                                     const placeholdersIds = idsMorasExoneradas.map(() => '?').join(', ');
-                                                    sqlExoneracion += ` AND id_morosidad IN (${placeholdersIds})`;
+                                                    condicionesExoneracion.push(`id_morosidad IN (${placeholdersIds})`);
                                                     paramsExoneracion.push(...idsMorasExoneradas);
-                                                } else {
+                                                }
+                                                if (morasExoneradas.length) {
                                                     const placeholdersMeses = morasExoneradas.map(() => '?').join(', ');
-                                                    sqlExoneracion += ` AND mes_atrasado IN (${placeholdersMeses})`;
-                                                    paramsExoneracion.push(...morasExoneradas);
+                                                    condicionesExoneracion.push(`LOWER(TRIM(mes_atrasado)) IN (${placeholdersMeses})`);
+                                                    paramsExoneracion.push(...morasExoneradas.map((mes) => String(mes).trim().toLowerCase()));
+                                                }
+                                                if (condicionesExoneracion.length) {
+                                                    sqlExoneracion += ` AND (${condicionesExoneracion.join(' OR ')})`;
                                                 }
 
                                                 db.query(sqlExoneracion, paramsExoneracion, (exonErr) => {
