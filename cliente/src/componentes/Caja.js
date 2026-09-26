@@ -1549,7 +1549,8 @@ const Caja = () => {
             ? morasVencidasDelCobro
                 .map((mora) => ({
                     id_morosidad: Number(mora?.id_morosidad || 0),
-                    mes_atrasado: String(mora?.mes_atrasado || '').trim()
+                    mes_atrasado: String(mora?.mes_atrasado || '').trim(),
+                    monto_mora: Number(mora?.monto_mora || 0)
                 }))
                 .filter((mora) => mora.mes_atrasado)
             : [];
@@ -1569,7 +1570,11 @@ const Caja = () => {
             return;
         }
 
-        if (!Number.isFinite(montoSolicitado) || montoSolicitado <= 0) {
+        const montoMoraExoneradaReferencia = morasExoneradasPayload.reduce(
+            (sum, mora) => sum + Number(mora?.monto_mora || 0),
+            0
+        );
+        if (!Number.isFinite(montoSolicitado) || (montoSolicitado <= 0 && montoMoraExoneradaReferencia <= 0)) {
             mostrarToast('El monto a cobrar debe ser mayor a cero.', 'warning');
             return;
         }
@@ -2171,6 +2176,12 @@ const Caja = () => {
             .reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0)
             .toFixed(2)
     );
+    const moraExoneradaTotalVista = (quitarMoraTodo || quitarMoraMesesSeleccionados)
+        ? parseFloat((morasPendientes || [])
+            .filter((mora) => (mesesSeleccionados || []).some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado)))
+            .reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0)
+            .toFixed(2))
+        : 0;
     const moraPendienteTotalVista = parseFloat(
         (morasPendientes || []).reduce((sum, mora) => sum + Number(mora?.monto_mora || 0), 0).toFixed(2)
     );
@@ -2889,6 +2900,9 @@ const Caja = () => {
                                                 <div><strong>Cargos extraordinarios:</strong> Q{Number(montoCargosExtraSeleccionado || 0).toFixed(2)}</div>
                                                 <div><strong>Servicios seleccionados:</strong> Q{serviciosSeleccionadosTotalVista.toFixed(2)}</div>
                                                 <div><strong>Mora seleccionada:</strong> Q{moraTotalDistribuidaVista.toFixed(2)}</div>
+                                                {moraExoneradaTotalVista > 0 && (
+                                                    <div className="text-warning-emphasis"><strong>Mora a exonerar:</strong> Q{moraExoneradaTotalVista.toFixed(2)}</div>
+                                                )}
                                                 <div className="fs-5"><strong>Total a cobrar:</strong> Q{totalCobroJuridicoVista.toFixed(2)}</div>
                                             </div>
                                             <label className="form-label fw-bold">📅 Mes de referencia del servicio o mora:</label>

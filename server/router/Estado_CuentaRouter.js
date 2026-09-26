@@ -105,7 +105,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.libro')) ELSE NULL END AS libro,
             CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.area')) ELSE NULL END AS area,
             COALESCE((
-                SELECT SUM(pd_total.subtotal)
+                SELECT SUM(CASE WHEN pd_total.tipo_concepto = 'mora_exonerada' THEN 0 ELSE pd_total.subtotal END)
                 FROM pagos p_total
                 INNER JOIN pagos_detalle pd_total ON pd_total.id_pago = p_total.id_pago
                 WHERE p_total.id_contrato = c.id_contrato
@@ -177,7 +177,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.forma_pago ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS forma_pago,
                 SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.no_referencia ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS no_referencia,
                 (SELECT MAX(fh.correlativo) FROM facturas_historial fh WHERE fh.id_pago = p.id_pago AND fh.estado_factura = 'EMITIDA') AS correlativo,
-                SUM(pd.subtotal) AS total_cobrado,
+                SUM(CASE WHEN pd.tipo_concepto = 'mora_exonerada' THEN 0 ELSE pd.subtotal END) AS total_cobrado,
                 COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora,
                 GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados,
                 GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
@@ -301,7 +301,17 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                                 END AS concepto,
                                 pd.tipo_concepto,
                                 pd.mes_pagado,
-                                pd.subtotal AS monto,
+                                CASE
+                                    WHEN pd.tipo_concepto = 'mora_exonerada' THEN COALESCE((
+                                        SELECT MAX(fh_ref.subtotal)
+                                        FROM facturas_historial fh_ref
+                                        WHERE fh_ref.id_pago = p.id_pago
+                                          AND fh_ref.estado_factura = 'EMITIDA'
+                                          AND fh_ref.tipo_concepto = 'mora_exonerada'
+                                          AND LOWER(TRIM(COALESCE(fh_ref.mes_pagado, ''))) = LOWER(TRIM(COALESCE(pd.mes_pagado, '')))
+                                    ), 0)
+                                    ELSE pd.subtotal
+                                END AS monto,
                                 (SELECT MAX(fh.correlativo)
                                  FROM facturas_historial fh
                                  WHERE fh.id_pago = p.id_pago AND fh.estado_factura = 'EMITIDA') AS correlativo

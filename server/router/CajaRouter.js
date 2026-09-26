@@ -457,6 +457,10 @@ const registrarHistorialFactura = ({
             const mesPagado = String(detalle?.[3] || '');
             const numeroCuota = detalle?.[4] == null ? null : Number(detalle[4]);
             const subtotal = Number(detalle?.[5] || 0);
+            const montoReferencia = Number(detalle?.[7] || 0);
+            const subtotalHistorial = tipoConcepto === 'mora_exonerada'
+                ? Math.max(montoReferencia, 0)
+                : subtotal;
             const idPagoExtra = detalle?.[6] == null ? null : Number(detalle[6]);
             const idConceptoHistorial = tipoConcepto === 'extraordinario'
                 ? (Number.isInteger(idPagoExtra) && idPagoExtra > 0 ? idPagoExtra : idConceptoServicio)
@@ -503,7 +507,7 @@ const registrarHistorialFactura = ({
                     id_pago_extra: idPagoExtra,
                     mes_pagado: mesPagado,
                     numero_cuota_afectada: numeroCuota,
-                    subtotal
+                    subtotal: subtotalHistorial
                 }
             });
 
@@ -521,7 +525,7 @@ const registrarHistorialFactura = ({
                 nombreConcepto,
                 mesPagado,
                 numeroCuota,
-                subtotal,
+                subtotalHistorial,
                 evidencia
             ];
         });
@@ -1930,7 +1934,8 @@ router.post("/procesar-pago", (req, res) => {
     const morasExoneradasNormalizadas = (Array.isArray(moras_exoneradas) ? moras_exoneradas : [])
         .map((item) => ({
             id_morosidad: Number(item?.id_morosidad || 0),
-            mes_atrasado: String(typeof item === 'string' ? item : (item?.mes_atrasado || '')).trim()
+            mes_atrasado: String(typeof item === 'string' ? item : (item?.mes_atrasado || '')).trim(),
+            monto_mora: Math.max(Number(typeof item === 'string' ? 0 : (item?.monto_mora || 0)), 0)
         }))
         .filter((item) => item.mes_atrasado);
     const morasExoneradas = [...new Set(morasExoneradasNormalizadas.map((item) => item.mes_atrasado))];
@@ -2911,7 +2916,8 @@ router.post("/procesar-pago", (req, res) => {
                                         mora.mes_atrasado,
                                         null,
                                         0,
-                                        null
+                                        null,
+                                        mora.monto_mora
                                     ]);
                                 });
 

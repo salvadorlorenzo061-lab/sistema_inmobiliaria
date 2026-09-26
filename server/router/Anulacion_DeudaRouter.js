@@ -389,7 +389,7 @@ const resolverPagoPorCorrelativo = (correlativo, callback) => {
             c.mes_inicio_pagos,
             c.anio_inicio_pagos,
             r.nombre AS nombre_residente,
-            COALESCE(SUM(pd.subtotal), 0) AS principal_pagado,
+            COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora_exonerada' THEN 0 ELSE pd.subtotal END), 0) AS principal_pagado,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END), 0) AS principal_terreno,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal ELSE 0 END), 0) AS principal_enganche,
             COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'abono_capital' THEN pd.subtotal ELSE 0 END), 0) AS principal_abono_capital,
