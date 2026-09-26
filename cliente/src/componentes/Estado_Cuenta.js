@@ -735,7 +735,10 @@ const EstadoCuenta = () => {
           cuotaLabel: esEnganche ? 0 : cuotaNumero || index + 1,
           banco: String(pago?.forma_pago || pago?.banco || 'EFECTIVO').trim() || 'EFECTIVO',
           noDeposito: String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || '',
-          fechaPago: formatoFecha(pago?.fecha_pago),
+          // Conservar la fecha cruda hasta construir la fila. Si aquí se convierte a
+          // dd/mm/yyyy, `new Date()` no puede volver a interpretarla de forma confiable
+          // y el PDF termina dejando la celda vacía.
+          fechaPago: pago?.fecha_pago || '',
           monto: Number(pago?.monto_total_detalle ?? pago?.total_cobrado ?? pago?.monto_cuota ?? 0),
           recibo: String(pago?.correlativo || pago?.no_referencia || pago?.id_pago || '').trim() || String(pago?.id_pago || ''),
           esEnganche
@@ -762,7 +765,7 @@ const EstadoCuenta = () => {
 
         const banco = obtenerBancoDisplay(pago);
         const noDeposito = String(
-          pago.noReferencia || pago.no_referencia || pago.no_deposito || pago.numero_referencia || pago.numero_transaccion || ''
+          pago.noDeposito || pago.noReferencia || pago.no_referencia || pago.no_deposito || pago.numero_referencia || pago.numero_transaccion || ''
         ).trim();
         const fechaPago = nuevoFormatoFecha(pago.fecha_pago || pago.fechaPago);
         const monto = Number(pago.monto ?? pago.monto_total_detalle ?? pago.total_cobrado ?? pago.monto_cuota ?? 0);
