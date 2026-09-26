@@ -298,7 +298,19 @@ const EstadoCuenta = () => {
     });
     const detallePorCuota = new Map();
     detalleRaw.forEach((item) => {
-      const cuota = Number(item?.numero_cuota ?? item?.numero_cuota_afectada ?? 0);
+      let cuota = Number(item?.numero_cuota ?? item?.numero_cuota_afectada ?? 0);
+      const tipo = String(item?.tipo_concepto || item?.tipos_concepto || '').toLowerCase();
+      if (cuota <= 0 && tipo.includes('cuota')) {
+        const mesPagado = String(item?.meses_pagados || item?.mes_pagado || '').toLowerCase();
+        for (let numero = 1; numero <= cuotasPactadas; numero += 1) {
+          const fecha = obtenerFechaCuotaContrato(contrato, numero);
+          const etiqueta = fecha?.toLocaleDateString('es-GT', { month: 'long', year: 'numeric' }).toLowerCase() || '';
+          if (etiqueta && mesPagado.includes(etiqueta)) {
+            cuota = numero;
+            break;
+          }
+        }
+      }
       if (cuota > 0 && !detallePorCuota.has(cuota)) detallePorCuota.set(cuota, item);
     });
 
@@ -702,12 +714,24 @@ const EstadoCuenta = () => {
         const cuotaNumero = Number(pago?.numero_cuota ?? pago?.numero_cuota_afectada ?? 0) || 0;
         const tipoConcepto = String(pago?.tipo_concepto || pago?.tipos_concepto || '').toLowerCase();
         const esEnganche = cuotaNumero === 0 || tipoConcepto.includes('enganche') || String(pago?.meses_pagados || '').toLowerCase().includes('enganche');
-        const key = esEnganche ? 0 : cuotaNumero || index + 1;
+        let key = esEnganche ? 0 : cuotaNumero;
+        if (!esEnganche && key <= 0) {
+          const mesPagado = String(pago?.meses_pagados || pago?.mes_pagado || '').toLowerCase();
+          for (let numero = 1; numero <= cuotasPactadas; numero += 1) {
+            const fecha = obtenerFechaCuotaContrato(contrato, numero);
+            const etiqueta = fecha?.toLocaleDateString('es-GT', { month: 'long', year: 'numeric' }).toLowerCase() || '';
+            if (etiqueta && mesPagado.includes(etiqueta)) {
+              key = numero;
+              break;
+            }
+          }
+          if (key <= 0) key = index + 1;
+        }
 
         detallePorCuota.set(key, {
           cuotaNumero: key,
           fechaCuota: String(pago?.meses_pagados || pago?.mes_pagado || '').split(',').map((item) => item.trim()).filter(Boolean)[0] || 'N/A',
-          tipoPago: esEnganche ? 'ENGANCHE' : 'CUOTA',
+          tipoPago: esEnganche ? 'ENGANCHE' : 'PAGADO',
           cuotaLabel: esEnganche ? 0 : cuotaNumero || index + 1,
           banco: String(pago?.forma_pago || pago?.banco || 'EFECTIVO').trim() || 'EFECTIVO',
           noDeposito: String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || '',
@@ -738,11 +762,11 @@ const EstadoCuenta = () => {
 
         const banco = obtenerBancoDisplay(pago);
         const noDeposito = String(
-          pago.no_referencia || pago.no_deposito || pago.numero_referencia || pago.numero_transaccion || ''
+          pago.noReferencia || pago.no_referencia || pago.no_deposito || pago.numero_referencia || pago.numero_transaccion || ''
         ).trim();
-        const fechaPago = nuevoFormatoFecha(pago.fecha_pago);
-        const monto = Number(pago.monto_total_detalle ?? pago.total_cobrado ?? pago.monto_cuota ?? 0);
-        const recibo = String(pago.correlativo || pago.no_referencia || pago.id_pago || '').trim();
+        const fechaPago = nuevoFormatoFecha(pago.fecha_pago || pago.fechaPago);
+        const monto = Number(pago.monto ?? pago.monto_total_detalle ?? pago.total_cobrado ?? pago.monto_cuota ?? 0);
+        const recibo = String(pago.recibo || pago.correlativo || pago.no_referencia || pago.id_pago || '').trim();
 
         return [
           fechaCuota || '',
@@ -785,8 +809,8 @@ const EstadoCuenta = () => {
         const fechaCuota = nuevoFormatoFecha(obtenerFechaCuotaContrato(contrato, cuota));
         filasReporte.push(
           pagoDetalle
-            ? crearFilaPago(pagoDetalle, fechaCuota, 'CUOTA', cuota)
-            : [fechaCuota || '', 'PENDIENTE', String(cuota), '', '', '', '', '']
+            ? crearFilaPago(pagoDetalle, fechaCuota, 'PAGADO', cuota)
+            : [fechaCuota || '', 'PENDIENTE DE PAGO', String(cuota), '', '', '', formatoMoneda((cuota === totalCuotas && ultimaCuota > 0) ? ultimaCuota : montoCuota), '']
         );
       }
 
@@ -831,6 +855,8 @@ const EstadoCuenta = () => {
       doc.text('TOTAL DEUDA CON INTERESES', 16, headerY + 21);
       doc.text(formatoMoneda(planContratoActual?.totalConIntereses || contrato?.monto_total || 0), 67, headerY + 21);
       doc.setFont('helvetica', 'normal');
+      doc.text('FINCA / FOLIO / LIBRO', 120, headerY + 21);
+      doc.text(`${contrato?.numero_finca || 'N/A'} / ${contrato?.folio || 'N/A'} / ${contrato?.libro || 'N/A'}`, 160, headerY + 21);
 
       autoTable(doc, {
         startY: headerY + 27,
@@ -883,6 +909,20 @@ const EstadoCuenta = () => {
           doc.text(`Página ${data.pageNumber}`, pageWidth - 18, pageHeight - 8, { align: 'right' });
         }
       });
+
+      let resumenY = Number(doc.lastAutoTable?.finalY || 0) + 8;
+      if (resumenY > pageHeight - 22) {
+        doc.addPage();
+        resumenY = 18;
+      }
+      const totalProgramado = Number(planContratoActual?.totalConIntereses || contrato?.monto_total || 0);
+      const totalPagadoReporte = Number(estadoCuenta?.totalPagado || 0);
+      const saldoPendienteReporte = Math.max(totalProgramado - totalPagadoReporte, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(`TOTAL PROGRAMADO: ${formatoMoneda(totalProgramado)}`, pageWidth - 12, resumenY, { align: 'right' });
+      doc.text(`TOTAL PAGADO: ${formatoMoneda(totalPagadoReporte)}`, pageWidth - 12, resumenY + 6, { align: 'right' });
+      doc.text(`PENDIENTE DE PAGO: ${formatoMoneda(saldoPendienteReporte)}`, pageWidth - 12, resumenY + 12, { align: 'right' });
 
       const fileName = `DetallePago_${estadoCuenta.contrato.codigo_contrato || 'cliente'}.pdf`;
       doc.save(fileName);
@@ -1017,8 +1057,8 @@ const EstadoCuenta = () => {
                     </div>
                     <div className="card-body">
                       <p className="mb-2">
-                        <strong>Monto Total del Contrato:</strong> Q
-                        {parseFloat(estadoCuenta.contrato.monto_total).toFixed(2)}
+                        <strong>Total deuda con intereses:</strong> Q
+                        {Number(estadoCuenta.totalConIntereses ?? planContratoActual?.totalConIntereses ?? estadoCuenta.contrato.monto_total).toFixed(2)}
                       </p>
                       <p className="mb-2">
                         <strong>Monto por Cuota:</strong> Q

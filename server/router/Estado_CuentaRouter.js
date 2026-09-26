@@ -100,6 +100,10 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             p.nombre AS nombre_proyecto,
             vp.id_lote AS lote,
             CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.manzana')) ELSE NULL END AS manzana,
+            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.numero_finca')) ELSE NULL END AS numero_finca,
+            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.folio')) ELSE NULL END AS folio,
+            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.libro')) ELSE NULL END AS libro,
+            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.area')) ELSE NULL END AS area,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
             COALESCE(em.logo, er.logo, ep.logo) AS logo_empresa_pdf
         FROM residentes r
@@ -213,7 +217,11 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
 
                     const responderEstadoCuenta = (detalleCuotasResult = []) => {
                         const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
-                        const saldoPendiente = parseFloat(contract.monto_total) - totalPagado;
+                        const capitalFinanciado = Math.max(Number(contract.monto_total || 0) - Number(contract.enganche || 0), 0);
+                        const cuotasContrato = Math.max(Number(contract.cuotas_pactadas || contract.plazo_meses || 0), 0);
+                        const totalConIntereses = capitalFinanciado + Number(contract.enganche || 0)
+                            + (capitalFinanciado * (Math.max(Number(contract.interes_porcentaje || 0), 0) / 100) * (cuotasContrato / 12));
+                        const saldoPendiente = totalConIntereses - totalPagado;
 
                         return res.status(200).json({
                             contrato: contract,
@@ -221,6 +229,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                             cuotasDetalle: detalleCuotasResult,
                             mesesPagados: mesesResult.map(m => m.mes_pagado),
                             totalPagado: totalPagado,
+                            totalConIntereses: Number(totalConIntereses.toFixed(2)),
                             saldoPendiente: Math.max(0, saldoPendiente),
                             fecha_inicio: fecha_inicio || contract.fecha_firma,
                             fecha_fin: fecha_fin || null,
@@ -230,33 +239,32 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
 
                     const queryDetalleCuotas = `
                     SELECT
-                        COALESCE(pd.numero_cuota_afectada, 0) AS numero_cuota,
-                        MIN(p.fecha_pago) AS fecha_pago,
-                        SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.forma_pago ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS forma_pago,
-                        SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT p.no_referencia ORDER BY p.id_pago DESC SEPARATOR ', '), ',', 1) AS no_referencia,
+                        COALESCE(
+                            NULLIF(pd.numero_cuota_afectada, 0),
+                            (SELECT MAX(fh.numero_cuota_afectada)
+                             FROM facturas_historial fh
+                             WHERE fh.id_pago = p.id_pago AND fh.estado_factura = 'EMITIDA'),
+                            0
+                        ) AS numero_cuota,
+                        p.fecha_pago,
+                        p.forma_pago,
+                        p.no_referencia,
                         (SELECT MAX(fh.correlativo) FROM facturas_historial fh WHERE fh.id_pago = p.id_pago AND fh.estado_factura = 'EMITIDA') AS correlativo,
-                        MIN(p.id_pago) AS id_pago,
-                        SUM(CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END) AS monto_cuota,
-                        SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END) AS monto_mora,
-                        SUM(pd.subtotal) AS monto_total_detalle,
-                        GROUP_CONCAT(DISTINCT pd.mes_pagado ORDER BY pd.mes_pagado SEPARATOR ', ') AS meses_pagados,
-                        GROUP_CONCAT(DISTINCT pd.tipo_concepto ORDER BY pd.tipo_concepto SEPARATOR ', ') AS tipos_concepto,
-                        GROUP_CONCAT(
-                            DISTINCT CASE
-                                WHEN pd.tipo_concepto = 'servicio' THEN s.nombre_servicio
-                                ELSE NULL
-                            END
-                            ORDER BY s.nombre_servicio SEPARATOR ', '
-                        ) AS servicios_nombres
+                        p.id_pago,
+                        CASE WHEN pd.tipo_concepto = 'cuota_terreno' THEN pd.subtotal ELSE 0 END AS monto_cuota,
+                        0 AS monto_mora,
+                        pd.subtotal AS monto_total_detalle,
+                        pd.mes_pagado AS meses_pagados,
+                        pd.tipo_concepto AS tipos_concepto,
+                        NULL AS servicios_nombres
                     FROM pagos p
                     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-                    LEFT JOIN servicios s ON s.id_servicio = pd.id_concepto_servicio
                     WHERE p.id_contrato = ?
                       AND NOT EXISTS (SELECT 1 FROM facturas_historial fa WHERE fa.id_pago = p.id_pago AND fa.estado_factura = 'ANULADA')
                       ${filtroFechas}
                       AND pd.tipo_concepto IN ('enganche', 'cuota_terreno')
-                    GROUP BY p.id_pago, COALESCE(pd.numero_cuota_afectada, 0)
-                    ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 THEN 0 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC
+                    ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 AND pd.tipo_concepto = 'enganche' THEN 0 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC,
+                             p.id_pago ASC
                     `;
 
                     db.query(queryDetalleCuotas, queryPagosParams, (detalleErr, detalleCuotasResult) => {

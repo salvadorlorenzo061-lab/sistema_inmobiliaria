@@ -1151,6 +1151,8 @@ router.get("/", (req, res) => {
                    COALESCE(em.logo, e.logo, er.logo) AS logo_proyecto,
                    COALESCE(e.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
                    COALESCE(p.nombre, em.nombre_empresa, e.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf,
+                   vp.id_lote AS numero_lote,
+                   vp.observaciones AS datos_propiedad_json,
                    f.nombre_original AS nombre_finiquito,
                    f.fecha_actualizacion AS fecha_finiquito,
                    (
@@ -1175,6 +1177,7 @@ router.get("/", (req, res) => {
                 LEFT JOIN empresas em ON em.id_empresa = p.id_empresa
                 LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
             LEFT JOIN contratos_finiquitos f ON f.id_contrato = c.id_contrato
+            LEFT JOIN ventas_propiedad vp ON vp.id_contrato = c.id_contrato
             ORDER BY c.id_contrato DESC
     `;
 
@@ -1184,10 +1187,19 @@ router.get("/", (req, res) => {
                 return res.status(500).send('Error de servidor');
             }
 
-            const contratosNormalizados = (result || []).map((contrato) => ({
-                ...contrato,
-                cuotas_pagadas: Math.max(Number(contrato?.cuotas_pagadas || 0), 0)
-            }));
+            const contratosNormalizados = (result || []).map((contrato) => {
+                let datosPropiedad = {};
+                try {
+                    datosPropiedad = JSON.parse(contrato?.datos_propiedad_json || '{}') || {};
+                } catch {
+                    datosPropiedad = {};
+                }
+                return {
+                    ...contrato,
+                    datos_propiedad: datosPropiedad,
+                    cuotas_pagadas: Math.max(Number(contrato?.cuotas_pagadas || 0), 0)
+                };
+            });
 
             return res.send(contratosNormalizados);
         });

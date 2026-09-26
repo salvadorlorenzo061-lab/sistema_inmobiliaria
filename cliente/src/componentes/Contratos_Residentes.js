@@ -559,7 +559,11 @@ function Contratos_Residentes() {
         libro: String(libro_propiedad || '').trim(),
         manzana: String(manzana_propiedad || '').trim(),
         area: String(area_propiedad || '').trim(),
-        proyecto: String(proyecto_propiedad || '').trim()
+        proyecto: String(proyecto_propiedad || '').trim(),
+        medida_norte: String(medida_norte || '').trim(),
+        medida_sur: String(medida_sur || '').trim(),
+        medida_oriente: String(medida_oriente || '').trim(),
+        medida_poniente: String(medida_poniente || '').trim()
       }
     };
 
@@ -1175,6 +1179,7 @@ function Contratos_Residentes() {
 
   const abrirEditarModal = (val) => {
     const proyectoResuelto = resolverProyectoContrato(val);
+    const propiedad = val?.datos_propiedad && typeof val.datos_propiedad === 'object' ? val.datos_propiedad : {};
     const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
     const totalConInteresesContrato = (() => {
       if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) return 0;
@@ -1191,6 +1196,16 @@ function Contratos_Residentes() {
     setId_empresa_marca(proyectoResuelto.idEmpresa);
     setId_proyecto(proyectoResuelto.idProyecto);
     setProyecto_propiedad(proyectoResuelto.nombreProyecto);
+    setNumero_finca(String(propiedad.numero_finca ?? ''));
+    setFolio_propiedad(String(propiedad.folio ?? ''));
+    setLibro_propiedad(String(propiedad.libro ?? ''));
+    setNumero_lote(String(val.numero_lote ?? ''));
+    setManzana_propiedad(String(propiedad.manzana ?? ''));
+    setArea_propiedad(String(propiedad.area ?? ''));
+    setMedida_norte(String(propiedad.medida_norte ?? ''));
+    setMedida_sur(String(propiedad.medida_sur ?? ''));
+    setMedida_oriente(String(propiedad.medida_oriente ?? ''));
+    setMedida_poniente(String(propiedad.medida_poniente ?? ''));
     setId_tipo_contrato(val.id_tipo_contrato);
     setMonto_total(val.monto_total);
     setModalidad_pago(String(val.modalidad_pago || 'financiado').toLowerCase() === 'contado' ? 'contado' : 'financiado');
