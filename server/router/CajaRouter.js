@@ -326,6 +326,27 @@ const ensureFacturasHistorialTable = () => {
     });
 };
 
+const ensureMorosidadExoneracionesTable = () => {
+    db.query(`
+        CREATE TABLE IF NOT EXISTS morosidad_exoneraciones (
+            id_exoneracion BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_contrato INT NOT NULL,
+            id_morosidad INT NULL,
+            id_usuario INT NULL,
+            mes_atrasado VARCHAR(80) NOT NULL,
+            monto_exonerado DECIMAL(12,2) NOT NULL DEFAULT 0,
+            estado VARCHAR(20) NOT NULL DEFAULT 'EXONERADA',
+            fecha_exoneracion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            fecha_restablecimiento DATETIME NULL,
+            id_usuario_restablece INT NULL,
+            INDEX idx_exoneracion_contrato (id_contrato),
+            INDEX idx_exoneracion_mora (id_morosidad)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `, (err) => {
+        if (err) console.error('Error asegurando historial de exoneraciones:', err.message);
+    });
+};
+
 const ensureFacturasHistorialRolColumn = () => {
     db.query("SHOW COLUMNS FROM facturas_historial LIKE 'rol_usuario_emisor'", (err, rows) => {
         if (err) {
@@ -702,6 +723,7 @@ const resolverColumnaCostoServicios = (callback) => {
 ensureContratosServiciosTable();
 ensureConvenioPagosTable();
 ensureFacturasHistorialTable();
+ensureMorosidadExoneracionesTable();
 ensureFacturasHistorialRolColumn();
 normalizarCuotaCeroComoEnganche();
 ensureInteresPorcentajeContratoColumn();
@@ -1826,6 +1848,68 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
             id_contrato: idContrato,
             total_mora_pendiente: Number(totalMoraPendiente.toFixed(2)),
             moras
+        });
+    });
+});
+
+router.get('/moras-exoneradas/:id_contrato', (req, res) => {
+    db.query(
+        `SELECT id_exoneracion, id_morosidad, mes_atrasado, monto_exonerado, estado,
+                fecha_exoneracion, fecha_restablecimiento
+         FROM morosidad_exoneraciones WHERE id_contrato = ?
+         ORDER BY fecha_exoneracion DESC, id_exoneracion DESC`,
+        [req.params.id_contrato],
+        (err, rows) => err
+            ? res.status(500).send('No se pudo consultar el historial de exoneraciones.')
+            : res.status(200).json({ exoneraciones: rows || [] })
+    );
+});
+
+router.post('/exonerar-moras', (req, res) => {
+    const idContrato = Number(req.body?.id_contrato || 0);
+    const idUsuario = Number(req.body?.id_usuario || 0) || null;
+    const moras = (Array.isArray(req.body?.moras) ? req.body.moras : []).map((mora) => ({
+        id: Number(mora?.id_morosidad || 0),
+        mes: String(mora?.mes_atrasado || '').trim(),
+        monto: Math.max(Number(mora?.monto_mora || 0), 0)
+    })).filter((mora) => mora.mes && mora.monto > 0);
+    if (!idContrato || !moras.length) return res.status(400).send('Seleccione al menos una mora válida para exonerar.');
+
+    db.beginTransaction((txErr) => {
+        if (txErr) return res.status(500).send('No se pudo iniciar la exoneración.');
+        const condiciones = moras.map(() => '(id_morosidad = ? OR LOWER(TRIM(mes_atrasado)) = ?)').join(' OR ');
+        const params = [idContrato, ...moras.flatMap((mora) => [mora.id || -1, mora.mes.toLowerCase()])];
+        db.query(`UPDATE morosidad SET estado = 'anulado' WHERE id_contrato = ? AND LOWER(TRIM(COALESCE(estado, 'pendiente'))) = 'pendiente' AND (${condiciones})`, params, (updErr) => {
+            if (updErr) return db.rollback(() => res.status(500).send('No se pudo actualizar la mora exonerada.'));
+            const values = moras.map((mora) => [idContrato, mora.id || null, idUsuario, mora.mes, mora.monto, 'EXONERADA']);
+            db.query('INSERT INTO morosidad_exoneraciones (id_contrato, id_morosidad, id_usuario, mes_atrasado, monto_exonerado, estado) VALUES ?', [values], (insErr) => {
+                if (insErr) return db.rollback(() => res.status(500).send('No se pudo guardar el historial de exoneración.'));
+                db.commit((commitErr) => commitErr
+                    ? db.rollback(() => res.status(500).send('No se pudo confirmar la exoneración.'))
+                    : res.status(200).json({ success: true }));
+            });
+        });
+    });
+});
+
+router.post('/restablecer-exoneracion', (req, res) => {
+    const idExoneracion = Number(req.body?.id_exoneracion || 0);
+    const idUsuario = Number(req.body?.id_usuario || 0) || null;
+    if (!idExoneracion) return res.status(400).send('Exoneración inválida.');
+    db.query("SELECT * FROM morosidad_exoneraciones WHERE id_exoneracion = ? AND estado = 'EXONERADA' LIMIT 1", [idExoneracion], (findErr, rows) => {
+        if (findErr || !rows?.length) return res.status(404).send('La exoneración ya fue restablecida o no existe.');
+        const item = rows[0];
+        db.beginTransaction((txErr) => {
+            if (txErr) return res.status(500).send('No se pudo iniciar el restablecimiento.');
+            db.query(`UPDATE morosidad SET estado = 'pendiente' WHERE id_contrato = ? AND (id_morosidad = ? OR LOWER(TRIM(mes_atrasado)) = ?)`, [item.id_contrato, item.id_morosidad || -1, String(item.mes_atrasado).toLowerCase()], (updErr) => {
+                if (updErr) return db.rollback(() => res.status(500).send('No se pudo restablecer la mora.'));
+                db.query("UPDATE morosidad_exoneraciones SET estado = 'RESTABLECIDA', fecha_restablecimiento = NOW(), id_usuario_restablece = ? WHERE id_exoneracion = ?", [idUsuario, idExoneracion], (histErr) => {
+                    if (histErr) return db.rollback(() => res.status(500).send('No se pudo actualizar el historial.'));
+                    db.commit((commitErr) => commitErr
+                        ? db.rollback(() => res.status(500).send('No se pudo confirmar el restablecimiento.'))
+                        : res.status(200).json({ success: true }));
+                });
+            });
         });
     });
 });

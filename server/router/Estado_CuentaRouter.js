@@ -333,7 +333,33 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                                 console.error('Error al obtener mora y servicios:', otrosErr.message);
                                 return responderEstadoCuenta(detalleCuotasResult, []);
                             }
-                            return responderEstadoCuenta(detalleCuotasResult, otrosPagosResult || []);
+                            const filtroExoneracion = fecha_inicio && fecha_fin
+                                ? 'AND DATE(me.fecha_exoneracion) BETWEEN ? AND ?'
+                                : '';
+                            db.query(`
+                                SELECT
+                                    CONCAT('EX-', me.id_exoneracion) AS id_pago_detalle,
+                                    NULL AS id_pago,
+                                    me.fecha_exoneracion AS fecha_pago,
+                                    'ADMINISTRATIVA' AS forma_pago,
+                                    NULL AS no_referencia,
+                                    CONCAT('Mora ', LOWER(me.estado), ' - ', me.mes_atrasado) AS concepto,
+                                    CASE WHEN me.estado = 'EXONERADA' THEN 'mora_exonerada' ELSE 'mora_restablecida' END AS tipo_concepto,
+                                    me.mes_atrasado AS mes_pagado,
+                                    me.monto_exonerado AS monto,
+                                    NULL AS correlativo
+                                FROM morosidad_exoneraciones me
+                                WHERE me.id_contrato = ? ${filtroExoneracion}
+                                ORDER BY me.fecha_exoneracion DESC
+                            `, queryPagosParams, (exonErr, exoneracionesResult) => {
+                                if (exonErr && String(exonErr?.code || '').toUpperCase() !== 'ER_NO_SUCH_TABLE') {
+                                    console.error('Error al obtener exoneraciones de mora:', exonErr.message);
+                                }
+                                return responderEstadoCuenta(
+                                    detalleCuotasResult,
+                                    [...(otrosPagosResult || []), ...(exoneracionesResult || [])]
+                                );
+                            });
                         });
                     });
                 });

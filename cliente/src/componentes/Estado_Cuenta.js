@@ -932,7 +932,8 @@ const EstadoCuenta = () => {
         }
       });
 
-      if (otrosPagosVisual.length > 0) {
+      // El informe jurídico se exporta en un archivo independiente.
+      if (false && otrosPagosVisual.length > 0) {
         doc.addPage();
         doc.setTextColor(35, 35, 35);
         doc.setFont('helvetica', 'bold');
@@ -985,11 +986,59 @@ const EstadoCuenta = () => {
       doc.text(`TOTAL PAGADO: ${formatoMoneda(totalPagadoReporte)}`, pageWidth - 12, resumenY + 6, { align: 'right' });
       doc.text(`PENDIENTE DE PAGO: ${formatoMoneda(saldoPendienteReporte)}`, pageWidth - 12, resumenY + 12, { align: 'right' });
 
-      const fileName = `DetallePago_${estadoCuenta.contrato.codigo_contrato || 'cliente'}.pdf`;
+      const fileName = `DetalleCuotas_${estadoCuenta.contrato.codigo_contrato || 'cliente'}.pdf`;
       doc.save(fileName);
     } catch (error) {
       console.error('Error al exportar PDF:', error);
       showFadeToast('No se pudo generar el PDF del estado de cuenta.', 'error');
+    }
+  };
+
+  const exportarOtrosPagosPDF = async () => {
+    if (!estadoCuenta || !otrosPagosVisual.length) {
+      showFadeToast('No hay cargos pagados o exonerados para exportar.', 'warning');
+      return;
+    }
+    try {
+      const doc = new jsPDF('p', 'mm', 'letter');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const contrato = estadoCuenta.contrato || {};
+      const rawLogo = String(contrato?.logo_proyecto || contrato?.logo_empresa_pdf || contrato?.logo_empresa || '').trim();
+      const logo = rawLogo && !rawLogo.startsWith('data:image') && !rawLogo.startsWith('http')
+        ? `data:image/png;base64,${rawLogo}`
+        : rawLogo;
+      if (logo) {
+        try {
+          doc.addImage(logo, logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', 12, 10, 32, 20, 'logo-informe-juridico', 'FAST');
+        } catch (error) {
+          console.warn('No se pudo incluir el logotipo del proyecto:', error);
+        }
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text(String(contrato?.nombre_proyecto || 'GRUPO DE INVERSIONES').toUpperCase(), pageWidth / 2, 18, { align: 'center' });
+      doc.setFontSize(13);
+      doc.text('INFORME DE MORA, SERVICIOS Y OTROS CARGOS', pageWidth / 2, 31, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Cliente: ${contrato?.nombre || 'N/A'}   Contrato: ${contrato?.codigo_contrato || 'N/A'}`, 10, 40);
+      autoTable(doc, {
+        startY: 46,
+        margin: { left: 10, right: 10 },
+        tableWidth: pageWidth - 20,
+        head: [['Fecha', 'Concepto', 'Estado/Tipo', 'Mes', 'Forma', 'Monto', 'Recibo']],
+        body: otrosPagosVisual.map((item) => [
+          formatoFecha(item.fechaPago), item.concepto, item.tipo.toUpperCase(), item.mes || 'N/A',
+          item.formaPago, formatoMoneda(item.monto), item.recibo || 'N/A'
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 7.5, halign: 'center', valign: 'middle', cellPadding: 1.5, overflow: 'linebreak' },
+        headStyles: { fillColor: [32, 139, 91], textColor: 255, fontStyle: 'bold' }
+      });
+      doc.save(`InformeCargos_${contrato?.codigo_contrato || 'cliente'}.pdf`);
+    } catch (error) {
+      console.error('Error al exportar informe jurídico:', error);
+      showFadeToast('No se pudo generar el informe de cargos.', 'error');
     }
   };
 
@@ -1069,7 +1118,14 @@ const EstadoCuenta = () => {
                     className="btn btn-sm btn-outline-danger"
                     onClick={exportarEstadoCuentaPDF}
                   >
-                    📄 Exportar PDF
+                    📄 PDF de cuotas
+                  </button>
+                  <button
+                    className="btn btn-sm btn-outline-success"
+                    onClick={exportarOtrosPagosPDF}
+                    disabled={!otrosPagosVisual.length}
+                  >
+                    💵 PDF de otros cargos
                   </button>
                   <button
                     className="btn btn-sm btn-outline-primary"
