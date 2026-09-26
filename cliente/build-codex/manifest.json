@@ -1,0 +1,15 @@
+{
+  "short_name": "Grupo Inversion",
+  "name": "Sistema Inmobiliario Grupo de Inversion",
+  "icons": [
+    {
+      "src": "images/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
+}

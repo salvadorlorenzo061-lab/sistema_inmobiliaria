@@ -104,6 +104,16 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.folio')) ELSE NULL END AS folio,
             CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.libro')) ELSE NULL END AS libro,
             CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.area')) ELSE NULL END AS area,
+            COALESCE((
+                SELECT SUM(pd_total.subtotal)
+                FROM pagos p_total
+                INNER JOIN pagos_detalle pd_total ON pd_total.id_pago = p_total.id_pago
+                WHERE p_total.id_contrato = c.id_contrato
+                  AND NOT EXISTS (
+                      SELECT 1 FROM facturas_historial fa_total
+                      WHERE fa_total.id_pago = p_total.id_pago AND fa_total.estado_factura = 'ANULADA'
+                  )
+            ), 0) AS total_pagado_real,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
             COALESCE(em.logo, er.logo, ep.logo) AS logo_empresa_pdf
         FROM residentes r
@@ -215,8 +225,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                         return res.status(500).send("No se pudo obtener los meses pagados.");
                     }
 
-                    const responderEstadoCuenta = (detalleCuotasResult = []) => {
-                        const totalPagado = pagosResult.reduce((sum, pago) => sum + parseFloat(pago.total_cobrado || 0), 0);
+                    const responderEstadoCuenta = (detalleCuotasResult = [], otrosPagosResult = []) => {
+                        const totalPagado = Number(contract.total_pagado_real || 0);
                         const capitalFinanciado = Math.max(Number(contract.monto_total || 0) - Number(contract.enganche || 0), 0);
                         const cuotasContrato = Math.max(Number(contract.cuotas_pactadas || contract.plazo_meses || 0), 0);
                         const totalConIntereses = capitalFinanciado + Number(contract.enganche || 0)
@@ -227,6 +237,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                             contrato: contract,
                             pagos: pagosResult,
                             cuotasDetalle: detalleCuotasResult,
+                            otrosPagos: otrosPagosResult,
                             mesesPagados: mesesResult.map(m => m.mes_pagado),
                             totalPagado: totalPagado,
                             totalConIntereses: Number(totalConIntereses.toFixed(2)),
@@ -261,19 +272,55 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                     WHERE p.id_contrato = ?
                       AND NOT EXISTS (SELECT 1 FROM facturas_historial fa WHERE fa.id_pago = p.id_pago AND fa.estado_factura = 'ANULADA')
-                      ${filtroFechas}
                       AND pd.tipo_concepto IN ('enganche', 'cuota_terreno')
                     ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 AND pd.tipo_concepto = 'enganche' THEN 0 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC,
                              p.id_pago ASC
                     `;
 
-                    db.query(queryDetalleCuotas, queryPagosParams, (detalleErr, detalleCuotasResult) => {
+                    db.query(queryDetalleCuotas, [id_contrato], (detalleErr, detalleCuotasResult) => {
                         if (detalleErr) {
                             console.error("Error al obtener detalle de cuotas:", detalleErr.message);
                             return responderEstadoCuenta([]);
                         }
 
-                        return responderEstadoCuenta(detalleCuotasResult);
+                        const queryOtrosPagos = `
+                            SELECT
+                                pd.id_pago_detalle,
+                                p.id_pago,
+                                p.fecha_pago,
+                                p.forma_pago,
+                                p.no_referencia,
+                                COALESCE(
+                                    NULLIF(TRIM(s.nombre_servicio), ''),
+                                    NULLIF(TRIM(pd.tipo_concepto), ''),
+                                    'Otro pago'
+                                ) AS concepto,
+                                pd.tipo_concepto,
+                                pd.mes_pagado,
+                                pd.subtotal AS monto,
+                                (SELECT MAX(fh.correlativo)
+                                 FROM facturas_historial fh
+                                 WHERE fh.id_pago = p.id_pago AND fh.estado_factura = 'EMITIDA') AS correlativo
+                            FROM pagos p
+                            INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                            LEFT JOIN servicios s ON s.id_servicio = pd.id_concepto_servicio
+                            WHERE p.id_contrato = ?
+                              AND pd.tipo_concepto NOT IN ('enganche', 'cuota_terreno')
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM facturas_historial fa
+                                  WHERE fa.id_pago = p.id_pago AND fa.estado_factura = 'ANULADA'
+                              )
+                              ${filtroFechas}
+                            ORDER BY p.fecha_pago DESC, p.id_pago DESC, pd.id_pago_detalle ASC
+                        `;
+
+                        db.query(queryOtrosPagos, queryPagosParams, (otrosErr, otrosPagosResult) => {
+                            if (otrosErr) {
+                                console.error('Error al obtener mora y servicios:', otrosErr.message);
+                                return responderEstadoCuenta(detalleCuotasResult, []);
+                            }
+                            return responderEstadoCuenta(detalleCuotasResult, otrosPagosResult || []);
+                        });
                     });
                 });
             });

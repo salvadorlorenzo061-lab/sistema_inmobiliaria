@@ -237,9 +237,17 @@ const EstadoCuenta = () => {
   const construirFilasDetalleVisual = () => {
     if (!estadoCuenta) return [];
 
-    const detalleBase = Array.isArray(estadoCuenta.cuotasDetalle) && estadoCuenta.cuotasDetalle.length
+    const detalleBaseCompleto = Array.isArray(estadoCuenta.cuotasDetalle) && estadoCuenta.cuotasDetalle.length
       ? estadoCuenta.cuotasDetalle
       : (Array.isArray(estadoCuenta.pagos) ? estadoCuenta.pagos : []);
+    const inicioFiltro = estadoCuenta.fecha_fin ? new Date(`${String(estadoCuenta.fecha_inicio).slice(0, 10)}T00:00:00`) : null;
+    const finFiltro = estadoCuenta.fecha_fin ? new Date(`${String(estadoCuenta.fecha_fin).slice(0, 10)}T23:59:59`) : null;
+    const detalleBase = inicioFiltro && finFiltro
+      ? detalleBaseCompleto.filter((item) => {
+          const fecha = item?.fecha_pago ? new Date(item.fecha_pago) : null;
+          return fecha instanceof Date && !Number.isNaN(fecha.getTime()) && fecha >= inicioFiltro && fecha <= finFiltro;
+        })
+      : detalleBaseCompleto;
 
     return detalleBase
       .map((item, index) => {
@@ -280,6 +288,17 @@ const EstadoCuenta = () => {
     if (texto.includes('cheque')) return 'CHEQUE';
     return raw.toUpperCase();
   };
+
+  const otrosPagosVisual = (Array.isArray(estadoCuenta?.otrosPagos) ? estadoCuenta.otrosPagos : []).map((item, index) => ({
+    id: item?.id_pago_detalle || `${item?.id_pago || 'pago'}-${index}`,
+    fechaPago: item?.fecha_pago || '',
+    concepto: String(item?.concepto || item?.tipo_concepto || 'Otro pago').replace(/_/g, ' '),
+    tipo: String(item?.tipo_concepto || 'otro').replace(/_/g, ' '),
+    mes: String(item?.mes_pagado || '').trim(),
+    formaPago: obtenerBancoDisplayVisual(item),
+    monto: Number(item?.monto || 0),
+    recibo: String(item?.correlativo || item?.no_referencia || item?.id_pago || '').trim()
+  }));
 
   // Cronograma completo (enganche + cuotas financiadas), mostrando tambien las
   // pendientes de pago con banco/no. referencia/recibo vacios hasta que se cobren.
@@ -913,6 +932,45 @@ const EstadoCuenta = () => {
         }
       });
 
+      if (otrosPagosVisual.length > 0) {
+        doc.addPage();
+        doc.setTextColor(35, 35, 35);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text('INFORME DE MORA, SERVICIOS Y OTROS PAGOS', pageWidth / 2, 18, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        const rangoTexto = estadoCuenta?.fecha_fin
+          ? `Rango consultado: ${nuevoFormatoFecha(estadoCuenta.fecha_inicio)} al ${nuevoFormatoFecha(estadoCuenta.fecha_fin)}`
+          : 'Rango consultado: todos los pagos';
+        doc.text(rangoTexto, pageWidth / 2, 24, { align: 'center' });
+
+        autoTable(doc, {
+          startY: 30,
+          margin: { left: 10, right: 10 },
+          head: [['Fecha pago', 'Concepto', 'Tipo', 'Mes afectado', 'Forma de pago', 'Monto', 'Recibo']],
+          body: otrosPagosVisual.map((item) => [
+            nuevoFormatoFecha(item.fechaPago),
+            item.concepto,
+            item.tipo.toUpperCase(),
+            item.mes || 'N/A',
+            item.formaPago,
+            formatoMoneda(item.monto),
+            item.recibo || 'N/A'
+          ]),
+          theme: 'grid',
+          styles: { fontSize: 8, halign: 'center', valign: 'middle', cellPadding: 1.7 },
+          headStyles: { fillColor: [32, 139, 91], textColor: [255, 255, 255], fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [242, 248, 245] },
+          didDrawPage: (data) => {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(90, 90, 90);
+            doc.text(`Página ${data.pageNumber}`, pageWidth - 18, pageHeight - 8, { align: 'right' });
+          }
+        });
+      }
+
       let resumenY = Number(doc.lastAutoTable?.finalY || 0) + 8;
       if (resumenY > pageHeight - 22) {
         doc.addPage();
@@ -1126,6 +1184,54 @@ const EstadoCuenta = () => {
                   ) : (
                     <div className="alert alert-warning mb-0">
                       ⚠️ No hay cronograma disponible para este cliente.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* INFORME SEPARADO: MORA, SERVICIOS Y OTROS CONCEPTOS */}
+              <div className="card mt-3 border-success">
+                <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                  <h6 className="mb-0">💵 Mora, Servicios y Otros Pagos Realizados</h6>
+                  {estadoCuenta.fecha_fin && (
+                    <span className="badge bg-light text-success">
+                      {formatoFecha(estadoCuenta.fecha_inicio)} al {formatoFecha(estadoCuenta.fecha_fin)}
+                    </span>
+                  )}
+                </div>
+                <div className="card-body">
+                  {otrosPagosVisual.length > 0 ? (
+                    <div className="table-responsive">
+                      <table className="table table-striped table-hover mb-0">
+                        <thead className="table-dark">
+                          <tr>
+                            <th>Fecha de Pago</th>
+                            <th>Concepto</th>
+                            <th>Tipo</th>
+                            <th>Mes Afectado</th>
+                            <th>Forma de Pago</th>
+                            <th>Monto</th>
+                            <th>Recibo/Factura</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {otrosPagosVisual.map((item) => (
+                            <tr key={item.id}>
+                              <td>{item.fechaPago ? formatoFecha(item.fechaPago) : 'N/A'}</td>
+                              <td>{item.concepto}</td>
+                              <td><span className={`badge ${item.tipo.toLowerCase() === 'mora' ? 'bg-danger' : 'bg-secondary'}`}>{item.tipo.toUpperCase()}</span></td>
+                              <td>{item.mes || 'N/A'}</td>
+                              <td>{item.formaPago}</td>
+                              <td>{formatoMoneda(item.monto)}</td>
+                              <td>{item.recibo || 'N/A'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="alert alert-light border mb-0">
+                      No hay pagos de mora, servicios u otros conceptos dentro del rango consultado.
                     </div>
                   )}
                 </div>
