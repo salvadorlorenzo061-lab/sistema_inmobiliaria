@@ -13,6 +13,29 @@ const formatearFechaLarga = (fecha = new Date()) => new Intl.DateTimeFormat('es-
   year: 'numeric'
 }).format(fecha);
 
+const normalizarLogo = (valor = '') => {
+  const raw = String(valor || '').trim();
+  if (!raw) return '';
+  if (/^data:image\/(png|jpe?g);base64,/i.test(raw)) return raw;
+  if (/^data:image\/webp;base64,/i.test(raw)) return raw;
+
+  const base64 = raw.includes('base64,') ? raw.split('base64,')[1] : raw;
+  const limpio = base64.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(limpio)) return '';
+
+  const mime = limpio.startsWith('/9j/')
+    ? 'image/jpeg'
+    : (limpio.startsWith('UklGR') ? 'image/webp' : 'image/png');
+  return `data:${mime};base64,${limpio}`;
+};
+
+const formatoLogo = (dataUrl = '') => {
+  const mime = String(dataUrl).match(/^data:image\/(png|jpe?g|webp);base64,/i)?.[1]?.toLowerCase();
+  if (mime === 'jpg' || mime === 'jpeg') return 'JPEG';
+  if (mime === 'webp') return 'WEBP';
+  return 'PNG';
+};
+
 export const generarPdfFiniquito = (contrato = {}) => {
   const doc = new jsPDF('p', 'mm', 'letter');
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -43,10 +66,26 @@ export const generarPdfFiniquito = (contrato = {}) => {
   const identificacion = normalizarTexto(contrato.numero_identificacion, 'NO REGISTRADA');
   const empresa = normalizarTexto(contrato.nombre_marca_pdf || contrato.nombre_empresa_marca, 'LA PARTE VENDEDORA').toUpperCase();
   const proyecto = normalizarTexto(contrato.nombre_proyecto_pdf || contrato.nombre_proyecto, 'PROYECTO INMOBILIARIO').toUpperCase();
+  const logos = [...new Set([
+    normalizarLogo(contrato.logo_proyecto),
+    normalizarLogo(contrato.logo_empresa_pdf || contrato.logo_empresa || contrato.logo)
+  ].filter(Boolean))];
   const monto = formatearMoneda(contrato.monto_total);
   const fechaEmision = formatearFechaLarga(new Date());
 
   drawBorder();
+  logos.forEach((logo, index) => {
+    const x = logos.length > 1
+      ? (index === 0 ? marginLeft : pageWidth - marginRight - 32)
+      : (pageWidth - 32) / 2;
+    try {
+      doc.addImage(logo, formatoLogo(logo), x, 17, 32, 22, `finiquito-logo-${index}`, 'FAST');
+    } catch {
+      // Un logo opcional o en formato no soportado no debe impedir emitir el finiquito.
+    }
+  });
+
+  if (logos.length) y = 47;
   doc.setFont('Times', 'bold');
   doc.setFontSize(16);
   doc.text('FINIQUITO DE PAGO', pageWidth / 2, y, { align: 'center' });
