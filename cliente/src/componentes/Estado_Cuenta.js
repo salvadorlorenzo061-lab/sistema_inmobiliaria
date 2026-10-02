@@ -335,7 +335,12 @@ const EstadoCuenta = () => {
           }
         }
       }
-      if (cuota > 0 && !detallePorCuota.has(cuota)) detallePorCuota.set(cuota, item);
+      if (cuota > 0) {
+        const detalleActual = detallePorCuota.get(cuota);
+        if (!detalleActual || Number(item?.id_pago || 0) >= Number(detalleActual?.id_pago || 0)) {
+          detallePorCuota.set(cuota, item);
+        }
+      }
     });
 
     const construirFilaPagada = (item, nombre, montoFallback) => ({
@@ -401,6 +406,17 @@ const EstadoCuenta = () => {
     }
 
     try {
+      const params = { _refresh: Date.now() };
+      if (estadoCuenta.fecha_fin && estadoCuenta.fecha_inicio) {
+        params.fecha_inicio = String(estadoCuenta.fecha_inicio).slice(0, 10);
+        params.fecha_fin = String(estadoCuenta.fecha_fin).slice(0, 10);
+      }
+      const { data: estadoCuentaReporte } = await axios.get(
+        `${API_BASE_URL}/api/estado_cuenta/estado-cuenta/${estadoCuenta.contrato.id_contrato}`,
+        { params, headers: { 'Cache-Control': 'no-cache' } }
+      );
+      setEstadoCuenta(estadoCuentaReporte);
+
       const doc = new jsPDF('p', 'mm', 'letter');
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
@@ -408,7 +424,7 @@ const EstadoCuenta = () => {
       const darkTextColor = [35, 35, 35];
       const borderColor = [85, 85, 85];
 
-      const contrato = estadoCuenta.contrato || {};
+      const contrato = estadoCuentaReporte.contrato || {};
       const normalizarLogoProyecto = (valor) => {
         const texto = String(valor || '').trim();
         if (!texto) return '';
@@ -444,19 +460,23 @@ const EstadoCuenta = () => {
       const formatoContrato = resolveContractTemplateId(
         contrato.formato_contrato || contrato.nombre_proyecto || contrato.nombre_tipo_contrato || ''
       );
-      const { cuotasPactadas, montoCuota, ultimaCuota, montoTotalContrato } = construirPlanContrato(contrato);
+      const planContratoPDF = construirPlanContrato(contrato);
+      const { cuotasPactadas, montoCuota, ultimaCuota, montoTotalContrato } = planContratoPDF;
 
       const detallesPorCuota = new Map();
-      const detalleRaw = Array.isArray(estadoCuenta.cuotasDetalle) ? estadoCuenta.cuotasDetalle : [];
+      const detalleRaw = Array.isArray(estadoCuentaReporte.cuotasDetalle) ? estadoCuentaReporte.cuotasDetalle : [];
       detalleRaw.forEach((item) => {
         const cuota = Number(item?.numero_cuota || 0);
-        if (cuota > 0 && !detallesPorCuota.has(cuota)) {
-          detallesPorCuota.set(cuota, item);
+        if (cuota > 0) {
+          const detalleActual = detallesPorCuota.get(cuota);
+          if (!detalleActual || Number(item?.id_pago || 0) >= Number(detalleActual?.id_pago || 0)) {
+            detallesPorCuota.set(cuota, item);
+          }
         }
       });
 
-      if (!detallesPorCuota.size && Array.isArray(estadoCuenta.pagos)) {
-        const pagosAsc = [...estadoCuenta.pagos].sort((a, b) => new Date(a.fecha_pago) - new Date(b.fecha_pago));
+      if (!detallesPorCuota.size && Array.isArray(estadoCuentaReporte.pagos)) {
+        const pagosAsc = [...estadoCuentaReporte.pagos].sort((a, b) => new Date(a.fecha_pago) - new Date(b.fecha_pago));
         pagosAsc.forEach((pago, idx) => {
           const cuota = idx + 1;
           if (cuota <= cuotasPactadas) {
@@ -546,7 +566,7 @@ const EstadoCuenta = () => {
       const dibujarResumenContrato = () => {
         const direccion = String(contrato.direccion_notificacion || '').trim() || 'DIRECCION NO REGISTRADA';
         const direccionLineas = doc.splitTextToSize(direccion, 57);
-        const totalPagado = Number(estadoCuenta.totalPagado || 0);
+        const totalPagado = Number(estadoCuentaReporte.totalPagado || 0);
         const resumenX = 10;
         const resumenY = 76;
         const resumenW = 196;
@@ -607,7 +627,7 @@ const EstadoCuenta = () => {
         doc.text('ABONADO:', 159.2, resumenY + 41.2);
         doc.text(formatoMoneda(totalPagado), 204.5, resumenY + 41.2, { align: 'right' });
         doc.text('SALDO:', 159.2, resumenY + 49.2);
-        doc.text(formatoMoneda(estadoCuenta.saldoPendiente || 0), 204.5, resumenY + 49.2, { align: 'right' });
+        doc.text(formatoMoneda(estadoCuentaReporte.saldoPendiente || 0), 204.5, resumenY + 49.2, { align: 'right' });
       };
 
       const nombreResidenteTexto = String(contrato.nombre || '').trim();
@@ -618,7 +638,7 @@ const EstadoCuenta = () => {
         ? `el ${tratamiento} ${nombreSinPrefijo || nombreResidenteMayus}`
         : 'el cliente';
       const cuerpoIntro = `Por medio del presente, se adjunta el detalle de pagos solicitado por ${solicitanteTexto}, el cual se especifica de manera clara la forma y fecha en que fueron aplicados cada uno de sus pagos.`;
-      const fechaReporteBase = estadoCuenta?.fecha_fin || new Date();
+      const fechaReporteBase = estadoCuentaReporte?.fecha_fin || new Date();
       const fechaLarga = new Date(fechaReporteBase).toLocaleDateString('es-GT', {
         day: 'numeric',
         month: 'long',
@@ -627,7 +647,7 @@ const EstadoCuenta = () => {
 
       const filas = [];
       const pagosPorId = new Map();
-      (Array.isArray(estadoCuenta.pagos) ? estadoCuenta.pagos : []).forEach((pago) => {
+      (Array.isArray(estadoCuentaReporte.pagos) ? estadoCuentaReporte.pagos : []).forEach((pago) => {
         const idPago = Number(pago?.id_pago || 0);
         if (idPago > 0) {
           pagosPorId.set(idPago, {
@@ -729,9 +749,9 @@ const EstadoCuenta = () => {
         return fecha.toLocaleDateString('es-GT');
       };
 
-      const detalleBase = Array.isArray(estadoCuenta?.cuotasDetalle) && estadoCuenta.cuotasDetalle.length
-        ? estadoCuenta.cuotasDetalle
-        : (Array.isArray(estadoCuenta?.pagos) ? estadoCuenta.pagos : []);
+      const detalleBase = Array.isArray(estadoCuentaReporte?.cuotasDetalle) && estadoCuentaReporte.cuotasDetalle.length
+        ? estadoCuentaReporte.cuotasDetalle
+        : (Array.isArray(estadoCuentaReporte?.pagos) ? estadoCuentaReporte.pagos : []);
 
       const detallePorCuota = new Map();
       detalleBase.forEach((pago, index) => {
@@ -752,8 +772,11 @@ const EstadoCuenta = () => {
           if (key <= 0) key = index + 1;
         }
 
+        const detalleActual = detallePorCuota.get(key);
+        if (detalleActual && Number(detalleActual.id_pago || 0) > Number(pago?.id_pago || 0)) return;
         detallePorCuota.set(key, {
           cuotaNumero: key,
+          id_pago: Number(pago?.id_pago || 0),
           fechaCuota: String(pago?.meses_pagados || pago?.mes_pagado || '').split(',').map((item) => item.trim()).filter(Boolean)[0] || 'N/A',
           tipoPago: esEnganche ? 'ENGANCHE' : 'PAGADO',
           cuotaLabel: esEnganche ? 0 : cuotaNumero || index + 1,
@@ -880,7 +903,7 @@ const EstadoCuenta = () => {
       doc.text(`${loteContrato}${contrato?.manzana ? ` / ${contrato.manzana}` : ''}`, 160, headerY + 14);
       doc.setFont('helvetica', 'bold');
       doc.text('TOTAL DEUDA CON INTERESES', 16, headerY + 21);
-      doc.text(formatoMoneda(planContratoActual?.totalConIntereses || contrato?.monto_total || 0), 67, headerY + 21);
+      doc.text(formatoMoneda(planContratoPDF.totalConIntereses || contrato?.monto_total || 0), 67, headerY + 21);
       doc.setFont('helvetica', 'normal');
       doc.text('FINCA / FOLIO / LIBRO', 120, headerY + 21);
       doc.text(`${contrato?.numero_finca || 'N/A'} / ${contrato?.folio || 'N/A'} / ${contrato?.libro || 'N/A'}`, 160, headerY + 21);
@@ -888,6 +911,7 @@ const EstadoCuenta = () => {
       autoTable(doc, {
         startY: headerY + 27,
         margin: { left: 10, right: 10 },
+        tableWidth: pageWidth - 20,
         head: [[
           'Fecha cuota',
           'Tipo de pago',
@@ -907,7 +931,7 @@ const EstadoCuenta = () => {
           overflow: 'linebreak',
           lineColor: [120, 120, 120],
           lineWidth: 0.2,
-          cellPadding: 1.7,
+          cellPadding: 2,
           textColor: [20, 20, 20]
         },
         headStyles: {
@@ -920,14 +944,14 @@ const EstadoCuenta = () => {
           fillColor: [245, 247, 250]
         },
         columnStyles: {
-          0: { cellWidth: 20 },
-          1: { cellWidth: 24 },
-          2: { cellWidth: 14 },
-          3: { cellWidth: 18 },
-          4: { cellWidth: 22 },
+          0: { cellWidth: 21.9 },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 13 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 34 },
           5: { cellWidth: 24 },
-          6: { cellWidth: 21 },
-          7: { cellWidth: 18 }
+          6: { cellWidth: 26 },
+          7: { cellWidth: 27 }
         },
         didDrawPage: (data) => {
           doc.setFont('helvetica', 'normal');
@@ -946,8 +970,8 @@ const EstadoCuenta = () => {
         doc.text('INFORME DE MORA, SERVICIOS Y OTROS PAGOS', pageWidth / 2, 18, { align: 'center' });
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
-        const rangoTexto = estadoCuenta?.fecha_fin
-          ? `Rango consultado: ${nuevoFormatoFecha(estadoCuenta.fecha_inicio)} al ${nuevoFormatoFecha(estadoCuenta.fecha_fin)}`
+        const rangoTexto = estadoCuentaReporte?.fecha_fin
+          ? `Rango consultado: ${nuevoFormatoFecha(estadoCuentaReporte.fecha_inicio)} al ${nuevoFormatoFecha(estadoCuentaReporte.fecha_fin)}`
           : 'Rango consultado: todos los pagos';
         doc.text(rangoTexto, pageWidth / 2, 24, { align: 'center' });
 
@@ -982,8 +1006,8 @@ const EstadoCuenta = () => {
         doc.addPage();
         resumenY = 18;
       }
-      const totalProgramado = Number(planContratoActual?.totalConIntereses || contrato?.monto_total || 0);
-      const totalPagadoReporte = Number(estadoCuenta?.totalPagado || 0);
+      const totalProgramado = Number(planContratoPDF?.totalConIntereses || contrato?.monto_total || 0);
+      const totalPagadoReporte = Number(estadoCuentaReporte?.totalPagado || 0);
       const saldoPendienteReporte = Math.max(totalProgramado - totalPagadoReporte, 0);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
@@ -991,7 +1015,7 @@ const EstadoCuenta = () => {
       doc.text(`TOTAL PAGADO: ${formatoMoneda(totalPagadoReporte)}`, pageWidth - 12, resumenY + 6, { align: 'right' });
       doc.text(`PENDIENTE DE PAGO: ${formatoMoneda(saldoPendienteReporte)}`, pageWidth - 12, resumenY + 12, { align: 'right' });
 
-      const fileName = `DetalleCuotas_${estadoCuenta.contrato.codigo_contrato || 'cliente'}.pdf`;
+      const fileName = `DetalleCuotas_${estadoCuentaReporte.contrato.codigo_contrato || 'cliente'}.pdf`;
       doc.save(fileName);
     } catch (error) {
       console.error('Error al exportar PDF:', error);
