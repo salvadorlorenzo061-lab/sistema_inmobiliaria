@@ -87,6 +87,8 @@ router.get("/buscar-residente", (req, res) => {
 router.get("/estado-cuenta/:id_contrato", (req, res) => {
     const { id_contrato } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
 
     // Obtener información del contrato
     const queryContrato = `
@@ -111,7 +113,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                 WHERE p_total.id_contrato = c.id_contrato
                   AND NOT EXISTS (
                       SELECT 1 FROM facturas_historial fa_total
-                      WHERE fa_total.id_pago = p_total.id_pago AND fa_total.estado_factura = 'ANULADA'
+                                            WHERE fa_total.id_pago = p_total.id_pago
+                                                AND UPPER(TRIM(COALESCE(fa_total.estado_factura, ''))) = 'ANULADA'
                   )
             ), 0) AS total_pagado_real,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
@@ -185,7 +188,11 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             FROM pagos p
             INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             WHERE p.id_contrato = ?
-              AND NOT EXISTS (SELECT 1 FROM facturas_historial fa WHERE fa.id_pago = p.id_pago AND fa.estado_factura = 'ANULADA')
+                            AND NOT EXISTS (
+                                    SELECT 1 FROM facturas_historial fa
+                                    WHERE fa.id_pago = p.id_pago
+                                        AND UPPER(TRIM(COALESCE(fa.estado_factura, ''))) = 'ANULADA'
+                            )
               AND p.id_pago IS NOT NULL
             GROUP BY p.id_pago
             ORDER BY fecha_pago DESC, p.id_pago DESC
@@ -214,7 +221,11 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                                 FROM pagos p
                                 INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                 WHERE p.id_contrato = ?
-                                    AND NOT EXISTS (SELECT 1 FROM facturas_historial fa WHERE fa.id_pago = p.id_pago AND fa.estado_factura = 'ANULADA')
+                                    AND NOT EXISTS (
+                                            SELECT 1 FROM facturas_historial fa
+                                            WHERE fa.id_pago = p.id_pago
+                                                AND UPPER(TRIM(COALESCE(fa.estado_factura, ''))) = 'ANULADA'
+                                    )
                                     ${filtroFechas}
                                 ORDER BY pd.mes_pagado
                         `;
@@ -271,7 +282,11 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                     FROM pagos p
                     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                     WHERE p.id_contrato = ?
-                      AND NOT EXISTS (SELECT 1 FROM facturas_historial fa WHERE fa.id_pago = p.id_pago AND fa.estado_factura = 'ANULADA')
+                                            AND NOT EXISTS (
+                                                    SELECT 1 FROM facturas_historial fa
+                                                    WHERE fa.id_pago = p.id_pago
+                                                        AND UPPER(TRIM(COALESCE(fa.estado_factura, ''))) = 'ANULADA'
+                                            )
                       AND pd.tipo_concepto IN ('enganche', 'cuota_terreno')
                     ORDER BY CASE WHEN COALESCE(pd.numero_cuota_afectada, 0) = 0 AND pd.tipo_concepto = 'enganche' THEN 0 ELSE COALESCE(pd.numero_cuota_afectada, 0) END ASC,
                              p.id_pago ASC
@@ -322,7 +337,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                               AND pd.tipo_concepto NOT IN ('enganche', 'cuota_terreno')
                               AND NOT EXISTS (
                                   SELECT 1 FROM facturas_historial fa
-                                  WHERE fa.id_pago = p.id_pago AND fa.estado_factura = 'ANULADA'
+                                                                    WHERE fa.id_pago = p.id_pago
+                                                                        AND UPPER(TRIM(COALESCE(fa.estado_factura, ''))) = 'ANULADA'
                               )
                               ${filtroFechas}
                             ORDER BY p.fecha_pago DESC, p.id_pago DESC, pd.id_pago_detalle ASC

@@ -98,12 +98,17 @@ const EstadoCuenta = () => {
   const obtenerEstadoCuenta = async (id_contrato, fInicio = '', fFin = '') => {
     setLoading(true);
     try {
-      let url = `${API_BASE_URL}/api/estado_cuenta/estado-cuenta/${id_contrato}`;
+      const url = `${API_BASE_URL}/api/estado_cuenta/estado-cuenta/${id_contrato}`;
+      const params = { _refresh: Date.now() };
       if (fInicio && fFin) {
-        url += `?fecha_inicio=${fInicio}&fecha_fin=${fFin}`;
+        params.fecha_inicio = fInicio;
+        params.fecha_fin = fFin;
       }
-      
-      const res = await axios.get(url);
+
+      const res = await axios.get(url, {
+        params,
+        headers: { 'Cache-Control': 'no-cache' }
+      });
       setEstadoCuenta(res.data);
       setListaResidentes([]);
       setMensajeBusqueda('');
@@ -995,8 +1000,8 @@ const EstadoCuenta = () => {
   };
 
   const exportarOtrosPagosPDF = async () => {
-    if (!estadoCuenta || !otrosPagosVisual.length) {
-      showFadeToast('No hay cargos pagados o exonerados para exportar.', 'warning');
+    if (!estadoCuenta) {
+      showFadeToast('Primero debes cargar un estado de cuenta.', 'warning');
       return;
     }
     try {
@@ -1027,10 +1032,12 @@ const EstadoCuenta = () => {
         margin: { left: 10, right: 10 },
         tableWidth: pageWidth - 20,
         head: [['Fecha', 'Concepto', 'Estado/Tipo', 'Mes', 'Forma', 'Monto', 'Recibo']],
-        body: otrosPagosVisual.map((item) => [
-          formatoFecha(item.fechaPago), item.concepto, item.tipo.toUpperCase(), item.mes || 'N/A',
-          item.formaPago, formatoMoneda(item.monto), item.recibo || 'N/A'
-        ]),
+        body: otrosPagosVisual.length
+          ? otrosPagosVisual.map((item) => [
+            formatoFecha(item.fechaPago), item.concepto, item.tipo.toUpperCase(), item.mes || 'N/A',
+            item.formaPago, formatoMoneda(item.monto), item.recibo || 'N/A'
+          ])
+          : [['', 'Sin otros cargos registrados en el rango consultado', '', '', '', '', '']],
         theme: 'grid',
         styles: { fontSize: 7.5, halign: 'center', valign: 'middle', cellPadding: 1.5, overflow: 'linebreak' },
         headStyles: { fillColor: [32, 139, 91], textColor: 255, fontStyle: 'bold' }
@@ -1115,6 +1122,14 @@ const EstadoCuenta = () => {
                 <h5 className="mb-0">📊 Estado de Cuenta Actual</h5>
                 <div className="estado-cuenta-actions">
                   <button
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => obtenerEstadoCuenta(estadoCuenta.contrato?.id_contrato || idContratoActual)}
+                    disabled={loading}
+                    title="Volver a consultar pagos y anulaciones"
+                  >
+                    {loading ? 'Actualizando...' : 'Actualizar estado'}
+                  </button>
+                  <button
                     className="btn btn-sm btn-outline-danger"
                     onClick={exportarEstadoCuentaPDF}
                   >
@@ -1123,7 +1138,6 @@ const EstadoCuenta = () => {
                   <button
                     className="btn btn-sm btn-outline-success"
                     onClick={exportarOtrosPagosPDF}
-                    disabled={!otrosPagosVisual.length}
                   >
                     💵 PDF de otros cargos
                   </button>
