@@ -253,12 +253,23 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
         LIMIT 1
     `;
 
+    // Una cuota solo se muestra PAGADO si existe evidencia EMITIDA de un cobro que
+    // sigue vigente. Al anular un cobro, el pago se elimina de las tablas vivas y en
+    // facturas_historial queda la evidencia ANULADA; la marca EMITIDA histórica no
+    // debe seguir contando como pago vigente en la tabla de amortización.
     const sqlCuotasEstadoDetalle = `
         SELECT
             COALESCE(fh.numero_cuota_afectada, 0) AS numero_cuota,
             fh.mes_pagado AS mes,
             CASE
-                WHEN MAX(CASE WHEN UPPER(COALESCE(fh.estado_factura, '')) = 'EMITIDA' THEN 1 ELSE 0 END) = 1 THEN 'PAGADO'
+                WHEN MAX(CASE
+                    WHEN UPPER(COALESCE(fh.estado_factura, '')) = 'EMITIDA'
+                         AND NOT EXISTS (
+                             SELECT 1 FROM facturas_historial fa
+                             WHERE fa.id_pago = fh.id_pago
+                               AND UPPER(COALESCE(fa.estado_factura, '')) = 'ANULADA'
+                         )
+                    THEN 1 ELSE 0 END) = 1 THEN 'PAGADO'
                 ELSE 'ANULADO'
             END AS estado
         FROM facturas_historial fh
