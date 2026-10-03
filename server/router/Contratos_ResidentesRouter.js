@@ -1188,10 +1188,24 @@ router.get("/", (req, res) => {
             }
 
             const contratosNormalizados = (result || []).map((contrato) => {
+                // Algunos registros históricos guardaron observaciones como texto plano
+                // o con JSON doblemente codificado; se decodifica hasta obtener objeto.
                 let datosPropiedad = {};
-                try {
-                    datosPropiedad = JSON.parse(contrato?.datos_propiedad_json || '{}') || {};
-                } catch {
+                let bruto = contrato?.datos_propiedad_json;
+                for (let intento = 0; intento < 2; intento += 1) {
+                    if (bruto && typeof bruto === 'object') {
+                        datosPropiedad = bruto;
+                        break;
+                    }
+                    const texto = String(bruto || '').trim();
+                    if (!texto) break;
+                    try {
+                        bruto = JSON.parse(texto);
+                    } catch {
+                        break;
+                    }
+                }
+                if (!datosPropiedad || typeof datosPropiedad !== 'object' || Array.isArray(datosPropiedad)) {
                     datosPropiedad = {};
                 }
                 return {

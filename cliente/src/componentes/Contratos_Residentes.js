@@ -1179,7 +1179,17 @@ function Contratos_Residentes() {
 
   const abrirEditarModal = (val) => {
     const proyectoResuelto = resolverProyectoContrato(val);
-    const propiedad = val?.datos_propiedad && typeof val.datos_propiedad === 'object' ? val.datos_propiedad : {};
+    // Tolerar datos_propiedad recibido como texto JSON (registros que viajaron
+    // codificados) para que el modal rellene finca, folio, libro, medidas, etc.
+    const propiedad = (() => {
+      let bruto = val?.datos_propiedad;
+      for (let intento = 0; intento < 2; intento += 1) {
+        if (bruto && typeof bruto === 'object' && !Array.isArray(bruto)) return bruto;
+        if (typeof bruto !== 'string') break;
+        try { bruto = JSON.parse(bruto); } catch { break; }
+      }
+      return {};
+    })();
     const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
     const totalConInteresesContrato = (() => {
       if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) return 0;
