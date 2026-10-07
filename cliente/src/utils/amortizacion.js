@@ -7,45 +7,67 @@ export const redondearMoneda = (value) => (
   Math.round((numeroSeguro(value, 0) + Number.EPSILON) * 100) / 100
 );
 
+// ============================================================================
+// SISTEMA FRANCES DE AMORTIZACION (cuota fija nivelada sobre saldos insolutos)
+// ============================================================================
+// UNICA formula de calculo de cuotas del sistema. Regla global obligatoria:
+//   1) Cuota mensual fija:  Cuota = P * [r(1+r)^n] / [(1+r)^n - 1]
+//      con r = tasa anual / 100 / 12  y  n = numero de cuotas.
+//   2) Interes del mes  = saldo pendiente actual del capital * r.
+//   3) Abono a capital  = cuota fija total - interes del mes.
+//   4) Saldo pendiente  = saldo anterior - abono a capital del mes.
+//   5) La ultima cuota ajusta el capital restante para cerrar el plan en cero.
+// El backend replica esta misma logica en server/utils/amortizacion.js.
+// No agregar formulas alternativas (interes plano / partes iguales).
+// ============================================================================
+
+// Cuota fija nivelada del Sistema Frances. Con tasa 0% la cuota es capital / n.
 export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
   const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
   const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
   const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
 
   if (principal <= 0 || plazo <= 0) return 0;
-  if (tasa <= 0) return Math.ceil(principal / plazo);
 
-  const anios = plazo / 12;
-  const interesTotal = principal * (tasa / 100) * anios;
-  const cuotaFija = (principal + interesTotal) / plazo;
-  // Las cuotas regulares no manejan centavos. Se redondean hacia arriba y la
-  // diferencia se compensa exactamente en la última cuota del contrato.
-  return Math.ceil(cuotaFija);
+  const tasaMensual = tasa / 100 / 12;
+  if (tasaMensual <= 0) return redondearMoneda(principal / plazo);
+
+  const factor = Math.pow(1 + tasaMensual, plazo);
+  return redondearMoneda(principal * (tasaMensual * factor) / (factor - 1));
 };
 
-export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicial = 0) => {
+// Una cuota personalizada (pactada manualmente) solo se respeta si amortiza:
+// debe superar el interes del primer mes (saldo inicial * tasa mensual).
+const resolverCuotaFijaPlan = (principal, tasa, plazo, cuotaPersonalizada = 0) => {
+  const calculada = calcularCuotaFija(principal, tasa, plazo);
+  const personalizada = redondearMoneda(Math.max(numeroSeguro(cuotaPersonalizada, 0), 0));
+  const interesPrimerMes = redondearMoneda(principal * (Math.max(numeroSeguro(tasa, 0), 0) / 100 / 12));
+  const personalizadaValida = personalizada > 0 && (plazo <= 1 || personalizada > interesPrimerMes);
+  return personalizadaValida ? personalizada : calculada;
+};
+
+export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicial = 0, cuotaFijaPersonalizada = 0) => {
   const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
   const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
   const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
-  const cuotaFija = calcularCuotaFija(principal, tasa, plazo);
   const numeroBase = Math.max(parseInt(cuotaInicial || 0, 10), 0);
+  if (principal <= 0 || plazo <= 0) return [];
+
+  const tasaMensual = tasa / 100 / 12;
+  const cuotaFija = resolverCuotaFijaPlan(principal, tasa, plazo, cuotaFijaPersonalizada);
   const tabla = [];
   let saldo = principal;
   let interesAcumulado = 0;
 
-  // El interes y el capital de cada cuota conservan centavos (redondeo a 2
-  // decimales); solo la cuota fija se maneja en numero entero. Redondear el
-  // interes a un entero (como antes) desalineaba el capital acumulado y el
-  // saldo, generando una diferencia creciente frente a la cuota real pactada.
-  const interesMesFijo = redondearMoneda((principal * (tasa / 100)) / 12);
-
+  // Interes de cada cuota = saldo insoluto * tasa mensual (Sistema Frances).
+  // El capital de la ultima cuota ajusta el saldo para cerrar exacto en cero.
   for (let indice = 1; indice <= plazo; indice += 1) {
     const esUltimaCuota = indice === plazo;
-    const interesMes = interesMesFijo;
+    const interesMes = redondearMoneda(saldo * tasaMensual);
     const capitalCuota = esUltimaCuota
       ? redondearMoneda(saldo)
-      : redondearMoneda(Math.max(cuotaFija - interesMes, 0));
-    const pago = esUltimaCuota ? redondearMoneda(capitalCuota + interesMes) : Math.round(cuotaFija);
+      : redondearMoneda(Math.min(Math.max(cuotaFija - interesMes, 0), saldo));
+    const pago = redondearMoneda(capitalCuota + interesMes);
     const saldoFinal = redondearMoneda(Math.max(saldo - capitalCuota, 0));
     interesAcumulado = redondearMoneda(interesAcumulado + interesMes);
 
@@ -63,4 +85,12 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
   }
 
   return tabla;
+};
+
+// Total del plan (capital + intereses) = cuota fija * numero de cuotas.
+export const calcularTotalPlanFrances = (capital, tasaAnual, cuotas, cuotaPersonalizada = 0) => {
+  const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
+  const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+  if (principal <= 0 || plazo <= 0) return 0;
+  return redondearMoneda(resolverCuotaFijaPlan(principal, numeroSeguro(tasaAnual, 0), plazo, cuotaPersonalizada) * plazo);
 };

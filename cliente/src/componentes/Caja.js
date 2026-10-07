@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { buildConsolidatedInvoiceRows, renderFacturaComprobante, formatearNotaMoraExonerada } from '../utils/facturaPdf';
+import { generarTablaAmortizacion } from '../utils/amortizacion';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
@@ -160,9 +161,10 @@ const Caja = () => {
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
     const redondear2 = (valor) => parseFloat((Number(valor || 0)).toFixed(2));
     // Caja NO define su propio plan financiero: consume el mismo que pacta el modulo de Contratos.
-    // Base acordada (identica a Contratos_Residentes.calcularMontoCuotaContrato):
+    // Unica formula del sistema (Sistema Frances de Amortizacion, cuota fija nivelada):
     //   capital financiado = Precio Total del contrato (saldo/monto_total) - Enganche
-    //   cuota mensual      = calcularCuotaFija(capital financiado, interes anual, cuotas pactadas)
+    //   cuota mensual      = calcularCuotaFija(capital, tasa, cuotas) = P * [r(1+r)^n] / [(1+r)^n - 1]
+    //   interes del mes    = saldo pendiente del capital * tasa mensual
     // De esa forma la "Cuota 1+ (capital + interes)" de Caja coincide con el
     // "Monto de Cuota (Auto)" que muestra y guarda el contrato.
     const calcularPlanFinancieroContrato = (contrato = {}) => {
@@ -196,39 +198,17 @@ const Caja = () => {
         // financiado pactado es tambien el capital que queda por cobrar.
         const capitalPendienteFinanciado = capitalTotalContrato;
         const capitalBaseInteres = capitalTotalContrato;
-        const interesTotalPactado = tieneConvenioActivo
-            ? 0
-            : redondear2(capitalBaseInteres * (interesPorcentaje / 100) * (cuotasPactadas / 12));
-        const totalFinanciadoPactado = redondear2(capitalBaseInteres + interesTotalPactado);
-        const cuotaRegularGuardada = Math.round(Math.max(parseFloat(contrato?.monto_cuota || 0), 0));
-        const cuotaGuardadaValida = cuotaRegularGuardada > 0
-            && (cuotasPactadas <= 1 || (cuotaRegularGuardada * (cuotasPactadas - 1)) < totalFinanciadoPactado);
-        const cuotaRegular = cuotaGuardadaValida
-            ? cuotaRegularGuardada
-            : Math.ceil(totalFinanciadoPactado / Math.max(cuotasPactadas, 1));
-        const interesRegular = cuotasPactadas > 0 ? redondear2(interesTotalPactado / cuotasPactadas) : 0;
-        let capitalRestantePlan = capitalBaseInteres;
-        let interesRestantePlan = interesTotalPactado;
-        const tablaContratoCompleta = [];
-        for (let indice = 1; indice <= cuotasPactadas; indice += 1) {
-            const esUltima = indice === cuotasPactadas;
-            const pagoCuota = esUltima
-                ? redondear2(totalFinanciadoPactado - (cuotaRegular * (cuotasPactadas - 1)))
-                : cuotaRegular;
-            const interesCuota = esUltima ? redondear2(interesRestantePlan) : Math.min(interesRegular, interesRestantePlan);
-            const capitalCuota = esUltima
-                ? redondear2(capitalRestantePlan)
-                : redondear2(Math.max(pagoCuota - interesCuota, 0));
-            tablaContratoCompleta.push({
-                indice,
-                numero_cuota: indice,
-                capital_cuota: capitalCuota,
-                interes_mes: interesCuota,
-                cuota_estimada: pagoCuota
-            });
-            capitalRestantePlan = redondear2(Math.max(capitalRestantePlan - capitalCuota, 0));
-            interesRestantePlan = redondear2(Math.max(interesRestantePlan - interesCuota, 0));
-        }
+        // Tabla del Sistema Frances (cliente/src/utils/amortizacion.js): el interes
+        // de cada cuota sale del saldo insoluto y la ultima cuota cierra en cero.
+        // La cuota guardada del contrato se respeta solo si amortiza el plan.
+        const cuotaRegularGuardada = redondear2(Math.max(parseFloat(contrato?.monto_cuota || 0), 0));
+        const tablaContratoCompleta = generarTablaAmortizacion(
+            capitalBaseInteres,
+            interesPorcentaje,
+            cuotasPactadas,
+            0,
+            cuotaRegularGuardada
+        );
         const tablaAmortizacion = tieneConvenioActivo
             ? tablaContratoCompleta
             : tablaContratoCompleta.filter((fila) => Number(fila?.numero_cuota || 0) > cuotasFinanciadasPagadas);

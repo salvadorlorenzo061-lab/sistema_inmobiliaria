@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('../Conexion');
+const { generarTablaFrancesa } = require('../utils/amortizacion');
 
 const router = express.Router();
 
@@ -75,47 +76,25 @@ const calcularLiquidacionCapital = ({
     const mesesPendientes = Math.max(cuotasTotales - cuotasPagadasBase, 0);
     const tasaMensual = interesAnual / 100 / 12;
     const capitalInicial = Math.round(Math.max(toNumber(capital_inicial, 0), 0));
-    const cuotaPactada = Math.round(Math.max(toNumber(monto_cuota_pactada, 0), 0));
+    const cuotaPactada = round2(Math.max(toNumber(monto_cuota_pactada, 0), 0));
 
-    // Misma regla contractual que usan Contratos y Caja para TODOS los
-    // clientes: con contrato identificado se construye el plan completo desde
-    // el capital original (interes simple del plan, cuota pactada valida o
-    // techo del total financiado, interes fijo por cuota y ultima cuota de
-    // ajuste) y se conservan solo las cuotas pendientes. Sin datos de
-    // contrato se mantiene la simulacion libre sobre el capital restante.
+    // Unica formula del sistema (Sistema Frances de Amortizacion, ver
+    // server/utils/amortizacion.js): cuota fija nivelada P * [r(1+r)^n] /
+    // [(1+r)^n - 1], interes del mes = saldo insoluto * tasa mensual y la
+    // ultima cuota ajusta el saldo. Con contrato identificado se construye el
+    // plan completo desde el capital original y se conservan solo las cuotas
+    // pendientes; sin contrato se simula libre sobre el capital restante.
     const usarPlanContrato = capitalInicial > 0 && cuotasTotales > 0;
     const capitalPlan = usarPlanContrato ? capitalInicial : capitalRestante;
     const mesesPlan = usarPlanContrato ? cuotasTotales : mesesPendientes;
 
-    const interesTotalPlan = capitalPlan * (interesAnual / 100) * (mesesPlan / 12);
-    const totalPlan = capitalPlan + interesTotalPlan;
-    const cuotaCalculada = mesesPlan > 0 ? Math.ceil(totalPlan / mesesPlan) : 0;
-    const cuotaMensual = cuotaPactada > 0 && (mesesPlan <= 1 || cuotaPactada * (mesesPlan - 1) < totalPlan)
-        ? cuotaPactada
-        : cuotaCalculada;
-    const interesPorMes = mesesPlan > 0 ? round2(interesTotalPlan / mesesPlan) : 0;
-    const tablaCompleta = [];
-    let saldo = capitalPlan;
-
-    for (let indice = 1; indice <= mesesPlan; indice += 1) {
-        const esUltima = indice === mesesPlan;
-        const interesMes = interesPorMes;
-        const capitalCuota = esUltima
-            ? round2(saldo)
-            : round2(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
-        const pagoMes = esUltima ? round2(capitalCuota + interesMes) : cuotaMensual;
-        const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
-
-        tablaCompleta.push({
-            numero_cuota: usarPlanContrato ? indice : cuotasPagadasBase + indice,
-            saldo_inicial: saldo,
-            capital_cuota: capitalCuota,
-            interes_mes: interesMes,
-            cuota_estimada: pagoMes,
-            saldo_final: saldoFinal
-        });
-        saldo = saldoFinal;
-    }
+    const tablaCompleta = generarTablaFrancesa(
+        capitalPlan,
+        interesAnual,
+        mesesPlan,
+        usarPlanContrato ? 0 : cuotasPagadasBase,
+        cuotaPactada
+    );
 
     const tablaAmortizacion = tablaCompleta
         .filter((fila) => fila.numero_cuota > cuotasPagadasBase)

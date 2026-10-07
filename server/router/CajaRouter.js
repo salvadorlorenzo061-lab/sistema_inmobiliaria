@@ -3,6 +3,7 @@ const db = require('../Conexion');
 const router = express.Router(); 
 const cors = require('cors');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
+const { generarTablaFrancesa, sqlTotalPlanFrancesa } = require('../utils/amortizacion');
 
 router.use(cors());
 router.use(express.json());
@@ -2340,27 +2341,12 @@ router.post("/procesar-pago", (req, res) => {
             const tieneConvenioActivoContrato = Number(saldoRows[0]?.id_convenio_activo || 0) > 0;
             const usaCuotaCeroEngancheContrato = engancheContrato > 0;
 
-            // === PLAN FINANCIERO PACTADO EN EL CONTRATO ===
-            // Caja no puede inventar su propio plan: debe cobrar exactamente la cuota que
-            // pacta el modulo de Contratos. Misma formula que Contratos_Residentes y que
-            // cliente/src/utils/amortizacion.js (interes simple sobre el capital financiado):
-            //   capital financiado = Precio Total (monto_total) - Enganche
-            //   cuota fija         = (capital + capital * interes% * anios) / cuotas
-            //   interes por cuota  = capital * interes% / 12  (constante)
-            //   capital por cuota  = cuota fija - interes por cuota
-            const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
-                const principal = Math.round(Math.max(Number(capital || 0), 0));
-                const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
-                const tasa = Math.max(Number(tasaAnual || 0), 0);
-
-                if (principal <= 0 || plazo <= 0) return 0;
-                if (tasa <= 0) return Math.ceil(principal / plazo);
-
-                const anios = plazo / 12;
-                const interesTotal = principal * (tasa / 100) * anios;
-                return Math.ceil((principal + interesTotal) / plazo);
-            };
-
+            // === PLAN FINANCIERO PACTADO EN EL CONTRATO (SISTEMA FRANCES) ===
+            // Unica formula del sistema (server/utils/amortizacion.js):
+            //   cuota fija        = P * [r(1+r)^n] / [(1+r)^n - 1]  (anualidades)
+            //   interes por cuota = saldo insoluto * tasa mensual
+            //   capital por cuota = cuota fija - interes; la ultima cuota cierra en cero.
+            // La cuota guardada del contrato se respeta solo si amortiza el plan.
             const cuotasPagadasContrato = Math.max(Number(saldoRows[0]?.cuotas_pagadas || 0), 0);
             const cuotasPendientesContrato = Math.max(cuotasBaseInteres - cuotasPagadasContrato, 0);
             const montoOriginalContrato = Math.max(Number(saldoRows[0]?.monto_total_original || 0), 0);
@@ -2374,22 +2360,23 @@ router.post("/procesar-pago", (req, res) => {
                 ? Math.max(cuotasPendientesContrato, 1)
                 : cuotasBaseInteres;
             const primeraCuotaPlanContrato = tieneConvenioActivoContrato ? (cuotasPagadasContrato + 1) : 1;
-            const cuotaCalculadaContrato = calcularCuotaFijaContrato(capitalBaseInteresContrato, interesPlanContrato, cuotasPlanContrato);
-            const interesTotalPlanContrato = redondear2(
-                capitalBaseInteresContrato * (interesPlanContrato / 100) * (cuotasPlanContrato / 12)
+            const cuotaGuardadaContrato = redondear2(montoCuotaBaseContrato);
+            const tablaAmortizacionContrato = generarTablaFrancesa(
+                capitalBaseInteresContrato,
+                interesPlanContrato,
+                cuotasPlanContrato,
+                primeraCuotaPlanContrato - 1,
+                cuotaGuardadaContrato
             );
-            const totalFinanciadoPlanContrato = redondear2(capitalBaseInteresContrato + interesTotalPlanContrato);
-            const cuotaGuardadaContrato = Math.round(montoCuotaBaseContrato);
-            const cuotaGuardadaValidaContrato = cuotaGuardadaContrato > 0
-                && (cuotasPlanContrato <= 1
-                    || (cuotaGuardadaContrato * (cuotasPlanContrato - 1)) < totalFinanciadoPlanContrato);
-            const cuotaFijaPactadaContrato = cuotaGuardadaValidaContrato
-                ? cuotaGuardadaContrato
-                : cuotaCalculadaContrato;
-            const interesPorCuotaContrato = cuotasPlanContrato > 0
-                ? redondear2(interesTotalPlanContrato / cuotasPlanContrato)
-                : 0;
-            const capitalPorCuotaContrato = Math.max(redondear2(cuotaFijaPactadaContrato - interesPorCuotaContrato), 0);
+            const cuotaFijaPactadaContrato = Number(tablaAmortizacionContrato[0]?.cuota_estimada || 0);
+            const interesPorCuotaContrato = Number(tablaAmortizacionContrato[0]?.interes_mes || 0);
+            const capitalPorCuotaContrato = Number(tablaAmortizacionContrato[0]?.capital_cuota || 0);
+            const interesTotalPlanContrato = redondear2(
+                tablaAmortizacionContrato.reduce((sum, fila) => sum + Number(fila.interes_mes || 0), 0)
+            );
+            const totalFinanciadoPlanContrato = redondear2(
+                tablaAmortizacionContrato.reduce((sum, fila) => sum + Number(fila.cuota_estimada || 0), 0)
+            );
             const cuotaBaseParaSaldo = capitalPorCuotaContrato > 0
                 ? capitalPorCuotaContrato
                 : montoCuotaBaseContrato;
@@ -2403,27 +2390,6 @@ router.post("/procesar-pago", (req, res) => {
                 : Math.max(mesesAProcesar.length, 1);
 
             const ultimaCuotaPlanContrato = primeraCuotaPlanContrato + cuotasPlanContrato - 1;
-            const tablaAmortizacionContrato = [];
-            let capitalRestantePlan = capitalBaseInteresContrato;
-            let interesRestantePlan = interesTotalPlanContrato;
-            for (let numeroCuotaPlan = primeraCuotaPlanContrato; numeroCuotaPlan <= ultimaCuotaPlanContrato; numeroCuotaPlan += 1) {
-                const esUltimaCuota = numeroCuotaPlan === ultimaCuotaPlanContrato;
-                const pagoCuota = esUltimaCuota
-                    ? redondear2(totalFinanciadoPlanContrato - (cuotaFijaPactadaContrato * (cuotasPlanContrato - 1)))
-                    : cuotaFijaPactadaContrato;
-                const interesCuota = esUltimaCuota ? redondear2(interesRestantePlan) : Math.min(interesPorCuotaContrato, interesRestantePlan);
-                const capitalCuota = esUltimaCuota
-                    ? redondear2(capitalRestantePlan)
-                    : redondear2(Math.max(pagoCuota - interesCuota, 0));
-                tablaAmortizacionContrato.push({
-                    numero_cuota: numeroCuotaPlan,
-                    capital_cuota: capitalCuota,
-                    interes_mes: interesCuota,
-                    cuota_estimada: pagoCuota
-                });
-                capitalRestantePlan = redondear2(Math.max(capitalRestantePlan - capitalCuota, 0));
-                interesRestantePlan = redondear2(Math.max(interesRestantePlan - interesCuota, 0));
-            }
             const obtenerFilaAmortizacion = (numeroCuota) => {
                 const cuotaNumero = Number(numeroCuota || 0);
                 return tablaAmortizacionContrato.find((fila) => fila.numero_cuota === cuotaNumero) || null;
@@ -3466,6 +3432,12 @@ router.post("/procesar-pago", (req, res) => {
 
                                             sincronizarMorosidadExonerada(() => sincronizarMorosidadPagada(() => {
                                             const descuentoCapital = redondear2(montoTerrenoTotal + montoInteresTotal + montoAbonoCapitalTotal);
+                                            // Sistema Frances: saldo = total del plan (cuota nivelada x cuotas) - pagado.
+                                            const totalPlanFrancesSql = sqlTotalPlanFrancesa(
+                                                'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+                                                'c.interes_porcentaje',
+                                                'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
+                                            );
                                             const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, () => sincronizarCuotasContrato(finalizarCommit));
 
                                             if (descuentoCapital > 0) {
@@ -3478,14 +3450,10 @@ router.post("/procesar-pago", (req, res) => {
                                                         INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
                                                         GROUP BY p.id_contrato
                                                     ) pagos ON pagos.id_contrato = c.id_contrato
-                                                    SET c.saldo_pendiente = GREATEST(
-                                                        (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
-                                                        + ((COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
-                                                           * COALESCE(c.interes_porcentaje, 0) / 100
-                                                           * (COALESCE(c.cuotas_pactadas, c.plazo_meses, 1) / 12))
-                                                        - COALESCE(pagos.total_pagado, 0),
-                                                        0
-                                                    ),
+                                                    SET c.saldo_pendiente = CASE
+                                                        WHEN (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
+                                                        ELSE (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0))
+                                                    END,
                                                         c.estado = CASE
                                                             WHEN c.saldo_pendiente <= 0.009 THEN 'finalizado'
                                                             ELSE 'activo'

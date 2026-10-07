@@ -52,51 +52,13 @@ const getImageFormatFromDataUrl = (value = '') => {
   return 'PNG';
 };
 
-// Replica el plan pactado del contrato (misma regla que Contratos y Caja):
-// cuota fija = pactada o techo((capital + capital*interes%*anios)/cuotas),
-// interes fijo por cuota y la ultima cuota ajusta la diferencia de redondeo.
-const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales, cuotaPactada) => {
-  const principal = Math.round(Math.max(toNumber(capitalInicial, 0), 0));
-  const plazo = Math.max(parseInt(cuotasTotales || 0, 10), 0);
-  const tasa = Math.max(toNumber(interesAnual, 0), 0);
-  if (principal <= 0 || plazo <= 0) return [];
-
-  const interesTotal = round2(principal * (tasa / 100) * (plazo / 12));
-  const totalFinanciado = round2(principal + interesTotal);
-  const cuotaCalculada = Math.ceil(totalFinanciado / plazo);
-  const pactada = Math.round(Math.max(toNumber(cuotaPactada, 0), 0));
-  const cuotaFija = pactada > 0 && (plazo <= 1 || pactada * (plazo - 1) < totalFinanciado)
-    ? pactada
-    : cuotaCalculada;
-  const interesPorCuota = round2(interesTotal / plazo);
-
-  const tabla = [];
-  let saldo = principal;
-  let interesAcumulado = 0;
-  for (let indice = 1; indice <= plazo; indice += 1) {
-    const esUltima = indice === plazo;
-    const capitalCuota = esUltima ? round2(saldo) : round2(Math.max(cuotaFija - interesPorCuota, 0));
-    // Interes fijo contractual en TODAS las cuotas (incluida la ultima), igual
-    // que utils/amortizacion.js y Caja; solo el capital de la ultima ajusta el
-    // saldo para cerrar exactamente en cero.
-    const interesMes = interesPorCuota;
-    const pago = esUltima ? round2(capitalCuota + interesMes) : cuotaFija;
-    const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
-    interesAcumulado = round2(interesAcumulado + interesMes);
-    tabla.push({
-      indice,
-      numero_cuota: indice,
-      saldo_inicial: round2(saldo),
-      capital_cuota: capitalCuota,
-      interes_mes: interesMes,
-      cuota_estimada: pago,
-      saldo_final: saldoFinal,
-      interes_acumulado: interesAcumulado
-    });
-    saldo = saldoFinal;
-  }
-  return tabla;
-};
+// Replica el plan pactado del contrato con la UNICA formula del sistema:
+// Sistema Frances de Amortizacion (cuota fija nivelada sobre saldos insolutos),
+// igual que Contratos, Caja y utils/amortizacion.js. La cuota pactada solo se
+// respeta si amortiza; la ultima cuota ajusta el saldo para cerrar en cero.
+const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales, cuotaPactada) => (
+  generarTablaAmortizacion(capitalInicial, interesAnual, cuotasTotales, 0, cuotaPactada)
+);
 
 const construirSimulacionLocal = ({
   capital_restante,
@@ -823,9 +785,9 @@ const CuentaEstado = () => {
 
                 <hr />
 
-                <p className="mb-1"><strong>Formula aplicada:</strong></p>
-                <p className="mb-1">Cuota fija = (Capital financiado + Capital x interes anual x anos) / cuotas; el interes se reparte en partes iguales por cuota.</p>
-                <p className="mb-0">Capital por cuota = cuota - interes por cuota; la ultima cuota ajusta el capital restante para cerrar el plan.</p>
+                <p className="mb-1"><strong>Formula aplicada (Sistema Frances de Amortizacion):</strong></p>
+                <p className="mb-1">Cuota fija = P x [r(1+r)^n] / [(1+r)^n - 1], con r = tasa anual / 12 (cuota nivelada).</p>
+                <p className="mb-0">Interes del mes = saldo pendiente x tasa mensual; Abono a capital = cuota fija - interes del mes; la ultima cuota ajusta el capital restante para cerrar el plan.</p>
 
                 {tablaAmortizacionPendiente.length > 0 && (
                   <>

@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
+const { calcularCuotaFrancesa, sqlCuotaFrancesa, sqlTotalPlanFrancesa } = require('../utils/amortizacion');
 
 const EXT_TO_MIME = {
     '.pdf': 'application/pdf',
@@ -63,30 +64,22 @@ const ensureFileExtension = (filename = '', mimeType = '', fallbackBase = 'archi
     return `${baseName || fallbackBase}${inferredExt}`;
 };
 
-const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => {
-    const principal = Math.round(Math.max(Number(capital || 0), 0));
-    const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
-    const tasa = Math.max(Number(tasaAnual || 0), 0);
-
-    if (principal <= 0 || plazo <= 0) return 0;
-    if (tasa <= 0) return Math.ceil(principal / plazo);
-
-    const anios = plazo / 12;
-    const interesTotal = principal * (tasa / 100) * anios;
-    const cuotaFija = (principal + interesTotal) / plazo;
-    return Math.ceil(cuotaFija);
-};
+// Unica formula del sistema: Sistema Frances de Amortizacion (cuota fija
+// nivelada sobre saldos insolutos), ver server/utils/amortizacion.js.
+const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => (
+    calcularCuotaFrancesa(capital, tasaAnual, cuotas)
+);
 
 const normalizarCuotaContrato = (cuotaManual = 0, capital = 0, tasaAnual = 0, cuotas = 0) => {
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     const principal = Math.max(Number(capital || 0), 0);
     const tasa = Math.max(Number(tasaAnual || 0), 0);
-    const totalFinanciado = plazo > 0
-        ? Number((principal + (principal * (tasa / 100) * (plazo / 12))).toFixed(2))
-        : 0;
-    const manual = Math.round(Number(cuotaManual || 0));
-    const manualValida = manual > 0
-        && (plazo <= 1 || (manual * (plazo - 1)) < totalFinanciado);
+    if (principal <= 0 || plazo <= 0) return 0;
+    // Sistema Frances: una cuota manual solo se respeta si amortiza el plan,
+    // es decir, si supera el interes del primer mes (saldo * tasa mensual).
+    const interesPrimerMes = Number((principal * (tasa / 100 / 12)).toFixed(2));
+    const manual = Number(Number(cuotaManual || 0).toFixed(2));
+    const manualValida = manual > 0 && (plazo <= 1 || manual > interesPrimerMes);
 
     return manualValida ? manual : calcularCuotaFijaContrato(principal, tasa, plazo);
 };
@@ -756,24 +749,30 @@ const backfillVentasPropiedad = () => {
     });
 };
 
-// Migra contratos históricos calculados automáticamente con ROUND a la regla
-// actual de cuotas enteras hacia arriba. Una cuota manual diferente se conserva.
+// Migra contratos históricos calculados con la formula plana (interes simple
+// en partes iguales) al Sistema Frances de Amortizacion. Una cuota manual
+// valida (que amortiza el plan) se conserva.
 const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
     const cuotasSql = 'COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1)';
     const capitalSql = 'GREATEST(ROUND(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0), 0), 0)';
-    const totalSql = `(${capitalSql} + (${capitalSql} * COALESCE(c.interes_porcentaje, 0) / 100 * (${cuotasSql} / 12)))`;
-    const cuotaAnteriorSql = `ROUND(${totalSql} / ${cuotasSql}, 0)`;
-    const cuotaNuevaSql = `CEIL(${totalSql} / ${cuotasSql})`;
+    const totalPlanoSql = `(${capitalSql} + (${capitalSql} * COALESCE(c.interes_porcentaje, 0) / 100 * (${cuotasSql} / 12)))`;
+    const cuotaPlanaRoundSql = `ROUND(${totalPlanoSql} / ${cuotasSql}, 0)`;
+    const cuotaPlanaCeilSql = `CEIL(${totalPlanoSql} / ${cuotasSql})`;
+    const cuotaFrancesaSql = sqlCuotaFrancesa(capitalSql, 'c.interes_porcentaje', cuotasSql);
+    const totalFrancesSql = sqlTotalPlanFrancesa(capitalSql, 'c.interes_porcentaje', cuotasSql);
+    const interesPrimerMesSql = `ROUND(${capitalSql} * (COALESCE(c.interes_porcentaje, 0) / 100 / 12), 2)`;
 
     db.query(`
         UPDATE contratos_residentes c
-        SET c.monto_cuota = ${cuotaNuevaSql}
+        SET c.monto_cuota = ${cuotaFrancesaSql}
         WHERE ${cuotasSql} > 0
           AND ${capitalSql} > 0
           AND (
               COALESCE(c.monto_cuota, 0) <= 0
-              OR ABS(COALESCE(c.monto_cuota, 0) - ${cuotaAnteriorSql}) < 0.01
-              OR (COALESCE(c.monto_cuota, 0) * GREATEST(${cuotasSql} - 1, 0)) >= ${totalSql}
+              OR ABS(COALESCE(c.monto_cuota, 0) - ${cuotaPlanaRoundSql}) < 0.01
+              OR ABS(COALESCE(c.monto_cuota, 0) - ${cuotaPlanaCeilSql}) < 0.01
+              OR COALESCE(c.monto_cuota, 0) <= ${interesPrimerMesSql}
+              OR (COALESCE(c.monto_cuota, 0) * GREATEST(${cuotasSql} - 1, 0)) >= ${totalFrancesSql}
           )
     `, (err, result) => {
         if (err) {
@@ -786,6 +785,12 @@ const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
 };
 
 const backfillSaldoPendienteContrato = () => {
+    // Sistema Frances: saldo = total del plan (cuota nivelada x cuotas) - pagado.
+    const totalPlanFrancesSql = sqlTotalPlanFrancesa(
+        'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+        'c.interes_porcentaje',
+        'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
+    );
     db.query(`
         UPDATE contratos_residentes c
         LEFT JOIN (
@@ -795,12 +800,10 @@ const backfillSaldoPendienteContrato = () => {
             LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             GROUP BY p.id_contrato
         ) pagos ON pagos.id_contrato = c.id_contrato
-        SET c.saldo_pendiente = GREATEST(
-            COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) + (
-                (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)) * COALESCE(c.interes_porcentaje, 0) / 100 * ((COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)) / 12)
-            ) - COALESCE(pagos.total_pagado, 0),
-            0
-        )
+        SET c.saldo_pendiente = CASE
+            WHEN (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
+            ELSE (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0))
+        END
     `, (err) => {
         if (err) {
             console.error('Error aplicando backfill global de saldo_pendiente en contratos_residentes:', err.message);
@@ -816,6 +819,13 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
         return callback(null);
     }
 
+    // Sistema Frances: saldo = total del plan (cuota nivelada x cuotas) - pagado.
+    const totalPlanFrancesSql = sqlTotalPlanFrancesa(
+        'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+        'c.interes_porcentaje',
+        'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
+    );
+
     db.query(`
         UPDATE contratos_residentes c
         LEFT JOIN (
@@ -825,12 +835,10 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
             LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             GROUP BY p.id_contrato
         ) pagos ON pagos.id_contrato = c.id_contrato
-        SET c.saldo_pendiente = GREATEST(
-            COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) + (
-                (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)) * COALESCE(c.interes_porcentaje, 0) / 100 * ((COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)) / 12)
-            ) - COALESCE(pagos.total_pagado, 0),
-            0
-        )
+        SET c.saldo_pendiente = CASE
+            WHEN (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
+            ELSE (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0))
+        END
         WHERE c.id_contrato = ?
     `, [idContratoSeguro], (err) => {
         if (err) {
@@ -875,13 +883,17 @@ const obtenerSaldoFinanciadoReal = (idContrato, callback = () => {}) => {
         return callback(new Error('Contrato inválido.'));
     }
 
+    // Sistema Frances: saldo = total del plan (cuota nivelada x cuotas) - pagado.
+    const totalPlanFrancesSql = sqlTotalPlanFrancesa(
+        'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+        'c.interes_porcentaje',
+        'COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1)'
+    );
+
     const sql = `
         SELECT c.id_contrato,
                GREATEST(
-                   (COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
-                   + ((COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0))
-                      * COALESCE(c.interes_porcentaje, 0) / 100
-                      * (COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1) / 12))
+                   ${totalPlanFrancesSql}
                    - COALESCE(pagos.total_pagado, 0),
                    0
                ) + GREATEST(
@@ -1262,8 +1274,9 @@ router.post("/crear", (req, res) => {
             interesPorcentajeNumerico,
             cuotasNormalizadas
         );
+        // Sistema Frances: total del plan = cuota fija nivelada x numero de cuotas.
         const totalConIntereses = (capitalFinanciado > 0 && cuotasNormalizadas > 0)
-            ? Number((capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))).toFixed(2))
+            ? Number((Number(montoCuotaNormalizado || 0) * cuotasNormalizadas).toFixed(2))
             : 0;
         const saldoPendienteBase = (cuotasPagadasNormalizadas <= 0 && totalConIntereses > 0)
             ? totalConIntereses
@@ -1485,8 +1498,9 @@ router.put("/actualizar", (req, res) => {
         interesPorcentajeNumerico,
         cuotasNormalizadas
     );
+    // Sistema Frances: total del plan = cuota fija nivelada x numero de cuotas.
     const totalConIntereses = (capitalFinanciado > 0 && cuotasNormalizadas > 0)
-        ? Number((capitalFinanciado + (capitalFinanciado * (interesPorcentajeNumerico / 100) * (cuotasNormalizadas / 12))).toFixed(2))
+        ? Number((Number(montoCuotaNormalizado || 0) * cuotasNormalizadas).toFixed(2))
         : 0;
     const saldoPendienteBase = (cuotasPagadasNormalizadas <= 0 && totalConIntereses > 0)
         ? totalConIntereses
