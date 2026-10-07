@@ -1051,6 +1051,7 @@ function Contratos_Residentes() {
   };
 
   const generarFiniquito = async (contrato) => {
+    let contratoFiniquito = contrato;
     try {
       const { data } = await Axios.get(`${API_URL}/solvencia-finiquito/${contrato.id_contrato}`);
       if (!data?.puede_generar_finiquito) {
@@ -1061,6 +1062,7 @@ function Contratos_Residentes() {
         });
         return;
       }
+      contratoFiniquito = { ...contrato, ...(data?.contrato || {}) };
     } catch (error) {
       Swal.fire({ icon: 'error', title: 'No se pudo validar', text: error?.response?.data?.message || 'No fue posible verificar el saldo financiado.' });
       return;
@@ -1078,7 +1080,7 @@ function Contratos_Residentes() {
     if (!confirmacion.isConfirmed) return;
 
     try {
-      descargarPdfFiniquito(contrato);
+      descargarPdfFiniquito(contratoFiniquito);
       Swal.fire({ icon: 'success', title: 'Finiquito generado', text: 'El PDF quedo listo para revision y firma.' });
     } catch (error) {
       Swal.fire({ icon: 'error', title: 'No se pudo generar', text: 'Ocurrio un error al preparar el finiquito.' });

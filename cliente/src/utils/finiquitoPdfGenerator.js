@@ -66,6 +66,9 @@ export const generarPdfFiniquito = (contrato = {}) => {
   const identificacion = normalizarTexto(contrato.numero_identificacion, 'NO REGISTRADA');
   const empresa = normalizarTexto(contrato.nombre_marca_pdf || contrato.nombre_empresa_marca, 'LA PARTE VENDEDORA').toUpperCase();
   const proyecto = normalizarTexto(contrato.nombre_proyecto_pdf || contrato.nombre_proyecto, 'PROYECTO INMOBILIARIO').toUpperCase();
+  const modalidad = normalizarTexto(contrato.modalidad_pago, 'financiado').toLowerCase() === 'contado'
+    ? 'pago total / al contado'
+    : 'plan de cuotas financiadas, incluido el enganche pactado';
   const logos = [...new Set([
     normalizarLogo(contrato.logo_proyecto),
     normalizarLogo(contrato.logo_empresa_pdf || contrato.logo_empresa || contrato.logo)
@@ -102,7 +105,8 @@ export const generarPdfFiniquito = (contrato = {}) => {
 
   addParagraph(
     `El contrato relacionado corresponde al proyecto ${proyecto}, por un precio contractual registrado de ` +
-    `Q ${monto}. En consecuencia, se extiende el presente FINIQUITO DE PAGO como constancia de que no existe ` +
+    `Q ${monto}, cancelado mediante ${modalidad}. En consecuencia, se extiende el presente FINIQUITO DE PAGO ` +
+    `como constancia de que no existe ` +
     `saldo pendiente por capital, cuotas ordinarias o intereses contractuales vinculados a dicha obligacion, ` +
     `segun los registros verificados por la parte vendedora a la fecha de emision.`
   );

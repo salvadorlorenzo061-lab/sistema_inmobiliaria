@@ -1894,9 +1894,38 @@ router.get('/solvencia-finiquito/:id_contrato', (req, res) => {
     obtenerSaldoFinanciadoReal(req.params.id_contrato, (err, saldoFinanciado) => {
         if (err) return res.status(500).send({ message: 'No se pudo validar el saldo financiado.' });
         if (saldoFinanciado === null) return res.status(404).send({ message: 'Contrato no encontrado.' });
-        return res.status(200).json({
-            saldo_financiado: Number(saldoFinanciado.toFixed(2)),
-            puede_generar_finiquito: saldoFinanciado <= 0.009
+
+        const sqlContratoFiniquito = `
+            SELECT c.id_contrato, c.codigo_contrato, c.monto_total, c.enganche,
+                   COALESCE(c.modalidad_pago, 'financiado') AS modalidad_pago,
+                   r.nombre AS nombre_residente,
+                   COALESCE(r.numero_identificacion, r.dpi) AS numero_identificacion,
+                   e.nombre_empresa AS nombre_empresa_marca,
+                   p.nombre AS nombre_proyecto,
+                   COALESCE(e.logo, er.logo) AS logo_empresa_pdf,
+                   COALESCE(ep.logo, e.logo, er.logo) AS logo_proyecto,
+                   COALESCE(e.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
+                   COALESCE(p.nombre, ep.nombre_empresa, e.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf
+            FROM contratos_residentes c
+            INNER JOIN residentes r ON r.id_residente = c.id_residente
+            LEFT JOIN empresas e ON e.id_empresa = c.id_empresa_marca
+            LEFT JOIN proyecto p ON p.id_proyecto = c.id_proyecto
+            LEFT JOIN empresas ep ON ep.id_empresa = p.id_empresa
+            LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
+            WHERE c.id_contrato = ?
+            LIMIT 1
+        `;
+
+        db.query(sqlContratoFiniquito, [Number(req.params.id_contrato)], (contratoErr, rows) => {
+            if (contratoErr) {
+                return res.status(500).send({ message: 'Se validó la solvencia, pero no se pudieron cargar los datos del finiquito.' });
+            }
+
+            return res.status(200).json({
+                saldo_financiado: Number(saldoFinanciado.toFixed(2)),
+                puede_generar_finiquito: saldoFinanciado <= 0.009,
+                contrato: rows?.[0] || null
+            });
         });
     });
 });
