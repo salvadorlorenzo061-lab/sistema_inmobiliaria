@@ -119,9 +119,12 @@ const construirSimulacionLocal = ({
   const capitalInicial = Math.round(Math.max(toNumber(capital_inicial, 0), 0));
   const cuotaPactada = Math.round(Math.max(toNumber(monto_cuota_pactada, 0), 0));
   // Con contrato cargado se replica su plan pactado (la misma cuota que
-  // muestran Contratos y Caja) y se conservan solo las cuotas pendientes;
-  // sin contrato se mantiene la simulacion libre sobre el capital restante.
-  const usarPlanContrato = capitalInicial > 0 && cuotaPactada > 0 && cuotasTotalesNumero > 0;
+  // muestran Contratos y Caja) y se conservan solo las cuotas pendientes.
+  // Si el contrato no tiene monto_cuota guardado, la cuota se deriva con la
+  // misma formula (techo((capital + interes total del plan) / cuotas)) para
+  // que TODOS los clientes usen esta misma tabla; solo sin contrato se
+  // mantiene la simulacion libre sobre el capital restante.
+  const usarPlanContrato = capitalInicial > 0 && cuotasTotalesNumero > 0;
   const tabla = usarPlanContrato
     ? construirPlanContratoLocal(capitalInicial, interes, cuotasTotalesNumero, cuotaPactada)
         .filter((fila) => fila.numero_cuota > cuotasPagadasNumero)

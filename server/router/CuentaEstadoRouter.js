@@ -57,7 +57,9 @@ const calcularLiquidacionCapital = ({
     interes_anual,
     cuotas_totales,
     cuotas_pagadas,
-    cuota_objetivo
+    cuota_objetivo,
+    capital_inicial = 0,
+    monto_cuota_pactada = 0
 }) => {
     const capitalRestante = Math.round(Math.max(toNumber(capital_restante, 0), 0));
     const interesAnual = Math.max(toNumber(interes_anual, 0), 0);
@@ -72,42 +74,60 @@ const calcularLiquidacionCapital = ({
 
     const mesesPendientes = Math.max(cuotasTotales - cuotasPagadasBase, 0);
     const tasaMensual = interesAnual / 100 / 12;
+    const capitalInicial = Math.round(Math.max(toNumber(capital_inicial, 0), 0));
+    const cuotaPactada = Math.round(Math.max(toNumber(monto_cuota_pactada, 0), 0));
 
-    // Misma regla contractual que usan Contratos y Caja: interes simple sobre
-    // el plan (capital + capital * tasa% * anios) / cuotas, cuota entera hacia
-    // arriba e interes fijo por cuota; la ultima cuota ajusta la diferencia.
-    const interesTotalPlan = capitalRestante * (interesAnual / 100) * (mesesPendientes / 12);
-    const totalPlan = capitalRestante + interesTotalPlan;
-    const cuotaMensual = mesesPendientes > 0 ? Math.ceil(totalPlan / mesesPendientes) : 0;
-    const interesPorMes = mesesPendientes > 0 ? round2(interesTotalPlan / mesesPendientes) : 0;
-    const tablaAmortizacion = [];
-    let saldo = capitalRestante;
-    let interesAcumulado = 0;
-    let totalPagos = 0;
+    // Misma regla contractual que usan Contratos y Caja para TODOS los
+    // clientes: con contrato identificado se construye el plan completo desde
+    // el capital original (interes simple del plan, cuota pactada valida o
+    // techo del total financiado, interes fijo por cuota y ultima cuota de
+    // ajuste) y se conservan solo las cuotas pendientes. Sin datos de
+    // contrato se mantiene la simulacion libre sobre el capital restante.
+    const usarPlanContrato = capitalInicial > 0 && cuotasTotales > 0;
+    const capitalPlan = usarPlanContrato ? capitalInicial : capitalRestante;
+    const mesesPlan = usarPlanContrato ? cuotasTotales : mesesPendientes;
 
-    for (let indice = 1; indice <= mesesPendientes; indice += 1) {
-        const esUltima = indice === mesesPendientes;
+    const interesTotalPlan = capitalPlan * (interesAnual / 100) * (mesesPlan / 12);
+    const totalPlan = capitalPlan + interesTotalPlan;
+    const cuotaCalculada = mesesPlan > 0 ? Math.ceil(totalPlan / mesesPlan) : 0;
+    const cuotaMensual = cuotaPactada > 0 && (mesesPlan <= 1 || cuotaPactada * (mesesPlan - 1) < totalPlan)
+        ? cuotaPactada
+        : cuotaCalculada;
+    const interesPorMes = mesesPlan > 0 ? round2(interesTotalPlan / mesesPlan) : 0;
+    const tablaCompleta = [];
+    let saldo = capitalPlan;
+
+    for (let indice = 1; indice <= mesesPlan; indice += 1) {
+        const esUltima = indice === mesesPlan;
         const interesMes = interesPorMes;
         const capitalCuota = esUltima
             ? round2(saldo)
             : round2(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
-        const pagoMes = round2(capitalCuota + interesMes);
+        const pagoMes = esUltima ? round2(capitalCuota + interesMes) : cuotaMensual;
         const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
 
-        interesAcumulado = round2(interesAcumulado + interesMes);
-        totalPagos = round2(totalPagos + pagoMes);
-        tablaAmortizacion.push({
-            indice,
-            numero_cuota: cuotasPagadasBase + indice,
+        tablaCompleta.push({
+            numero_cuota: usarPlanContrato ? indice : cuotasPagadasBase + indice,
             saldo_inicial: saldo,
             capital_cuota: capitalCuota,
             interes_mes: interesMes,
             cuota_estimada: pagoMes,
-            saldo_final: saldoFinal,
-            interes_acumulado: interesAcumulado
+            saldo_final: saldoFinal
         });
         saldo = saldoFinal;
     }
+
+    const tablaAmortizacion = tablaCompleta
+        .filter((fila) => fila.numero_cuota > cuotasPagadasBase)
+        .map((fila, posicion) => ({ ...fila, indice: posicion + 1 }));
+
+    let interesAcumulado = 0;
+    let totalPagos = 0;
+    tablaAmortizacion.forEach((fila) => {
+        interesAcumulado = round2(interesAcumulado + fila.interes_mes);
+        totalPagos = round2(totalPagos + fila.cuota_estimada);
+        fila.interes_acumulado = interesAcumulado;
+    });
 
     const interesTotalPendiente = interesAcumulado;
     const totalLiquidacion = totalPagos;
@@ -120,8 +140,8 @@ const calcularLiquidacionCapital = ({
         capital_restante: round2(capitalRestante),
         interes_anual: round2(interesAnual),
         tasa_mensual: round2(tasaMensual * 100),
-        cuota_mensual: cuotaMensual,
-        interes_por_mes: interesPorMes,
+        cuota_mensual: tablaAmortizacion[0]?.cuota_estimada || 0,
+        interes_por_mes: tablaAmortizacion[0]?.interes_mes || 0,
         interes_total_pendiente: interesTotalPendiente,
         total_liquidacion: totalLiquidacion,
         tabla_amortizacion: tablaAmortizacion
@@ -340,7 +360,9 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             capital_restante: payload.capital_restante,
             interes_anual: payload.interes_anual,
             cuotas_totales: payload.cuotas_totales,
-            cuotas_pagadas: payload.cuotas_pagadas
+            cuotas_pagadas: payload.cuotas_pagadas,
+            capital_inicial: payload.capital_inicial_financiado,
+            monto_cuota_pactada: payload.monto_cuota
         });
 
         db.query(sqlCuotasEstadoDetalle, [idContrato], (mesesErr, mesesRows) => {
