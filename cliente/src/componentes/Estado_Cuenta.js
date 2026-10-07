@@ -901,15 +901,8 @@ const EstadoCuenta = () => {
       doc.text(nombreProyecto.toUpperCase(), 50, headerY + 14);
       doc.text('LOTE / MANZANA', 120, headerY + 14);
       doc.text(`${loteContrato}${contrato?.manzana ? ` / ${contrato.manzana}` : ''}`, 160, headerY + 14);
-      doc.setFont('helvetica', 'bold');
-      doc.text('TOTAL DEUDA CON INTERESES', 16, headerY + 21);
-      doc.text(formatoMoneda(planContratoPDF.totalConIntereses || contrato?.monto_total || 0), 67, headerY + 21);
-      doc.setFont('helvetica', 'normal');
-      doc.text('FINCA / FOLIO / LIBRO', 120, headerY + 21);
-      doc.text(`${contrato?.numero_finca || 'N/A'} / ${contrato?.folio || 'N/A'} / ${contrato?.libro || 'N/A'}`, 160, headerY + 21);
-
       autoTable(doc, {
-        startY: headerY + 27,
+        startY: headerY + 21,
         margin: { left: 10, right: 10 },
         tableWidth: pageWidth - 20,
         head: [[
@@ -1000,20 +993,6 @@ const EstadoCuenta = () => {
           }
         });
       }
-
-      let resumenY = Number(doc.lastAutoTable?.finalY || 0) + 8;
-      if (resumenY > pageHeight - 22) {
-        doc.addPage();
-        resumenY = 18;
-      }
-      const totalProgramado = Number(planContratoPDF?.totalConIntereses || contrato?.monto_total || 0);
-      const totalPagadoReporte = Number(estadoCuentaReporte?.totalPagado || 0);
-      const saldoPendienteReporte = Math.max(totalProgramado - totalPagadoReporte, 0);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text(`TOTAL PROGRAMADO: ${formatoMoneda(totalProgramado)}`, pageWidth - 12, resumenY, { align: 'right' });
-      doc.text(`TOTAL PAGADO: ${formatoMoneda(totalPagadoReporte)}`, pageWidth - 12, resumenY + 6, { align: 'right' });
-      doc.text(`PENDIENTE DE PAGO: ${formatoMoneda(saldoPendienteReporte)}`, pageWidth - 12, resumenY + 12, { align: 'right' });
 
       const fileName = `DetalleCuotas_${estadoCuentaReporte.contrato.codigo_contrato || 'cliente'}.pdf`;
       doc.save(fileName);

@@ -50,6 +50,11 @@ const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
         END), 0) AS cuotas_pagadas
     FROM pagos p
     INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+    WHERE NOT EXISTS (
+        SELECT 1 FROM facturas_historial fa
+        WHERE fa.id_pago = p.id_pago
+          AND UPPER(COALESCE(fa.estado_factura, '')) = 'ANULADA'
+    )
     GROUP BY p.id_contrato
 `;
 
@@ -247,9 +252,9 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
     `;
 
     // Una cuota solo se muestra PAGADO si existe evidencia EMITIDA de un cobro que
-    // sigue vigente. Al anular un cobro, el pago se elimina de las tablas vivas y en
-    // facturas_historial queda la evidencia ANULADA; la marca EMITIDA histórica no
-    // debe seguir contando como pago vigente en la tabla de amortización.
+    // sigue vigente. Al anular un cobro, el pago se elimina de las tablas vivas y la
+    // cuota VUELVE A PENDIENTE (no se queda como ANULADO), para que reaparezca como
+    // cobrable en Caja y en el Detalle de Pagos.
     const sqlCuotasEstadoDetalle = `
         SELECT
             COALESCE(fh.numero_cuota_afectada, 0) AS numero_cuota,
@@ -263,7 +268,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
                                AND UPPER(COALESCE(fa.estado_factura, '')) = 'ANULADA'
                          )
                     THEN 1 ELSE 0 END) = 1 THEN 'PAGADO'
-                ELSE 'ANULADO'
+                ELSE 'PENDIENTE'
             END AS estado
         FROM facturas_historial fh
         WHERE fh.id_contrato = ?

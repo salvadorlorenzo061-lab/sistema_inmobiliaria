@@ -622,12 +622,20 @@ const reservarCorrelativoAsignado = (idUsuario, idEmpresa, callback) => {
         const siguienteCorrelativo = correlativoNumero + 1;
         const nuevoEstado = siguienteCorrelativo > correlativoFin ? 'agotado' : 'activo';
 
+        // Bloqueo optimista (sin FOR UPDATE): el UPDATE solo aplica si el
+        // correlativo sigue siendo el que leimos. Si otro cobro simultaneo lo
+        // tomo primero, affectedRows = 0 y reintentamos con el valor fresco.
+        // Asi nunca se repite el mismo correlativo en dos cobros.
         db.query(
-            'UPDATE asignar_correlativos SET correlativo_actual = ?, estado = ?, fecha_cierre = CASE WHEN ? = \"agotado\" THEN NOW() ELSE fecha_cierre END WHERE id_asignacion = ?',
-            [siguienteCorrelativo, nuevoEstado, nuevoEstado, asignacion.id_asignacion],
-            (updateErr) => {
+            'UPDATE asignar_correlativos SET correlativo_actual = ?, estado = ?, fecha_cierre = CASE WHEN ? = \"agotado\" THEN NOW() ELSE fecha_cierre END WHERE id_asignacion = ? AND COALESCE(correlativo_actual, correlativo_inicio) = ?',
+            [siguienteCorrelativo, nuevoEstado, nuevoEstado, asignacion.id_asignacion, correlativoNumero],
+            (updateErr, updateResult) => {
                 if (updateErr) {
                     return callback(updateErr);
+                }
+
+                if (!updateResult || Number(updateResult.affectedRows || 0) === 0) {
+                    return reservarCorrelativoAsignado(idUsuario, idEmpresa, callback);
                 }
 
                 return callback(null, {
@@ -2654,8 +2662,45 @@ router.post("/procesar-pago", (req, res) => {
                     });
                 };
 
+                // Guardia anti-duplicado: una cuota de terreno con cobro vigente
+                // (no anulado) no puede volver a cobrarse. Evita cargos repetidos
+                // de la misma cuota aunque lleguen varias peticiones seguidas.
+                const procesarCobroPrincipalConValidacionCuotas = () => {
+                    if (!(montoTerrenoTotal > 0) || !cuotasInteresSolicitadas.length) {
+                        return procesarCobroPrincipal();
+                    }
+
+                    const placeholdersCuotas = cuotasInteresSolicitadas.map(() => '?').join(',');
+                    const sqlCuotasYaCobradas = `
+                        SELECT DISTINCT pd.numero_cuota_afectada
+                        FROM pagos p
+                        INNER JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+                        WHERE p.id_contrato = ?
+                          AND pd.tipo_concepto = 'cuota_terreno'
+                          AND pd.numero_cuota_afectada IN (${placeholdersCuotas})
+                          AND NOT EXISTS (
+                              SELECT 1 FROM facturas_historial fa
+                              WHERE fa.id_pago = p.id_pago
+                                AND UPPER(TRIM(COALESCE(fa.estado_factura, ''))) = 'ANULADA'
+                          )
+                    `;
+
+                    db.query(sqlCuotasYaCobradas, [id_contrato, ...cuotasInteresSolicitadas], (cuotaErr, cuotaRows) => {
+                        if (cuotaErr) {
+                            return db.rollback(() => res.status(500).send('Error validando duplicidad de cuotas: ' + cuotaErr.message));
+                        }
+
+                        if (cuotaRows && cuotaRows.length) {
+                            const listaCuotas = cuotaRows.map((r) => `Cuota ${r.numero_cuota_afectada}`).join(', ');
+                            return db.rollback(() => res.status(409).send(`Ya existe un cobro vigente para: ${listaCuotas}. Si el cobro anterior fue un error, anulelo primero en Anular Cobro.`));
+                        }
+
+                        return procesarCobroPrincipal();
+                    });
+                };
+
                 if (!serviciosAValidar.length) {
-                    return validarExtrasPendientes(() => procesarCobroPrincipal());
+                    return validarExtrasPendientes(() => procesarCobroPrincipalConValidacionCuotas());
                 }
 
                 const idsServicios = [...new Set(serviciosAValidar.map((s) => s.id_servicio))];
@@ -2733,7 +2778,7 @@ router.post("/procesar-pago", (req, res) => {
                         }
 
                         if (!serviciosMesInicial.length || !mesInicialContrato) {
-                            return validarExtrasPendientes(() => procesarCobroPrincipal());
+                            return validarExtrasPendientes(() => procesarCobroPrincipalConValidacionCuotas());
                         }
 
                         const idsServiciosInicial = [...new Set(serviciosMesInicial.map((s) => s.id_servicio))];
@@ -2766,7 +2811,7 @@ router.post("/procesar-pago", (req, res) => {
                                 recalcularTotales();
                             }
 
-                            return validarExtrasPendientes(() => procesarCobroPrincipal());
+                            return validarExtrasPendientes(() => procesarCobroPrincipalConValidacionCuotas());
                         });
                     });
                 });
