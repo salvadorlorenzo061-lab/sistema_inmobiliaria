@@ -226,9 +226,15 @@ const CuentaEstado = () => {
 
       setContrato(contratoApi);
       setEstadosPorCuota(mapaEstadosPorCuota);
+      // Con convenio activo el plan se construye desde el capital original del
+      // convenio (capital_original_plan) para conservar capital e interes fijos
+      // oficiales; sin convenio se usa el capital inicial financiado.
+      const capitalPlanFrontend = Number(contratoApi.id_convenio_activo || 0) > 0
+        ? toNumber(contratoApi.capital_original_plan ?? contratoApi.capital_inicial_financiado, contratoApi.capital_inicial_financiado)
+        : toNumber(contratoApi.capital_inicial_financiado, 0);
       setSimulacion(construirSimulacionLocal({
         capital_restante: contratoApi.capital_restante,
-        capital_inicial: contratoApi.capital_inicial_financiado,
+        capital_inicial: capitalPlanFrontend,
         monto_cuota_pactada: contratoApi.monto_cuota,
         interes_anual: contratoApi.interes_anual,
         cuotas_totales: contratoApi.cuotas_totales,
@@ -337,10 +343,27 @@ const CuentaEstado = () => {
   };
 
   const tablaAmortizacionPendiente = useMemo(() => {
-    return Array.isArray(simulacion?.tabla_amortizacion)
+    const tabla = Array.isArray(simulacion?.tabla_amortizacion)
       ? simulacion.tabla_amortizacion
       : [];
-  }, [simulacion]);
+    // Fila del enganche (Cuota 0) al inicio, solo cuando hay contrato con
+    // enganche registrado; su saldo es el capital inicial financiado.
+    if (contrato && toNumber(contrato.enganche_registrado, 0) > 0) {
+      const filaEnganche = {
+        indice: 0,
+        numero_cuota: 0,
+        saldo_inicial: toNumber(contrato.capital_inicial_financiado, 0),
+        capital_cuota: 0,
+        interes_mes: 0,
+        cuota_estimada: toNumber(contrato.enganche_registrado, 0),
+        saldo_final: toNumber(contrato.capital_inicial_financiado, 0),
+        interes_acumulado: 0,
+        estado: String(contrato.estado_enganche === 'PAGADO' ? 'PAGADO' : 'PENDIENTE').toUpperCase()
+      };
+      return [filaEnganche, ...tabla];
+    }
+    return tabla;
+  }, [simulacion, contrato]);
 
   const generarCuotasPactadasEnCaja = async () => {
     if (!contrato?.id_contrato || !simulacion || !tablaAmortizacionPendiente.length) {
@@ -348,7 +371,10 @@ const CuentaEstado = () => {
       return;
     }
 
-    const totalCuotasPlan = tablaAmortizacionPendiente.length;
+    // Solo cuotas reales del plan (excluir la fila del enganche / Cuota 0).
+    const cuotasPlan = tablaAmortizacionPendiente.filter((f) => Number(f.numero_cuota || 0) > 0);
+    const totalCuotasPlan = cuotasPlan.length;
+    const primeraCuotaPlan = cuotasPlan[0] || tablaAmortizacionPendiente[0];
     const confirmacion = await Swal.fire({
       icon: 'question',
       title: 'Generar cuotas pactadas en Caja',
@@ -372,9 +398,9 @@ const CuentaEstado = () => {
         tipo: 'cuota',
         id_convenio: Number(data?.id_convenio || 0),
         cuota_objetivo: 1,
-        monto_capital: toNumber(data?.monto_cuota, tablaAmortizacionPendiente[0]?.capital_cuota),
+        monto_capital: toNumber(data?.monto_cuota, primeraCuotaPlan?.capital_cuota),
         monto_interes: 0,
-        monto_total: toNumber(data?.monto_cuota, tablaAmortizacionPendiente[0]?.capital_cuota)
+        monto_total: toNumber(data?.monto_cuota, primeraCuotaPlan?.capital_cuota)
       });
     } catch (error) {
       const message = error?.response?.data?.message || error?.response?.data || 'No se pudo generar el plan de cuotas en Caja.';

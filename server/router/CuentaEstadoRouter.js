@@ -308,6 +308,14 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             ? 0
             : (cuotasTotales > 0 ? Math.min(cuotasPagadasReales + 1, cuotasTotales) : 1);
 
+        // Con convenio activo el plan se calcula desde el CAPITAL ORIGINAL del
+        // convenio (monto_original) con el PLAZO ORIGINAL, para conservar el
+        // capital fijo e interes fijo oficiales de la tabla; nunca desde el
+        // saldo restante (eso alteraria capital e interes por cuota).
+        const capitalPlanBase = Number(contrato.id_convenio_activo || 0) > 0
+            ? round2(Math.max(toNumber(contrato.convenio_monto_original, capitalInicialFinanciado), 0))
+            : capitalInicialFinanciado;
+
         const payload = {
             id_contrato: contrato.id_contrato,
             id_residente: contrato.id_residente,
@@ -329,6 +337,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             capital_pagado: round2(capitalPagado),
             interes_anual: round2(toNumber(contrato.interes_porcentaje, 14)),
             monto_cuota: round2(toNumber(contrato.convenio_monto_cuota || contrato.monto_cuota, 0)),
+            capital_original_plan: capitalPlanBase,
             cuotas_totales: cuotasTotales,
             cuotas_pagadas: cuotasPagadasReales,
             cuotas_pendientes: Math.max(cuotasTotales - cuotasPagadasReales, 0),
@@ -340,7 +349,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             interes_anual: payload.interes_anual,
             cuotas_totales: payload.cuotas_totales,
             cuotas_pagadas: payload.cuotas_pagadas,
-            capital_inicial: payload.capital_inicial_financiado,
+            capital_inicial: capitalPlanBase,
             monto_cuota_pactada: payload.monto_cuota
         });
 
