@@ -76,7 +76,10 @@ const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales,
   for (let indice = 1; indice <= plazo; indice += 1) {
     const esUltima = indice === plazo;
     const capitalCuota = esUltima ? round2(saldo) : round2(Math.max(cuotaFija - interesPorCuota, 0));
-    const interesMes = esUltima ? round2(interesTotal - (interesPorCuota * (plazo - 1))) : interesPorCuota;
+    // Interes fijo contractual en TODAS las cuotas (incluida la ultima), igual
+    // que utils/amortizacion.js y Caja; solo el capital de la ultima ajusta el
+    // saldo para cerrar exactamente en cero.
+    const interesMes = interesPorCuota;
     const pago = esUltima ? round2(capitalCuota + interesMes) : cuotaFija;
     const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
     interesAcumulado = round2(interesAcumulado + interesMes);
@@ -818,8 +821,8 @@ const CuentaEstado = () => {
                 <hr />
 
                 <p className="mb-1"><strong>Formula aplicada:</strong></p>
-                <p className="mb-1">Cuota fija = Capital x [tasa mensual x (1 + tasa mensual)^plazo] / [(1 + tasa mensual)^plazo - 1]</p>
-                <p className="mb-0">Cada cuota separa interes sobre saldo y abono a capital; la ultima cuota ajusta cualquier diferencia de redondeo.</p>
+                <p className="mb-1">Cuota fija = (Capital financiado + Capital x interes anual x anos) / cuotas; el interes se reparte en partes iguales por cuota.</p>
+                <p className="mb-0">Capital por cuota = cuota - interes por cuota; la ultima cuota ajusta el capital restante para cerrar el plan.</p>
 
                 {tablaAmortizacionPendiente.length > 0 && (
                   <>

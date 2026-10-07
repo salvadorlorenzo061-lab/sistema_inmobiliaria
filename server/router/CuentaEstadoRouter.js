@@ -89,13 +89,13 @@ const calcularLiquidacionCapital = ({
         const esUltima = indice === mesesPendientes;
         const interesMes = interesPorMes;
         const capitalCuota = esUltima
-            ? saldo
-            : Math.round(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
-        const pagoMes = Math.round(capitalCuota + interesMes);
-        const saldoFinal = Math.round(Math.max(saldo - capitalCuota, 0));
+            ? round2(saldo)
+            : round2(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
+        const pagoMes = round2(capitalCuota + interesMes);
+        const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
 
-        interesAcumulado = Math.round(interesAcumulado + interesMes);
-        totalPagos = Math.round(totalPagos + pagoMes);
+        interesAcumulado = round2(interesAcumulado + interesMes);
+        totalPagos = round2(totalPagos + pagoMes);
         tablaAmortizacion.push({
             indice,
             numero_cuota: cuotasPagadasBase + indice,
