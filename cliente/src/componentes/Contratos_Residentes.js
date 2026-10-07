@@ -1173,6 +1173,12 @@ function Contratos_Residentes() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
+      if (Number(error?.response?.status || 0) === 404) {
+        // Si todavía no existe una copia firmada, generar el finiquito oficial
+        // directamente después de validar la solvencia del inmueble.
+        await generarFiniquito(contrato);
+        return;
+      }
       Swal.fire({ icon: 'warning', title: 'No se pudo descargar', text: error?.response?.data?.message || 'Este contrato no tiene finiquito firmado.' });
     }
   };

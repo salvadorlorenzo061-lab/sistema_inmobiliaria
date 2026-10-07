@@ -891,14 +891,24 @@ const obtenerSaldoFinanciadoReal = (idContrato, callback = () => {}) => {
 
     const sql = `
         SELECT c.id_contrato,
-               GREATEST(
-                   ${totalPlanPlanoSql}
-                   - COALESCE(pagos.total_pagado, 0),
-                   0
-               ) + GREATEST(
-                   COALESCE(c.enganche, 0) - COALESCE(pagos.enganche_pagado, 0),
-                   0
-               ) AS saldo_financiado
+               CASE
+                   WHEN LOWER(COALESCE(c.modalidad_pago, 'financiado')) = 'contado' THEN
+                       GREATEST(
+                           COALESCE(c.monto_total, 0)
+                           - COALESCE(pagos.total_pagado, 0)
+                           - COALESCE(pagos.enganche_pagado, 0),
+                           0
+                       )
+                   ELSE
+                       GREATEST(
+                           ${totalPlanPlanoSql}
+                           - COALESCE(pagos.total_pagado, 0),
+                           0
+                       ) + GREATEST(
+                           COALESCE(c.enganche, 0) - COALESCE(pagos.enganche_pagado, 0),
+                           0
+                       )
+               END AS saldo_financiado
         FROM contratos_residentes c
         LEFT JOIN (
             SELECT p.id_contrato,
