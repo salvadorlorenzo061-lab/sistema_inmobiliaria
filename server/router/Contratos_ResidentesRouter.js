@@ -545,6 +545,10 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('dia_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
     ensureFinancialColumn('modalidad_pago', "VARCHAR(20) NOT NULL DEFAULT 'financiado'");
+    // Los datos registrales deben vivir también en el contrato principal. De esta
+    // forma no se pierden si falla la sincronización del resumen de venta.
+    ensureFinancialColumn('numero_lote', "VARCHAR(100) NULL DEFAULT NULL");
+    ensureFinancialColumn('datos_propiedad_json', 'LONGTEXT NULL');
 };
 
 // ventas_propiedad es un resumen de la venta. contratos_residentes continúa siendo
@@ -1172,8 +1176,8 @@ router.get("/", (req, res) => {
                    COALESCE(em.logo, e.logo, er.logo) AS logo_proyecto,
                    COALESCE(e.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
                    COALESCE(p.nombre, em.nombre_empresa, e.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf,
-                   vp.id_lote AS numero_lote,
-                   vp.observaciones AS datos_propiedad_json,
+                   COALESCE(NULLIF(c.numero_lote, ''), CAST(vp.id_lote AS CHAR)) AS numero_lote,
+                   COALESCE(NULLIF(c.datos_propiedad_json, ''), vp.observaciones) AS datos_propiedad_json,
                    f.nombre_original AS nombre_finiquito,
                    f.fecha_actualizacion AS fecha_finiquito,
                    (
@@ -1295,12 +1299,16 @@ router.post("/crear", (req, res) => {
         const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
             ? Number(saldo_pendiente)
             : saldoPendienteBase;
+        const numeroLoteContrato = String(numero_lote ?? '').trim() || null;
+        const datosPropiedadContrato = datos_propiedad && typeof datos_propiedad === 'object'
+            ? JSON.stringify(datos_propiedad)
+            : null;
 
         obtenerCuotasPagadasReales(0, cuotasPagadasNormalizadas, (_realErr, cuotasPagadasDefinitivas) => {
             const queryInsert = `
                 INSERT INTO contratos_residentes 
-                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, modalidad_pago, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, modalidad_pago, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, numero_lote, datos_propiedad_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
             db.query(
                 queryInsert,
@@ -1329,7 +1337,9 @@ router.post("/crear", (req, res) => {
                     fecha_compra || null,
                     fecha_fin || null,
                     estado,
-                    documento_contrato || null
+                    documento_contrato || null,
+                    numeroLoteContrato,
+                    datosPropiedadContrato
                 ],
                 (insertErr, insertResult) => {
                     if (insertErr) {
@@ -1536,6 +1546,10 @@ router.put("/actualizar", (req, res) => {
     const saldoPendienteNumerico = Number.isFinite(Number(saldo_pendiente)) && Number(saldo_pendiente) > 0
         ? Number(saldo_pendiente)
         : saldoPendienteBase;
+    const numeroLoteContrato = String(numero_lote ?? '').trim() || null;
+    const datosPropiedadContrato = datos_propiedad && typeof datos_propiedad === 'object'
+        ? JSON.stringify(datos_propiedad)
+        : null;
 
     obtenerCuotasPagadasReales(id_contrato, cuotasPagadasNormalizadas, (realErr, cuotasPagadasDefinitivas) => {
         if (realErr) {
@@ -1547,7 +1561,8 @@ router.put("/actualizar", (req, res) => {
             UPDATE contratos_residentes SET 
             codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, modalidad_pago=?, monto_total=?, saldo_pendiente=?,
             enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
-            dia_inicio_pagos=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=? 
+            dia_inicio_pagos=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=?,
+            numero_lote=?, datos_propiedad_json=?
             WHERE id_contrato=?
         `;
         db.query(
@@ -1578,6 +1593,8 @@ router.put("/actualizar", (req, res) => {
                 fecha_fin || null,
                 estado,
                 documento_contrato || null,
+                numeroLoteContrato,
+                datosPropiedadContrato,
                 id_contrato
             ],
             (err, result) => {
