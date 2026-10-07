@@ -1357,20 +1357,14 @@ router.post("/crear", (req, res) => {
                             }
                         );
 
-                        recalcularSaldoPendienteContrato(idContratoCreado, (recalcErr) => {
-                            if (recalcErr) {
-                                console.warn('[contratos][crear] no fue posible recalcular saldo pendiente:', recalcErr.message);
-                                return;
-                            }
-                            sincronizarVentaPropiedad(idContratoCreado, { numero_lote, datos_propiedad }, (ventaErr) => {
-                                if (ventaErr) console.error('[contratos][crear] error sincronizando venta:', ventaErr.message);
-                            });
-                        });
-
-                        const finalizarRespuestaCrear = () => {
+                        const finalizarRespuestaCrear = (ventaErr = null) => {
                             const serviciosEnPayload = Array.isArray(servicios_contrato);
                             if (!serviciosEnPayload) {
-                                return res.status(200).send("Contrato establecido con éxito");
+                                return res.status(200).send(
+                                    ventaErr
+                                        ? 'Contrato establecido; datos de propiedad pendientes de sincronización'
+                                        : 'Contrato establecido con éxito'
+                                );
                             }
 
                             syncServiciosContrato(idContratoCreado, servicios_contrato, (asignErr) => {
@@ -1378,7 +1372,30 @@ router.post("/crear", (req, res) => {
                                     console.error('Contrato creado pero sin asignacion de servicios:', asignErr.message);
                                     return res.status(200).send("Contrato establecido con éxito (servicios pendientes de asignación)");
                                 }
-                                return res.status(200).send("Contrato establecido con éxito");
+                                return res.status(200).send(
+                                    ventaErr
+                                        ? 'Contrato establecido; datos de propiedad pendientes de sincronización'
+                                        : 'Contrato establecido con éxito'
+                                );
+                            });
+                        };
+
+                        const guardarDatosPropiedadYResponder = () => {
+                            recalcularSaldoPendienteContrato(idContratoCreado, (recalcErr) => {
+                                if (recalcErr) {
+                                    console.warn('[contratos][crear] no fue posible recalcular saldo pendiente:', recalcErr.message);
+                                }
+
+                                sincronizarVentaPropiedad(
+                                    idContratoCreado,
+                                    { numero_lote, datos_propiedad },
+                                    (ventaErr) => {
+                                        if (ventaErr) {
+                                            console.error('[contratos][crear] error sincronizando datos de propiedad:', ventaErr.message);
+                                        }
+                                        return finalizarRespuestaCrear(ventaErr || null);
+                                    }
+                                );
                             });
                         };
 
@@ -1394,7 +1411,7 @@ router.post("/crear", (req, res) => {
                                 } else {
                                     console.log('[contratos][crear] fila final persistida:', filaPersistida);
                                 }
-                                return finalizarRespuestaCrear();
+                                return guardarDatosPropiedadYResponder();
                             }
                         );
                     }
