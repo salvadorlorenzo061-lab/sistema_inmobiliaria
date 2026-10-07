@@ -2804,6 +2804,8 @@ router.post("/procesar-pago", (req, res) => {
                         const moraTotal = moraTotalSeleccionada;
                         const totalTransaccion = parseFloat((montoPrincipalTotal + montoInteresTotal + moraTotal).toFixed(2));
 
+
+                        
                         db.query(sqlPago, [
                             id_contrato,
                             idUsuarioSeguro,
