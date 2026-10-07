@@ -73,18 +73,13 @@ const calcularLiquidacionCapital = ({
     const mesesPendientes = Math.max(cuotasTotales - cuotasPagadasBase, 0);
     const tasaMensual = interesAnual / 100 / 12;
 
-    const calcularCuotaFija = (principal, tasa, cuotas) => {
-        if (principal <= 0 || cuotas <= 0) return 0;
-        if (tasa <= 0) return principal / cuotas;
-        const factor = Math.pow(1 + tasa, cuotas);
-        const denominador = factor - 1;
-        if (!Number.isFinite(factor) || Math.abs(denominador) < 1e-12) {
-            return principal / cuotas;
-        }
-        return principal * ((tasa * factor) / denominador);
-    };
-
-    const cuotaMensual = Math.round(calcularCuotaFija(capitalRestante, tasaMensual, mesesPendientes));
+    // Misma regla contractual que usan Contratos y Caja: interes simple sobre
+    // el plan (capital + capital * tasa% * anios) / cuotas, cuota entera hacia
+    // arriba e interes fijo por cuota; la ultima cuota ajusta la diferencia.
+    const interesTotalPlan = capitalRestante * (interesAnual / 100) * (mesesPendientes / 12);
+    const totalPlan = capitalRestante + interesTotalPlan;
+    const cuotaMensual = mesesPendientes > 0 ? Math.ceil(totalPlan / mesesPendientes) : 0;
+    const interesPorMes = mesesPendientes > 0 ? round2(interesTotalPlan / mesesPendientes) : 0;
     const tablaAmortizacion = [];
     let saldo = capitalRestante;
     let interesAcumulado = 0;
@@ -92,7 +87,7 @@ const calcularLiquidacionCapital = ({
 
     for (let indice = 1; indice <= mesesPendientes; indice += 1) {
         const esUltima = indice === mesesPendientes;
-        const interesMes = Math.round(saldo * tasaMensual);
+        const interesMes = interesPorMes;
         const capitalCuota = esUltima
             ? saldo
             : Math.round(Math.min(Math.max(cuotaMensual - interesMes, 0), saldo));
@@ -114,7 +109,6 @@ const calcularLiquidacionCapital = ({
         saldo = saldoFinal;
     }
 
-    const interesPorMes = tablaAmortizacion[0]?.interes_mes || 0;
     const interesTotalPendiente = interesAcumulado;
     const totalLiquidacion = totalPagos;
 
@@ -335,6 +329,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             numero_cuota_enganche: 0,
             capital_pagado: round2(capitalPagado),
             interes_anual: round2(toNumber(contrato.interes_porcentaje, 14)),
+            monto_cuota: round2(toNumber(contrato.convenio_monto_cuota || contrato.monto_cuota, 0)),
             cuotas_totales: cuotasTotales,
             cuotas_pagadas: cuotasPagadasReales,
             cuotas_pendientes: Math.max(cuotasTotales - cuotasPagadasReales, 0),

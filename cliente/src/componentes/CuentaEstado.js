@@ -52,8 +52,53 @@ const getImageFormatFromDataUrl = (value = '') => {
   return 'PNG';
 };
 
+// Replica el plan pactado del contrato (misma regla que Contratos y Caja):
+// cuota fija = pactada o techo((capital + capital*interes%*anios)/cuotas),
+// interes fijo por cuota y la ultima cuota ajusta la diferencia de redondeo.
+const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales, cuotaPactada) => {
+  const principal = Math.round(Math.max(toNumber(capitalInicial, 0), 0));
+  const plazo = Math.max(parseInt(cuotasTotales || 0, 10), 0);
+  const tasa = Math.max(toNumber(interesAnual, 0), 0);
+  if (principal <= 0 || plazo <= 0) return [];
+
+  const interesTotal = round2(principal * (tasa / 100) * (plazo / 12));
+  const totalFinanciado = round2(principal + interesTotal);
+  const cuotaCalculada = Math.ceil(totalFinanciado / plazo);
+  const pactada = Math.round(Math.max(toNumber(cuotaPactada, 0), 0));
+  const cuotaFija = pactada > 0 && (plazo <= 1 || pactada * (plazo - 1) < totalFinanciado)
+    ? pactada
+    : cuotaCalculada;
+  const interesPorCuota = round2(interesTotal / plazo);
+
+  const tabla = [];
+  let saldo = principal;
+  let interesAcumulado = 0;
+  for (let indice = 1; indice <= plazo; indice += 1) {
+    const esUltima = indice === plazo;
+    const capitalCuota = esUltima ? round2(saldo) : round2(Math.max(cuotaFija - interesPorCuota, 0));
+    const interesMes = esUltima ? round2(interesTotal - (interesPorCuota * (plazo - 1))) : interesPorCuota;
+    const pago = esUltima ? round2(capitalCuota + interesMes) : cuotaFija;
+    const saldoFinal = round2(Math.max(saldo - capitalCuota, 0));
+    interesAcumulado = round2(interesAcumulado + interesMes);
+    tabla.push({
+      indice,
+      numero_cuota: indice,
+      saldo_inicial: round2(saldo),
+      capital_cuota: capitalCuota,
+      interes_mes: interesMes,
+      cuota_estimada: pago,
+      saldo_final: saldoFinal,
+      interes_acumulado: interesAcumulado
+    });
+    saldo = saldoFinal;
+  }
+  return tabla;
+};
+
 const construirSimulacionLocal = ({
   capital_restante,
+  capital_inicial = 0,
+  monto_cuota_pactada = 0,
   interes_anual,
   cuotas_totales,
   cuotas_pagadas,
@@ -68,12 +113,21 @@ const construirSimulacionLocal = ({
     ? Math.max(objetivo - 1, 0)
     : Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
   const mesesPendientes = Math.max(cuotasTotalesNumero - cuotasPagadasNumero, 0);
-  const tabla = generarTablaAmortizacion(
-    capitalRestante,
-    interes,
-    mesesPendientes,
-    cuotasPagadasNumero
-  );
+  const capitalInicial = Math.round(Math.max(toNumber(capital_inicial, 0), 0));
+  const cuotaPactada = Math.round(Math.max(toNumber(monto_cuota_pactada, 0), 0));
+  // Con contrato cargado se replica su plan pactado (la misma cuota que
+  // muestran Contratos y Caja) y se conservan solo las cuotas pendientes;
+  // sin contrato se mantiene la simulacion libre sobre el capital restante.
+  const usarPlanContrato = capitalInicial > 0 && cuotaPactada > 0 && cuotasTotalesNumero > 0;
+  const tabla = usarPlanContrato
+    ? construirPlanContratoLocal(capitalInicial, interes, cuotasTotalesNumero, cuotaPactada)
+        .filter((fila) => fila.numero_cuota > cuotasPagadasNumero)
+    : generarTablaAmortizacion(
+      capitalRestante,
+      interes,
+      mesesPendientes,
+      cuotasPagadasNumero
+    );
   const interesTotal = round2(tabla.reduce((sum, fila) => sum + toNumber(fila.interes_mes, 0), 0));
   const totalPagos = round2(tabla.reduce((sum, fila) => sum + toNumber(fila.cuota_estimada, 0), 0));
 
@@ -206,6 +260,8 @@ const CuentaEstado = () => {
       setEstadosPorCuota(mapaEstadosPorCuota);
       setSimulacion(construirSimulacionLocal({
         capital_restante: contratoApi.capital_restante,
+        capital_inicial: contratoApi.capital_inicial_financiado,
+        monto_cuota_pactada: contratoApi.monto_cuota,
         interes_anual: contratoApi.interes_anual,
         cuotas_totales: contratoApi.cuotas_totales,
         cuotas_pagadas: contratoApi.cuotas_pagadas,
@@ -236,6 +292,8 @@ const CuentaEstado = () => {
       cuotas_totales: parseInt(cuotasTotales || '0', 10),
       cuotas_pagadas: parseInt(cuotasPagadas || '0', 10),
       cuota_objetivo: cuotaObjetivo ? parseInt(cuotaObjetivo, 10) : null,
+      capital_inicial: contrato ? toNumber(contrato.capital_inicial_financiado, 0) : 0,
+      monto_cuota_pactada: contrato ? toNumber(contrato.monto_cuota, 0) : 0,
       estados_por_cuota: estadosPorCuota
     };
 
@@ -487,18 +545,25 @@ const CuentaEstado = () => {
     });
 
     const lastY = (doc.lastAutoTable?.finalY || 70) + 8;
-    const summaryX = 12;
+    const centroPagina = pageWidth / 2;
     doc.setDrawColor(180, 180, 180);
-    doc.line(summaryX, lastY, pageWidth - 12, lastY);
+    doc.line(12, lastY, pageWidth - 12, lastY);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setTextColor(13, 64, 44);
-    doc.text(`Capital restante: ${formatoMoneda(capitalRestante)}`, summaryX, lastY + 8);
-    doc.text(`Intereses anual: ${Number(simulacion.interes_anual || 0).toFixed(2)}%`, summaryX + 62, lastY + 8);
-    doc.text(`Tasa mensual: ${Number(tasaMensual || 0).toFixed(4)}%`, summaryX + 126, lastY + 8);
-    doc.text(`Cuota mensual fija: ${formatoMoneda(cuotaMensual)}`, summaryX + 178, lastY + 8);
-    doc.text(`Interés total pendiente: ${formatoMoneda(interesTotalPendiente)}`, summaryX, lastY + 16);
-    doc.text(`Total liquidación (capital + intereses): ${formatoMoneda(simulacion.total_liquidacion)}`, summaryX + 68, lastY + 16);
+    // Resumen centrado a la hoja para que no se salga del margen derecho.
+    doc.text(
+      `Capital restante: ${formatoMoneda(capitalRestante)}   |   Interés anual: ${Number(simulacion.interes_anual || 0).toFixed(2)}%   |   Tasa mensual: ${Number(tasaMensual || 0).toFixed(4)}%   |   Cuota mensual fija: ${formatoMoneda(cuotaMensual)}`,
+      centroPagina,
+      lastY + 8,
+      { align: 'center', maxWidth: pageWidth - 20 }
+    );
+    doc.text(
+      `Interés total pendiente: ${formatoMoneda(interesTotalPendiente)}   |   Total liquidación (capital + intereses): ${formatoMoneda(simulacion.total_liquidacion)}`,
+      centroPagina,
+      lastY + 15,
+      { align: 'center', maxWidth: pageWidth - 20 }
+    );
 
     doc.save(`Tabla_Amortizacion_${codigoContrato}.pdf`);
   };
