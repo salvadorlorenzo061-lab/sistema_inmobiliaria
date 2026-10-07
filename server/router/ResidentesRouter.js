@@ -85,7 +85,7 @@ const generarNumeroIdentificacion = () => {
     const fecha = new Date();
     const fechaClave = `${fecha.getFullYear()}${String(fecha.getMonth() + 1).padStart(2, '0')}${String(fecha.getDate()).padStart(2, '0')}`;
     const aleatorio = Math.floor(100000 + Math.random() * 900000);
-    return `RES-${fechaClave}-${aleatorio}`;
+    return `CL-${fechaClave}-${aleatorio}`;
 };
 
 const generarNumeroIdentificacionUnico = (callback) => {

@@ -97,7 +97,7 @@ function Residentes() {
         startY: 88, 
         head: [['PARÁMETRO', 'VALOR ASIGNADO']],
         body: [
-          ['CÓDIGO CLIENTE', `RES-${val.id_residente}`],
+          ['CÓDIGO CLIENTE', val.numero_identificacion || `CL-${val.id_residente}`],
           ['NOMBRE COMPLETO', val.nombre.toUpperCase()],
           ['DPI / IDENTIFICACIÓN', val.dpi],
           ['TELÉFONO', val.telefono],

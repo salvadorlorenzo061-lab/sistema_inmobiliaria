@@ -451,7 +451,7 @@ function PagosExtraordinarios() {
                           value={busquedaResidente}
                           onChange={(e) => setBusquedaResidente(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && buscarResidenteContrato()}
-                          placeholder="Ej: MARIA, 152244522, RES-202606..., CON-..."
+                          placeholder="Ej: MARIA, 152244522, CL-202606..., CON-..."
                         />
                         <button type="button" className="btn btn-primary" onClick={buscarResidenteContrato}>Buscar</button>
                         <button
