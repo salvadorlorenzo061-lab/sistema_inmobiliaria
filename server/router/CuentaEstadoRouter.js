@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('../Conexion');
-const { generarTablaFrancesa } = require('../utils/amortizacion');
+const { generarTablaPlana } = require('../utils/amortizacion');
 
 const router = express.Router();
 
@@ -78,17 +78,17 @@ const calcularLiquidacionCapital = ({
     const capitalInicial = Math.round(Math.max(toNumber(capital_inicial, 0), 0));
     const cuotaPactada = round2(Math.max(toNumber(monto_cuota_pactada, 0), 0));
 
-    // Unica formula del sistema (Sistema Frances de Amortizacion, ver
-    // server/utils/amortizacion.js): cuota fija nivelada P * [r(1+r)^n] /
-    // [(1+r)^n - 1], interes del mes = saldo insoluto * tasa mensual y la
-    // ultima cuota ajusta el saldo. Con contrato identificado se construye el
-    // plan completo desde el capital original y se conservan solo las cuotas
-    // pendientes; sin contrato se simula libre sobre el capital restante.
+    // Unica formula del sistema: plan lineal oficial (server/utils/amortizacion.js)
+    // con capital fijo e interes fijo por mes, identico a las tablas PDF:
+    // interes = capital inicial x tasa / 12 (constante), capital = cuota -
+    // interes y la ultima cuota ajusta el saldo. Con contrato identificado se
+    // construye el plan completo desde el capital original y se conservan solo
+    // las cuotas pendientes; sin contrato se simula libre sobre el capital restante.
     const usarPlanContrato = capitalInicial > 0 && cuotasTotales > 0;
     const capitalPlan = usarPlanContrato ? capitalInicial : capitalRestante;
     const mesesPlan = usarPlanContrato ? cuotasTotales : mesesPendientes;
 
-    const tablaCompleta = generarTablaFrancesa(
+    const tablaCompleta = generarTablaPlana(
         capitalPlan,
         interesAnual,
         mesesPlan,

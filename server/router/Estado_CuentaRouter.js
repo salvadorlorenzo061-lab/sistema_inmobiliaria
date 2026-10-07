@@ -3,7 +3,7 @@ const db = require('../Conexion');
 const router = express.Router();
 const cors = require('cors');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
-const { calcularTotalPlanFrances } = require('../utils/amortizacion');
+const { calcularTotalPlanPlano } = require('../utils/amortizacion');
 
 router.use(cors());
 router.use(express.json());
@@ -241,8 +241,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                         const totalPagado = Number(contract.total_pagado_real || 0);
                         const capitalFinanciado = Math.max(Number(contract.monto_total || 0) - Number(contract.enganche || 0), 0);
                         const cuotasContrato = Math.max(Number(contract.cuotas_pactadas || contract.plazo_meses || 0), 0);
-                        // Sistema Frances: total del plan = cuota fija nivelada x numero de cuotas.
-                        const totalConIntereses = calcularTotalPlanFrances(
+                        // Plan lineal: total = capital + interes fijo x numero de cuotas.
+                        const totalConIntereses = calcularTotalPlanPlano(
                             capitalFinanciado,
                             Math.max(Number(contract.interes_porcentaje || 0), 0),
                             cuotasContrato

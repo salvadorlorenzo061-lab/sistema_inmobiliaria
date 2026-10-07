@@ -53,9 +53,9 @@ const getImageFormatFromDataUrl = (value = '') => {
 };
 
 // Replica el plan pactado del contrato con la UNICA formula del sistema:
-// Sistema Frances de Amortizacion (cuota fija nivelada sobre saldos insolutos),
-// igual que Contratos, Caja y utils/amortizacion.js. La cuota pactada solo se
-// respeta si amortiza; la ultima cuota ajusta el saldo para cerrar en cero.
+// plan lineal oficial (capital fijo + interes fijo por mes, igual que las
+// tablas PDF), compartida por Contratos, Caja y utils/amortizacion.js. La
+// cuota pactada solo se respeta si amortiza; la ultima cuota cierra en cero.
 const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales, cuotaPactada) => (
   generarTablaAmortizacion(capitalInicial, interesAnual, cuotasTotales, 0, cuotaPactada)
 );
@@ -785,9 +785,9 @@ const CuentaEstado = () => {
 
                 <hr />
 
-                <p className="mb-1"><strong>Formula aplicada (Sistema Frances de Amortizacion):</strong></p>
-                <p className="mb-1">Cuota fija = P x [r(1+r)^n] / [(1+r)^n - 1], con r = tasa anual / 12 (cuota nivelada).</p>
-                <p className="mb-0">Interes del mes = saldo pendiente x tasa mensual; Abono a capital = cuota fija - interes del mes; la ultima cuota ajusta el capital restante para cerrar el plan.</p>
+                <p className="mb-1"><strong>Formula aplicada (plan lineal oficial):</strong></p>
+                <p className="mb-1">Interes fijo por mes = capital inicial x tasa anual / 12; Capital fijo por mes = cuota fija - interes fijo.</p>
+                <p className="mb-0">Cuota total mensual = capital fijo + interes fijo (constante todos los meses); la ultima cuota ajusta el capital restante para cerrar el plan.</p>
 
                 {tablaAmortizacionPendiente.length > 0 && (
                   <>

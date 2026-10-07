@@ -3,7 +3,7 @@ const db = require('../Conexion');
 const router = express.Router(); 
 const cors = require('cors');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
-const { generarTablaFrancesa, sqlTotalPlanFrancesa } = require('../utils/amortizacion');
+const { generarTablaPlana, sqlTotalPlanPlano } = require('../utils/amortizacion');
 
 router.use(cors());
 router.use(express.json());
@@ -2341,11 +2341,12 @@ router.post("/procesar-pago", (req, res) => {
             const tieneConvenioActivoContrato = Number(saldoRows[0]?.id_convenio_activo || 0) > 0;
             const usaCuotaCeroEngancheContrato = engancheContrato > 0;
 
-            // === PLAN FINANCIERO PACTADO EN EL CONTRATO (SISTEMA FRANCES) ===
+            // === PLAN FINANCIERO PACTADO EN EL CONTRATO (PLAN LINEAL OFICIAL) ===
             // Unica formula del sistema (server/utils/amortizacion.js):
-            //   cuota fija        = P * [r(1+r)^n] / [(1+r)^n - 1]  (anualidades)
-            //   interes por cuota = saldo insoluto * tasa mensual
-            //   capital por cuota = cuota fija - interes; la ultima cuota cierra en cero.
+            //   interes por cuota = capital inicial x tasa anual / 12 (FIJO cada mes)
+            //   capital por cuota = cuota fija - interes fijo (FIJO cada mes)
+            //   cuota fija        = techo((capital + interes total) / cuotas); la
+            //   ultima cuota ajusta el saldo para cerrar exactamente en cero.
             // La cuota guardada del contrato se respeta solo si amortiza el plan.
             const cuotasPagadasContrato = Math.max(Number(saldoRows[0]?.cuotas_pagadas || 0), 0);
             const cuotasPendientesContrato = Math.max(cuotasBaseInteres - cuotasPagadasContrato, 0);
@@ -2361,7 +2362,7 @@ router.post("/procesar-pago", (req, res) => {
                 : cuotasBaseInteres;
             const primeraCuotaPlanContrato = tieneConvenioActivoContrato ? (cuotasPagadasContrato + 1) : 1;
             const cuotaGuardadaContrato = redondear2(montoCuotaBaseContrato);
-            const tablaAmortizacionContrato = generarTablaFrancesa(
+            const tablaAmortizacionContrato = generarTablaPlana(
                 capitalBaseInteresContrato,
                 interesPlanContrato,
                 cuotasPlanContrato,
@@ -3432,8 +3433,8 @@ router.post("/procesar-pago", (req, res) => {
 
                                             sincronizarMorosidadExonerada(() => sincronizarMorosidadPagada(() => {
                                             const descuentoCapital = redondear2(montoTerrenoTotal + montoInteresTotal + montoAbonoCapitalTotal);
-                                            // Sistema Frances: saldo = total del plan (cuota nivelada x cuotas) - pagado.
-                                            const totalPlanFrancesSql = sqlTotalPlanFrancesa(
+                                            // Plan lineal: saldo = capital + interes fijo x cuotas - pagado.
+                                            const totalPlanPlanoSql = sqlTotalPlanPlano(
                                                 'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
                                                 'c.interes_porcentaje',
                                                 'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
@@ -3451,8 +3452,8 @@ router.post("/procesar-pago", (req, res) => {
                                                         GROUP BY p.id_contrato
                                                     ) pagos ON pagos.id_contrato = c.id_contrato
                                                     SET c.saldo_pendiente = CASE
-                                                        WHEN (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
-                                                        ELSE (${totalPlanFrancesSql} - COALESCE(pagos.total_pagado, 0))
+                                                        WHEN (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
+                                                        ELSE (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0))
                                                     END,
                                                         c.estado = CASE
                                                             WHEN c.saldo_pendiente <= 0.009 THEN 'finalizado'

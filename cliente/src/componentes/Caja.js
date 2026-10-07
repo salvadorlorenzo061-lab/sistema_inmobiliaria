@@ -161,10 +161,10 @@ const Caja = () => {
     const getSaldoDisplay = (saldo) => Math.max(parseFloat(saldo || 0), 0);
     const redondear2 = (valor) => parseFloat((Number(valor || 0)).toFixed(2));
     // Caja NO define su propio plan financiero: consume el mismo que pacta el modulo de Contratos.
-    // Unica formula del sistema (Sistema Frances de Amortizacion, cuota fija nivelada):
+    // Unica formula del sistema (plan lineal oficial de las tablas PDF):
     //   capital financiado = Precio Total del contrato (saldo/monto_total) - Enganche
-    //   cuota mensual      = calcularCuotaFija(capital, tasa, cuotas) = P * [r(1+r)^n] / [(1+r)^n - 1]
-    //   interes del mes    = saldo pendiente del capital * tasa mensual
+    //   interes por cuota  = capital x tasa anual / 12 (FIJO todos los meses)
+    //   cuota mensual      = capital fijo por cuota + interes fijo (constante)
     // De esa forma la "Cuota 1+ (capital + interes)" de Caja coincide con el
     // "Monto de Cuota (Auto)" que muestra y guarda el contrato.
     const calcularPlanFinancieroContrato = (contrato = {}) => {
@@ -198,8 +198,8 @@ const Caja = () => {
         // financiado pactado es tambien el capital que queda por cobrar.
         const capitalPendienteFinanciado = capitalTotalContrato;
         const capitalBaseInteres = capitalTotalContrato;
-        // Tabla del Sistema Frances (cliente/src/utils/amortizacion.js): el interes
-        // de cada cuota sale del saldo insoluto y la ultima cuota cierra en cero.
+        // Tabla del plan lineal oficial (cliente/src/utils/amortizacion.js):
+        // capital fijo e interes fijo por cuota; la ultima cuota cierra en cero.
         // La cuota guardada del contrato se respeta solo si amortiza el plan.
         const cuotaRegularGuardada = redondear2(Math.max(parseFloat(contrato?.monto_cuota || 0), 0));
         const tablaContratoCompleta = generarTablaAmortizacion(

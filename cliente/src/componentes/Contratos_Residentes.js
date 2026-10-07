@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { calcularCuotaFija, calcularTotalPlanFrances, redondearMoneda } from '../utils/amortizacion';
+import { calcularCuotaFija, calcularTotalPlanPlano, redondearMoneda } from '../utils/amortizacion';
 import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfGenerator';
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 
@@ -70,8 +70,8 @@ function Contratos_Residentes() {
       if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) {
         return 0;
       }
-      // Sistema Frances: total del plan = cuota fija nivelada x numero de cuotas.
-      return calcularTotalPlanFrances(capitalFinanciado, Number(interes_porcentaje || 0), cuotasNumero);
+      // Plan lineal oficial: total = capital + interes fijo mensual x cuotas.
+      return calcularTotalPlanPlano(capitalFinanciado, Number(interes_porcentaje || 0), cuotasNumero);
     })();
 
     if (totalConIntereses > 0 && cuotasPagadas <= 0) {
@@ -425,8 +425,8 @@ function Contratos_Residentes() {
       return '';
     }
 
-    // Sistema Frances: total financiado = cuota fija nivelada x numero de cuotas.
-    const totalFinanciadoConIntereses = calcularTotalPlanFrances(capitalFinanciado, interesNumero, cuotasCalculadasNumero);
+    // Plan lineal oficial: total financiado = capital + interes fijo x cuotas.
+    const totalFinanciadoConIntereses = calcularTotalPlanPlano(capitalFinanciado, interesNumero, cuotasCalculadasNumero);
     return totalFinanciadoConIntereses.toFixed(2);
   };
 
@@ -440,8 +440,8 @@ function Contratos_Residentes() {
       return '';
     }
 
-    // Sistema Frances: total financiado = cuota fija nivelada x numero de cuotas.
-    const totalFinanciadoConIntereses = calcularTotalPlanFrances(capitalFinanciado, interesNumero, cuotasCalculadasNumero);
+    // Plan lineal oficial: total financiado = capital + interes fijo x cuotas.
+    const totalFinanciadoConIntereses = calcularTotalPlanPlano(capitalFinanciado, interesNumero, cuotasCalculadasNumero);
     const totalProyectoConEnganche = redondearMoneda(totalFinanciadoConIntereses + engancheNumero);
     return totalProyectoConEnganche.toFixed(2);
   };
@@ -1194,8 +1194,8 @@ function Contratos_Residentes() {
       const cuotasNumero = Number(val.cuotas_pactadas || val.plazo_meses || 0);
       if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) return 0;
       const interesNumero = Number(val.interes_porcentaje ?? 0);
-      // Sistema Frances: total del plan = cuota fija nivelada x numero de cuotas.
-      return calcularTotalPlanFrances(capitalFinanciado, interesNumero, cuotasNumero);
+      // Plan lineal oficial: total = capital + interes fijo mensual x cuotas.
+      return calcularTotalPlanPlano(capitalFinanciado, interesNumero, cuotasNumero);
     })();
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
