@@ -57,7 +57,7 @@ const getImageFormatFromDataUrl = (value = '') => {
 // tablas PDF), compartida por Contratos, Caja y utils/amortizacion.js. La
 // cuota pactada solo se respeta si amortiza; la ultima cuota cierra en cero.
 const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales, _cuotaPactada) => (
-  generarTablaAmortizacion(capitalInicial, interesAnual, cuotasTotales, 0, 0)
+  generarTablaAmortizacion(capitalInicial, interesAnual, cuotasTotales, 0, _cuotaPactada)
 );
 
 const construirSimulacionLocal = ({
@@ -89,15 +89,15 @@ const construirSimulacionLocal = ({
   const usarPlanContrato = capitalInicial > 0 && cuotasTotalesNumero > 0;
   const tabla = usarPlanContrato
     ? construirPlanContratoLocal(capitalInicial, interes, cuotasTotalesNumero, cuotaPactada)
-        .filter((fila) => fila.numero_cuota > cuotasPagadasNumero)
     : generarTablaAmortizacion(
       capitalRestante,
       interes,
       mesesPendientes,
       cuotasPagadasNumero
     );
-  const interesTotal = round2(tabla.reduce((sum, fila) => sum + toNumber(fila.interes_mes, 0), 0));
-  const totalPagos = round2(tabla.reduce((sum, fila) => sum + toNumber(fila.cuota_estimada, 0), 0));
+  const tablaPendiente = tabla.filter((fila) => fila.numero_cuota > cuotasPagadasNumero);
+  const interesTotal = round2(tablaPendiente.reduce((sum, fila) => sum + toNumber(fila.interes_mes, 0), 0));
+  const totalPagos = round2(tablaPendiente.reduce((sum, fila) => sum + toNumber(fila.cuota_estimada, 0), 0));
 
   return {
     cuota_objetivo: objetivo || null,
@@ -525,16 +525,17 @@ const CuentaEstado = () => {
         halign: 'center'
       },
       alternateRowStyles: { fillColor: [247, 249, 252] },
-      margin: { left: 10, right: 10 },
+      margin: { left: 12, right: 12 },
+      tableWidth: pageWidth - 24,
       columnStyles: {
-        0: { cellWidth: 12 },
-        1: { cellWidth: 28 },
-        2: { cellWidth: 22 },
-        3: { cellWidth: 26 },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 18 },
-        6: { cellWidth: 24 },
-        7: { cellWidth: 20 }
+        0: { cellWidth: 13 },
+        1: { cellWidth: 29 },
+        2: { cellWidth: 23 },
+        3: { cellWidth: 29 },
+        4: { cellWidth: 22 },
+        5: { cellWidth: 19 },
+        6: { cellWidth: 28 },
+        7: { cellWidth: 28 }
       }
     });
 
@@ -818,7 +819,7 @@ const CuentaEstado = () => {
                 {tablaAmortizacionPendiente.length > 0 && (
                   <>
                     <hr />
-                    <h6 className="fw-bold mb-3">Tabla de amortizacion de cuotas pendientes</h6>
+                    <h6 className="fw-bold mb-3">Tabla de amortización contractual completa</h6>
                     <div className="table-responsive">
                       <table className="table table-sm table-bordered table-striped align-middle">
                         <thead className="table-dark">
@@ -856,9 +857,13 @@ const CuentaEstado = () => {
                                   </span>
                                 </td>
                                 {contrato && <td>
-                                  <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
-                                    Cobrar en Caja
-                                  </button>
+                                  {estadoFila === 'PAGADO' ? (
+                                    <span className="text-success fw-bold">Cobro registrado</span>
+                                  ) : (
+                                    <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
+                                      Cobrar en Caja
+                                    </button>
+                                  )}
                                 </td>}
                               </tr>
                             );

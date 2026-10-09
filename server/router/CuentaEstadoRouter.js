@@ -44,6 +44,10 @@ const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
             WHEN pd.tipo_concepto = 'enganche' THEN pd.subtotal
             ELSE 0
         END), 0) AS enganche_pagado,
+        COALESCE(SUM(CASE
+            WHEN pd.tipo_concepto = 'abono_capital' THEN pd.subtotal
+            ELSE 0
+        END), 0) AS abono_capital_total,
         COALESCE(COUNT(DISTINCT CASE
             WHEN pd.numero_cuota_afectada > 0 AND pd.tipo_concepto = 'cuota_terreno' THEN pd.numero_cuota_afectada
             ELSE NULL
@@ -98,16 +102,19 @@ const calcularLiquidacionCapital = ({
         interesAnual,
         mesesPlan,
         usarPlanContrato ? 0 : cuotasPagadasBase,
-        usarPlanContrato ? 0 : cuotaPactada
+        cuotaPactada
     );
 
+    // El cronograma contractual nunca pierde las cuotas ya cobradas. Se
+    // conserva completo para que los números, capital, interés y cuota fija
+    // sigan siendo exactamente los pactados desde el inicio.
     const tablaAmortizacion = tablaCompleta
-        .filter((fila) => fila.numero_cuota > cuotasPagadasBase)
         .map((fila, posicion) => ({ ...fila, indice: posicion + 1 }));
+    const filasPendientes = tablaAmortizacion.filter((fila) => fila.numero_cuota > cuotasPagadasBase);
 
     let interesAcumulado = 0;
     let totalPagos = 0;
-    tablaAmortizacion.forEach((fila) => {
+    filasPendientes.forEach((fila) => {
         interesAcumulado = round2(interesAcumulado + fila.interes_mes);
         totalPagos = round2(totalPagos + fila.cuota_estimada);
         fila.interes_acumulado = interesAcumulado;
@@ -124,8 +131,8 @@ const calcularLiquidacionCapital = ({
         capital_restante: round2(capitalRestante),
         interes_anual: round2(interesAnual),
         tasa_mensual: round2(tasaMensual * 100),
-        cuota_mensual: tablaAmortizacion[0]?.cuota_estimada || 0,
-        interes_por_mes: tablaAmortizacion[0]?.interes_mes || 0,
+        cuota_mensual: tablaCompleta[0]?.cuota_estimada || 0,
+        interes_por_mes: tablaCompleta[0]?.interes_mes || 0,
         interes_total_pendiente: interesTotalPendiente,
         total_liquidacion: totalLiquidacion,
         tabla_amortizacion: tablaAmortizacion
@@ -152,9 +159,7 @@ router.get('/buscar-residente', (req, res) => {
             c.estado AS estado_contrato,
             c.fecha_firma,
             COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            COALESCE(conv.monto_original,
-                c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
-            ) AS monto_total_original,
+            COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
             c.monto_cuota,
             c.cuotas_pactadas,
@@ -211,9 +216,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             c.id_residente,
             c.fecha_firma,
             COALESCE(c.saldo_pendiente, conv.saldo_actual, c.monto_total) AS saldo_pendiente,
-            COALESCE(conv.monto_original,
-                c.monto_total + COALESCE(pagos_resumen.capital_pagado_total, 0)
-            ) AS monto_total_original,
+            COALESCE(conv.monto_original, c.monto_total) AS monto_total_original,
             c.enganche,
             c.monto_cuota,
             c.interes_porcentaje,
@@ -237,6 +240,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             COALESCE(pagos_resumen.cuotas_pagadas, 0) AS cuotas_pagadas_reales,
             COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado_total,
+            COALESCE(pagos_resumen.abono_capital_total, 0) AS abono_capital_total,
             p.nombre AS nombre_proyecto,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
             COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
@@ -302,19 +306,30 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
         );
 
         const enganchePagadoRaw = Math.max(toNumber(contrato.enganche_pagado_total, 0), 0);
-        const capitalPagado = Math.max(toNumber(contrato.capital_pagado_total, 0), 0);
         const precioTerreno = round2(Math.max(toNumber(contrato.monto_total_original, 0), 0));
         const engancheContrato = round2(Math.max(toNumber(contrato.enganche, 0), 0));
         const enganchePagado = round2(Math.min(enganchePagadoRaw, engancheContrato));
         const enganchePendiente = round2(Math.max(engancheContrato - enganchePagado, 0));
         const capitalInicialFinanciado = round2(Math.max(precioTerreno - engancheContrato, 0));
+        const cuotasPagadasReales = Math.max(parseInt(contrato.cuotas_pagadas_reales || 0, 10), 0);
+        const abonoCapitalExtra = round2(Math.max(toNumber(contrato.abono_capital_total, 0), 0));
+        const planOriginal = generarTablaPlana(
+            capitalInicialFinanciado,
+            Math.max(toNumber(contrato.interes_porcentaje, 0), 0),
+            cuotasTotales,
+            0,
+            toNumber(contrato.convenio_monto_cuota || contrato.monto_cuota, 0)
+        );
+        const capitalCuotasPagadas = round2(planOriginal
+            .filter((fila) => fila.numero_cuota <= cuotasPagadasReales)
+            .reduce((total, fila) => total + toNumber(fila.capital_cuota, 0), 0));
+        const capitalPagado = round2(Math.min(capitalCuotasPagadas + abonoCapitalExtra, capitalInicialFinanciado));
         const capitalRestante = round2(Math.max(
             Number(contrato.id_convenio_activo || 0) > 0
                 ? toNumber(contrato.convenio_saldo_actual, capitalInicialFinanciado - capitalPagado)
                 : capitalInicialFinanciado - capitalPagado,
             0
         ));
-        const cuotasPagadasReales = Math.max(parseInt(contrato.cuotas_pagadas_reales || 0, 10), 0);
         const cuotaSiguiente = enganchePendiente > 0.01
             ? 0
             : (cuotasTotales > 0 ? Math.min(cuotasPagadasReales + 1, cuotasTotales) : 1);
