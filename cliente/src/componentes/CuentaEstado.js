@@ -127,6 +127,7 @@ const CuentaEstado = () => {
   const [generandoPlan, setGenerandoPlan] = useState(false);
   const [contrato, setContrato] = useState(null);
   const [simulacion, setSimulacion] = useState(null);
+  const [recalculoPropuesto, setRecalculoPropuesto] = useState(null);
 
   const [capitalRestante, setCapitalRestante] = useState('');
   const [interesAnual, setInteresAnual] = useState('');
@@ -155,6 +156,7 @@ const CuentaEstado = () => {
     setResultados([]);
     setContrato(null);
     setSimulacion(null);
+    setRecalculoPropuesto(null);
     setCapitalRestante('');
     setInteresAnual('');
     setCuotasTotales('');
@@ -171,6 +173,7 @@ const CuentaEstado = () => {
     setResultados([]);
     setContrato(null);
     setSimulacion(null);
+    setRecalculoPropuesto(null);
     setPrecioTotal('100000');
     setEngancheRegistrado('0');
     setEnganchePagado('0');
@@ -196,6 +199,7 @@ const CuentaEstado = () => {
       setResultados(Array.isArray(data) ? data : []);
       setContrato(null);
       setSimulacion(null);
+      setRecalculoPropuesto(null);
     } catch (error) {
       setResultados([]);
       showToast(String(error?.response?.data || 'No se pudo buscar el cliente.'), 'error');
@@ -242,6 +246,7 @@ const CuentaEstado = () => {
         cuota_objetivo: null,
         estados_por_cuota: mapaEstadosPorCuota
       }));
+      setRecalculoPropuesto(null);
       setResultados([]);
 
       setCapitalRestante(String(toNumber(contratoApi.capital_restante, 0)));
@@ -266,8 +271,10 @@ const CuentaEstado = () => {
       cuotas_totales: parseInt(cuotasTotales || '0', 10),
       cuotas_pagadas: parseInt(cuotasPagadas || '0', 10),
       cuota_objetivo: cuotaObjetivo ? parseInt(cuotaObjetivo, 10) : null,
-      capital_inicial: contrato ? toNumber(contrato.capital_inicial_financiado, 0) : 0,
-      monto_cuota_pactada: contrato ? toNumber(contrato.monto_cuota, 0) : 0,
+      // La propuesta se calcula sobre los valores editados, no sobre el plan
+      // contractual vigente. El contrato permanece intacto hasta confirmación.
+      capital_inicial: 0,
+      monto_cuota_pactada: 0,
       estados_por_cuota: estadosPorCuota
     };
 
@@ -281,7 +288,31 @@ const CuentaEstado = () => {
       return;
     }
 
-    setSimulacion(construirSimulacionLocal(payload));
+    const nuevaPropuesta = construirSimulacionLocal(payload);
+    if (contrato) {
+      setRecalculoPropuesto(nuevaPropuesta);
+      showToast('Recalculación preparada. Revísala y aplícala únicamente si el cliente está de acuerdo.', 'info');
+    } else {
+      setSimulacion(nuevaPropuesta);
+      setRecalculoPropuesto(null);
+    }
+  };
+
+  const aplicarRecalculoPropuesto = async () => {
+    if (!recalculoPropuesto) return;
+    const confirmacion = await Swal.fire({
+      icon: 'warning',
+      title: '¿Aplicar nueva recalculación?',
+      html: `Se usará una cuota estimada de <strong>${formatoMoneda(recalculoPropuesto.cuota_mensual)}</strong> durante <strong>${recalculoPropuesto.meses_pendientes} cuotas pendientes</strong>.<br><br>Esta acción aplica la propuesta a la liquidación actual; no elimina pagos ni modifica facturas anteriores.`,
+      showCancelButton: true,
+      confirmButtonText: 'Sí, aplicar recalculación',
+      cancelButtonText: 'Mantener plan actual',
+      confirmButtonColor: '#dc3545'
+    });
+    if (!confirmacion.isConfirmed) return;
+    setSimulacion(recalculoPropuesto);
+    setRecalculoPropuesto(null);
+    showToast('Nueva recalculación aplicada a la liquidación actual.', 'success');
   };
 
   const resumenEjemplo = useMemo(() => {
@@ -777,6 +808,29 @@ const CuentaEstado = () => {
                 </div>
               </div>
             </>
+          )}
+
+          {recalculoPropuesto && (
+            <div className="card mt-3 border-warning">
+              <div className="card-header bg-warning text-dark fw-bold">Nueva recalculación pendiente de aprobación</div>
+              <div className="card-body">
+                <div className="row g-3 align-items-center">
+                  <div className="col-md-3"><strong>Capital recalculado:</strong><br />{formatoMoneda(recalculoPropuesto.capital_restante)}</div>
+                  <div className="col-md-3"><strong>Cuotas pendientes:</strong><br />{recalculoPropuesto.meses_pendientes}</div>
+                  <div className="col-md-3"><strong>Nueva cuota estimada:</strong><br /><span className="text-primary fw-bold">{formatoMoneda(recalculoPropuesto.cuota_mensual)}</span></div>
+                  <div className="col-md-3"><strong>Total de liquidación:</strong><br />{formatoMoneda(recalculoPropuesto.total_liquidacion)}</div>
+                </div>
+                <div className="d-flex flex-wrap gap-2 mt-3">
+                  <button type="button" className="btn btn-danger" onClick={aplicarRecalculoPropuesto}>
+                    Aplicar nueva recalculación
+                  </button>
+                  <button type="button" className="btn btn-outline-secondary" onClick={() => setRecalculoPropuesto(null)}>
+                    Mantener plan actual
+                  </button>
+                </div>
+                <small className="text-muted d-block mt-2">La propuesta no se aplica hasta que el cliente confirme. Los pagos y facturas anteriores permanecen intactos.</small>
+              </div>
+            </div>
           )}
 
           {simulacion && (
