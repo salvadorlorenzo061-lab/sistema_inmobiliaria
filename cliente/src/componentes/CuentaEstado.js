@@ -460,7 +460,12 @@ const CuentaEstado = () => {
     );
     const cuotaMensual = toNumber(simulacion.cuota_mensual || simulacion.cuota_mensual || 0, 0);
     const tasaMensual = toNumber(simulacion.tasa_mensual || 0, 0);
-    const interesTotalPendiente = toNumber(simulacion.interes_total_pendiente || 0, 0);
+    const filasFinanciadasPDF = tablaAmortizacionPendiente.filter((fila) => Number(fila.numero_cuota || 0) > 0);
+    const interesTotalPlan = round2(filasFinanciadasPDF.reduce((total, fila) => total + toNumber(fila.interes_mes, 0), 0));
+    const totalPlan = round2(filasFinanciadasPDF.reduce((total, fila) => total + toNumber(fila.cuota_estimada || fila.cuota, 0), 0));
+    const filasPendientesPDF = filasFinanciadasPDF.filter((fila) => String(fila.estado || 'PENDIENTE').toUpperCase() !== 'PAGADO');
+    const interesTotalPendiente = round2(filasPendientesPDF.reduce((total, fila) => total + toNumber(fila.interes_mes, 0), 0));
+    const totalLiquidacionPendiente = round2(filasPendientesPDF.reduce((total, fila) => total + toNumber(fila.cuota_estimada || fila.cuota, 0), 0));
     const capitalRestante = toNumber(simulacion.capital_restante || 0, 0);
     const fecha = new Date().toLocaleDateString('es-GT');
     const infoHeaderY = 22;
@@ -585,9 +590,15 @@ const CuentaEstado = () => {
       { align: 'center', maxWidth: pageWidth - 20 }
     );
     doc.text(
-      `Interés total pendiente: ${formatoMoneda(interesTotalPendiente)}   |   Total liquidación (capital + intereses): ${formatoMoneda(simulacion.total_liquidacion)}`,
+      `Interés total del plan: ${formatoMoneda(interesTotalPlan)}   |   Total del plan financiado: ${formatoMoneda(totalPlan)}`,
       centroPagina,
       lastY + 15,
+      { align: 'center', maxWidth: pageWidth - 20 }
+    );
+    doc.text(
+      `Interés realmente pendiente: ${formatoMoneda(interesTotalPendiente)}   |   Liquidación pendiente: ${formatoMoneda(totalLiquidacionPendiente)}`,
+      centroPagina,
+      lastY + 22,
       { align: 'center', maxWidth: pageWidth - 20 }
     );
 
