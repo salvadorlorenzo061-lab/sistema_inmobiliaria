@@ -81,6 +81,8 @@ function AsignarCorrelativo() {
   const [fechaCuadre, setFechaCuadre] = useState(getToday());
   const [periodoMes, setPeriodoMes] = useState(getCurrentMonth());
   const [periodoAnio, setPeriodoAnio] = useState(String(new Date().getFullYear()));
+  const [fechaInicioCuadre, setFechaInicioCuadre] = useState(getToday());
+  const [fechaFinCuadre, setFechaFinCuadre] = useState(getToday());
   const [reporte, setReporte] = useState(null);
   const [loadingReporte, setLoadingReporte] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -118,6 +120,11 @@ function AsignarCorrelativo() {
     () => getRangeByType(tipoCuadre, fechaCuadre, periodoMes, periodoAnio),
     [tipoCuadre, fechaCuadre, periodoMes, periodoAnio]
   );
+
+  useEffect(() => {
+    setFechaInicioCuadre(rangoCuadreSeleccionado.inicio);
+    setFechaFinCuadre(rangoCuadreSeleccionado.fin);
+  }, [rangoCuadreSeleccionado]);
 
   useEffect(() => {
     if (!idResolucion) return;
@@ -240,10 +247,15 @@ function AsignarCorrelativo() {
   };
 
   const consultarCuadre = async () => {
-    const rango = getRangeByType(tipoCuadre, fechaCuadre, periodoMes, periodoAnio);
-    let query = tipoCuadre === 'dia'
-      ? `fecha=${encodeURIComponent(rango.inicio)}`
-      : `fecha_inicio=${encodeURIComponent(rango.inicio)}&fecha_fin=${encodeURIComponent(rango.fin)}`;
+    if (!fechaInicioCuadre || !fechaFinCuadre) {
+      Swal.fire({ icon: 'warning', title: 'Rango incompleto', text: 'Selecciona la fecha de inicio y la fecha final.' });
+      return;
+    }
+    if (fechaInicioCuadre > fechaFinCuadre) {
+      Swal.fire({ icon: 'warning', title: 'Rango inválido', text: 'La fecha de inicio no puede ser mayor que la fecha final.' });
+      return;
+    }
+    let query = `fecha_inicio=${encodeURIComponent(fechaInicioCuadre)}&fecha_fin=${encodeURIComponent(fechaFinCuadre)}`;
 
     query = `${query}&accion=${encodeURIComponent(accionCuadre)}`;
     if (idUsuarioCuadre) {
@@ -252,8 +264,7 @@ function AsignarCorrelativo() {
 
     setLoadingReporte(true);
     try {
-      const endpoint = tipoCuadre === 'dia' ? 'cuadre-dia' : 'cuadre-mes';
-      const response = await Axios.get(`${API_URL}/${endpoint}?${query}`);
+      const response = await Axios.get(`${API_URL}/cuadre-mes?${query}`);
       setReporte(response.data || null);
     } catch (error) {
       setReporte(null);
@@ -604,12 +615,12 @@ function AsignarCorrelativo() {
 
             <div className="col-md-2">
               <label className="form-label fw-bold">Fecha inicio</label>
-              <input type="date" className="form-control bg-light" value={rangoCuadreSeleccionado.inicio} readOnly />
+              <input type="date" className="form-control" value={fechaInicioCuadre} onChange={(e) => setFechaInicioCuadre(e.target.value)} />
             </div>
 
             <div className="col-md-2">
               <label className="form-label fw-bold">Fecha fin</label>
-              <input type="date" className="form-control bg-light" value={rangoCuadreSeleccionado.fin} readOnly />
+              <input type="date" className="form-control" value={fechaFinCuadre} onChange={(e) => setFechaFinCuadre(e.target.value)} />
             </div>
 
             <div className="col-md-2">
