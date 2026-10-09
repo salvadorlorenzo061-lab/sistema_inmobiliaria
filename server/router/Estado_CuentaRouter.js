@@ -100,13 +100,13 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             c.formato_contrato, c.id_proyecto, c.mes_inicio_pagos, c.anio_inicio_pagos,
             c.dia_inicio_pagos, c.dia_pago_limite,
             tc.nombre_tipo_contrato,
-            p.nombre AS nombre_proyecto,
-            vp.id_lote AS lote,
-            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.manzana')) ELSE NULL END AS manzana,
-            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.numero_finca')) ELSE NULL END AS numero_finca,
-            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.folio')) ELSE NULL END AS folio,
-            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.libro')) ELSE NULL END AS libro,
-            CASE WHEN JSON_VALID(vp.observaciones) THEN JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.area')) ELSE NULL END AS area,
+            COALESCE(NULLIF(c.nombre_proyecto_propiedad, ''), p.nombre) AS nombre_proyecto,
+            COALESCE(NULLIF(c.numero_lote, ''), NULLIF(CAST(vp.id_lote AS CHAR), '0')) AS lote,
+            COALESCE(NULLIF(c.manzana, ''), CASE WHEN JSON_VALID(vp.observaciones) THEN NULLIF(JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.manzana')), '') ELSE NULL END) AS manzana,
+            COALESCE(NULLIF(c.numero_finca, ''), CASE WHEN JSON_VALID(vp.observaciones) THEN NULLIF(JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.numero_finca')), '') ELSE NULL END) AS numero_finca,
+            COALESCE(NULLIF(c.folio, ''), CASE WHEN JSON_VALID(vp.observaciones) THEN NULLIF(JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.folio')), '') ELSE NULL END) AS folio,
+            COALESCE(NULLIF(c.libro, ''), CASE WHEN JSON_VALID(vp.observaciones) THEN NULLIF(JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.libro')), '') ELSE NULL END) AS libro,
+            COALESCE(NULLIF(c.area_m2, ''), CASE WHEN JSON_VALID(vp.observaciones) THEN NULLIF(JSON_UNQUOTE(JSON_EXTRACT(vp.observaciones, '$.area')), '') ELSE NULL END) AS area,
             COALESCE((
                 SELECT SUM(CASE WHEN pd_total.tipo_concepto = 'mora_exonerada' THEN 0 ELSE pd_total.subtotal END)
                 FROM pagos p_total

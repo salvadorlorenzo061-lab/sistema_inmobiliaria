@@ -98,30 +98,28 @@ const EstadoCuenta = () => {
     const dorado = [194, 145, 35];
     const logo = logoNormalizado(contrato.logo_proyecto || contrato.logo_empresa_pdf);
     if (logo) {
-      try { doc.addImage(logo, logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', 60, 9, 36, 21, 'logo-proyecto', 'FAST'); } catch (e) { console.warn(e); }
+      try { doc.addImage(logo, logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', 73, 7, 70, 28, 'logo-proyecto', 'FAST'); } catch (e) { console.warn(e); }
     }
     doc.setTextColor(...azul);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(17);
-    doc.text('GRUPO DE INVERSIONES', 112, 20, { align: 'center' });
     doc.setFontSize(15);
-    doc.text('ESTADO DE CUENTA', ancho / 2, 34, { align: 'center' });
+    doc.text('ESTADO DE CUENTA', ancho / 2, 44, { align: 'center' });
     const dato = (titulo, valor, x, y, vx) => {
       doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.text(titulo, x, y);
       doc.setFont('helvetica', 'normal'); doc.text(String(valor || 'N/A'), vx, y, { maxWidth: 55 });
     };
-    dato('CLIENTE', String(contrato.nombre || '').toUpperCase(), 17, 48, 50);
-    dato('PROYECTO', String(contrato.nombre_proyecto || '').toUpperCase(), 17, 55, 50);
-    dato('DIRECCIÓN', contrato.direccion_notificacion, 17, 62, 50);
-    dato('FECHA CONTRATO', fecha(contrato.fecha_firma), 17, 69, 50);
-    dato('ID CLIENTE', contrato.numero_identificacion || contrato.id_residente, 118, 48, 153);
-    dato('LOTE / MANZANA', `${contrato.lote || 'N/A'} / ${contrato.manzana || 'N/A'}`, 118, 55, 153);
-    dato('TELÉFONO', contrato.telefono, 118, 62, 153);
-    dato('ESTADO', Number(estado.saldoPendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE', 118, 69, 153);
-    doc.setFillColor(...azul); doc.rect(12, 76, ancho - 24, 6, 'F');
-    doc.setTextColor(255); doc.setFontSize(8); doc.text('RESUMEN DE SU CUENTA', ancho / 2, 80.2, { align: 'center' });
+    dato('CLIENTE', String(contrato.nombre || '').toUpperCase(), 17, 59, 50);
+    dato('PROYECTO', String(contrato.nombre_proyecto || '').toUpperCase(), 17, 66, 50);
+    dato('DIRECCIÓN', contrato.direccion_notificacion, 17, 73, 50);
+    dato('FECHA CONTRATO', fecha(contrato.fecha_firma), 17, 80, 50);
+    dato('ID CLIENTE', contrato.numero_identificacion || contrato.id_residente, 118, 59, 153);
+    dato('LOTE / MANZANA', `${contrato.lote || 'N/A'} / ${contrato.manzana || 'N/A'}`, 118, 66, 153);
+    dato('TELÉFONO', contrato.telefono, 118, 73, 153);
+    dato('ESTADO', Number(estado.saldoPendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE', 118, 80, 153);
+    doc.setFillColor(...azul); doc.rect(12, 87, ancho - 24, 6, 'F');
+    doc.setTextColor(255); doc.setFontSize(8); doc.text('RESUMEN DE SU CUENTA', ancho / 2, 91.2, { align: 'center' });
     autoTable(doc, {
-      startY: 82, margin: { left: 12, right: 12 }, theme: 'plain', styles: { fontSize: 7.2, cellPadding: 1.2 },
+      startY: 93, margin: { left: 12, right: 12 }, theme: 'plain', styles: { fontSize: 7.2, cellPadding: 1.2 },
       body: [
         ['Precio total', moneda(contrato.monto_total), 'Enganche', moneda(contrato.enganche), 'Saldo financiado', moneda(resumen.capital)],
         ['Tasa anual', `${Number(contrato.interes_porcentaje || 0).toFixed(2)}%`, 'Cuota mensual', moneda(resumen.montoCuota), 'Plazo original', `${resumen.cuotas} meses`],
