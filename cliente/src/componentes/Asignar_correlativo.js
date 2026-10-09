@@ -76,7 +76,7 @@ function AsignarCorrelativo() {
   const [observaciones, setObservaciones] = useState('');
 
   const [tipoCuadre, setTipoCuadre] = useState('dia');
-  const accionCuadre = 'todas';
+  const [accionCuadre, setAccionCuadre] = useState('todas');
   const [idUsuarioCuadre, setIdUsuarioCuadre] = useState('');
   const [fechaCuadre, setFechaCuadre] = useState(getToday());
   const [periodoMes, setPeriodoMes] = useState(getCurrentMonth());
@@ -124,7 +124,7 @@ function AsignarCorrelativo() {
   useEffect(() => {
     setFechaInicioCuadre(rangoCuadreSeleccionado.inicio);
     setFechaFinCuadre(rangoCuadreSeleccionado.fin);
-  }, [rangoCuadreSeleccionado]);
+  }, [rangoCuadreSeleccionado.inicio, rangoCuadreSeleccionado.fin]);
 
   useEffect(() => {
     if (!idResolucion) return;
@@ -596,6 +596,15 @@ function AsignarCorrelativo() {
               </select>
             </div>
 
+            <div className="col-md-2">
+              <label className="form-label fw-bold">Estado de factura</label>
+              <select className="form-select" value={accionCuadre} onChange={(e) => setAccionCuadre(e.target.value)}>
+                <option value="todas">Emitidas y anuladas</option>
+                <option value="emitio">Solo emitidas</option>
+                <option value="anulo">Solo anuladas</option>
+              </select>
+            </div>
+
             <div className="col-md-3">
               <label className="form-label fw-bold">Cobrador / Usuario</label>
               <select className="form-select" value={idUsuarioCuadre} onChange={(e) => setIdUsuarioCuadre(e.target.value)}>
@@ -633,13 +642,12 @@ function AsignarCorrelativo() {
                   const month = e.target.value;
                   setPeriodoMes(month);
                 }}
-                disabled={tipoCuadre !== 'mes'}
               />
             </div>
 
             <div className="col-md-2">
               <label className="form-label fw-bold">Año</label>
-              <input type="number" min="2000" max="2100" className="form-control" value={periodoAnio} onChange={(e) => setPeriodoAnio(e.target.value)} disabled={tipoCuadre !== 'anio'} />
+              <input type="number" min="2000" max="2100" className="form-control" value={periodoAnio} onChange={(e) => setPeriodoAnio(e.target.value)} />
             </div>
 
             <div className="col-md-2">
@@ -649,14 +657,24 @@ function AsignarCorrelativo() {
             </div>
           </div>
 
-          {reporte && (
+          {reporte && !(reporte.detalle_facturas?.length > 0) && (
+            <div className="alert alert-info mt-3 mb-0 fw-bold">
+              {accionCuadre === 'emitio'
+                ? `No hay facturas emitidas en ${tipoCuadre === 'dia' ? 'ese día' : 'el período seleccionado'}.`
+                : accionCuadre === 'anulo'
+                  ? `No hay facturas anuladas en ${tipoCuadre === 'dia' ? 'ese día' : 'el período seleccionado'}.`
+                  : `No hay facturas emitidas ni anuladas en ${tipoCuadre === 'dia' ? 'ese día' : 'el período seleccionado'}.`}
+            </div>
+          )}
+
+          {reporte && reporte.detalle_facturas?.length > 0 && (
             <div className="d-flex gap-2 flex-wrap mt-3">
               <button className="btn btn-outline-danger fw-bold" onClick={exportarCuadrePdf}>EXPORTAR PDF</button>
               <button className="btn btn-outline-success fw-bold" onClick={exportarCuadreExcel}>EXPORTAR EXCEL</button>
             </div>
           )}
 
-          {reporte && (
+          {reporte && reporte.detalle_facturas?.length > 0 && (
             <>
               <div className="row g-3 mt-3">
                 <div className="col-md-3">

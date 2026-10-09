@@ -748,28 +748,44 @@ const obtenerCuadre = (scope) => (req, res) => {
             LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
             LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
             WHERE ${whereSql}${filtroUsuarioSql}
+              AND COALESCE(p.no_referencia, '') NOT LIKE 'TMP-%'
+              AND (
+                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = p.id_usuario)
+                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = p.id_usuario)
+              )
             GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
         `;
     } else if (accion === 'anulo') {
         const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'ad.fecha_anulacion');
-        const filtroUsuarioSql = filtrarUsuario ? ' AND ad.id_usuario_autoriza = ?' : '';
+        const filtroUsuarioSql = filtrarUsuario ? ' AND COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) = ?' : '';
 
         detalleBase = `
             SELECT
                 COALESCE(ad.id_pago, ad.id_anulacion) AS id_pago,
-                ad.id_usuario_autoriza AS id_usuario,
-                u.nombre AS nombre_usuario,
+                COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) AS id_usuario,
+                COALESCE(ue.nombre, ua.nombre) AS nombre_usuario,
                 COALESCE(ad.correlativo, CONCAT('ANU-', ad.id_anulacion)) AS no_referencia,
                 'ANULACION' AS forma_pago,
                 ad.fecha_anulacion AS fecha_pago,
                 'ANULADA' AS estado_factura,
-                COALESCE(ad.monto_anulado, 0) AS subtotal,
-                0 AS iva_total,
-                COALESCE(ad.monto_anulado, 0) AS total_cobrado,
+                -ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2) AS subtotal,
+                -ROUND(COALESCE(ad.monto_anulado, 0) - ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2), 2) AS iva_total,
+                -COALESCE(ad.monto_anulado, 0) AS total_cobrado,
                 0 AS monto_mora
             FROM anulacion_deuda ad
-            LEFT JOIN usuarios u ON u.id_usuario = ad.id_usuario_autoriza
+            LEFT JOIN (
+                SELECT correlativo, MAX(id_usuario) AS id_usuario_emisor
+                FROM facturas_historial
+                WHERE UPPER(COALESCE(estado_factura, '')) = 'ANULADA'
+                GROUP BY correlativo
+            ) fh ON fh.correlativo = ad.correlativo
+            LEFT JOIN usuarios ue ON ue.id_usuario = fh.id_usuario_emisor
+            LEFT JOIN usuarios ua ON ua.id_usuario = ad.id_usuario_autoriza
             WHERE ${whereSql}${filtroUsuarioSql}
+              AND (
+                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
+                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
+              )
         `;
     } else {
         const whereEmitidas = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'p.fecha_pago');
@@ -822,7 +838,7 @@ const obtenerCuadre = (scope) => (req, res) => {
                 0 AS monto_mora
             FROM anulacion_deuda ad
             LEFT JOIN (
-                SELECT correlativo, MAX(id_usuario_emisor) AS id_usuario_emisor
+                SELECT correlativo, MAX(id_usuario) AS id_usuario_emisor
                 FROM facturas_historial
                 WHERE UPPER(COALESCE(estado_factura, '')) = 'ANULADA'
                 GROUP BY correlativo
