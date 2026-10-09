@@ -24,7 +24,7 @@ export const redondearMoneda = (value) => (
 
 // Interes fijo mensual del plan: capital inicial financiado x tasa anual / 12.
 export const calcularInteresFijoMensual = (capital, tasaAnual) => {
-  const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
+  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
   const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
   return redondearMoneda((principal * (tasa / 100)) / 12);
 };
@@ -32,7 +32,7 @@ export const calcularInteresFijoMensual = (capital, tasaAnual) => {
 // Cuota fija mensual: techo((capital + interes total del plan) / cuotas).
 // Con tasa 0% equivale a techo(capital / cuotas).
 export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
-  const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
+  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
   const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
   const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
 
@@ -54,7 +54,7 @@ const resolverCuotaFijaPlan = (principal, tasa, plazo, cuotaPersonalizada = 0) =
 };
 
 export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicial = 0, cuotaFijaPersonalizada = 0) => {
-  const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
+  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
   const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
   const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
   const numeroBase = Math.max(parseInt(cuotaInicial || 0, 10), 0);
@@ -97,7 +97,7 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
 
 // Total del plan: cuota absoluta fija x numero de cuotas.
 export const calcularTotalPlanPlano = (capital, tasaAnual, cuotas) => {
-  const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
+  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
   const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
   if (principal <= 0 || plazo <= 0) return 0;
   return redondearMoneda(calcularCuotaFija(principal, tasaAnual, plazo) * plazo);

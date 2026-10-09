@@ -56,8 +56,8 @@ const getImageFormatFromDataUrl = (value = '') => {
 // plan lineal oficial (capital fijo + interes fijo por mes, igual que las
 // tablas PDF), compartida por Contratos, Caja y utils/amortizacion.js. La
 // cuota pactada solo se respeta si amortiza; la ultima cuota cierra en cero.
-const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales, cuotaPactada) => (
-  generarTablaAmortizacion(capitalInicial, interesAnual, cuotasTotales, 0, cuotaPactada)
+const construirPlanContratoLocal = (capitalInicial, interesAnual, cuotasTotales, _cuotaPactada) => (
+  generarTablaAmortizacion(capitalInicial, interesAnual, cuotasTotales, 0, 0)
 );
 
 const construirSimulacionLocal = ({

@@ -98,7 +98,7 @@ const calcularLiquidacionCapital = ({
         interesAnual,
         mesesPlan,
         usarPlanContrato ? 0 : cuotasPagadasBase,
-        cuotaPactada
+        usarPlanContrato ? 0 : cuotaPactada
     );
 
     const tablaAmortizacion = tablaCompleta

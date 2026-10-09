@@ -70,18 +70,14 @@ const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => (
     calcularCuotaPlana(capital, tasaAnual, cuotas)
 );
 
-const normalizarCuotaContrato = (cuotaManual = 0, capital = 0, tasaAnual = 0, cuotas = 0) => {
+const normalizarCuotaContrato = (_cuotaManual = 0, capital = 0, tasaAnual = 0, cuotas = 0) => {
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     const principal = Math.max(Number(capital || 0), 0);
     const tasa = Math.max(Number(tasaAnual || 0), 0);
-    const totalFinanciado = plazo > 0
-        ? Number((principal + (principal * (tasa / 100) * (plazo / 12))).toFixed(2))
-        : 0;
-    const manual = Math.round(Number(cuotaManual || 0));
-    const manualValida = manual > 0
-        && (plazo <= 1 || (manual * (plazo - 1)) < totalFinanciado);
-
-    return manualValida ? manual : calcularCuotaFijaContrato(principal, tasa, plazo);
+    // La cuota contractual nunca se toma de un valor manual anterior: se
+    // deriva siempre de capital, tasa y plazo para que Contratos, Caja y PDF
+    // reproduzcan exactamente el mismo plan.
+    return calcularCuotaFijaContrato(principal, tasa, plazo);
 };
 
 const normalizeMesInicioPagos = (value, fallback = 1) => {
@@ -813,30 +809,19 @@ const backfillVentasPropiedad = () => {
     });
 };
 
-// Migra contratos históricos al plan lineal oficial (capital fijo + interes
-// fijo por mes). Reconoce cuotas viejas calculadas con la formula plana
-// (ROUND) y las que se generaron con el Sistema Frances; una cuota manual
-// diferente y valida se conserva.
+// Migra todos los contratos financiados históricos al plan lineal oficial.
+// No conserva cuotas manuales: capital, tasa y plazo son la fuente de verdad.
 const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
     const cuotasSql = 'COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1)';
-    const capitalSql = 'GREATEST(ROUND(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0), 0), 0)';
-    const totalPlanoSql = `(${capitalSql} + (${capitalSql} * COALESCE(c.interes_porcentaje, 0) / 100 * (${cuotasSql} / 12)))`;
+    const capitalSql = 'GREATEST(ROUND(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0), 2), 0)';
     const cuotaPlanaSql = sqlCuotaPlana(capitalSql, 'c.interes_porcentaje', cuotasSql);
-    // Deteccion de cuotas generadas con el Sistema Frances (interes compuesto),
-    // para regresarlas a la cuota plana oficial.
-    const rFrancesSql = '(COALESCE(c.interes_porcentaje, 0) / 100 / 12)';
-    const cuotaFrancesaSql = `IF(COALESCE(c.interes_porcentaje, 0) > 0, ROUND(${capitalSql} * ((${rFrancesSql}) * POWER(1 + ${rFrancesSql}, ${cuotasSql})) / (POWER(1 + ${rFrancesSql}, ${cuotasSql}) - 1), 2), ROUND(${capitalSql} / ${cuotasSql}, 2))`;
-
     db.query(`
         UPDATE contratos_residentes c
         SET c.monto_cuota = ${cuotaPlanaSql}
         WHERE ${cuotasSql} > 0
           AND ${capitalSql} > 0
-          AND (
-              COALESCE(c.monto_cuota, 0) <= 0
-              OR ABS(COALESCE(c.monto_cuota, 0) - ${cuotaFrancesaSql}) < 0.01
-              OR (COALESCE(c.monto_cuota, 0) * GREATEST(${cuotasSql} - 1, 0)) >= ${totalPlanoSql}
-          )
+          AND LOWER(COALESCE(c.modalidad_pago, 'financiado')) <> 'contado'
+          AND ABS(COALESCE(c.monto_cuota, 0) - ${cuotaPlanaSql}) >= 0.01
     `, (err, result) => {
         if (err) {
             console.error('Error normalizando cuotas automáticas existentes:', err.message);

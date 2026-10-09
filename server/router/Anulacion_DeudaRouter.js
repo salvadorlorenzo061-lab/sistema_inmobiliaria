@@ -3,6 +3,7 @@ const db = require('../Conexion');
 const router = express.Router();
 const cors = require('cors');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
+const { sqlTotalPlanPlano } = require('../utils/amortizacion');
 
 router.use(cors());
 
@@ -756,6 +757,11 @@ router.post('/anular-por-correlativo', (req, res) => {
                 // interpretar un correlativo distinto como una repetición del mismo documento.
 
                 const recalcularContratoTrasAnulacion = (finishCallback) => {
+                    const totalPlanPlanoSql = sqlTotalPlanPlano(
+                        'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+                        'c.interes_porcentaje',
+                        'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
+                    );
                     const sqlRecalculo = `
                         UPDATE contratos_residentes c
                         LEFT JOIN (
@@ -766,7 +772,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                             GROUP BY p.id_contrato
                         ) pagos ON pagos.id_contrato = c.id_contrato
                         SET c.saldo_pendiente = GREATEST(
-                                COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(pagos.total_pagado, 0),
+                                (${totalPlanPlanoSql}) - COALESCE(pagos.total_pagado, 0),
                                 0
                             ),
                             c.cuotas_pagadas = COALESCE(
@@ -807,7 +813,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                                     0
                                 ),
                                 c.saldo_pendiente = GREATEST(
-                                    COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0) - COALESCE(
+                                    (${totalPlanPlanoSql}) - COALESCE(
                                         (
                                             SELECT SUM(CASE WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal ELSE 0 END)
                                             FROM pagos p
@@ -840,7 +846,7 @@ router.post('/anular-por-correlativo', (req, res) => {
                         SELECT id_convenio, monto_original, saldo_actual, estado
                         FROM convenio_pagos
                         WHERE id_contrato = ?
-                          AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pagado', 'cumplido', 'incumplido')
+                          AND LOWER(COALESCE(estado, 'activo')) IN ('activo', 'pendiente', 'pagado', 'cumplido', 'incumplido')
                         ORDER BY id_convenio DESC
                         LIMIT 1
                     `;

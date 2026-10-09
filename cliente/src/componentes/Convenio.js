@@ -64,7 +64,7 @@ function Convenio() {
     const montoOriginalNum = Number(monto_original || 0);
     const cuotasNum = Number(cuotas_pactadas || 0);
     if (montoOriginalNum > 0 && cuotasNum > 0) {
-      setMontoCuota(String(Math.round(montoOriginalNum / cuotasNum)));
+      setMontoCuota(String(Math.ceil(montoOriginalNum / cuotasNum)));
     } else {
       setMontoCuota('');
     }
@@ -138,16 +138,28 @@ function Convenio() {
     }
   };
 
-  const seleccionarResidenteContrato = (item) => {
+  const seleccionarResidenteContrato = async (item) => {
     setIdContrato(String(item.id_contrato || ''));
-    setResidenteSeleccionado(item);
+    setResidenteSeleccionado({ ...item, cargando_saldo: true });
     setBusquedaResidente(`${item.nombre || ''} · ${item.codigo_contrato || `#${item.id_contrato}`}`);
     setResultadosResidentes([]);
 
-    const montoBase = Number(item.monto_total || 0);
-    if (montoBase > 0) {
-      setMontoOriginal(String(montoBase.toFixed(2)));
-      setSaldoActual(String(montoBase.toFixed(2)));
+    try {
+      const res = await Axios.get(`${API_URL}/saldo-pendiente/${item.id_contrato}`);
+      const deuda = res?.data || {};
+      const montoBase = Number(deuda.total_pendiente_convenio || 0);
+      setResidenteSeleccionado({ ...item, ...deuda, cargando_saldo: false });
+      setMontoOriginal(montoBase > 0 ? montoBase.toFixed(2) : '0.00');
+      setSaldoActual(montoBase > 0 ? montoBase.toFixed(2) : '0.00');
+    } catch (error) {
+      setMontoOriginal('');
+      setSaldoActual('');
+      setResidenteSeleccionado({ ...item, cargando_saldo: false });
+      Swal.fire({
+        icon: 'error',
+        title: 'No se pudo calcular el saldo',
+        text: error?.response?.data?.message || 'No se pudo consultar la deuda contractual pendiente.'
+      });
     }
   };
 
@@ -477,6 +489,18 @@ function Convenio() {
                       Convenio para: <strong>{residenteSeleccionado.nombre}</strong>
                       {' · '}
                       {residenteSeleccionado.codigo_contrato || `Contrato #${residenteSeleccionado.id_contrato}`}
+                      {residenteSeleccionado.cargando_saldo && <div className="mt-2">Calculando saldo contractual pendiente...</div>}
+                      {!residenteSeleccionado.cargando_saldo && residenteSeleccionado.total_pendiente_convenio != null && (
+                        <div className="mt-2">
+                          <strong>Cuotas financiadas pendientes:</strong> Q{Number(residenteSeleccionado.cuotas_financiadas_pendientes || 0).toFixed(2)}
+                          {' · '}
+                          <strong>Enganche pendiente:</strong> Q{Number(residenteSeleccionado.enganche_pendiente || 0).toFixed(2)}
+                          <br />
+                          <strong>Próxima cuota contractual:</strong> {residenteSeleccionado.proxima_cuota || '-'}
+                          {' · '}
+                          <strong>Total para convenio:</strong> Q{Number(residenteSeleccionado.total_pendiente_convenio || 0).toFixed(2)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -487,11 +511,11 @@ function Convenio() {
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Monto Original (Q):</label>
-                  <input type="number" className="form-control" value={monto_original} onChange={(e) => setMontoOriginal(e.target.value)} />
+                  <input type="number" className="form-control bg-light" readOnly value={monto_original} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Saldo Actual (Q):</label>
-                  <input type="number" className="form-control" value={saldo_actual} onChange={(e) => setSaldoActual(e.target.value)} />
+                  <input type="number" className="form-control bg-light" readOnly value={saldo_actual} />
                 </div>
                 <div className="col-md-4 mb-3">
                   <label className="form-label fw-bold">Cuotas Pactadas:</label>

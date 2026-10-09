@@ -2375,7 +2375,7 @@ router.post("/procesar-pago", (req, res) => {
                 interesPlanContrato,
                 cuotasPlanContrato,
                 primeraCuotaPlanContrato - 1,
-                cuotaGuardadaContrato
+                tieneConvenioActivoContrato ? cuotaGuardadaContrato : 0
             );
             const cuotaFijaPactadaContrato = Number(tablaAmortizacionContrato[0]?.cuota_estimada || 0);
             const interesPorCuotaContrato = Number(tablaAmortizacionContrato[0]?.interes_mes || 0);
