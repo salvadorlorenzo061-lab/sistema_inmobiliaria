@@ -8,18 +8,16 @@ export const redondearMoneda = (value) => (
 );
 
 // ============================================================================
-// SISTEMA LINEAL OFICIAL DE AMORTIZACION (capital fijo + interes fijo)
+// SISTEMA LINEAL OFICIAL (cuota absoluta fija + ajuste residual final)
 // ============================================================================
 // UNICA formula de calculo de cuotas del sistema (la misma de las tablas PDF
 // oficiales). Regla global obligatoria:
 //   1) Capital fijo por mes: se amortiza la misma cantidad de capital en cada
 //      cuota (Ej: Q170,000 / 24 = Q7,083.67 fijos cada mes).
-//   2) Interes fijo por mes: capital inicial financiado x tasa mensual
-//      (Ej: Q170,000 x 14% / 12 = Q1,983.33 fijos cada mes).
-//   3) Cuota total mensual: capital fijo + interes fijo, identica cada mes
-//      (Ej: Q7,083.67 + Q1,983.33 = Q9,067.00).
-//   4) El saldo de capital baja linealmente restando el abono fijo y la
-//      ultima cuota ajusta el residuo para cerrar exactamente en cero.
+//   2) Cuota total mensual absoluta e identica durante todo el plazo.
+//   3) Interes regular: cuota fija menos capital regular.
+//   4) La ultima cuota usa el capital residual exacto y despeja el interes
+//      por diferencia, conservando la cuota fija y cerrando el saldo en cero.
 // El backend replica esta misma logica en server/utils/amortizacion.js.
 // NO usar formulas de interes compuesto / Sistema Frances.
 // ============================================================================
@@ -62,21 +60,22 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
   const numeroBase = Math.max(parseInt(cuotaInicial || 0, 10), 0);
   if (principal <= 0 || plazo <= 0) return [];
 
-  // Capital fijo e interes fijo identicos en TODAS las cuotas; el capital de
-  // la ultima cuota ajusta el saldo para cerrar exactamente en cero.
-  const interesMesFijo = calcularInteresFijoMensual(principal, tasa);
+  // Cuota absoluta rigida: el capital regular es principal / plazo. En el
+  // ultimo periodo se aplica el residuo de capital y el interes se despeja
+  // por diferencia para conservar exactamente la misma cuota pactada.
   const cuotaFija = resolverCuotaFijaPlan(principal, tasa, plazo, cuotaFijaPersonalizada);
+  const capitalRegular = redondearMoneda(principal / plazo);
   const tabla = [];
   let saldo = principal;
   let interesAcumulado = 0;
 
   for (let indice = 1; indice <= plazo; indice += 1) {
     const esUltimaCuota = indice === plazo;
-    const interesMes = interesMesFijo;
     const capitalCuota = esUltimaCuota
       ? redondearMoneda(saldo)
-      : redondearMoneda(Math.min(Math.max(cuotaFija - interesMes, 0), saldo));
-    const pago = esUltimaCuota ? redondearMoneda(capitalCuota + interesMes) : cuotaFija;
+      : redondearMoneda(Math.min(capitalRegular, saldo));
+    const pago = cuotaFija;
+    const interesMes = redondearMoneda(Math.max(pago - capitalCuota, 0));
     const saldoFinal = redondearMoneda(Math.max(saldo - capitalCuota, 0));
     interesAcumulado = redondearMoneda(interesAcumulado + interesMes);
 
@@ -96,11 +95,10 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
   return tabla;
 };
 
-// Total del plan (capital + intereses): capital + interes fijo mensual x n.
-// Coincide con la suma de las cuotas de la tabla de amortizacion.
+// Total del plan: cuota absoluta fija x numero de cuotas.
 export const calcularTotalPlanPlano = (capital, tasaAnual, cuotas) => {
   const principal = Math.round(Math.max(numeroSeguro(capital, 0), 0));
   const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
   if (principal <= 0 || plazo <= 0) return 0;
-  return redondearMoneda(principal + calcularInteresFijoMensual(principal, tasaAnual) * plazo);
+  return redondearMoneda(calcularCuotaFija(principal, tasaAnual, plazo) * plazo);
 };

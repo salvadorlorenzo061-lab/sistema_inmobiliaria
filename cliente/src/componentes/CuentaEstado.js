@@ -494,13 +494,13 @@ const CuentaEstado = () => {
         'Estado'
       ]],
       body: tablaAmortizacionPendiente.map((row, index) => {
-        const cuotaNumero = Number(row.numero_cuota || index + 1);
+        const cuotaNumero = Number(row.numero_cuota ?? (index + 1));
         const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
         const saldoCapital = Number(row.saldo_final ?? 0);
         const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
         return [
-          String(cuotaNumero),
+          cuotaNumero === 0 ? 'Cuota 0 / Enganche' : String(cuotaNumero),
           fechaVencimiento,
           formatoMoneda(row.cuota_estimada || row.cuota || 0),
           'Q 0.00',
@@ -583,13 +583,13 @@ const CuentaEstado = () => {
     const nombreResidente = String(contrato?.nombre_residente || 'SIN-CLIENTE');
 
     const filas = tablaAmortizacionPendiente.map((row, index) => {
-      const cuotaNumero = Number(row.numero_cuota || index + 1);
+      const cuotaNumero = Number(row.numero_cuota ?? (index + 1));
       const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
       const saldoCapital = Number(row.saldo_final ?? 0);
       const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
       return [
-        cuotaNumero,
+        cuotaNumero === 0 ? 'Cuota 0 / Enganche' : cuotaNumero,
         fechaVencimiento,
         Number(row.cuota_estimada || row.cuota || 0),
         0,
@@ -812,8 +812,8 @@ const CuentaEstado = () => {
                 <hr />
 
                 <p className="mb-1"><strong>Formula aplicada (plan lineal oficial):</strong></p>
-                <p className="mb-1">Interes fijo por mes = capital inicial x tasa anual / 12; Capital fijo por mes = cuota fija - interes fijo.</p>
-                <p className="mb-0">Cuota total mensual = capital fijo + interes fijo (constante todos los meses); la ultima cuota ajusta el capital restante para cerrar el plan.</p>
+                <p className="mb-1">Capital regular = capital financiado / cuotas. La cuota total permanece fija durante todo el plan.</p>
+                <p className="mb-0">En la última cuota se aplica el residuo exacto de capital y el interés se ajusta por diferencia: cuota fija - capital residual.</p>
 
                 {tablaAmortizacionPendiente.length > 0 && (
                   <>
@@ -836,14 +836,14 @@ const CuentaEstado = () => {
                         </thead>
                         <tbody>
                           {tablaAmortizacionPendiente.map((row, index) => {
-                            const cuotaNumero = Number(row.numero_cuota || index + 1);
+                            const cuotaNumero = Number(row.numero_cuota ?? (index + 1));
                             const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
                             const saldoCapital = Number(row.saldo_final ?? 0);
                             const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
                             return (
                               <tr key={row.indice ?? cuotaNumero}>
-                                <td className="fw-bold">{cuotaNumero}</td>
+                                <td className="fw-bold">{cuotaNumero === 0 ? 'Cuota 0 / Enganche' : cuotaNumero}</td>
                                 <td>{fechaVencimiento || '—'}</td>
                                 <td>{formatoMoneda(row.cuota_estimada || row.cuota || 0)}</td>
                                 <td>Q 0.00</td>

@@ -1,16 +1,14 @@
 // ============================================================================
-// SISTEMA LINEAL OFICIAL DE AMORTIZACION (capital fijo + interes fijo)
+// SISTEMA LINEAL OFICIAL (cuota absoluta fija + ajuste residual final)
 // ============================================================================
 // UNICA formula de calculo de cuotas del sistema (la misma de las tablas PDF
 // oficiales). Regla global obligatoria:
 //   1) Capital fijo por mes: se amortiza la misma cantidad de capital en cada
 //      cuota (Ej: Q170,000 / 24 = Q7,083.67 fijos cada mes).
-//   2) Interes fijo por mes: capital inicial financiado x tasa mensual
-//      (Ej: Q170,000 x 14% / 12 = Q1,983.33 fijos cada mes).
-//   3) Cuota total mensual: capital fijo + interes fijo, identica cada mes
-//      (Ej: Q7,083.67 + Q1,983.33 = Q9,067.00).
-//   4) El saldo de capital baja linealmente restando el abono fijo y la
-//      ultima cuota ajusta el residuo para cerrar exactamente en cero.
+//   2) Cuota total mensual absoluta e identica durante todo el plazo.
+//   3) Interes regular: cuota fija menos capital regular.
+//   4) La ultima cuota usa el capital residual exacto y despeja el interes
+//      por diferencia, conservando la cuota fija y cerrando el saldo en cero.
 // El frontend replica esta misma logica en cliente/src/utils/amortizacion.js.
 // NO usar formulas de interes compuesto / Sistema Frances.
 // ============================================================================
@@ -56,8 +54,8 @@ const resolverCuotaFijaPlan = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaPers
     return personalizadaValida ? personalizada : calculada;
 };
 
-// Tabla completa del plan: capital fijo e interes fijo identicos cada mes; la
-// ultima cuota ajusta el capital restante para cerrar exactamente en cero.
+// Tabla completa: capital regular fijo; al vencimiento se ajustan el capital
+// residual y el interes para mantener invariable la cuota absoluta.
 const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial = 0, cuotaPersonalizada = 0) => {
     const principal = Math.round(Math.max(toNumber(capital, 0), 0));
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
@@ -65,19 +63,19 @@ const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial 
     const numeroBase = Math.max(parseInt(cuotaInicial || 0, 10), 0);
     if (principal <= 0 || plazo <= 0) return [];
 
-    const interesMesFijo = calcularInteresFijoMensual(principal, tasa);
     const cuotaFija = resolverCuotaFijaPlan(principal, tasa, plazo, cuotaPersonalizada);
+    const capitalRegular = redondear2(principal / plazo);
     const tabla = [];
     let saldo = principal;
     let interesAcumulado = 0;
 
     for (let indice = 1; indice <= plazo; indice += 1) {
         const esUltima = indice === plazo;
-        const interesMes = interesMesFijo;
         const capitalCuota = esUltima
             ? redondear2(saldo)
-            : redondear2(Math.min(Math.max(cuotaFija - interesMes, 0), saldo));
-        const pago = esUltima ? redondear2(capitalCuota + interesMes) : cuotaFija;
+            : redondear2(Math.min(capitalRegular, saldo));
+        const pago = cuotaFija;
+        const interesMes = redondear2(Math.max(pago - capitalCuota, 0));
         const saldoFinal = redondear2(Math.max(saldo - capitalCuota, 0));
         interesAcumulado = redondear2(interesAcumulado + interesMes);
 
@@ -97,13 +95,12 @@ const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial 
     return tabla;
 };
 
-// Total del plan (capital + intereses): capital + interes fijo mensual x n.
-// Coincide con la suma de las cuotas de la tabla y con la formula SQL de abajo.
+// Total del plan: cuota absoluta fija x numero de cuotas.
 const calcularTotalPlanPlano = (capital = 0, tasaAnual = 0, cuotas = 0) => {
     const principal = Math.round(Math.max(toNumber(capital, 0), 0));
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     if (principal <= 0 || plazo <= 0) return 0;
-    return redondear2(principal + calcularInteresFijoMensual(principal, tasaAnual) * plazo);
+    return redondear2(calcularCuotaPlana(principal, tasaAnual, plazo) * plazo);
 };
 
 // Expresion SQL (MySQL) de la cuota plana, para migraciones de monto_cuota.
@@ -114,12 +111,12 @@ const sqlCuotaPlana = (capitalExpr, tasaAnualExpr, cuotasExpr) => {
     return `CEIL((${p} + (${p} * ${tasa} / 100 * (${n} / 12))) / ${n})`;
 };
 
-// Total del plan en SQL: capital + interes fijo mensual x numero de cuotas.
+// Total del plan en SQL: cuota absoluta fija x numero de cuotas.
 const sqlTotalPlanPlano = (capitalExpr, tasaAnualExpr, cuotasExpr) => {
     const tasa = `COALESCE(${tasaAnualExpr}, 0)`;
     const n = `GREATEST(COALESCE((${cuotasExpr}), 1), 1)`;
     const p = `GREATEST(COALESCE((${capitalExpr}), 0), 0)`;
-    return `ROUND(${p} + ROUND(${p} * ${tasa} / 100 / 12, 2) * ${n}, 2)`;
+    return `ROUND(${sqlCuotaPlana(p, tasa, n)} * ${n}, 2)`;
 };
 
 module.exports = {

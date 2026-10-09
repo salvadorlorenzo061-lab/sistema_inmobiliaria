@@ -545,10 +545,70 @@ const ensureFinancialContractColumns = () => {
     ensureFinancialColumn('dia_inicio_pagos', 'INT NULL DEFAULT 1');
     ensureFinancialColumn('saldo_pendiente', 'DECIMAL(12,2) NULL DEFAULT 0');
     ensureFinancialColumn('modalidad_pago', "VARCHAR(20) NOT NULL DEFAULT 'financiado'");
-    // Los datos registrales deben vivir también en el contrato principal. De esta
-    // forma no se pierden si falla la sincronización del resumen de venta.
-    ensureFinancialColumn('numero_lote', "VARCHAR(100) NULL DEFAULT NULL");
-    ensureFinancialColumn('datos_propiedad_json', 'LONGTEXT NULL');
+};
+
+// Cada dato registral se guarda en una columna propia. datos_propiedad_json se
+// conserva únicamente como respaldo para instalaciones y consumidores antiguos.
+const ensurePropertyContractColumns = (callback = () => {}) => {
+    const columnas = [
+        ['numero_lote', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['numero_finca', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['folio', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['libro', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['manzana', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['area_m2', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['nombre_proyecto_propiedad', 'VARCHAR(255) NULL DEFAULT NULL'],
+        ['medida_norte', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['medida_sur', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['medida_oriente', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['medida_poniente', 'VARCHAR(100) NULL DEFAULT NULL'],
+        ['datos_propiedad_json', 'LONGTEXT NULL']
+    ];
+
+    ensureTableExists('contratos_residentes', (tableExists) => {
+        if (!tableExists) return callback(null);
+        db.query(`
+            SELECT COLUMN_NAME AS column_name
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'contratos_residentes'
+        `, (columnErr, rows) => {
+            if (columnErr) return callback(columnErr);
+            const existentes = new Set((rows || []).map((row) => row.column_name));
+            const faltantes = columnas.filter(([nombre]) => !existentes.has(nombre));
+            const crearSiguiente = (indice = 0) => {
+                if (indice >= faltantes.length) return callback(null);
+                const [nombre, definicion] = faltantes[indice];
+                db.query(`ALTER TABLE contratos_residentes ADD COLUMN ${nombre} ${definicion}`, (alterErr) => {
+                    if (alterErr) return callback(alterErr);
+                    console.log(`Columna ${nombre} creada en contratos_residentes.`);
+                    return crearSiguiente(indice + 1);
+                });
+            };
+            return crearSiguiente();
+        });
+    });
+};
+
+const migrarDatosPropiedadAColumnas = (callback = () => {}) => {
+    const fuenteJson = "COALESCE(NULLIF(c.datos_propiedad_json, ''), NULLIF(vp.observaciones, ''))";
+    const valorJson = (campo) => `CASE WHEN JSON_VALID(${fuenteJson}) THEN NULLIF(JSON_UNQUOTE(JSON_EXTRACT(${fuenteJson}, '$.${campo}')), '') ELSE NULL END`;
+    const sql = `
+        UPDATE contratos_residentes c
+        LEFT JOIN ventas_propiedad vp ON vp.id_contrato = c.id_contrato
+        SET c.numero_lote = COALESCE(NULLIF(c.numero_lote, ''), ${valorJson('numero_lote')}, NULLIF(CAST(vp.id_lote AS CHAR), '0')),
+            c.numero_finca = COALESCE(NULLIF(c.numero_finca, ''), ${valorJson('numero_finca')}),
+            c.folio = COALESCE(NULLIF(c.folio, ''), ${valorJson('folio')}),
+            c.libro = COALESCE(NULLIF(c.libro, ''), ${valorJson('libro')}),
+            c.manzana = COALESCE(NULLIF(c.manzana, ''), ${valorJson('manzana')}),
+            c.area_m2 = COALESCE(NULLIF(c.area_m2, ''), ${valorJson('area')}),
+            c.nombre_proyecto_propiedad = COALESCE(NULLIF(c.nombre_proyecto_propiedad, ''), ${valorJson('proyecto')}),
+            c.medida_norte = COALESCE(NULLIF(c.medida_norte, ''), ${valorJson('medida_norte')}),
+            c.medida_sur = COALESCE(NULLIF(c.medida_sur, ''), ${valorJson('medida_sur')}),
+            c.medida_oriente = COALESCE(NULLIF(c.medida_oriente, ''), ${valorJson('medida_oriente')}),
+            c.medida_poniente = COALESCE(NULLIF(c.medida_poniente, ''), ${valorJson('medida_poniente')})
+    `;
+    db.query(sql, callback);
 };
 
 // ventas_propiedad es un resumen de la venta. contratos_residentes continúa siendo
@@ -1036,9 +1096,15 @@ ensureFormatoContratoColumn();
 ensureInteresPorcentajeColumn();
 ensureFinancialContractColumns();
 normalizarCuotasAutomaticasExistentes(() => backfillSaldoPendienteContrato());
-ensureVentasPropiedadSchema((ventasErr) => {
-    if (ventasErr) return console.error('No se pudo preparar ventas_propiedad:', ventasErr.message);
-    return backfillVentasPropiedad();
+ensurePropertyContractColumns((propertyErr) => {
+    if (propertyErr) return console.error('No se pudieron preparar las columnas de propiedad:', propertyErr.message);
+    ensureVentasPropiedadSchema((ventasErr) => {
+        if (ventasErr) return console.error('No se pudo preparar ventas_propiedad:', ventasErr.message);
+        migrarDatosPropiedadAColumnas((migrationErr) => {
+            if (migrationErr) console.error('No se pudieron migrar los datos registrales:', migrationErr.message);
+            return backfillVentasPropiedad();
+        });
+    });
 });
 sincronizarCuotasPagadasContrato(null, () => {
     console.log('Backfill global de cuotas_pagadas aplicado a contratos_residentes.');
@@ -1177,6 +1243,9 @@ router.get("/", (req, res) => {
                    COALESCE(e.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
                    COALESCE(p.nombre, em.nombre_empresa, e.nombre_empresa, er.nombre_empresa) AS nombre_proyecto_pdf,
                    COALESCE(NULLIF(c.numero_lote, ''), CAST(vp.id_lote AS CHAR)) AS numero_lote,
+                   c.numero_finca, c.folio, c.libro, c.manzana, c.area_m2,
+                   c.nombre_proyecto_propiedad, c.medida_norte, c.medida_sur,
+                   c.medida_oriente, c.medida_poniente,
                    COALESCE(NULLIF(c.datos_propiedad_json, ''), vp.observaciones) AS datos_propiedad_json,
                    f.nombre_original AS nombre_finiquito,
                    f.fecha_actualizacion AS fecha_finiquito,
@@ -1233,6 +1302,23 @@ router.get("/", (req, res) => {
                 if (!datosPropiedad || typeof datosPropiedad !== 'object' || Array.isArray(datosPropiedad)) {
                     datosPropiedad = {};
                 }
+                const preferirColumna = (valorColumna, valorAnterior = '') => {
+                    const valor = String(valorColumna ?? '').trim();
+                    return valor || String(valorAnterior ?? '').trim();
+                };
+                datosPropiedad = {
+                    ...datosPropiedad,
+                    numero_finca: preferirColumna(contrato.numero_finca, datosPropiedad.numero_finca),
+                    folio: preferirColumna(contrato.folio, datosPropiedad.folio),
+                    libro: preferirColumna(contrato.libro, datosPropiedad.libro),
+                    manzana: preferirColumna(contrato.manzana, datosPropiedad.manzana),
+                    area: preferirColumna(contrato.area_m2, datosPropiedad.area),
+                    proyecto: preferirColumna(contrato.nombre_proyecto_propiedad, datosPropiedad.proyecto || contrato.nombre_proyecto),
+                    medida_norte: preferirColumna(contrato.medida_norte, datosPropiedad.medida_norte),
+                    medida_sur: preferirColumna(contrato.medida_sur, datosPropiedad.medida_sur),
+                    medida_oriente: preferirColumna(contrato.medida_oriente, datosPropiedad.medida_oriente),
+                    medida_poniente: preferirColumna(contrato.medida_poniente, datosPropiedad.medida_poniente)
+                };
                 return {
                     ...contrato,
                     datos_propiedad: datosPropiedad,
@@ -1303,12 +1389,13 @@ router.post("/crear", (req, res) => {
         const datosPropiedadContrato = datos_propiedad && typeof datos_propiedad === 'object'
             ? JSON.stringify(datos_propiedad)
             : null;
+        const datoPropiedad = (campo) => String(datos_propiedad?.[campo] ?? '').trim() || null;
 
         obtenerCuotasPagadasReales(0, cuotasPagadasNormalizadas, (_realErr, cuotasPagadasDefinitivas) => {
             const queryInsert = `
                 INSERT INTO contratos_residentes 
-                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, modalidad_pago, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, numero_lote, datos_propiedad_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (codigo_contrato, id_residente, id_empresa_marca, id_proyecto, id_tipo_contrato, formato_contrato, modalidad_pago, monto_total, saldo_pendiente, enganche, cuotas_pactadas, cuotas_pagadas, monto_cuota, interes_porcentaje, mora, plazo_meses, mes_inicio_pagos, anio_inicio_pagos, dia_inicio_pagos, dia_pago_limite, fecha_firma, fecha_compra, fecha_fin, estado, documento_contrato, numero_lote, numero_finca, folio, libro, manzana, area_m2, nombre_proyecto_propiedad, medida_norte, medida_sur, medida_oriente, medida_poniente, datos_propiedad_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
             db.query(
                 queryInsert,
@@ -1339,6 +1426,16 @@ router.post("/crear", (req, res) => {
                     estado,
                     documento_contrato || null,
                     numeroLoteContrato,
+                    datoPropiedad('numero_finca'),
+                    datoPropiedad('folio'),
+                    datoPropiedad('libro'),
+                    datoPropiedad('manzana'),
+                    datoPropiedad('area'),
+                    datoPropiedad('proyecto'),
+                    datoPropiedad('medida_norte'),
+                    datoPropiedad('medida_sur'),
+                    datoPropiedad('medida_oriente'),
+                    datoPropiedad('medida_poniente'),
                     datosPropiedadContrato
                 ],
                 (insertErr, insertResult) => {
@@ -1550,6 +1647,7 @@ router.put("/actualizar", (req, res) => {
     const datosPropiedadContrato = datos_propiedad && typeof datos_propiedad === 'object'
         ? JSON.stringify(datos_propiedad)
         : null;
+    const datoPropiedad = (campo) => String(datos_propiedad?.[campo] ?? '').trim() || null;
 
     obtenerCuotasPagadasReales(id_contrato, cuotasPagadasNormalizadas, (realErr, cuotasPagadasDefinitivas) => {
         if (realErr) {
@@ -1562,7 +1660,8 @@ router.put("/actualizar", (req, res) => {
             codigo_contrato=?, id_residente=?, id_empresa_marca=COALESCE(?, id_empresa_marca), id_proyecto=COALESCE(?, id_proyecto), id_tipo_contrato=?, formato_contrato=?, modalidad_pago=?, monto_total=?, saldo_pendiente=?,
             enganche=?, cuotas_pactadas=?, cuotas_pagadas=?, monto_cuota=?, interes_porcentaje=?, mora=?, plazo_meses=?, mes_inicio_pagos=?, anio_inicio_pagos=?,
             dia_inicio_pagos=?, dia_pago_limite=?, fecha_firma=?, fecha_compra=?, fecha_fin=?, estado=?, documento_contrato=?,
-            numero_lote=?, datos_propiedad_json=?
+            numero_lote=?, numero_finca=?, folio=?, libro=?, manzana=?, area_m2=?, nombre_proyecto_propiedad=?,
+            medida_norte=?, medida_sur=?, medida_oriente=?, medida_poniente=?, datos_propiedad_json=?
             WHERE id_contrato=?
         `;
         db.query(
@@ -1594,6 +1693,16 @@ router.put("/actualizar", (req, res) => {
                 estado,
                 documento_contrato || null,
                 numeroLoteContrato,
+                datoPropiedad('numero_finca'),
+                datoPropiedad('folio'),
+                datoPropiedad('libro'),
+                datoPropiedad('manzana'),
+                datoPropiedad('area'),
+                datoPropiedad('proyecto'),
+                datoPropiedad('medida_norte'),
+                datoPropiedad('medida_sur'),
+                datoPropiedad('medida_oriente'),
+                datoPropiedad('medida_poniente'),
                 datosPropiedadContrato,
                 id_contrato
             ],
