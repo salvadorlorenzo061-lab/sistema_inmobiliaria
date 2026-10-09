@@ -173,7 +173,7 @@ export const modulesConfig = [
   },
   {
     id: 'asignar_correlativo',
-    label: 'Asignar Correlativos',
+    label: 'Cuadre de Facturación',
     icon: '🧾',
     path: '/asignar_correlativo',
     component: AsignarCorrelativo,

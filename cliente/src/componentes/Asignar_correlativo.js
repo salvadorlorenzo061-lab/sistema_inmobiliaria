@@ -25,6 +25,36 @@ const getMonthDateRange = (monthValue = getCurrentMonth()) => {
   return { inicio, fin };
 };
 
+const formatDateInput = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getRangeByType = (tipo, fechaReferencia, periodoMes, periodoAnio) => {
+  if (tipo === 'mes') return getMonthDateRange(periodoMes);
+  if (tipo === 'anio') return { inicio: `${periodoAnio}-01-01`, fin: `${periodoAnio}-12-31` };
+  const [year, month, day] = String(fechaReferencia || getToday()).split('-').map(Number);
+  const base = new Date(year, month - 1, day);
+  if (tipo === 'semana') {
+    const inicio = new Date(base);
+    inicio.setDate(base.getDate() - ((base.getDay() + 6) % 7));
+    const fin = new Date(inicio);
+    fin.setDate(inicio.getDate() + 6);
+    return { inicio: formatDateInput(inicio), fin: formatDateInput(fin) };
+  }
+  if (tipo === 'quincena') {
+    const primerDia = day <= 15 ? 1 : 16;
+    const ultimoDia = day <= 15 ? 15 : new Date(year, month, 0).getDate();
+    return {
+      inicio: formatDateInput(new Date(year, month - 1, primerDia)),
+      fin: formatDateInput(new Date(year, month - 1, ultimoDia))
+    };
+  }
+  return { inicio: fechaReferencia, fin: fechaReferencia };
+};
+
 const formatMoney = (value) => `Q ${Number(value || 0).toFixed(2)}`;
 const normalizeFileSegment = (value = '') => String(value || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 const normalizeRole = (value = '') => String(value || '')
@@ -46,12 +76,11 @@ function AsignarCorrelativo() {
   const [observaciones, setObservaciones] = useState('');
 
   const [tipoCuadre, setTipoCuadre] = useState('dia');
-  const [accionCuadre, setAccionCuadre] = useState('emitio');
+  const accionCuadre = 'todas';
   const [idUsuarioCuadre, setIdUsuarioCuadre] = useState('');
   const [fechaCuadre, setFechaCuadre] = useState(getToday());
   const [periodoMes, setPeriodoMes] = useState(getCurrentMonth());
-  const [fechaInicioMes, setFechaInicioMes] = useState(() => getMonthDateRange(getCurrentMonth()).inicio);
-  const [fechaFinMes, setFechaFinMes] = useState(() => getMonthDateRange(getCurrentMonth()).fin);
+  const [periodoAnio, setPeriodoAnio] = useState(String(new Date().getFullYear()));
   const [reporte, setReporte] = useState(null);
   const [loadingReporte, setLoadingReporte] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -76,6 +105,19 @@ function AsignarCorrelativo() {
   const usuariosDisponibles = useMemo(() => {
     return [...usuariosList].sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')));
   }, [usuariosList, resolucionSeleccionada]);
+
+  const usuariosConCorrelativos = useMemo(() => {
+    const ids = new Set([
+      ...asignacionesList.map((item) => String(item.id_usuario || '')),
+      ...resolucionesList.map((item) => String(item.id_usuario || ''))
+    ].filter(Boolean));
+    return usuariosList.filter((item) => ids.has(String(item.id_usuario)));
+  }, [asignacionesList, resolucionesList, usuariosList]);
+
+  const rangoCuadreSeleccionado = useMemo(
+    () => getRangeByType(tipoCuadre, fechaCuadre, periodoMes, periodoAnio),
+    [tipoCuadre, fechaCuadre, periodoMes, periodoAnio]
+  );
 
   useEffect(() => {
     if (!idResolucion) return;
@@ -198,21 +240,10 @@ function AsignarCorrelativo() {
   };
 
   const consultarCuadre = async () => {
-    if (tipoCuadre === 'mes') {
-      if (!fechaInicioMes || !fechaFinMes) {
-        Swal.fire({ icon: 'warning', title: 'Rango incompleto', text: 'Debes seleccionar fecha inicio y fecha fin para el cuadre del mes.' });
-        return;
-      }
-
-      if (fechaInicioMes > fechaFinMes) {
-        Swal.fire({ icon: 'warning', title: 'Rango inválido', text: 'La fecha inicio no puede ser mayor que la fecha fin.' });
-        return;
-      }
-    }
-
+    const rango = getRangeByType(tipoCuadre, fechaCuadre, periodoMes, periodoAnio);
     let query = tipoCuadre === 'dia'
-      ? `fecha=${encodeURIComponent(fechaCuadre)}`
-      : `fecha_inicio=${encodeURIComponent(fechaInicioMes)}&fecha_fin=${encodeURIComponent(fechaFinMes)}`;
+      ? `fecha=${encodeURIComponent(rango.inicio)}`
+      : `fecha_inicio=${encodeURIComponent(rango.inicio)}&fecha_fin=${encodeURIComponent(rango.fin)}`;
 
     query = `${query}&accion=${encodeURIComponent(accionCuadre)}`;
     if (idUsuarioCuadre) {
@@ -239,30 +270,32 @@ function AsignarCorrelativo() {
     }
 
     const doc = new jsPDF({ orientation: 'landscape' });
-    const titulo = `Cuadre ${reporte.scope === 'dia' ? 'del Dia' : 'del Mes'} - ${reporte.periodo}`;
+    const titulo = `Cuadre de Facturacion - ${reporte.periodo}`;
 
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(16);
     doc.text(titulo, 14, 16);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Facturas: ${reporte.total_general?.total_facturas || 0}`, 14, 24);
-    doc.text(`Subtotal: ${formatMoney(reporte.total_general?.subtotal)}`, 70, 24);
-    doc.text(`IVA: ${formatMoney(reporte.total_general?.iva_total)}`, 130, 24);
-    doc.text(`Total: ${formatMoney(reporte.total_general?.total_cobrado)}`, 180, 24);
+    doc.text(`Emitidas: ${reporte.total_general?.facturas_emitidas || 0}`, 14, 24);
+    doc.text(`Anuladas: ${reporte.total_general?.facturas_anuladas || 0}`, 60, 24);
+    doc.text(`Total emitido: ${formatMoney(reporte.total_general?.total_emitido)}`, 110, 24);
+    doc.text(`Total anulado: ${formatMoney(reporte.total_general?.total_anulado)}`, 180, 24);
+    doc.text(`Neto: ${formatMoney(reporte.total_general?.total_cobrado)}`, 245, 24);
     doc.text(`Correlativo inicial: ${reporte.total_general?.correlativo_inicial || 'N/A'}`, 14, 31);
     doc.text(`Correlativo final: ${reporte.total_general?.correlativo_final || 'N/A'}`, 110, 31);
 
     autoTable(doc, {
       startY: 38,
-      head: [['Usuario', 'Facturas', 'Correlativo inicial', 'Correlativo final', 'Subtotal', 'IVA', 'Total']],
+      head: [['Usuario', 'Emitidas', 'Anuladas', 'Correlativo inicial', 'Correlativo final', 'Emitido', 'Anulado', 'Neto']],
       body: (reporte.resumen_por_usuario || []).map((item) => ([
         item.nombre_usuario || `Usuario #${item.id_usuario}`,
-        item.total_facturas || 0,
+        item.facturas_emitidas || 0,
+        item.facturas_anuladas || 0,
         item.correlativo_inicial || 'N/A',
         item.correlativo_final || 'N/A',
-        formatMoney(item.subtotal),
-        formatMoney(item.iva_total),
+        formatMoney(item.total_emitido),
+        formatMoney(item.total_anulado),
         formatMoney(item.total_cobrado)
       ])),
       theme: 'striped',
@@ -272,11 +305,12 @@ function AsignarCorrelativo() {
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 10,
-      head: [['Fecha', 'Usuario', 'Correlativo', 'Forma de pago', 'Subtotal', 'IVA', 'Mora', 'Total']],
+      head: [['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Subtotal', 'IVA', 'Mora', 'Total']],
       body: (reporte.detalle_facturas || []).map((item) => ([
         item.fecha_pago ? new Date(item.fecha_pago).toLocaleString() : 'N/A',
         item.nombre_usuario || 'N/A',
         item.no_referencia || 'N/A',
+        item.estado_factura || 'N/A',
         item.forma_pago || 'N/A',
         formatMoney(item.subtotal),
         formatMoney(item.iva_total),
@@ -299,35 +333,40 @@ function AsignarCorrelativo() {
 
     const lineas = [];
     lineas.push(['Cuadre', reporte.scope === 'dia' ? 'Dia' : 'Mes', reporte.periodo].join(','));
-    lineas.push(['Total facturas', reporte.total_general?.total_facturas || 0].join(','));
+    lineas.push(['Facturas emitidas', reporte.total_general?.facturas_emitidas || 0].join(','));
+    lineas.push(['Facturas anuladas', reporte.total_general?.facturas_anuladas || 0].join(','));
     lineas.push(['Correlativo inicial', reporte.total_general?.correlativo_inicial || 'N/A'].join(','));
     lineas.push(['Correlativo final', reporte.total_general?.correlativo_final || 'N/A'].join(','));
     lineas.push(['Subtotal', Number(reporte.total_general?.subtotal || 0).toFixed(2)].join(','));
     lineas.push(['IVA total', Number(reporte.total_general?.iva_total || 0).toFixed(2)].join(','));
     lineas.push(['Mora total', Number(reporte.total_general?.monto_mora || 0).toFixed(2)].join(','));
-    lineas.push(['Total cobrado', Number(reporte.total_general?.total_cobrado || 0).toFixed(2)].join(','));
+    lineas.push(['Total emitido', Number(reporte.total_general?.total_emitido || 0).toFixed(2)].join(','));
+    lineas.push(['Total anulado', Number(reporte.total_general?.total_anulado || 0).toFixed(2)].join(','));
+    lineas.push(['Cuadre neto', Number(reporte.total_general?.total_cobrado || 0).toFixed(2)].join(','));
     lineas.push('');
     lineas.push('Resumen por usuario');
-    lineas.push(['Usuario', 'Facturas', 'Correlativo inicial', 'Correlativo final', 'Subtotal', 'IVA', 'Total'].join(','));
+    lineas.push(['Usuario', 'Emitidas', 'Anuladas', 'Correlativo inicial', 'Correlativo final', 'Total emitido', 'Total anulado', 'Neto'].join(','));
     (reporte.resumen_por_usuario || []).forEach((item) => {
       lineas.push([
         `"${String(item.nombre_usuario || `Usuario #${item.id_usuario}`).replace(/"/g, '""')}"`,
-        item.total_facturas || 0,
+        item.facturas_emitidas || 0,
+        item.facturas_anuladas || 0,
         `"${String(item.correlativo_inicial || 'N/A').replace(/"/g, '""')}"`,
         `"${String(item.correlativo_final || 'N/A').replace(/"/g, '""')}"`,
-        Number(item.subtotal || 0).toFixed(2),
-        Number(item.iva_total || 0).toFixed(2),
+        Number(item.total_emitido || 0).toFixed(2),
+        Number(item.total_anulado || 0).toFixed(2),
         Number(item.total_cobrado || 0).toFixed(2)
       ].join(','));
     });
     lineas.push('');
     lineas.push('Detalle de facturas');
-    lineas.push(['Fecha', 'Usuario', 'Correlativo', 'Forma de pago', 'Subtotal', 'IVA', 'Mora', 'Total'].join(','));
+    lineas.push(['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Subtotal', 'IVA', 'Mora', 'Total'].join(','));
     (reporte.detalle_facturas || []).forEach((item) => {
       lineas.push([
         `"${String(item.fecha_pago ? new Date(item.fecha_pago).toLocaleString() : 'N/A').replace(/"/g, '""')}"`,
         `"${String(item.nombre_usuario || 'N/A').replace(/"/g, '""')}"`,
         `"${String(item.no_referencia || 'N/A').replace(/"/g, '""')}"`,
+        `"${String(item.estado_factura || 'N/A').replace(/"/g, '""')}"`,
         `"${String(item.forma_pago || 'N/A').replace(/"/g, '""')}"`,
         Number(item.subtotal || 0).toFixed(2),
         Number(item.iva_total || 0).toFixed(2),
@@ -352,8 +391,8 @@ function AsignarCorrelativo() {
       <div className="module-header">
         <div className="row align-items-center bg-light p-3 rounded shadow-sm mb-4">
           <div className="col-md-7">
-            <h3 className="m-0 fw-bold text-dark">ASIGNAR CORRELATIVOS Y CUADRES</h3>
-            <div className="text-muted small mt-1">Reserva lotes por cobrador y controla el total cobrado por día o por mes.</div>
+            <h3 className="m-0 fw-bold text-dark">CUADRE DE FACTURACIÓN POR USUARIO</h3>
+            <div className="text-muted small mt-1">Control de facturas emitidas, anulaciones y total neto por usuarios con correlativos.</div>
           </div>
           <div className="col-md-5 text-end">
             <button className="btn btn-dark fw-bold" onClick={consultarCuadre} disabled={loadingReporte}>
@@ -369,7 +408,7 @@ function AsignarCorrelativo() {
         </div>
       )}
 
-      <div className="row g-4">
+      {false && <div className="row g-4">
         <div className="col-lg-5">
           <div className="card shadow-sm border-0 h-100">
             <div className="card-header bg-primary text-white fw-bold">Asignación de Lote</div>
@@ -529,25 +568,20 @@ function AsignarCorrelativo() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className="card shadow-sm border-0 mt-4">
-        <div className="card-header bg-info text-dark fw-bold">Cuadre de Cobros</div>
+        <div className="card-header bg-info text-dark fw-bold">Cuadre de Facturas y Anulaciones</div>
         <div className="card-body">
           <div className="row g-3 align-items-end">
             <div className="col-md-2">
               <label className="form-label fw-bold">Tipo de cuadre</label>
               <select className="form-select" value={tipoCuadre} onChange={(e) => setTipoCuadre(e.target.value)}>
-                <option value="dia">Cuadre del día</option>
-                <option value="mes">Cuadre del mes</option>
-              </select>
-            </div>
-
-            <div className="col-md-3">
-              <label className="form-label fw-bold">Acción</label>
-              <select className="form-select" value={accionCuadre} onChange={(e) => setAccionCuadre(e.target.value)}>
-                <option value="emitio">Emitió factura/recibo</option>
-                <option value="anulo">Anuló factura/recibo</option>
+                <option value="dia">Cuadre diario</option>
+                <option value="semana">Cuadre semanal</option>
+                <option value="quincena">Cuadre quincenal</option>
+                <option value="mes">Cuadre mensual</option>
+                <option value="anio">Cuadre anual</option>
               </select>
             </div>
 
@@ -555,7 +589,7 @@ function AsignarCorrelativo() {
               <label className="form-label fw-bold">Cobrador / Usuario</label>
               <select className="form-select" value={idUsuarioCuadre} onChange={(e) => setIdUsuarioCuadre(e.target.value)}>
                 <option value="">Todos los usuarios</option>
-                {usuariosList.map((item) => (
+                {usuariosConCorrelativos.map((item) => (
                   <option key={item.id_usuario} value={item.id_usuario}>
                     {item.nombre} ({item.nombre_rol || 'sin rol'})
                   </option>
@@ -564,18 +598,18 @@ function AsignarCorrelativo() {
             </div>
 
             <div className="col-md-2">
-              <label className="form-label fw-bold">Fecha del cuadre</label>
-              <input type="date" className="form-control" value={fechaCuadre} onChange={(e) => setFechaCuadre(e.target.value)} disabled={tipoCuadre !== 'dia'} />
+              <label className="form-label fw-bold">Fecha de referencia</label>
+              <input type="date" className="form-control" value={fechaCuadre} onChange={(e) => setFechaCuadre(e.target.value)} disabled={['mes', 'anio'].includes(tipoCuadre)} />
             </div>
 
             <div className="col-md-2">
               <label className="form-label fw-bold">Fecha inicio</label>
-              <input type="date" className="form-control" value={fechaInicioMes} onChange={(e) => setFechaInicioMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
+              <input type="date" className="form-control bg-light" value={rangoCuadreSeleccionado.inicio} readOnly />
             </div>
 
             <div className="col-md-2">
               <label className="form-label fw-bold">Fecha fin</label>
-              <input type="date" className="form-control" value={fechaFinMes} onChange={(e) => setFechaFinMes(e.target.value)} disabled={tipoCuadre !== 'mes'} />
+              <input type="date" className="form-control bg-light" value={rangoCuadreSeleccionado.fin} readOnly />
             </div>
 
             <div className="col-md-2">
@@ -587,12 +621,14 @@ function AsignarCorrelativo() {
                 onChange={(e) => {
                   const month = e.target.value;
                   setPeriodoMes(month);
-                  const range = getMonthDateRange(month);
-                  setFechaInicioMes(range.inicio);
-                  setFechaFinMes(range.fin);
                 }}
                 disabled={tipoCuadre !== 'mes'}
               />
+            </div>
+
+            <div className="col-md-2">
+              <label className="form-label fw-bold">Año</label>
+              <input type="number" min="2000" max="2100" className="form-control" value={periodoAnio} onChange={(e) => setPeriodoAnio(e.target.value)} disabled={tipoCuadre !== 'anio'} />
             </div>
 
             <div className="col-md-2">
@@ -614,26 +650,32 @@ function AsignarCorrelativo() {
               <div className="row g-3 mt-3">
                 <div className="col-md-3">
                   <div className="border rounded p-3 bg-light h-100">
-                    <div className="text-muted small">{accionCuadre === 'anulo' ? 'Facturas anuladas' : 'Facturas cobradas'}</div>
-                    <div className="fs-4 fw-bold">{reporte.total_general?.total_facturas || 0}</div>
+                    <div className="text-muted small">Facturas emitidas</div>
+                    <div className="fs-4 fw-bold text-primary">{reporte.total_general?.facturas_emitidas || 0}</div>
                   </div>
                 </div>
                 <div className="col-md-3">
                   <div className="border rounded p-3 bg-light h-100">
-                    <div className="text-muted small">Subtotal cobrado</div>
-                    <div className="fs-5 fw-bold text-primary">{formatMoney(reporte.total_general?.subtotal)}</div>
+                    <div className="text-muted small">Facturas anuladas</div>
+                    <div className="fs-4 fw-bold text-danger">{reporte.total_general?.facturas_anuladas || 0}</div>
                   </div>
                 </div>
                 <div className="col-md-3">
                   <div className="border rounded p-3 bg-light h-100">
-                    <div className="text-muted small">IVA total</div>
-                    <div className="fs-5 fw-bold text-warning">{formatMoney(reporte.total_general?.iva_total)}</div>
+                    <div className="text-muted small">Total emitido</div>
+                    <div className="fs-5 fw-bold text-success">{formatMoney(reporte.total_general?.total_emitido)}</div>
                   </div>
                 </div>
                 <div className="col-md-3">
                   <div className="border rounded p-3 bg-light h-100">
-                    <div className="text-muted small">Total general cobrado</div>
-                    <div className="fs-5 fw-bold text-success">{formatMoney(reporte.total_general?.total_cobrado)}</div>
+                    <div className="text-muted small">Total anulado</div>
+                    <div className="fs-5 fw-bold text-danger">{formatMoney(reporte.total_general?.total_anulado)}</div>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="border rounded p-3 bg-light h-100">
+                    <div className="text-muted small">Cuadre neto</div>
+                    <div className="fs-5 fw-bold text-dark">{formatMoney(reporte.total_general?.total_cobrado)}</div>
                   </div>
                 </div>
               </div>
@@ -658,28 +700,34 @@ function AsignarCorrelativo() {
                     <thead className="table-dark">
                       <tr>
                         <th>Usuario</th>
-                        <th>Facturas</th>
+                        <th>Emitidas</th>
+                        <th>Anuladas</th>
                         <th>Correlativo inicial</th>
                         <th>Correlativo final</th>
                         <th>Subtotal</th>
                         <th>IVA</th>
-                        <th>Total</th>
+                        <th>Total emitido</th>
+                        <th>Total anulado</th>
+                        <th>Neto</th>
                       </tr>
                     </thead>
                     <tbody>
                       {reporte.resumen_por_usuario?.length ? reporte.resumen_por_usuario.map((item) => (
                         <tr key={`${item.id_usuario}-${item.correlativo_inicial || 'na'}`}>
                           <td>{item.nombre_usuario || `Usuario #${item.id_usuario}`}</td>
-                          <td>{item.total_facturas}</td>
+                          <td>{item.facturas_emitidas || 0}</td>
+                          <td className="text-danger">{item.facturas_anuladas || 0}</td>
                           <td>{item.correlativo_inicial || 'N/A'}</td>
                           <td>{item.correlativo_final || 'N/A'}</td>
                           <td>{formatMoney(item.subtotal)}</td>
                           <td>{formatMoney(item.iva_total)}</td>
-                          <td className="fw-bold text-success">{formatMoney(item.total_cobrado)}</td>
+                          <td className="text-success">{formatMoney(item.total_emitido)}</td>
+                          <td className="text-danger">{formatMoney(item.total_anulado)}</td>
+                          <td className="fw-bold">{formatMoney(item.total_cobrado)}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="7" className="text-center text-muted py-3">No hay cobros en el período seleccionado.</td>
+                          <td colSpan="10" className="text-center text-muted py-3">No hay facturas en el período seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
@@ -688,7 +736,7 @@ function AsignarCorrelativo() {
               </div>
 
               <div className="mt-4">
-                <h5 className="fw-bold">{accionCuadre === 'anulo' ? 'Detalle de facturas/recibos anulados' : 'Detalle de facturas cobradas'}</h5>
+                <h5 className="fw-bold">Detalle de facturas emitidas y anuladas</h5>
                 <div className="table-responsive">
                   <table className="table table-bordered table-striped align-middle">
                     <thead className="table-dark">
@@ -697,6 +745,7 @@ function AsignarCorrelativo() {
                         <th>Usuario</th>
                         <th>Correlativo</th>
                         <th>Forma de pago</th>
+                        <th>Estado</th>
                         <th>Subtotal</th>
                         <th>IVA</th>
                         <th>Mora</th>
@@ -710,6 +759,7 @@ function AsignarCorrelativo() {
                           <td>{item.nombre_usuario || 'N/A'}</td>
                           <td>{item.no_referencia || 'N/A'}</td>
                           <td>{item.forma_pago || 'N/A'}</td>
+                          <td><span className={`badge ${item.estado_factura === 'ANULADA' ? 'bg-danger' : 'bg-success'}`}>{item.estado_factura}</span></td>
                           <td>{formatMoney(item.subtotal)}</td>
                           <td>{formatMoney(item.iva_total)}</td>
                           <td>{formatMoney(item.monto_mora)}</td>
@@ -717,7 +767,7 @@ function AsignarCorrelativo() {
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="8" className="text-center text-muted py-3">No se encontraron facturas para el período consultado.</td>
+                          <td colSpan="9" className="text-center text-muted py-3">No se encontraron facturas para el período consultado.</td>
                         </tr>
                       )}
                     </tbody>

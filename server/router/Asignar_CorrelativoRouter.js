@@ -638,9 +638,9 @@ const obtenerCuadre = (scope) => (req, res) => {
         return res.status(400).send({ message: periodo.error });
     }
 
-    const accion = String(req.query?.accion || 'emitio').trim().toLowerCase();
-    if (!['emitio', 'anulo'].includes(accion)) {
-        return res.status(400).send({ message: 'La acción debe ser emitio o anulo.' });
+    const accion = String(req.query?.accion || 'todas').trim().toLowerCase();
+    if (!['emitio', 'anulo', 'todas'].includes(accion)) {
+        return res.status(400).send({ message: 'La acción debe ser emitio, anulo o todas.' });
     }
 
     const idUsuario = Number(req.query?.id_usuario || 0);
@@ -652,11 +652,15 @@ const obtenerCuadre = (scope) => (req, res) => {
                 base.id_usuario,
                 base.nombre_usuario,
                 COUNT(*) AS total_facturas,
+                SUM(CASE WHEN base.estado_factura = 'EMITIDA' THEN 1 ELSE 0 END) AS facturas_emitidas,
+                SUM(CASE WHEN base.estado_factura = 'ANULADA' THEN 1 ELSE 0 END) AS facturas_anuladas,
                 MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
                 MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
                 ROUND(SUM(base.subtotal), 2) AS subtotal,
                 ROUND(SUM(base.iva_total), 2) AS iva_total,
                 ROUND(SUM(base.monto_mora), 2) AS monto_mora,
+                ROUND(SUM(CASE WHEN base.estado_factura = 'EMITIDA' THEN base.total_cobrado ELSE 0 END), 2) AS total_emitido,
+                ROUND(SUM(CASE WHEN base.estado_factura = 'ANULADA' THEN ABS(base.total_cobrado) ELSE 0 END), 2) AS total_anulado,
                 ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
             FROM (${detalleBase}) base
             GROUP BY base.id_usuario, base.nombre_usuario
@@ -666,11 +670,15 @@ const obtenerCuadre = (scope) => (req, res) => {
         const totalGeneralQuery = `
             SELECT
                 COUNT(*) AS total_facturas,
+                SUM(CASE WHEN base.estado_factura = 'EMITIDA' THEN 1 ELSE 0 END) AS facturas_emitidas,
+                SUM(CASE WHEN base.estado_factura = 'ANULADA' THEN 1 ELSE 0 END) AS facturas_anuladas,
                 MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
                 MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
                 ROUND(SUM(base.subtotal), 2) AS subtotal,
                 ROUND(SUM(base.iva_total), 2) AS iva_total,
                 ROUND(SUM(base.monto_mora), 2) AS monto_mora,
+                ROUND(SUM(CASE WHEN base.estado_factura = 'EMITIDA' THEN base.total_cobrado ELSE 0 END), 2) AS total_emitido,
+                ROUND(SUM(CASE WHEN base.estado_factura = 'ANULADA' THEN ABS(base.total_cobrado) ELSE 0 END), 2) AS total_anulado,
                 ROUND(SUM(base.total_cobrado), 2) AS total_cobrado
             FROM (${detalleBase}) base
         `;
@@ -682,6 +690,7 @@ const obtenerCuadre = (scope) => (req, res) => {
                 base.no_referencia,
                 base.forma_pago,
                 base.fecha_pago,
+                base.estado_factura,
                 ROUND(base.subtotal, 2) AS subtotal,
                 ROUND(base.iva_total, 2) AS iva_total,
                 ROUND(base.monto_mora, 2) AS monto_mora,
@@ -693,7 +702,7 @@ const obtenerCuadre = (scope) => (req, res) => {
         return { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery };
     };
 
-    const params = [...periodo.params, ...(filtrarUsuario ? [idUsuario] : [])];
+    let params = [...periodo.params, ...(filtrarUsuario ? [idUsuario] : [])];
     let detalleBase = '';
 
     if (accion === 'emitio') {
@@ -708,6 +717,7 @@ const obtenerCuadre = (scope) => (req, res) => {
                 p.no_referencia,
                 p.forma_pago,
                 p.fecha_pago,
+                'EMITIDA' AS estado_factura,
                 ROUND(
                     GREATEST(
                         COALESCE(SUM(pd.subtotal), 0)
@@ -740,7 +750,7 @@ const obtenerCuadre = (scope) => (req, res) => {
             WHERE ${whereSql}${filtroUsuarioSql}
             GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
         `;
-    } else {
+    } else if (accion === 'anulo') {
         const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'ad.fecha_anulacion');
         const filtroUsuarioSql = filtrarUsuario ? ' AND ad.id_usuario_autoriza = ?' : '';
 
@@ -752,6 +762,7 @@ const obtenerCuadre = (scope) => (req, res) => {
                 COALESCE(ad.correlativo, CONCAT('ANU-', ad.id_anulacion)) AS no_referencia,
                 'ANULACION' AS forma_pago,
                 ad.fecha_anulacion AS fecha_pago,
+                'ANULADA' AS estado_factura,
                 COALESCE(ad.monto_anulado, 0) AS subtotal,
                 0 AS iva_total,
                 COALESCE(ad.monto_anulado, 0) AS total_cobrado,
@@ -759,6 +770,70 @@ const obtenerCuadre = (scope) => (req, res) => {
             FROM anulacion_deuda ad
             LEFT JOIN usuarios u ON u.id_usuario = ad.id_usuario_autoriza
             WHERE ${whereSql}${filtroUsuarioSql}
+        `;
+    } else {
+        const whereEmitidas = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'p.fecha_pago');
+        const whereAnuladas = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'ad.fecha_anulacion');
+        const filtroEmitidas = filtrarUsuario ? ' AND p.id_usuario = ?' : '';
+        const filtroAnuladas = filtrarUsuario ? ' AND COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) = ?' : '';
+        params = [
+            ...periodo.params,
+            ...(filtrarUsuario ? [idUsuario] : []),
+            ...periodo.params,
+            ...(filtrarUsuario ? [idUsuario] : [])
+        ];
+        detalleBase = `
+            SELECT
+                p.id_pago,
+                p.id_usuario,
+                u.nombre AS nombre_usuario,
+                p.no_referencia,
+                p.forma_pago,
+                p.fecha_pago,
+                'EMITIDA' AS estado_factura,
+                ROUND((p.monto_total_pagado - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0)) / 1.12, 2) AS subtotal,
+                ROUND((p.monto_total_pagado - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0)) - ROUND((p.monto_total_pagado - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0)) / 1.12, 2), 2) AS iva_total,
+                p.monto_total_pagado AS total_cobrado,
+                COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora
+            FROM pagos p
+            LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
+            LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
+            WHERE ${whereEmitidas}${filtroEmitidas}
+              AND COALESCE(p.no_referencia, '') NOT LIKE 'TMP-%'
+              AND (
+                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = p.id_usuario)
+                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = p.id_usuario)
+              )
+            GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
+
+            UNION ALL
+
+            SELECT
+                -ad.id_anulacion AS id_pago,
+                COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) AS id_usuario,
+                COALESCE(ue.nombre, ua.nombre) AS nombre_usuario,
+                COALESCE(ad.correlativo, CONCAT('ANU-', ad.id_anulacion)) AS no_referencia,
+                'ANULACION' AS forma_pago,
+                ad.fecha_anulacion AS fecha_pago,
+                'ANULADA' AS estado_factura,
+                -ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2) AS subtotal,
+                -ROUND(COALESCE(ad.monto_anulado, 0) - ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2), 2) AS iva_total,
+                -COALESCE(ad.monto_anulado, 0) AS total_cobrado,
+                0 AS monto_mora
+            FROM anulacion_deuda ad
+            LEFT JOIN (
+                SELECT correlativo, MAX(id_usuario_emisor) AS id_usuario_emisor
+                FROM facturas_historial
+                WHERE UPPER(COALESCE(estado_factura, '')) = 'ANULADA'
+                GROUP BY correlativo
+            ) fh ON fh.correlativo = ad.correlativo
+            LEFT JOIN usuarios ue ON ue.id_usuario = fh.id_usuario_emisor
+            LEFT JOIN usuarios ua ON ua.id_usuario = ad.id_usuario_autoriza
+            WHERE ${whereAnuladas}${filtroAnuladas}
+              AND (
+                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
+                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
+              )
         `;
     }
     const { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery } = buildQueries(detalleBase);
@@ -788,11 +863,15 @@ const obtenerCuadre = (scope) => (req, res) => {
                     resumen_por_usuario: rowsUsuarios || [],
                     total_general: rowsTotales?.[0] || {
                         total_facturas: 0,
+                        facturas_emitidas: 0,
+                        facturas_anuladas: 0,
                         correlativo_inicial: null,
                         correlativo_final: null,
                         subtotal: 0,
                         iva_total: 0,
                         monto_mora: 0,
+                        total_emitido: 0,
+                        total_anulado: 0,
                         total_cobrado: 0
                     },
                     detalle_facturas: rowsDetalle || []
