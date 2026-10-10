@@ -309,10 +309,6 @@ function App() {
         return true;
       }
 
-      if (module.id === 'asignar_correlativo') {
-        return false;
-      }
-
       if (module.id === 'menu_general') {
         return true;
       }

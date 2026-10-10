@@ -133,10 +133,6 @@ function MenuGeneral() {
         return true;
       }
 
-      if (modulo.id === 'asignar_correlativo') {
-        return false;
-      }
-
       if (permisosEfectivos.size === 0) {
         return false;
       }

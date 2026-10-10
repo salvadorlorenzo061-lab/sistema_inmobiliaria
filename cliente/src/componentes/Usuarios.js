@@ -30,7 +30,7 @@ const PERMISOS_MODULOS = [
   'Dashboard Financiero',
   'Reporte de Facturas',
   'Tabla de Amortización',
-  'Asignar Correlativos',
+  'Cuadre de Facturación',
   'Resoluciones Facturas',
   'Bitácora',
   'Detalle de Pagos'
