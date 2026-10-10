@@ -702,162 +702,65 @@ const obtenerCuadre = (scope) => (req, res) => {
         return { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery };
     };
 
-    let params = [...periodo.params, ...(filtrarUsuario ? [idUsuario] : [])];
-    let detalleBase = '';
+    const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'fh.fecha_evento');
+    const filtroUsuarioSql = filtrarUsuario ? ' AND fh.id_usuario = ?' : '';
+    const filtroAccionSql = accion === 'emitio'
+        ? " AND UPPER(TRIM(fh.estado_factura)) = 'EMITIDA'"
+        : accion === 'anulo'
+            ? " AND UPPER(TRIM(fh.estado_factura)) = 'ANULADA'"
+            : " AND UPPER(TRIM(fh.estado_factura)) IN ('EMITIDA', 'ANULADA')";
+    const params = [...periodo.params, ...(filtrarUsuario ? [idUsuario] : [])];
 
-    if (accion === 'emitio') {
-        const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'p.fecha_pago');
-        const filtroUsuarioSql = filtrarUsuario ? ' AND p.id_usuario = ?' : '';
-
-        detalleBase = `
-            SELECT
-                p.id_pago,
-                p.id_usuario,
-                u.nombre AS nombre_usuario,
-                p.no_referencia,
-                p.forma_pago,
-                p.fecha_pago,
-                'EMITIDA' AS estado_factura,
-                ROUND(
-                    GREATEST(
-                        COALESCE(SUM(pd.subtotal), 0)
-                        - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
-                        0
-                    ) / 1.12,
-                    2
-                ) AS subtotal,
-                ROUND(
-                    GREATEST(
-                        COALESCE(SUM(pd.subtotal), 0)
-                        - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
-                        0
-                    )
-                    - ROUND(
-                        GREATEST(
-                            COALESCE(SUM(pd.subtotal), 0)
-                            - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0),
-                            0
-                        ) / 1.12,
-                        2
-                    ),
-                    2
-                ) AS iva_total,
-                p.monto_total_pagado AS total_cobrado,
-                COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora
-            FROM pagos p
-            LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-            LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
-            WHERE ${whereSql}${filtroUsuarioSql}
-              AND COALESCE(p.no_referencia, '') NOT LIKE 'TMP-%'
-              AND (
-                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = p.id_usuario)
-                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = p.id_usuario)
-              )
-            GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
-        `;
-    } else if (accion === 'anulo') {
-        const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'ad.fecha_anulacion');
-        const filtroUsuarioSql = filtrarUsuario ? ' AND COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) = ?' : '';
-
-        detalleBase = `
-            SELECT
-                COALESCE(ad.id_pago, ad.id_anulacion) AS id_pago,
-                COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) AS id_usuario,
-                COALESCE(ue.nombre, ua.nombre) AS nombre_usuario,
-                COALESCE(ad.correlativo, CONCAT('ANU-', ad.id_anulacion)) AS no_referencia,
-                'ANULACION' AS forma_pago,
-                ad.fecha_anulacion AS fecha_pago,
-                'ANULADA' AS estado_factura,
-                -ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2) AS subtotal,
-                -ROUND(COALESCE(ad.monto_anulado, 0) - ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2), 2) AS iva_total,
-                -COALESCE(ad.monto_anulado, 0) AS total_cobrado,
-                0 AS monto_mora
-            FROM anulacion_deuda ad
-            LEFT JOIN (
-                SELECT correlativo, MAX(id_usuario) AS id_usuario_emisor
-                FROM facturas_historial
-                WHERE UPPER(COALESCE(estado_factura, '')) = 'ANULADA'
-                GROUP BY correlativo
-            ) fh ON fh.correlativo = ad.correlativo
-            LEFT JOIN usuarios ue ON ue.id_usuario = fh.id_usuario_emisor
-            LEFT JOIN usuarios ua ON ua.id_usuario = ad.id_usuario_autoriza
-            WHERE ${whereSql}${filtroUsuarioSql}
-              AND (
-                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
-                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
-              )
-        `;
-    } else {
-        const whereEmitidas = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'p.fecha_pago');
-        const whereAnuladas = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'ad.fecha_anulacion');
-        const filtroEmitidas = filtrarUsuario ? ' AND p.id_usuario = ?' : '';
-        const filtroAnuladas = filtrarUsuario ? ' AND COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) = ?' : '';
-        params = [
-            ...periodo.params,
-            ...(filtrarUsuario ? [idUsuario] : []),
-            ...periodo.params,
-            ...(filtrarUsuario ? [idUsuario] : [])
-        ];
-        detalleBase = `
-            SELECT
-                p.id_pago,
-                p.id_usuario,
-                u.nombre AS nombre_usuario,
-                p.no_referencia,
-                p.forma_pago,
-                p.fecha_pago,
-                'EMITIDA' AS estado_factura,
-                ROUND((p.monto_total_pagado - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0)) / 1.12, 2) AS subtotal,
-                ROUND((p.monto_total_pagado - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0)) - ROUND((p.monto_total_pagado - COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0)) / 1.12, 2), 2) AS iva_total,
-                p.monto_total_pagado AS total_cobrado,
-                COALESCE(SUM(CASE WHEN pd.tipo_concepto = 'mora' THEN pd.subtotal ELSE 0 END), 0) AS monto_mora
-            FROM pagos p
-            LEFT JOIN pagos_detalle pd ON pd.id_pago = p.id_pago
-            LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario
-            WHERE ${whereEmitidas}${filtroEmitidas}
-              AND COALESCE(p.no_referencia, '') NOT LIKE 'TMP-%'
-              AND (
-                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = p.id_usuario)
-                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = p.id_usuario)
-              )
-            GROUP BY p.id_pago, p.id_usuario, u.nombre, p.no_referencia, p.forma_pago, p.fecha_pago, p.monto_total_pagado
-
-            UNION ALL
-
-            SELECT
-                -ad.id_anulacion AS id_pago,
-                COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza) AS id_usuario,
-                COALESCE(ue.nombre, ua.nombre) AS nombre_usuario,
-                COALESCE(ad.correlativo, CONCAT('ANU-', ad.id_anulacion)) AS no_referencia,
-                'ANULACION' AS forma_pago,
-                ad.fecha_anulacion AS fecha_pago,
-                'ANULADA' AS estado_factura,
-                -ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2) AS subtotal,
-                -ROUND(COALESCE(ad.monto_anulado, 0) - ROUND(COALESCE(ad.monto_anulado, 0) / 1.12, 2), 2) AS iva_total,
-                -COALESCE(ad.monto_anulado, 0) AS total_cobrado,
-                0 AS monto_mora
-            FROM anulacion_deuda ad
-            LEFT JOIN (
-                SELECT correlativo, MAX(id_usuario) AS id_usuario_emisor
-                FROM facturas_historial
-                WHERE UPPER(COALESCE(estado_factura, '')) = 'ANULADA'
-                GROUP BY correlativo
-            ) fh ON fh.correlativo = ad.correlativo
-            LEFT JOIN usuarios ue ON ue.id_usuario = fh.id_usuario_emisor
-            LEFT JOIN usuarios ua ON ua.id_usuario = ad.id_usuario_autoriza
-            WHERE ${whereAnuladas}${filtroAnuladas}
-              AND (
-                  EXISTS (SELECT 1 FROM asignar_correlativos ac WHERE ac.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
-                  OR EXISTS (SELECT 1 FROM resoluciones_facturas rf WHERE rf.id_usuario = COALESCE(fh.id_usuario_emisor, ad.id_usuario_autoriza))
-              )
-        `;
-    }
+    // facturas_historial es la fuente común para emisiones y anulaciones.
+    // Se agrupa por factura/estado para no repetir una factura por cada concepto.
+    const detalleBase = `
+        SELECT
+            fh.id_pago,
+            fh.id_usuario,
+            COALESCE(u.nombre, 'Sin asignación') AS nombre_usuario,
+            COALESCE(NULLIF(fh.correlativo, ''), p.no_referencia) AS no_referencia,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(p.forma_pago, 'N/A') END AS forma_pago,
+            MAX(fh.fecha_evento) AS fecha_pago,
+            UPPER(TRIM(fh.estado_factura)) AS estado_factura,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
+                THEN -ROUND(COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0) / 1.12, 2)
+                ELSE ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) / 1.12, 2)
+            END AS subtotal,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
+                THEN -ROUND(COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0) - ROUND(COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0) / 1.12, 2), 2)
+                ELSE ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) - ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) / 1.12, 2), 2)
+            END AS iva_total,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
+                THEN -COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0)
+                ELSE COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0)
+            END AS total_cobrado,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 0 ELSE COALESCE(MAX(pd.monto_mora), 0) END AS monto_mora
+        FROM facturas_historial fh
+        LEFT JOIN pagos p ON p.id_pago = fh.id_pago
+        LEFT JOIN usuarios u ON u.id_usuario = fh.id_usuario
+        LEFT JOIN (
+            SELECT id_pago, SUM(CASE WHEN tipo_concepto = 'mora' THEN subtotal ELSE 0 END) AS monto_mora
+            FROM pagos_detalle GROUP BY id_pago
+        ) pd ON pd.id_pago = fh.id_pago
+        LEFT JOIN (
+            SELECT id_pago, correlativo, MAX(monto_anulado) AS monto_anulado
+            FROM anulacion_deuda GROUP BY id_pago, correlativo
+        ) ad ON ad.id_pago = fh.id_pago OR (ad.id_pago IS NULL AND ad.correlativo = fh.correlativo)
+        WHERE ${whereSql}${filtroUsuarioSql}${filtroAccionSql}
+          AND COALESCE(NULLIF(fh.correlativo, ''), p.no_referencia, '') NOT LIKE 'TMP-%'
+        GROUP BY fh.id_pago, fh.id_usuario, u.nombre,
+                 COALESCE(NULLIF(fh.correlativo, ''), p.no_referencia),
+                 p.forma_pago, UPPER(TRIM(fh.estado_factura))
+    `;
     const { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery } = buildQueries(detalleBase);
 
     db.query(resumenUsuariosQuery, params, (userErr, rowsUsuarios) => {
         if (userErr) {
             console.error(userErr);
-            return res.status(500).send({ message: 'No se pudo generar el resumen por usuario.' });
+            return res.status(500).send({
+                message: 'No se pudo generar el resumen por usuario.',
+                detail: process.env.NODE_ENV === 'production' ? undefined : userErr.message
+            });
         }
 
         db.query(totalGeneralQuery, params, (totalErr, rowsTotales) => {

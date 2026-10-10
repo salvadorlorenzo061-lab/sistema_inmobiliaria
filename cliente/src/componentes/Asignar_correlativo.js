@@ -6,8 +6,14 @@ import autoTable from 'jspdf-autotable';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { API_BASE_URL } from '../config';
 
-const getToday = () => new Date().toISOString().slice(0, 10);
-const getCurrentMonth = () => new Date().toISOString().slice(0, 7);
+const getToday = () => {
+  const ahora = new Date();
+  return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+};
+const getCurrentMonth = () => {
+  const ahora = new Date();
+  return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+};
 const getMonthDateRange = (monthValue = getCurrentMonth()) => {
   const [yearRaw, monthRaw] = String(monthValue || '').split('-');
   const year = Number(yearRaw);
