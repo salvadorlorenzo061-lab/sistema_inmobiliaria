@@ -59,7 +59,7 @@ const Dashboard = () => {
     return [
       { label: 'Cobro total', value: currency(data.resumen.total_cobrado), color: '#0d6efd', helper: 'Cuotas y pagos registrados' },
       { label: 'Intereses', value: currency(data.resumen.total_interes || 0), color: '#8b5cf6', helper: 'Pagos por intereses' },
-      { label: 'Mora', value: currency(data.resumen.total_mora), color: '#dc3545', helper: 'Cobros con atraso' },
+      { label: 'Mora pendiente', value: currency(data.resumen.total_mora), color: '#dc3545', helper: 'Deuda morosa vigente' },
       { label: 'Facturas emitidas', value: formatNumber(data.resumen.total_facturas_emitidas), color: '#198754', helper: 'Emitidas por receptores' },
       { label: 'Facturas anuladas', value: formatNumber(data.resumen.total_facturas_anuladas), color: '#fd7e14', helper: 'Anulaciones del periodo' }
     ];
@@ -223,60 +223,6 @@ const Dashboard = () => {
             </div>
 
             <div className="row g-2">
-              <div className="col-xl-2 col-lg-3 col-md-6">
-                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#f8fafc', minHeight: 180 }}>
-                  <div className="card-body p-3">
-                    <div className="text-dark fw-bold mb-2" style={{ fontSize: '0.78rem' }}>Cobro total</div>
-                    <div className="fw-bold text-primary" style={{ fontSize: '1.55rem', lineHeight: 1.1 }}>{currency(data.resumen.total_cobrado)}</div>
-                    <div className="mt-3">
-                      <div className="d-flex justify-content-between text-secondary" style={{ fontSize: '0.68rem' }}>
-                        <span>Cuotas</span>
-                        <strong className="text-primary">{formatNumber(data.resumen.cuotas_financiadas_cobradas)}</strong>
-                      </div>
-                      <div className="progress mt-1" style={{ height: 7, borderRadius: 6, background: '#e8edf7' }}>
-                        <div className="progress-bar bg-primary" style={{ width: '100%' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="col-xl-2 col-lg-3 col-md-6">
-                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#f8fafc', minHeight: 180 }}>
-                  <div className="card-body p-3">
-                    <div className="text-dark fw-bold mb-2" style={{ fontSize: '0.78rem' }}>Mora</div>
-                    <div className="fw-bold text-danger" style={{ fontSize: '1.55rem', lineHeight: 1.1 }}>{currency(data.resumen.total_mora)}</div>
-                    <div className="mt-3">
-                      <div className="d-flex justify-content-between text-secondary" style={{ fontSize: '0.68rem' }}>
-                        <span>Clientes</span>
-                        <strong className="text-danger">{formatNumber(data.resumen.clientes_con_mora)}</strong>
-                      </div>
-                      <div className="progress mt-1" style={{ height: 7, borderRadius: 6, background: '#f8e6eb' }}>
-                        <div className="progress-bar bg-danger" style={{ width: `${Math.min((data.resumen.clientes_con_mora / Math.max(data.resumen.clientes_total || 1, 1)) * 100, 100)}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="col-xl-2 col-lg-3 col-md-6">
-                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#f8fafc', minHeight: 180 }}>
-                  <div className="card-body p-3">
-                    <div className="text-dark fw-bold mb-2" style={{ fontSize: '0.78rem' }}>Facturas emitidas</div>
-                    <div className="fw-bold text-success" style={{ fontSize: '1.55rem', lineHeight: 1.1 }}>{formatNumber(data.resumen.total_facturas_emitidas)}</div>
-                    <div className="mt-3">
-                      <div className="d-flex justify-content-between text-secondary" style={{ fontSize: '0.68rem' }}>
-                        <span>Anuladas</span>
-                        <strong className="text-warning">{formatNumber(data.resumen.total_facturas_anuladas)}</strong>
-                      </div>
-                      <div className="progress mt-1" style={{ height: 7, borderRadius: 6, background: '#edf5ea' }}>
-                        <div className="progress-bar bg-success" style={{ width: `${Math.min((data.resumen.total_facturas_emitidas / Math.max(data.resumen.total_facturas_emitidas + data.resumen.total_facturas_anuladas || 1, 1)) * 100, 100)}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <div className="col-xl-2 col-lg-3 col-md-6">
                 <div className="card border-0 shadow-sm h-100" style={{ borderRadius: 12, background: '#f8fafc', minHeight: 180 }}>
                   <div className="card-body p-3">

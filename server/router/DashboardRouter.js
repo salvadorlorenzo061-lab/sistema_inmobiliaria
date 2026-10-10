@@ -55,7 +55,8 @@ router.get('/resumen', async (req, res) => {
       topMora,
       facturasPorUsuario,
       contratosEstado,
-      clientesEstado
+      clientesEstado,
+      moraPendiente
     ] = await Promise.all([
       queryAsync(`
         SELECT
@@ -100,9 +101,9 @@ router.get('/resumen', async (req, res) => {
       queryAsync(`
         SELECT
           COALESCE(u.nombre, 'Sin asignación') AS nombre,
-          COUNT(*) AS total_facturas,
-          SUM(CASE WHEN fh.estado_factura = 'ANULADA' THEN 1 ELSE 0 END) AS anuladas,
-          SUM(CASE WHEN fh.estado_factura = 'EMITIDA' THEN 1 ELSE 0 END) AS emitidas,
+          COUNT(DISTINCT fh.id_pago) AS total_facturas,
+          COUNT(DISTINCT CASE WHEN fh.estado_factura = 'ANULADA' THEN fh.id_pago END) AS anuladas,
+          COUNT(DISTINCT CASE WHEN fh.estado_factura = 'EMITIDA' THEN fh.id_pago END) AS emitidas,
           COALESCE(SUM(CASE WHEN fh.estado_factura = 'EMITIDA' THEN fh.subtotal ELSE 0 END), 0) AS monto_emitido
         FROM facturas_historial fh
         LEFT JOIN usuarios u ON u.id_usuario = fh.id_usuario
@@ -122,7 +123,7 @@ router.get('/resumen', async (req, res) => {
         FROM contratos_residentes c
         LEFT JOIN (
           SELECT id_contrato,
-                 MAX(CASE WHEN estado != 'pagado' THEN 1 ELSE 0 END) AS tiene_mora
+                 MAX(CASE WHEN LOWER(TRIM(COALESCE(estado, 'pendiente'))) NOT IN ('pagado', 'exonerada', 'anulada') THEN 1 ELSE 0 END) AS tiene_mora
           FROM morosidad
           GROUP BY id_contrato
         ) mora ON mora.id_contrato = c.id_contrato
@@ -138,11 +139,24 @@ router.get('/resumen', async (req, res) => {
         FROM residentes r
         LEFT JOIN (
           SELECT c.id_residente,
-                 MAX(CASE WHEN m.estado != 'pagado' THEN 1 ELSE 0 END) AS tiene_mora
+                 MAX(CASE WHEN LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) NOT IN ('pagado', 'exonerada', 'anulada') THEN 1 ELSE 0 END) AS tiene_mora
           FROM contratos_residentes c
           LEFT JOIN morosidad m ON m.id_contrato = c.id_contrato
           GROUP BY c.id_residente
         ) mora ON mora.id_residente = r.id_residente
+      `),
+
+      queryAsync(`
+        SELECT COALESCE(SUM(mora_mes.monto_mora), 0) AS total_mora_pendiente
+        FROM (
+          SELECT m.id_contrato,
+                 LOWER(TRIM(COALESCE(m.mes_atrasado, CONCAT('id:', m.id_morosidad)))) AS periodo_mora,
+                 MAX(COALESCE(NULLIF(c.mora, 0), m.monto_mora, 0)) AS monto_mora
+          FROM morosidad m
+          LEFT JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
+          WHERE LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) NOT IN ('pagado', 'exonerada', 'anulada')
+          GROUP BY m.id_contrato, LOWER(TRIM(COALESCE(m.mes_atrasado, CONCAT('id:', m.id_morosidad))))
+        ) mora_mes
       `)
     ]);
 
@@ -163,7 +177,8 @@ router.get('/resumen', async (req, res) => {
       resumen: {
         total_cobrado: Number(resumen.total_cobrado || 0),
         total_interes: Number(resumen.total_interes || 0),
-        total_mora: Number(resumen.total_mora || 0),
+        total_mora: Number(moraPendiente[0]?.total_mora_pendiente || 0),
+        mora_cobrada_periodo: Number(resumen.total_mora || 0),
         cuotas_financiadas_cobradas: Number(resumen.cuotas_financiadas_cobradas || 0),
         contratos_con_cobro: Number(resumen.contratos_con_cobro || 0),
         clientes_activos: Number(clientes.total_clientes || 0),

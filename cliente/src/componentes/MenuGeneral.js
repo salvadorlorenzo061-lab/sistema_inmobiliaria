@@ -11,6 +11,11 @@ const normalizeText = (value = '') => value
 
 const MODULE_PERMISSION_ALIASES = {
   menu_general: ['menu principal', 'menu general'],
+  residentes: ['residentes', 'clientes'],
+  servicio: ['servicio', 'servicios basicos'],
+  estado_cuenta_resumen: ['estado de cuenta'],
+  estado_cuenta: ['detalle de pagos', 'detalle pagos'],
+  asignar_correlativo: ['asignar correlativos', 'cuadre de facturacion'],
   anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
   convenio: ['convenio', 'convenio pagos', 'convenio de pagos'],
   caja_ingresos: ['caja ingresos manual'],

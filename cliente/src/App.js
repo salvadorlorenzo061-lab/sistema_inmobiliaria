@@ -13,6 +13,10 @@ const normalizeText = (value = '') => value
   .trim();
 
 const MODULE_PERMISSION_ALIASES = {
+  residentes: ['residentes', 'clientes'],
+  servicio: ['servicio', 'servicios basicos'],
+  estado_cuenta_resumen: ['estado de cuenta'],
+  estado_cuenta: ['detalle de pagos', 'detalle pagos'],
   menu_general: ['menu principal', 'menu general'],
   anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
   convenio: ['convenio', 'convenio pagos', 'convenio de pagos'],

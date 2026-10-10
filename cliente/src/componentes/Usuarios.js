@@ -9,11 +9,13 @@ import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 
 const PERMISOS_MODULOS = [
   'Residentes',
+  'Menu General',
   'Usuarios',
   'Roles Sistema',
   'Contratos Legales',
   'Modalidades Contrato',
   'Catálogo Servicios',
+  'Servicio',
   'Empresa',
   'Empresa-Proyecto',
   'Proyectos',
@@ -32,6 +34,7 @@ const PERMISOS_MODULOS = [
   'Resoluciones Facturas',
   'Bitácora',
   'Detalle de Pagos'
+  ,'Estado de Cuenta'
 ];
 
 // Se conserva el valor técnico "Residentes" en permisos existentes para no
@@ -143,7 +146,7 @@ function Usuarios() {
         ['CÓDIGO INTERNO DE EMPLEADO', `EMP-${val.id_usuario}2026`],
         ['NOMBRE COMPLETO', val.nombre.toUpperCase()],
         ['CORREO ELECTRÓNICO DE ACCESO', val.correo],
-        ['CONTRASEÑA ENCRIPTADA (BD)', val.clave],
+        ['CONTRASEÑA', 'Protegida (no visible)'],
         ['ROL / NIVEL DE PERMISOS', textoRol],
         ['ESTADO OPERATIVO EN SISTEMA', val.estado.toUpperCase()],
       ],
@@ -243,7 +246,7 @@ function Usuarios() {
   };
 
   const actualizar = async () => {
-    if (!nombre.trim() || !correo.trim() || !clave.trim() || !id_rol || !estado.trim()) {
+    if (!nombre.trim() || !correo.trim() || !id_rol || !estado.trim()) {
       Swal.fire({ icon: 'warning', title: 'Campos incompletos' });
       return;
     }
@@ -348,7 +351,7 @@ function Usuarios() {
     setId_usuario(val.id_usuario);
     setNombre(val.nombre);
     setCorreo(val.correo);
-    setClave(val.clave);
+    setClave('');
     setId_rol(val.id_rol);
     setEstado(val.estado);
     setFoto_perfil(val.foto_perfil || '');
@@ -449,7 +452,7 @@ function Usuarios() {
                 </td>
                 <td>{val.nombre}</td>
                 <td>{val.correo}</td>
-                <td>{val.clave}</td>
+                <td><span className="badge bg-success">Protegida</span></td>
                 {/* CAMBIO: Mostramos el 'nombre_rol' textual traído con el JOIN de la BD */}
                 <td><span className="badge bg-secondary">{(val.nombre_rol || 'Sin Rol').toUpperCase()}</span></td>
                 <td>
@@ -618,7 +621,7 @@ function Usuarios() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Clave:</label>
-                  <input type="text" value={clave} onChange={(e) => setClave(e.target.value)} className="form-control" />
+                  <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} className="form-control" placeholder="Dejar vacía para conservar la clave actual" autoComplete="new-password" />
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Rol de Usuario:</label>
