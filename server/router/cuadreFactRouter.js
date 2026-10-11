@@ -42,48 +42,46 @@ router.get('/reporte', (req, res) => {
         filtros.push("UPPER(TRIM(fh.estado_factura)) IN ('EMITIDA', 'ANULADA')");
     }
     if (idUsuario > 0) {
-        filtros.push('COALESCE(fh.id_usuario, p_filtro.id_usuario) = ?');
+        filtros.push('COALESCE(fh.id_usuario, p.id_usuario) = ?');
         params.push(idUsuario);
     }
 
-    // Consolidar primero las filas de una misma factura evita duplicar montos por
-    // concepto y también es compatible con ONLY_FULL_GROUP_BY en producción.
+    // Consulta directa sobre facturas_historial (mismo patron que
+    // pagos_detalle/reporte-facturas, que si funciona en produccion): GROUP BY
+    // sobre la tabla base y JOINs simples, sin tabla derivada anidada. Las
+    // columnas de pagos/usuarios van agregadas con MAX porque el JOIN es 1:1.
     const sql = `
         SELECT
-            historial.id_pago,
-            COALESCE(historial.id_usuario, p.id_usuario) AS id_usuario,
-            COALESCE(u.nombre, CONCAT('Usuario #', COALESCE(historial.id_usuario, p.id_usuario)), 'Sin asignación') AS nombre_usuario,
-            historial.estado_factura,
-            historial.fecha_evento,
-            COALESCE(NULLIF(historial.correlativo, ''), p.no_referencia, CONCAT('PAGO-', historial.id_pago)) AS correlativo,
-            CASE WHEN historial.estado_factura = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(p.forma_pago, 'N/A') END AS forma_pago,
-            CASE WHEN historial.estado_factura = 'ANULADA'
-                 THEN -COALESCE(NULLIF(p.monto_total_pagado, 0), historial.total_historial, 0)
-                 ELSE COALESCE(NULLIF(p.monto_total_pagado, 0), historial.total_historial, 0)
+            fh.id_pago,
+            COALESCE(fh.id_usuario, p.id_usuario) AS id_usuario,
+            COALESCE(MAX(u.nombre), CONCAT('Usuario #', COALESCE(fh.id_usuario, p.id_usuario)), 'Sin asignación') AS nombre_usuario,
+            UPPER(TRIM(fh.estado_factura)) AS estado_factura,
+            MAX(fh.fecha_evento) AS fecha_evento,
+            COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), CONCAT('PAGO-', fh.id_pago)) AS correlativo,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(MAX(p.forma_pago), 'N/A') END AS forma_pago,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
+                 THEN -COALESCE(MAX(NULLIF(p.monto_total_pagado, 0)), SUM(COALESCE(fh.subtotal, 0)), 0)
+                 ELSE COALESCE(MAX(NULLIF(p.monto_total_pagado, 0)), SUM(COALESCE(fh.subtotal, 0)), 0)
             END AS total_cobrado
-        FROM (
-            SELECT
-                fh.id_pago,
-                fh.id_usuario,
-                MAX(NULLIF(fh.correlativo, '')) AS correlativo,
-                UPPER(TRIM(fh.estado_factura)) AS estado_factura,
-                MAX(fh.fecha_evento) AS fecha_evento,
-                SUM(COALESCE(fh.subtotal, 0)) AS total_historial
-            FROM facturas_historial fh
-            LEFT JOIN pagos p_filtro ON p_filtro.id_pago = fh.id_pago
-            WHERE ${filtros.join(' AND ')}
-            GROUP BY fh.id_pago, fh.id_usuario, UPPER(TRIM(fh.estado_factura))
-        ) historial
-        LEFT JOIN pagos p ON p.id_pago = historial.id_pago
-        LEFT JOIN usuarios u ON u.id_usuario = COALESCE(historial.id_usuario, p.id_usuario)
-        WHERE COALESCE(NULLIF(historial.correlativo, ''), p.no_referencia, '') NOT LIKE 'TMP-%'
-        ORDER BY historial.fecha_evento, historial.id_pago
+        FROM facturas_historial fh
+        LEFT JOIN pagos p ON p.id_pago = fh.id_pago
+        LEFT JOIN usuarios u ON u.id_usuario = COALESCE(fh.id_usuario, p.id_usuario)
+        WHERE ${filtros.join(' AND ')}
+        GROUP BY
+            fh.id_pago,
+            COALESCE(fh.id_usuario, p.id_usuario),
+            UPPER(TRIM(fh.estado_factura))
+        HAVING COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), '') NOT LIKE 'TMP-%'
+        ORDER BY fecha_evento, fh.id_pago
     `;
 
     db.query(sql, params, (err, rows) => {
         if (err) {
             console.error('Error generando cuadre de facturación:', err.code, err.message);
-            return res.status(500).send({ message: 'No se pudo generar el cuadre de facturación.' });
+            return res.status(500).send({
+                message: 'No se pudo generar el cuadre de facturación.',
+                detail: `${err.code || ''} ${err.message || ''}`.trim()
+            });
         }
         const detalle = rows || [];
         const porUsuario = new Map();
