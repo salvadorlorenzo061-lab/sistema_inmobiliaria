@@ -719,7 +719,7 @@ const obtenerCuadre = (scope) => (req, res) => {
     };
 
     const whereSql = periodo.whereSqlTemplate.replace(/__DATE_FIELD__/g, 'fh.fecha_evento');
-    const filtroUsuarioSql = filtrarUsuario ? ' AND fh.id_usuario = ?' : '';
+    const filtroUsuarioSql = filtrarUsuario ? ' AND COALESCE(fh.id_usuario, p_filtro.id_usuario) = ?' : '';
     const filtroAccionSql = accion === 'emitio'
         ? " AND UPPER(TRIM(fh.estado_factura)) = 'EMITIDA'"
         : accion === 'anulo'
@@ -731,38 +731,41 @@ const obtenerCuadre = (scope) => (req, res) => {
     // Se agrupa por factura/estado para no repetir una factura por cada concepto.
     const detalleBase = `
         SELECT
-            fh.id_pago,
-            fh.id_usuario,
+            historial.id_pago,
+            COALESCE(historial.id_usuario, p.id_usuario) AS id_usuario,
             COALESCE(u.nombre, 'Sin asignación') AS nombre_usuario,
-            COALESCE(NULLIF(fh.correlativo, ''), p.no_referencia) AS no_referencia,
-            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(p.forma_pago, 'N/A') END AS forma_pago,
-            MAX(fh.fecha_evento) AS fecha_pago,
-            UPPER(TRIM(fh.estado_factura)) AS estado_factura,
-            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
-                THEN -ROUND(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) / 1.12, 2)
-                ELSE ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) / 1.12, 2)
+            COALESCE(NULLIF(historial.correlativo, ''), p.no_referencia, CONCAT('PAGO-', historial.id_pago)) AS no_referencia,
+            CASE WHEN historial.estado_factura = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(p.forma_pago, 'N/A') END AS forma_pago,
+            COALESCE(historial.fecha_evento, p.fecha_pago) AS fecha_pago,
+            historial.estado_factura,
+            CASE WHEN historial.estado_factura = 'ANULADA'
+                THEN -COALESCE(NULLIF(p.monto_total_pagado, 0), historial.total_historial, 0)
+                ELSE COALESCE(NULLIF(p.monto_total_pagado, 0), historial.total_historial, 0)
             END AS subtotal,
-            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
-                THEN -ROUND(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - ROUND(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) / 1.12, 2), 2)
-                ELSE ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) - ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) / 1.12, 2), 2)
-            END AS iva_total,
-            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
-                THEN -COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0)
-                ELSE COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0)
+            0 AS iva_total,
+            CASE WHEN historial.estado_factura = 'ANULADA'
+                THEN -COALESCE(NULLIF(p.monto_total_pagado, 0), historial.total_historial, 0)
+                ELSE COALESCE(NULLIF(p.monto_total_pagado, 0), historial.total_historial, 0)
             END AS total_cobrado,
-            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 0 ELSE COALESCE(MAX(pd.monto_mora), 0) END AS monto_mora
-        FROM facturas_historial fh
-        LEFT JOIN pagos p ON p.id_pago = fh.id_pago
-        LEFT JOIN usuarios u ON u.id_usuario = fh.id_usuario
+            CASE WHEN historial.estado_factura = 'ANULADA' THEN 0 ELSE COALESCE(pd.monto_mora, 0) END AS monto_mora
+        FROM (
+            SELECT fh.id_pago, fh.id_usuario,
+                   MAX(NULLIF(fh.correlativo, '')) AS correlativo,
+                   UPPER(TRIM(fh.estado_factura)) AS estado_factura,
+                   MAX(fh.fecha_evento) AS fecha_evento,
+                   SUM(COALESCE(fh.subtotal, 0)) AS total_historial
+            FROM facturas_historial fh
+            LEFT JOIN pagos p_filtro ON p_filtro.id_pago = fh.id_pago
+            WHERE ${whereSql}${filtroUsuarioSql}${filtroAccionSql}
+            GROUP BY fh.id_pago, fh.id_usuario, UPPER(TRIM(fh.estado_factura))
+        ) historial
+        LEFT JOIN pagos p ON p.id_pago = historial.id_pago
+        LEFT JOIN usuarios u ON u.id_usuario = COALESCE(historial.id_usuario, p.id_usuario)
         LEFT JOIN (
             SELECT id_pago, SUM(CASE WHEN tipo_concepto = 'mora' THEN subtotal ELSE 0 END) AS monto_mora
             FROM pagos_detalle GROUP BY id_pago
-        ) pd ON pd.id_pago = fh.id_pago
-        WHERE ${whereSql}${filtroUsuarioSql}${filtroAccionSql}
-          AND COALESCE(NULLIF(fh.correlativo, ''), p.no_referencia, '') NOT LIKE 'TMP-%'
-        GROUP BY fh.id_pago, fh.id_usuario, u.nombre,
-                 COALESCE(NULLIF(fh.correlativo, ''), p.no_referencia),
-                 p.forma_pago, UPPER(TRIM(fh.estado_factura))
+        ) pd ON pd.id_pago = historial.id_pago
+        WHERE COALESCE(NULLIF(historial.correlativo, ''), p.no_referencia, '') NOT LIKE 'TMP-%'
     `;
     const { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery } = buildQueries(detalleBase);
 

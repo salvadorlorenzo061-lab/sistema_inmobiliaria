@@ -10,6 +10,23 @@ const getToday = () => {
   const ahora = new Date();
   return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
 };
+const formatDateInput = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const obtenerRangoRapido = (tipo) => {
+  const hoy = new Date();
+  const inicio = new Date(hoy);
+  const fin = new Date(hoy);
+  if (tipo === 'semana') {
+    inicio.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7));
+    fin.setDate(inicio.getDate() + 6);
+  } else if (tipo === 'quincena') {
+    inicio.setDate(hoy.getDate() <= 15 ? 1 : 16);
+    fin.setDate(hoy.getDate() <= 15 ? 15 : new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate());
+  } else if (tipo === 'mes') {
+    inicio.setDate(1);
+    fin.setDate(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate());
+  }
+  return { inicio: formatDateInput(inicio), fin: formatDateInput(fin) };
+};
 const formatMoney = (value) => `Q ${Number(value || 0).toFixed(2)}`;
 const normalizeFileSegment = (value = '') => String(value || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 const normalizeRole = (value = '') => String(value || '')
@@ -31,6 +48,7 @@ function AsignarCorrelativo() {
   const [observaciones, setObservaciones] = useState('');
 
   const [accionCuadre, setAccionCuadre] = useState('todas');
+  const [periodoRapido, setPeriodoRapido] = useState('dia');
   const [idUsuarioCuadre, setIdUsuarioCuadre] = useState('');
   const [fechaInicioCuadre, setFechaInicioCuadre] = useState(getToday());
   const [fechaFinCuadre, setFechaFinCuadre] = useState(getToday());
@@ -41,6 +59,13 @@ function AsignarCorrelativo() {
   const [loadError, setLoadError] = useState('');
 
   const API_URL = `${API_BASE_URL}/api/asignar_correlativo`;
+
+  const cambiarPeriodoRapido = (tipo) => {
+    setPeriodoRapido(tipo);
+    const rango = obtenerRangoRapido(tipo);
+    setFechaInicioCuadre(rango.inicio);
+    setFechaFinCuadre(rango.fin);
+  };
 
   const cargarHistorialCuadres = useCallback(async () => {
     try {
@@ -281,15 +306,13 @@ function AsignarCorrelativo() {
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 10,
-      head: [['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Subtotal', 'IVA', 'Mora', 'Total']],
+      head: [['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Mora', 'Total cobrado']],
       body: (datosReporte.detalle_facturas || []).map((item) => ([
         item.fecha_pago ? new Date(item.fecha_pago).toLocaleString() : 'N/A',
         item.nombre_usuario || 'N/A',
         item.no_referencia || 'N/A',
         item.estado_factura || 'N/A',
         item.forma_pago || 'N/A',
-        formatMoney(item.subtotal),
-        formatMoney(item.iva_total),
         formatMoney(item.monto_mora),
         formatMoney(item.total_cobrado)
       ])),
@@ -322,8 +345,6 @@ function AsignarCorrelativo() {
     lineas.push(['Facturas anuladas', reporte.total_general?.facturas_anuladas || 0].join(','));
     lineas.push(['Correlativo inicial', reporte.total_general?.correlativo_inicial || 'N/A'].join(','));
     lineas.push(['Correlativo final', reporte.total_general?.correlativo_final || 'N/A'].join(','));
-    lineas.push(['Subtotal', Number(reporte.total_general?.subtotal || 0).toFixed(2)].join(','));
-    lineas.push(['IVA total', Number(reporte.total_general?.iva_total || 0).toFixed(2)].join(','));
     lineas.push(['Mora total', Number(reporte.total_general?.monto_mora || 0).toFixed(2)].join(','));
     lineas.push(['Total emitido', Number(reporte.total_general?.total_emitido || 0).toFixed(2)].join(','));
     lineas.push(['Total anulado', Number(reporte.total_general?.total_anulado || 0).toFixed(2)].join(','));
@@ -345,7 +366,7 @@ function AsignarCorrelativo() {
     });
     lineas.push('');
     lineas.push('Detalle de facturas');
-    lineas.push(['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Subtotal', 'IVA', 'Mora', 'Total'].join(','));
+    lineas.push(['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Mora', 'Total cobrado'].join(','));
     (reporte.detalle_facturas || []).forEach((item) => {
       lineas.push([
         `"${String(item.fecha_pago ? new Date(item.fecha_pago).toLocaleString() : 'N/A').replace(/"/g, '""')}"`,
@@ -353,8 +374,6 @@ function AsignarCorrelativo() {
         `"${String(item.no_referencia || 'N/A').replace(/"/g, '""')}"`,
         `"${String(item.estado_factura || 'N/A').replace(/"/g, '""')}"`,
         `"${String(item.forma_pago || 'N/A').replace(/"/g, '""')}"`,
-        Number(item.subtotal || 0).toFixed(2),
-        Number(item.iva_total || 0).toFixed(2),
         Number(item.monto_mora || 0).toFixed(2),
         Number(item.total_cobrado || 0).toFixed(2)
       ].join(','));
@@ -560,6 +579,15 @@ function AsignarCorrelativo() {
         <div className="card-body">
           <div className="row g-3 align-items-end">
             <div className="col-md-2">
+              <label className="form-label fw-bold">Período</label>
+              <select className="form-select" value={periodoRapido} onChange={(e) => cambiarPeriodoRapido(e.target.value)}>
+                <option value="dia">Diario</option>
+                <option value="semana">Semanal</option>
+                <option value="quincena">Quincenal</option>
+                <option value="mes">Mensual</option>
+              </select>
+            </div>
+            <div className="col-md-2">
               <label className="form-label fw-bold">Estado de factura</label>
               <select className="form-select" value={accionCuadre} onChange={(e) => setAccionCuadre(e.target.value)}>
                 <option value="todas">Emitidas y anuladas</option>
@@ -694,8 +722,6 @@ function AsignarCorrelativo() {
                         <th>Anuladas</th>
                         <th>Correlativo inicial</th>
                         <th>Correlativo final</th>
-                        <th>Subtotal</th>
-                        <th>IVA</th>
                         <th>Total emitido</th>
                         <th>Total anulado</th>
                         <th>Neto</th>
@@ -709,15 +735,13 @@ function AsignarCorrelativo() {
                           <td className="text-danger">{item.facturas_anuladas || 0}</td>
                           <td>{item.correlativo_inicial || 'N/A'}</td>
                           <td>{item.correlativo_final || 'N/A'}</td>
-                          <td>{formatMoney(item.subtotal)}</td>
-                          <td>{formatMoney(item.iva_total)}</td>
                           <td className="text-success">{formatMoney(item.total_emitido)}</td>
                           <td className="text-danger">{formatMoney(item.total_anulado)}</td>
                           <td className="fw-bold">{formatMoney(item.total_cobrado)}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="10" className="text-center text-muted py-3">No hay facturas en el período seleccionado.</td>
+                          <td colSpan="8" className="text-center text-muted py-3">No hay facturas en el período seleccionado.</td>
                         </tr>
                       )}
                     </tbody>
@@ -736,10 +760,8 @@ function AsignarCorrelativo() {
                         <th>Correlativo</th>
                         <th>Forma de pago</th>
                         <th>Estado</th>
-                        <th>Subtotal</th>
-                        <th>IVA</th>
                         <th>Mora</th>
-                        <th>Total</th>
+                        <th>Total cobrado</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -750,14 +772,12 @@ function AsignarCorrelativo() {
                           <td>{item.no_referencia || 'N/A'}</td>
                           <td>{item.forma_pago || 'N/A'}</td>
                           <td><span className={`badge ${item.estado_factura === 'ANULADA' ? 'bg-danger' : 'bg-success'}`}>{item.estado_factura}</span></td>
-                          <td>{formatMoney(item.subtotal)}</td>
-                          <td>{formatMoney(item.iva_total)}</td>
                           <td>{formatMoney(item.monto_mora)}</td>
                           <td className="fw-bold text-success">{formatMoney(item.total_cobrado)}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="9" className="text-center text-muted py-3">No se encontraron facturas para el período consultado.</td>
+                          <td colSpan="7" className="text-center text-muted py-3">No se encontraron facturas para el período consultado.</td>
                         </tr>
                       )}
                     </tbody>
