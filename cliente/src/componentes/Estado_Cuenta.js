@@ -717,6 +717,7 @@ const EstadoCuenta = () => {
         ]);
       }
 
+      const filasEnganche = [];
       enganches.forEach((item) => {
         const serviciosFuenteFila = [item?.servicios_nombres, serviciosContratoNombres, serviciosCajaNombres]
           .map((txt) => String(txt || '').trim())
@@ -727,7 +728,7 @@ const EstadoCuenta = () => {
           serviciosFuenteFila,
           item?.forma_pago
         );
-        filas.push([
+        filasEnganche.push([
           formatoFecha(item?.fecha_pago),
           marcasForma.d,
           marcasForma.t,
@@ -741,6 +742,15 @@ const EstadoCuenta = () => {
           'Enganche'
         ]);
       });
+
+      const enganchePactado = Math.max(Number(contrato?.enganche || 0), 0);
+      if (!filasEnganche.length && enganchePactado > 0) {
+        filasEnganche.push([
+          formatoFecha(contrato?.fecha_firma), '', '', '', '', '', '',
+          formatoMoneda(enganchePactado), '0', '', 'Enganche pendiente de pago'
+        ]);
+      }
+      if (filasEnganche.length) filas.unshift(...filasEnganche);
 
       const nuevoFormatoFecha = (valor) => {
         if (!valor) return '';
@@ -851,6 +861,17 @@ const EstadoCuenta = () => {
             recibo || ''
           ]);
         });
+      } else if (Number(contrato?.enganche || 0) > 0) {
+        filasReporte.push([
+          nuevoFormatoFecha(contrato?.fecha_firma) || '',
+          'PENDIENTE DE PAGO',
+          '0',
+          '',
+          '',
+          '',
+          formatoMoneda(contrato.enganche),
+          ''
+        ]);
       }
 
       const totalCuotas = Math.max(Number(cuotasPactadas || 0), 0);

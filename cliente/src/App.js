@@ -24,6 +24,7 @@ const MODULE_PERMISSION_ALIASES = {
   convenio: ['convenio', 'convenio pagos', 'convenio de pagos'],
   caja_ingresos: ['caja ingresos manual'],
   asignar_correlativo: ['asignar correlativos', 'asignar correlativo', 'cuadre de facturacion', 'cuadre diario', 'cuadre semanal', 'cuadre quincenal', 'cuadre mensual', 'cuadre anual'],
+  cuadre_fact: ['cuadre de facturacion nuevo', 'cuadre fact'],
   proyectos: ['proyecto', 'proyectos', 'catalogo de proyectos', 'catalogo proyectos'],
   empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa'],
   dashboard_financiero: ['dashboard', 'dashboard financiero', 'reportes', 'reporte financiero', 'estadisticas', 'reportes financieros']

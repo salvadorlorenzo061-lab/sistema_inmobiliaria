@@ -43,6 +43,7 @@ const pagosRouter = require('./router/PagosRouter');
 const pagosDetalleRouter = require('./router/Pagos_DetalleRouter');
 const cajaIngresosRouter = require('./router/Caja_ingresosRouter');
 const asignarCorrelativoRouter = require('./router/Asignar_CorrelativoRouter');
+const cuadreFactRouter = require('./router/cuadreFactRouter');
 
 // 🔴 IMPORTAR ENRUTADORES DE LOS NUEVOS MÓDULOS
 const anulacionDeudaRouter = require('./router/Anulacion_DeudaRouter');
@@ -72,6 +73,7 @@ app.use('/api/pagos', pagosRouter);
 app.use('/api/pagos_detalle', pagosDetalleRouter);
 app.use('/api/caja_ingresos', cajaIngresosRouter);
 app.use('/api/asignar_correlativo', asignarCorrelativoRouter);
+app.use('/api/cuadre_fact', cuadreFactRouter);
 
 // 🔴 INYECTAR LAS RUTAS DE LOS NUEVOS MÓDULOS A LA API
 app.use('/api/anulacion_deuda', anulacionDeudaRouter);

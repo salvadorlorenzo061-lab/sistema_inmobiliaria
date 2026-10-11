@@ -16,6 +16,7 @@ const MODULE_PERMISSION_ALIASES = {
   estado_cuenta_resumen: ['estado de cuenta'],
   estado_cuenta: ['detalle de pagos', 'detalle pagos'],
   asignar_correlativo: ['asignar correlativos', 'cuadre de facturacion'],
+  cuadre_fact: ['cuadre de facturacion nuevo', 'cuadre fact'],
   anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
   convenio: ['convenio', 'convenio pagos', 'convenio de pagos'],
   caja_ingresos: ['caja ingresos manual'],

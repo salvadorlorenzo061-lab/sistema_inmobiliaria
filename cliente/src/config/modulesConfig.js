@@ -22,6 +22,7 @@ import EstadoCuentaResumen from '../componentes/EstadoCuenta';
 import CuentaEstado from '../componentes/CuentaEstado';
 import MenuGeneral from '../componentes/MenuGeneral';
 import AsignarCorrelativo from '../componentes/Asignar_correlativo';
+import CuadreFact from '../componentes/cuadreFact';
 import Convenio from '../componentes/Convenio';
 import ReporteFacturas from '../componentes/ReporteFacturas';
 import Dashboard from '../componentes/Dashboard';
@@ -178,6 +179,14 @@ export const modulesConfig = [
     icon: '🧾',
     path: '/asignar_correlativo',
     component: AsignarCorrelativo,
+    category: 'Caja'
+  },
+  {
+    id: 'cuadre_fact',
+    label: 'Cuadre de Facturación Nuevo',
+    icon: '📑',
+    path: '/cuadre_fact',
+    component: CuadreFact,
     category: 'Caja'
   },
   {
