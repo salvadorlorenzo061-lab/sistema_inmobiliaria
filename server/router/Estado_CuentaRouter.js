@@ -6,7 +6,7 @@ const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 const { calcularTotalPlanPlano } = require('../utils/amortizacion');
 
 router.use(cors());
-router.use(express.json());
+router.use(express.json({ limit: '15mb' }));
 
 const ensureFacturasHistorialTable = () => {
     const sql = `
@@ -51,17 +51,30 @@ db.query(`
         id_usuario INT NULL,
         texto_manual TEXT NULL,
         cantidad_movimientos INT NOT NULL DEFAULT 5,
+        pdf_base64 LONGTEXT NULL,
+        datos_json LONGTEXT NULL,
         fecha_generacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_estado_cuenta_contrato (id_contrato),
         INDEX idx_estado_cuenta_fecha (fecha_generacion)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 `, (err) => {
     if (err) console.error('Error asegurando historial de estados de cuenta:', err.message);
+    else {
+        db.query(`ALTER TABLE estado_cuenta_historial ADD COLUMN pdf_base64 LONGTEXT NULL`, (alterErr) => {
+            if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') console.error('Error agregando PDF al historial:', alterErr.message);
+        });
+        db.query(`ALTER TABLE estado_cuenta_historial ADD COLUMN datos_json LONGTEXT NULL`, (alterErr) => {
+            if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') console.error('Error agregando datos al historial:', alterErr.message);
+        });
+    }
 });
 
 router.get('/historial/:id_contrato', (req, res) => {
     db.query(`
-        SELECT h.*, COALESCE(u.nombre, 'Usuario no disponible') AS nombre_usuario
+        SELECT h.id_estado_cuenta, h.id_contrato, h.id_usuario, h.texto_manual,
+               h.cantidad_movimientos, h.fecha_generacion,
+               CASE WHEN h.pdf_base64 IS NULL OR h.pdf_base64 = '' THEN 0 ELSE 1 END AS tiene_pdf,
+               COALESCE(u.nombre, 'Usuario no disponible') AS nombre_usuario
         FROM estado_cuenta_historial h
         LEFT JOIN usuarios u ON u.id_usuario = h.id_usuario
         WHERE h.id_contrato = ?
@@ -72,19 +85,38 @@ router.get('/historial/:id_contrato', (req, res) => {
     });
 });
 
+router.get('/historial/:id_estado_cuenta/pdf', (req, res) => {
+    db.query(`SELECT pdf_base64, id_contrato FROM estado_cuenta_historial WHERE id_estado_cuenta = ? LIMIT 1`,
+        [req.params.id_estado_cuenta], (err, rows) => {
+            if (err) return res.status(500).send({ message: 'No se pudo recuperar el PDF.' });
+            const registro = rows?.[0];
+            if (!registro?.pdf_base64) return res.status(404).send({ message: 'Este registro antiguo no contiene un PDF guardado.' });
+            try {
+                const pdf = Buffer.from(registro.pdf_base64, 'base64');
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename="EstadoCuenta_${registro.id_contrato}_${req.params.id_estado_cuenta}.pdf"`);
+                return res.send(pdf);
+            } catch (error) {
+                return res.status(500).send({ message: 'El PDF guardado no es válido.' });
+            }
+        });
+});
+
 router.post('/historial', (req, res) => {
     const idContrato = Number(req.body?.id_contrato || 0);
     const idUsuario = Number(req.body?.id_usuario || 0) || null;
     const textoManual = String(req.body?.texto_manual || '').trim();
     const cantidadMovimientos = [5, 10].includes(Number(req.body?.cantidad_movimientos))
         ? Number(req.body.cantidad_movimientos) : 5;
+    const pdfBase64 = String(req.body?.pdf_base64 || '').replace(/^data:application\/pdf;base64,/, '');
+    const datosJson = req.body?.datos ? JSON.stringify(req.body.datos) : null;
     if (!idContrato) return res.status(400).send({ message: 'Contrato inválido.' });
     if (!textoManual) return res.status(400).send({ message: 'Debe ingresar el texto manual del estado de cuenta.' });
     db.query(`
         INSERT INTO estado_cuenta_historial
-            (id_contrato, id_usuario, texto_manual, cantidad_movimientos)
-        VALUES (?, ?, ?, ?)
-    `, [idContrato, idUsuario, textoManual, cantidadMovimientos], (err, result) => {
+            (id_contrato, id_usuario, texto_manual, cantidad_movimientos, pdf_base64, datos_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `, [idContrato, idUsuario, textoManual, cantidadMovimientos, pdfBase64 || null, datosJson], (err, result) => {
         if (err) return res.status(500).send({ message: 'No se pudo guardar el estado de cuenta.' });
         return res.status(201).json({ id_estado_cuenta: result.insertId, message: 'Estado de cuenta registrado.' });
     });

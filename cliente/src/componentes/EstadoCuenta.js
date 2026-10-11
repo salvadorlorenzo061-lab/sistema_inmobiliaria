@@ -95,7 +95,7 @@ const EstadoCuenta = () => {
     };
   }, [estado, cantidad]);
 
-  const exportarPDF = (textoConfirmado = textoManual) => {
+  const crearPDF = (textoConfirmado = textoManual) => {
     if (!estado?.contrato || !resumen) return;
     const contrato = estado.contrato;
     const doc = new jsPDF('p', 'mm', 'letter');
@@ -167,36 +167,60 @@ const EstadoCuenta = () => {
     doc.text(doc.splitTextToSize(textoIngresado, ancho - 64), ancho / 2, y + 23, { align: 'center' });
     doc.line(42, 244, 82, 244); doc.line(137, 244, 177, 244);
     doc.text('Elaboró / Revisó', 62, 249, { align: 'center' }); doc.text('Sello / Autorización', 157, 249, { align: 'center' });
-    doc.save(`EstadoCuenta_${contrato.codigo_contrato || 'cliente'}.pdf`);
+    return doc;
+  };
+
+  const descargarPDF = (doc) => {
+    doc.save(`EstadoCuenta_${estado?.contrato?.codigo_contrato || 'cliente'}.pdf`);
+  };
+
+  const descargarHistorico = async (item) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/estado_cuenta/historial/${item.id_estado_cuenta}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(response.data);
+      const enlace = document.createElement('a');
+      enlace.href = url;
+      enlace.download = `EstadoCuenta_${estado?.contrato?.codigo_contrato || item.id_contrato}_${item.id_estado_cuenta}.pdf`;
+      document.body.appendChild(enlace); enlace.click(); enlace.remove(); window.URL.revokeObjectURL(url);
+    } catch (error) {
+      Swal.fire('PDF no disponible', error?.response?.data?.message || 'Este registro no contiene el archivo PDF.', 'warning');
+    }
   };
 
   const generarEstadoCuenta = async () => {
     if (!estado?.contrato) return;
+    const filas = resumen.movimientos.map((m) => `<tr><td>${fecha(m.fecha)}</td><td>${m.numero}</td><td>${moneda(m.monto)}</td><td>${m.banco}</td><td>${m.boleta}</td><td>${m.recibo}</td></tr>`).join('');
     const resultado = await Swal.fire({
       title: 'Texto manual del estado de cuenta',
-      input: 'textarea',
-      inputValue: textoManual,
-      inputPlaceholder: 'Ejemplo: SALDO A CANCELAR: Q 10,000.00',
-      inputAttributes: { rows: '4' },
+      width: 950,
+      html: `<div class="text-start mb-2"><b>Contrato:</b> ${estado.contrato.codigo_contrato} &nbsp; <b>Total pagado:</b> ${moneda(estado.totalPagado)} &nbsp; <b>Saldo:</b> ${moneda(estado.saldoPendiente)}</div><div style="max-height:220px;overflow:auto"><table class="table table-sm table-bordered"><thead><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Boleta</th><th>Recibo</th></tr></thead><tbody>${filas || '<tr><td colspan="6">Sin movimientos</td></tr>'}</tbody></table></div><label class="d-block text-start fw-bold" for="texto-estado-cuenta">Texto para el PDF</label><textarea id="texto-estado-cuenta" class="swal2-textarea" style="width:90%" rows="4" placeholder="Ejemplo: SALDO A CANCELAR: Q 10,000.00">${String(textoManual || '').replace(/</g, '&lt;')}</textarea>`,
       showCancelButton: true,
       confirmButtonText: 'Guardar y generar PDF',
       cancelButtonText: 'Cancelar',
-      inputValidator: (valor) => !String(valor || '').trim() ? 'Debe ingresar el texto que aparecerá en el PDF.' : undefined
+      preConfirm: () => {
+        const valor = document.getElementById('texto-estado-cuenta')?.value?.trim();
+        if (!valor) { Swal.showValidationMessage('Debe ingresar el texto que aparecerá en el PDF.'); return false; }
+        return valor;
+      }
     });
     if (!resultado.isConfirmed) return;
     const texto = String(resultado.value || '').trim();
     try {
       const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+      const doc = crearPDF(texto);
+      const pdfBase64 = doc.output('datauristring').split(',')[1];
       await axios.post(`${API_BASE_URL}/api/estado_cuenta/historial`, {
         id_contrato: estado.contrato.id_contrato,
         id_usuario: usuario.id_usuario || null,
         texto_manual: texto,
-        cantidad_movimientos: cantidad
+        cantidad_movimientos: cantidad,
+        pdf_base64: pdfBase64,
+        datos: { contrato: estado.contrato, totalPagado: estado.totalPagado, saldoPendiente: estado.saldoPendiente, resumen, texto }
       });
       setTextoManual(texto);
       const { data } = await axios.get(`${API_BASE_URL}/api/estado_cuenta/historial/${estado.contrato.id_contrato}`);
       setHistorial(Array.isArray(data) ? data : []);
-      exportarPDF(texto);
+      descargarPDF(doc);
     } catch (error) {
       Swal.fire('Error', error?.response?.data?.message || 'No se pudo guardar el historial del estado de cuenta.', 'error');
     }
@@ -217,7 +241,7 @@ const EstadoCuenta = () => {
             <h4 className="mb-0">{estado.contrato.nombre}</h4>
             <div className="d-flex gap-2"><select className="form-select" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))}><option value={5}>Últimos 5 movimientos</option><option value={10}>Últimos 10 movimientos</option></select><button className="btn btn-outline-secondary text-nowrap" onClick={() => setMostrarHistorial((valor) => !valor)}>Historial ({historial.length})</button><button className="btn btn-danger text-nowrap" onClick={generarEstadoCuenta}>Generar PDF</button></div>
           </div>
-          {mostrarHistorial && <div className="card border-secondary mb-3"><div className="card-header fw-bold">Historial de estados de cuenta generados</div><div className="table-responsive"><table className="table table-sm table-striped mb-0"><thead><tr><th>Fecha</th><th>Usuario</th><th>Movimientos</th><th>Texto registrado</th></tr></thead><tbody>{historial.length ? historial.map((item) => <tr key={item.id_estado_cuenta}><td>{fecha(item.fecha_generacion)}</td><td>{item.nombre_usuario}</td><td>{item.cantidad_movimientos}</td><td>{item.texto_manual}</td></tr>) : <tr><td colSpan="4" className="text-center">Aún no se han generado estados de cuenta.</td></tr>}</tbody></table></div></div>}
+          {mostrarHistorial && <div className="card border-secondary mb-3"><div className="card-header fw-bold">Historial de estados de cuenta generados</div><div className="table-responsive"><table className="table table-sm table-striped mb-0"><thead><tr><th>Fecha</th><th>Usuario</th><th>Movimientos</th><th>Texto registrado</th><th>Acciones</th></tr></thead><tbody>{historial.length ? historial.map((item) => <tr key={item.id_estado_cuenta}><td>{fecha(item.fecha_generacion)}</td><td>{item.nombre_usuario}</td><td>{item.cantidad_movimientos}</td><td>{item.texto_manual}</td><td><div className="d-flex gap-1"><button className="btn btn-sm btn-outline-primary" onClick={() => setTextoManual(item.texto_manual || '')}>Usar texto</button><button className="btn btn-sm btn-danger" disabled={!Number(item.tiene_pdf)} onClick={() => descargarHistorico(item)}>Descargar PDF</button></div></td></tr>) : <tr><td colSpan="5" className="text-center">Aún no se han generado estados de cuenta.</td></tr>}</tbody></table></div></div>}
           <div className="row g-3 mb-3"><div className="col-md-4"><div className="alert alert-primary mb-0"><strong>Contrato:</strong> {estado.contrato.codigo_contrato}</div></div><div className="col-md-4"><div className="alert alert-success mb-0"><strong>Total pagado:</strong> {moneda(estado.totalPagado)}</div></div><div className="col-md-4"><div className="alert alert-warning mb-0"><strong>Saldo pendiente:</strong> {moneda(estado.saldoPendiente)}</div></div></div>
           <div className="table-responsive"><table className="table table-striped table-bordered"><thead className="table-dark"><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Boleta</th><th>Recibo</th><th>Capital</th><th>Interés</th></tr></thead><tbody>{resumen.movimientos.length ? resumen.movimientos.map((m) => <tr key={m.id}><td>{fecha(m.fecha)}</td><td>{m.numero}</td><td>{moneda(m.monto)}</td><td>{m.banco}</td><td>{m.boleta}</td><td>{m.recibo}</td><td>{moneda(m.capital)}</td><td>{moneda(m.interes)}</td></tr>) : <tr><td colSpan="8" className="text-center">No hay movimientos registrados.</td></tr>}</tbody></table></div>
         </>}

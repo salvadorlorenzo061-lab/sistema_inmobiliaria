@@ -10,57 +10,6 @@ const getToday = () => {
   const ahora = new Date();
   return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
 };
-const getCurrentMonth = () => {
-  const ahora = new Date();
-  return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
-};
-const getMonthDateRange = (monthValue = getCurrentMonth()) => {
-  const [yearRaw, monthRaw] = String(monthValue || '').split('-');
-  const year = Number(yearRaw);
-  const month = Number(monthRaw);
-
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
-    const today = getToday();
-    return { inicio: today, fin: today };
-  }
-
-  const inicio = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
-  const ultimoDia = new Date(year, month, 0).getDate();
-  const fin = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
-
-  return { inicio, fin };
-};
-
-const formatDateInput = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const getRangeByType = (tipo, fechaReferencia, periodoMes, periodoAnio) => {
-  if (tipo === 'mes') return getMonthDateRange(periodoMes);
-  if (tipo === 'anio') return { inicio: `${periodoAnio}-01-01`, fin: `${periodoAnio}-12-31` };
-  const [year, month, day] = String(fechaReferencia || getToday()).split('-').map(Number);
-  const base = new Date(year, month - 1, day);
-  if (tipo === 'semana') {
-    const inicio = new Date(base);
-    inicio.setDate(base.getDate() - ((base.getDay() + 6) % 7));
-    const fin = new Date(inicio);
-    fin.setDate(inicio.getDate() + 6);
-    return { inicio: formatDateInput(inicio), fin: formatDateInput(fin) };
-  }
-  if (tipo === 'quincena') {
-    const primerDia = day <= 15 ? 1 : 16;
-    const ultimoDia = day <= 15 ? 15 : new Date(year, month, 0).getDate();
-    return {
-      inicio: formatDateInput(new Date(year, month - 1, primerDia)),
-      fin: formatDateInput(new Date(year, month - 1, ultimoDia))
-    };
-  }
-  return { inicio: fechaReferencia, fin: fechaReferencia };
-};
-
 const formatMoney = (value) => `Q ${Number(value || 0).toFixed(2)}`;
 const normalizeFileSegment = (value = '') => String(value || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 const normalizeRole = (value = '') => String(value || '')
@@ -81,19 +30,26 @@ function AsignarCorrelativo() {
   const [cantidad, setCantidad] = useState('1');
   const [observaciones, setObservaciones] = useState('');
 
-  const [tipoCuadre, setTipoCuadre] = useState('dia');
   const [accionCuadre, setAccionCuadre] = useState('todas');
   const [idUsuarioCuadre, setIdUsuarioCuadre] = useState('');
-  const [fechaCuadre, setFechaCuadre] = useState(getToday());
-  const [periodoMes, setPeriodoMes] = useState(getCurrentMonth());
-  const [periodoAnio, setPeriodoAnio] = useState(String(new Date().getFullYear()));
   const [fechaInicioCuadre, setFechaInicioCuadre] = useState(getToday());
   const [fechaFinCuadre, setFechaFinCuadre] = useState(getToday());
   const [reporte, setReporte] = useState(null);
+  const [historialCuadres, setHistorialCuadres] = useState([]);
+  const [mostrarHistorialCuadres, setMostrarHistorialCuadres] = useState(false);
   const [loadingReporte, setLoadingReporte] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   const API_URL = `${API_BASE_URL}/api/asignar_correlativo`;
+
+  const cargarHistorialCuadres = useCallback(async () => {
+    try {
+      const { data } = await Axios.get(`${API_URL}/cuadres-historial`);
+      setHistorialCuadres(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('No se pudo cargar el historial de cuadres:', error);
+    }
+  }, [API_URL]);
 
   const empresaSeleccionada = useMemo(() => (
     empresasList.find((item) => String(item.id_empresa) === String(idEmpresa)) || null
@@ -121,16 +77,6 @@ function AsignarCorrelativo() {
     ].filter(Boolean));
     return usuariosList.filter((item) => ids.has(String(item.id_usuario)));
   }, [asignacionesList, resolucionesList, usuariosList]);
-
-  const rangoCuadreSeleccionado = useMemo(
-    () => getRangeByType(tipoCuadre, fechaCuadre, periodoMes, periodoAnio),
-    [tipoCuadre, fechaCuadre, periodoMes, periodoAnio]
-  );
-
-  useEffect(() => {
-    setFechaInicioCuadre(rangoCuadreSeleccionado.inicio);
-    setFechaFinCuadre(rangoCuadreSeleccionado.fin);
-  }, [rangoCuadreSeleccionado.inicio, rangoCuadreSeleccionado.fin]);
 
   useEffect(() => {
     if (!idResolucion) return;
@@ -181,6 +127,7 @@ function AsignarCorrelativo() {
         setLoadError('');
         await cargarCatalogos();
         await cargarAsignaciones();
+        await cargarHistorialCuadres();
       } catch (error) {
         console.error('Error cargando módulo Asignar Correlativos:', error);
         setLoadError(error?.message || 'No se pudo cargar el módulo de asignación de correlativos.');
@@ -188,7 +135,7 @@ function AsignarCorrelativo() {
     };
 
     cargarInicial();
-  }, [cargarCatalogos, cargarAsignaciones]);
+  }, [cargarCatalogos, cargarAsignaciones, cargarHistorialCuadres]);
 
   const limpiarFormulario = () => {
     setIdEmpresa('');
@@ -271,7 +218,18 @@ function AsignarCorrelativo() {
     setLoadingReporte(true);
     try {
       const response = await Axios.get(`${API_URL}/cuadre-mes?${query}`);
-      setReporte(response.data || null);
+      const nuevoReporte = response.data || null;
+      setReporte(nuevoReporte);
+      const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+      await Axios.post(`${API_URL}/cuadres-historial`, {
+        id_usuario_generador: usuario.id_usuario || null,
+        fecha_inicio: fechaInicioCuadre,
+        fecha_fin: fechaFinCuadre,
+        filtro_usuario: idUsuarioCuadre || null,
+        filtro_accion: accionCuadre,
+        reporte: nuevoReporte
+      });
+      await cargarHistorialCuadres();
     } catch (error) {
       setReporte(null);
       Swal.fire({ icon: 'error', title: 'No se pudo generar el cuadre', text: error?.response?.data?.message || 'Error interno del servidor.' });
@@ -280,32 +238,33 @@ function AsignarCorrelativo() {
     }
   };
 
-  const exportarCuadrePdf = () => {
-    if (!reporte) {
+  const exportarCuadrePdf = (reporteSeleccionado = reporte) => {
+    if (!reporteSeleccionado) {
       Swal.fire({ icon: 'warning', title: 'Sin reporte', text: 'Primero genera el cuadre a exportar.' });
       return;
     }
 
     const doc = new jsPDF({ orientation: 'landscape' });
-    const titulo = `Cuadre de Facturacion - ${reporte.periodo}`;
+    const datosReporte = reporteSeleccionado;
+    const titulo = `Cuadre de Facturacion - ${datosReporte.periodo}`;
 
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(16);
     doc.text(titulo, 14, 16);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Emitidas: ${reporte.total_general?.facturas_emitidas || 0}`, 14, 24);
-    doc.text(`Anuladas: ${reporte.total_general?.facturas_anuladas || 0}`, 60, 24);
-    doc.text(`Total emitido: ${formatMoney(reporte.total_general?.total_emitido)}`, 110, 24);
-    doc.text(`Total anulado: ${formatMoney(reporte.total_general?.total_anulado)}`, 180, 24);
-    doc.text(`Neto: ${formatMoney(reporte.total_general?.total_cobrado)}`, 245, 24);
-    doc.text(`Correlativo inicial: ${reporte.total_general?.correlativo_inicial || 'N/A'}`, 14, 31);
-    doc.text(`Correlativo final: ${reporte.total_general?.correlativo_final || 'N/A'}`, 110, 31);
+    doc.text(`Emitidas: ${datosReporte.total_general?.facturas_emitidas || 0}`, 14, 24);
+    doc.text(`Anuladas: ${datosReporte.total_general?.facturas_anuladas || 0}`, 60, 24);
+    doc.text(`Total emitido: ${formatMoney(datosReporte.total_general?.total_emitido)}`, 110, 24);
+    doc.text(`Total anulado: ${formatMoney(datosReporte.total_general?.total_anulado)}`, 180, 24);
+    doc.text(`Neto: ${formatMoney(datosReporte.total_general?.total_cobrado)}`, 245, 24);
+    doc.text(`Correlativo inicial: ${datosReporte.total_general?.correlativo_inicial || 'N/A'}`, 14, 31);
+    doc.text(`Correlativo final: ${datosReporte.total_general?.correlativo_final || 'N/A'}`, 110, 31);
 
     autoTable(doc, {
       startY: 38,
       head: [['Usuario', 'Emitidas', 'Anuladas', 'Correlativo inicial', 'Correlativo final', 'Emitido', 'Anulado', 'Neto']],
-      body: (reporte.resumen_por_usuario || []).map((item) => ([
+      body: (datosReporte.resumen_por_usuario || []).map((item) => ([
         item.nombre_usuario || `Usuario #${item.id_usuario}`,
         item.facturas_emitidas || 0,
         item.facturas_anuladas || 0,
@@ -323,7 +282,7 @@ function AsignarCorrelativo() {
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 10,
       head: [['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Subtotal', 'IVA', 'Mora', 'Total']],
-      body: (reporte.detalle_facturas || []).map((item) => ([
+      body: (datosReporte.detalle_facturas || []).map((item) => ([
         item.fecha_pago ? new Date(item.fecha_pago).toLocaleString() : 'N/A',
         item.nombre_usuario || 'N/A',
         item.no_referencia || 'N/A',
@@ -339,7 +298,16 @@ function AsignarCorrelativo() {
       styles: { fontSize: 8 }
     });
 
-    doc.save(`cuadre_${reporte.scope}_${normalizeFileSegment(reporte.periodo)}.pdf`);
+    doc.save(`cuadre_${datosReporte.scope}_${normalizeFileSegment(datosReporte.periodo)}.pdf`);
+  };
+
+  const descargarCuadreHistorico = async (item) => {
+    try {
+      const { data } = await Axios.get(`${API_URL}/cuadres-historial/${item.id_cuadre}`);
+      exportarCuadrePdf(data.reporte);
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'No se pudo descargar', text: error?.response?.data?.message || 'No fue posible recuperar el reporte.' });
+    }
   };
 
   const exportarCuadreExcel = () => {
@@ -592,17 +560,6 @@ function AsignarCorrelativo() {
         <div className="card-body">
           <div className="row g-3 align-items-end">
             <div className="col-md-2">
-              <label className="form-label fw-bold">Tipo de cuadre</label>
-              <select className="form-select" value={tipoCuadre} onChange={(e) => setTipoCuadre(e.target.value)}>
-                <option value="dia">Cuadre diario</option>
-                <option value="semana">Cuadre semanal</option>
-                <option value="quincena">Cuadre quincenal</option>
-                <option value="mes">Cuadre mensual</option>
-                <option value="anio">Cuadre anual</option>
-              </select>
-            </div>
-
-            <div className="col-md-2">
               <label className="form-label fw-bold">Estado de factura</label>
               <select className="form-select" value={accionCuadre} onChange={(e) => setAccionCuadre(e.target.value)}>
                 <option value="todas">Emitidas y anuladas</option>
@@ -624,11 +581,6 @@ function AsignarCorrelativo() {
             </div>
 
             <div className="col-md-2">
-              <label className="form-label fw-bold">Fecha de referencia</label>
-              <input type="date" className="form-control" value={fechaCuadre} onChange={(e) => setFechaCuadre(e.target.value)} disabled={['mes', 'anio'].includes(tipoCuadre)} />
-            </div>
-
-            <div className="col-md-2">
               <label className="form-label fw-bold">Fecha inicio</label>
               <input type="date" className="form-control" value={fechaInicioCuadre} onChange={(e) => setFechaInicioCuadre(e.target.value)} />
             </div>
@@ -639,43 +591,46 @@ function AsignarCorrelativo() {
             </div>
 
             <div className="col-md-2">
-              <label className="form-label fw-bold">Mes rápido</label>
-              <input
-                type="month"
-                className="form-control"
-                value={periodoMes}
-                onChange={(e) => {
-                  const month = e.target.value;
-                  setPeriodoMes(month);
-                }}
-              />
-            </div>
-
-            <div className="col-md-2">
-              <label className="form-label fw-bold">Año</label>
-              <input type="number" min="2000" max="2100" className="form-control" value={periodoAnio} onChange={(e) => setPeriodoAnio(e.target.value)} />
-            </div>
-
-            <div className="col-md-2">
               <button className="btn btn-info fw-bold text-dark w-100" onClick={consultarCuadre} disabled={loadingReporte}>
                 {loadingReporte ? 'GENERANDO...' : 'GENERAR REPORTE'}
               </button>
             </div>
+            <div className="col-md-2">
+              <button className="btn btn-outline-secondary fw-bold w-100" onClick={() => setMostrarHistorialCuadres((valor) => !valor)}>
+                HISTORIAL ({historialCuadres.length})
+              </button>
+            </div>
           </div>
+
+          {mostrarHistorialCuadres && (
+            <div className="table-responsive mt-3 border rounded">
+              <table className="table table-sm table-striped mb-0 align-middle">
+                <thead className="table-secondary"><tr><th>Generado</th><th>Rango consultado</th><th>Usuario</th><th>Filtro</th><th>Reporte</th></tr></thead>
+                <tbody>{historialCuadres.length ? historialCuadres.map((item) => (
+                  <tr key={item.id_cuadre}>
+                    <td>{new Date(item.fecha_generacion).toLocaleString('es-GT')}</td>
+                    <td>{String(item.fecha_inicio).slice(0, 10)} al {String(item.fecha_fin).slice(0, 10)}</td>
+                    <td>{item.generado_por}</td><td>{item.filtro_accion}</td>
+                    <td><button className="btn btn-sm btn-danger" onClick={() => descargarCuadreHistorico(item)}>Descargar PDF</button></td>
+                  </tr>
+                )) : <tr><td colSpan="5" className="text-center py-3">Todavía no hay cuadres guardados.</td></tr>}</tbody>
+              </table>
+            </div>
+          )}
 
           {reporte && !(reporte.detalle_facturas?.length > 0) && (
             <div className="alert alert-info mt-3 mb-0 fw-bold">
               {accionCuadre === 'emitio'
-                ? `No hay facturas emitidas en ${tipoCuadre === 'dia' ? 'ese día' : 'el período seleccionado'}.`
+                ? 'No hay facturas emitidas en el período seleccionado.'
                 : accionCuadre === 'anulo'
-                  ? `No hay facturas anuladas en ${tipoCuadre === 'dia' ? 'ese día' : 'el período seleccionado'}.`
-                  : `No hay facturas emitidas ni anuladas en ${tipoCuadre === 'dia' ? 'ese día' : 'el período seleccionado'}.`}
+                  ? 'No hay facturas anuladas en el período seleccionado.'
+                  : 'No hay facturas emitidas ni anuladas en el período seleccionado.'}
             </div>
           )}
 
           {reporte && reporte.detalle_facturas?.length > 0 && (
             <div className="d-flex gap-2 flex-wrap mt-3">
-              <button className="btn btn-outline-danger fw-bold" onClick={exportarCuadrePdf}>EXPORTAR PDF</button>
+              <button className="btn btn-outline-danger fw-bold" onClick={() => exportarCuadrePdf()}>EXPORTAR PDF</button>
               <button className="btn btn-outline-success fw-bold" onClick={exportarCuadreExcel}>EXPORTAR EXCEL</button>
             </div>
           )}

@@ -4,8 +4,24 @@ const db = require('../Conexion');
 
 const router = express.Router();
 
+db.query(`
+    CREATE TABLE IF NOT EXISTS cuadre_facturacion_historial (
+        id_cuadre BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        id_usuario_generador INT NULL,
+        fecha_inicio DATE NOT NULL,
+        fecha_fin DATE NOT NULL,
+        filtro_usuario INT NULL,
+        filtro_accion VARCHAR(20) NOT NULL DEFAULT 'todas',
+        reporte_json LONGTEXT NOT NULL,
+        fecha_generacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cuadre_fecha (fecha_generacion)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`, (err) => {
+    if (err) console.error('Error asegurando historial de cuadres:', err.message);
+});
+
 router.use(cors());
-router.use(express.json());
+router.use(express.json({ limit: '15mb' }));
 
 const padCorrelativo = (value) => String(Number(value) || 0).padStart(8, '0');
 const normalizarToken = (value) => String(value || '').trim().toUpperCase();
@@ -798,5 +814,50 @@ const obtenerCuadre = (scope) => (req, res) => {
 
 router.get('/cuadre-dia', obtenerCuadre('dia'));
 router.get('/cuadre-mes', obtenerCuadre('mes'));
+
+router.get('/cuadres-historial', (req, res) => {
+    db.query(`
+        SELECT h.id_cuadre, h.fecha_inicio, h.fecha_fin, h.filtro_usuario, h.filtro_accion,
+               h.fecha_generacion, COALESCE(u.nombre, 'Usuario no disponible') AS generado_por
+        FROM cuadre_facturacion_historial h
+        LEFT JOIN usuarios u ON u.id_usuario = h.id_usuario_generador
+        ORDER BY h.fecha_generacion DESC, h.id_cuadre DESC
+        LIMIT 100
+    `, (err, rows) => {
+        if (err) return res.status(500).send({ message: 'No se pudo consultar el historial de cuadres.' });
+        return res.json(rows || []);
+    });
+});
+
+router.get('/cuadres-historial/:id_cuadre', (req, res) => {
+    db.query(`SELECT * FROM cuadre_facturacion_historial WHERE id_cuadre = ? LIMIT 1`, [req.params.id_cuadre], (err, rows) => {
+        if (err) return res.status(500).send({ message: 'No se pudo recuperar el cuadre.' });
+        if (!rows?.[0]) return res.status(404).send({ message: 'Cuadre no encontrado.' });
+        try {
+            return res.json({ ...rows[0], reporte: JSON.parse(rows[0].reporte_json) });
+        } catch (error) {
+            return res.status(500).send({ message: 'Los datos guardados del cuadre no son válidos.' });
+        }
+    });
+});
+
+router.post('/cuadres-historial', (req, res) => {
+    const fechaInicio = String(req.body?.fecha_inicio || '');
+    const fechaFin = String(req.body?.fecha_fin || '');
+    const reporte = req.body?.reporte;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin) || !reporte) {
+        return res.status(400).send({ message: 'El rango y los datos del reporte son obligatorios.' });
+    }
+    db.query(`
+        INSERT INTO cuadre_facturacion_historial
+            (id_usuario_generador, fecha_inicio, fecha_fin, filtro_usuario, filtro_accion, reporte_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `, [Number(req.body.id_usuario_generador) || null, fechaInicio, fechaFin,
+        Number(req.body.filtro_usuario) || null, String(req.body.filtro_accion || 'todas'), JSON.stringify(reporte)],
+    (err, result) => {
+        if (err) return res.status(500).send({ message: 'No se pudo guardar el historial del cuadre.' });
+        return res.status(201).json({ id_cuadre: result.insertId });
+    });
+});
 
 module.exports = router;
