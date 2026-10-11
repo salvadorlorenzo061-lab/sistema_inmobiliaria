@@ -399,6 +399,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                                 p.id_pago,
                                 p.fecha_pago,
                                 p.forma_pago,
+                                p.banco_pago,
+                                p.boleta_referencia,
                                 p.no_referencia,
                                 CASE
                                     WHEN pd.tipo_concepto = 'mora' THEN CONCAT('Mora cobrada', IF(TRIM(COALESCE(pd.mes_pagado, '')) = '', '', CONCAT(' - ', pd.mes_pagado)))

@@ -347,7 +347,7 @@ const EstadoCuenta = () => {
       nombre,
       fechaPago: item?.fecha_pago || '',
       banco: obtenerBancoDisplayVisual(item),
-      noReferencia: String(item?.no_referencia || item?.no_deposito || item?.numero_referencia || '').trim(),
+      noReferencia: String(item?.boleta_referencia || item?.no_deposito || item?.numero_referencia || '').trim(),
       monto: Number(item?.monto_total_detalle ?? item?.total_cobrado ?? item?.monto_cuota ?? montoFallback ?? 0),
       recibo: String(item?.correlativo || item?.no_referencia || item?.id_pago || '').trim(),
       estado: 'PAGADO'
@@ -781,7 +781,7 @@ const EstadoCuenta = () => {
           tipoPago: esEnganche ? 'ENGANCHE' : 'PAGADO',
           cuotaLabel: esEnganche ? 0 : cuotaNumero || index + 1,
           banco: String(pago?.forma_pago || pago?.banco || 'EFECTIVO').trim() || 'EFECTIVO',
-          noDeposito: String(pago?.no_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || '',
+          noDeposito: String(pago?.boleta_referencia || pago?.no_deposito || pago?.numero_referencia || '').trim() || '',
           // Conservar la fecha cruda hasta construir la fila. Si aquí se convierte a
           // dd/mm/yyyy, `new Date()` no puede volver a interpretarla de forma confiable
           // y el PDF termina dejando la celda vacía.
@@ -812,7 +812,7 @@ const EstadoCuenta = () => {
 
         const banco = obtenerBancoDisplay(pago);
         const noDeposito = String(
-          pago.noDeposito || pago.noReferencia || pago.no_referencia || pago.no_deposito || pago.numero_referencia || pago.numero_transaccion || ''
+          pago.noDeposito || pago.noReferencia || pago.boleta_referencia || pago.no_deposito || pago.numero_referencia || pago.numero_transaccion || ''
         ).trim();
         const fechaPago = nuevoFormatoFecha(pago.fecha_pago || pago.fechaPago);
         const monto = Number(pago.monto ?? pago.monto_total_detalle ?? pago.total_cobrado ?? pago.monto_cuota ?? 0);
@@ -837,7 +837,7 @@ const EstadoCuenta = () => {
           const monto = Number(item?.monto_total_detalle ?? item?.monto_cuota ?? 0);
           const fechaCuota = nuevoFormatoFecha(item?.fecha_pago) || 'N/A';
           const banco = obtenerBancoDisplay(item);
-          const noDeposito = String(item?.no_referencia || item?.no_deposito || item?.numero_referencia || item?.numero_transaccion || '').trim();
+          const noDeposito = String(item?.boleta_referencia || item?.no_deposito || item?.numero_referencia || item?.numero_transaccion || '').trim();
           const recibo = String(item?.correlativo || item?.no_referencia || item?.id_pago || '').trim();
 
           filasReporte.push([
@@ -910,7 +910,7 @@ const EstadoCuenta = () => {
           'Tipo de pago',
           'Cuota',
           'Banco',
-          'No. depósito',
+          'No. Depósito/Transferencia',
           'Fecha pago',
           'Monto',
           'Recibo'

@@ -1923,8 +1923,70 @@ router.post('/restablecer-exoneracion', (req, res) => {
     });
 });
 
+const bloquearCobroSiExisteMora = (req, res, next) => {
+    const idContrato = Number(req.body?.id_contrato || 0);
+    const idUsuario = Number(req.body?.id_usuario || 0);
+    if (!idContrato || !idUsuario) return next();
+
+    obtenerContextoPermisosCaja(idUsuario, (rolErr, contextoRol) => {
+        if (rolErr) return res.status(500).send('No se pudo validar el rol para revisar la mora.');
+        if (contextoRol?.esJuridico) return next();
+
+        const sqlCorrelativos = `
+            SELECT (
+                EXISTS(SELECT 1 FROM asignar_correlativos ac
+                       WHERE ac.id_usuario = ? AND ac.estado = 'activo'
+                         AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin)
+                OR EXISTS(SELECT 1 FROM resoluciones_facturas rf
+                          WHERE rf.id_usuario = ? AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
+                            AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final)
+            ) AS tiene_correlativos
+        `;
+        db.query(sqlCorrelativos, [idUsuario, idUsuario], (corrErr, corrRows) => {
+            if (corrErr) return res.status(500).send('No se pudieron validar los correlativos del usuario.');
+            const debeValidarMora = Boolean(contextoRol?.esGestorCobros) || Number(corrRows?.[0]?.tiene_correlativos || 0) === 1;
+            if (!debeValidarMora) return next();
+
+            const sqlMora = `
+                SELECT COALESCE(SUM(CASE WHEN COALESCE(c.mora, 0) > 0 THEN c.mora ELSE m.monto_mora END), 0) AS total_mora
+                FROM morosidad m
+                INNER JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
+                WHERE m.id_contrato = ?
+                  AND LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pagos p_mora
+                      INNER JOIN pagos_detalle pd_mora ON pd_mora.id_pago = p_mora.id_pago
+                      WHERE p_mora.id_contrato = m.id_contrato
+                        AND pd_mora.tipo_concepto = 'mora'
+                        AND LOWER(TRIM(COALESCE(pd_mora.mes_pagado, ''))) = LOWER(TRIM(COALESCE(m.mes_atrasado, '')))
+                        AND NOT EXISTS (
+                            SELECT 1 FROM facturas_historial fh_mora
+                            WHERE fh_mora.id_pago = p_mora.id_pago
+                              AND UPPER(TRIM(COALESCE(fh_mora.estado_factura, ''))) = 'ANULADA'
+                        )
+                  )
+            `;
+            db.query(sqlMora, [idContrato], (moraErr, moraRows) => {
+                if (moraErr) {
+                    if (String(moraErr?.code || '').toUpperCase() === 'ER_NO_SUCH_TABLE') return next();
+                    return res.status(500).send('No se pudo validar la mora pendiente del cliente.');
+                }
+                const totalMora = Number(moraRows?.[0]?.total_mora || 0);
+                if (totalMora > 0) {
+                    return res.status(409).send({
+                        code: 'CLIENTE_CON_MORA',
+                        total_mora: Number(totalMora.toFixed(2)),
+                        message: `Cobro bloqueado: el cliente tiene mora pendiente por Q${totalMora.toFixed(2)}. Debe abocarse al departamento Jurídico para que la mora sea cobrada o exonerada antes de realizar otro cobro.`
+                    });
+                }
+                return next();
+            });
+        });
+    });
+};
+
 // === PROCESAR COBRO ===
-router.post("/procesar-pago", (req, res) => {
+router.post("/procesar-pago", bloquearCobroSiExisteMora, (req, res) => {
     const { 
         id_residente, id_contrato, id_tipo_contrato, id_usuario,
         monto_pagar, monto_terreno_pagar, monto_enganche_pagar, monto_abono_capital, monto_interes, monto_mora, metodo_pago, no_referencia, banco_pago, fecha_operacion, boleta_referencia, observaciones,

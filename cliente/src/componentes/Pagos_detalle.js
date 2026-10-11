@@ -137,7 +137,7 @@ function PagosDetalle() {
     const metodo = String(documento?.metodo_pago || '').toLowerCase();
     const bancoPago = String(documento?.banco_pago || '').trim();
     const fechaOperacion = String(documento?.fecha_operacion || '').trim();
-    const boletaReferencia = String(documento?.boleta_referencia || documento?.correlativo || '').trim();
+    const boletaReferencia = String(documento?.boleta_referencia || '').trim();
     const esJuridico = USAR_FORMATO_RECIBO_JURIDICO && isRoleJuridico(rolEmisor);
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
@@ -266,7 +266,7 @@ function PagosDetalle() {
       doc.text('Cheque:', filaX + 114, pagosY + 5.6);
       doc.text('Efectivo:', filaX + 156, pagosY + 5.6);
 
-      const referenciaBase = String(documento?.correlativo || documento?.metodo_pago || '').trim();
+      const referenciaBase = boletaReferencia;
       const boletaValor = metodo.includes('deposit') ? referenciaBase : '';
       const transferenciaValor = metodo.includes('transfer') ? referenciaBase : '';
       const chequeValor = metodo.includes('cheque') ? referenciaBase : '';

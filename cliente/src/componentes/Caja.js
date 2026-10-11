@@ -1521,6 +1521,18 @@ const Caja = () => {
     const ejecutarCobro = async (e) => {
         e.preventDefault();
 
+        const usuarioSujetoABloqueoMora = !esUsuarioJuridico
+            && (esUsuarioGestorCobros || Boolean(estadoCorrelativoUsuario?.disponible));
+        if (usuarioSujetoABloqueoMora && Number(moraPendienteTotalVista || 0) > 0) {
+            await Swal.fire({
+                icon: 'warning',
+                title: 'Cobro bloqueado por mora',
+                html: `El cliente tiene mora pendiente por <strong>Q${Number(moraPendienteTotalVista).toFixed(2)}</strong>.<br><br>Debe abocarse al departamento Jurídico, donde decidirán cobrar o exonerar la mora antes de permitir otro cobro.`,
+                confirmButtonText: 'Entendido'
+            });
+            return;
+        }
+
         const saldoPendienteActual = parseFloat(datosDeuda?.saldo_pendiente || 0);
         const montoTerreno = esUsuarioJuridico ? 0 : parseFloat(montoTerrenoSeleccionado || 0);
         const montoEngancheContrato = esUsuarioJuridico ? 0 : parseFloat(montoEngancheContratoAplicado || 0);
@@ -1834,7 +1846,7 @@ const Caja = () => {
             }
         } catch (error) {
             const status = Number(error?.response?.status || 0);
-            const mensajeBackend = error?.response?.data;
+            const mensajeBackend = error?.response?.data?.message || error?.response?.data;
             const esFallaComunicacion = !error?.response || status === 502 || status === 503 || status === 504;
             const mensaje = esFallaComunicacion
                 ? 'No hay comunicacion con el servidor de Caja. Verifica que el backend este en linea e intenta de nuevo en unos segundos.'
@@ -2739,7 +2751,7 @@ const Caja = () => {
                                         {esUsuarioGestorCobros && moraPendienteTotalVista > 0 && (
                                             <div className="alert alert-warning border-warning fw-bold mb-3">
                                                 ⚠️ Existe mora pendiente por <strong>Q{moraPendienteTotalVista.toFixed(2)}</strong>.
-                                                Esta mora no se incluirá en la factura del Gestor de Cobros; debe cobrarla el rol Jurídico.
+                                                El cobro está bloqueado hasta que el departamento Jurídico cobre o exonere la mora.
                                             </div>
                                         )}
                                         <div className="border rounded-3 p-3 bg-light">
