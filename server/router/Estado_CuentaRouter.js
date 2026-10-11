@@ -118,6 +118,16 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                                                 AND UPPER(TRIM(COALESCE(fa_total.estado_factura, ''))) = 'ANULADA'
                   )
             ), 0) AS total_pagado_real,
+            COALESCE((
+                SELECT SUM(mora_unica.monto_mora)
+                FROM (
+                    SELECT m.id_contrato, LOWER(TRIM(m.mes_atrasado)) AS mes_mora, MAX(m.monto_mora) AS monto_mora
+                    FROM morosidad m
+                    WHERE LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) NOT IN ('pagado', 'exonerada', 'anulada')
+                    GROUP BY m.id_contrato, LOWER(TRIM(m.mes_atrasado))
+                ) mora_unica
+                WHERE mora_unica.id_contrato = c.id_contrato
+            ), 0) AS mora_registrada,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
             COALESCE(em.logo, er.logo, ep.logo) AS logo_empresa_pdf
         FROM residentes r
@@ -275,6 +285,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                         ) AS numero_cuota,
                         p.fecha_pago,
                         p.forma_pago,
+                        p.banco_pago,
+                        p.boleta_referencia,
                         p.no_referencia,
                         (SELECT MAX(fh.correlativo) FROM facturas_historial fh WHERE fh.id_pago = p.id_pago AND fh.estado_factura = 'EMITIDA') AS correlativo,
                         p.id_pago,

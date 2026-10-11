@@ -723,15 +723,15 @@ const obtenerCuadre = (scope) => (req, res) => {
             MAX(fh.fecha_evento) AS fecha_pago,
             UPPER(TRIM(fh.estado_factura)) AS estado_factura,
             CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
-                THEN -ROUND(COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0) / 1.12, 2)
+                THEN -ROUND(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) / 1.12, 2)
                 ELSE ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) / 1.12, 2)
             END AS subtotal,
             CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
-                THEN -ROUND(COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0) - ROUND(COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0) / 1.12, 2), 2)
+                THEN -ROUND(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - ROUND(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) / 1.12, 2), 2)
                 ELSE ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) - ROUND(GREATEST(COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0) - COALESCE(MAX(pd.monto_mora), 0), 0) / 1.12, 2), 2)
             END AS iva_total,
             CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
-                THEN -COALESCE(MAX(ad.monto_anulado), MAX(p.monto_total_pagado), 0)
+                THEN -COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0)
                 ELSE COALESCE(MAX(p.monto_total_pagado), SUM(fh.subtotal), 0)
             END AS total_cobrado,
             CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 0 ELSE COALESCE(MAX(pd.monto_mora), 0) END AS monto_mora
@@ -742,10 +742,6 @@ const obtenerCuadre = (scope) => (req, res) => {
             SELECT id_pago, SUM(CASE WHEN tipo_concepto = 'mora' THEN subtotal ELSE 0 END) AS monto_mora
             FROM pagos_detalle GROUP BY id_pago
         ) pd ON pd.id_pago = fh.id_pago
-        LEFT JOIN (
-            SELECT id_pago, correlativo, MAX(monto_anulado) AS monto_anulado
-            FROM anulacion_deuda GROUP BY id_pago, correlativo
-        ) ad ON ad.id_pago = fh.id_pago OR (ad.id_pago IS NULL AND ad.correlativo = fh.correlativo)
         WHERE ${whereSql}${filtroUsuarioSql}${filtroAccionSql}
           AND COALESCE(NULLIF(fh.correlativo, ''), p.no_referencia, '') NOT LIKE 'TMP-%'
         GROUP BY fh.id_pago, fh.id_usuario, u.nombre,

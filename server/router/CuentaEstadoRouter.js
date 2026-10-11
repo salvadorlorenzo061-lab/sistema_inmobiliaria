@@ -350,6 +350,8 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             nombre_proyecto: contrato.nombre_proyecto || contrato.nombre_proyecto_pdf || null,
             nombre_proyecto_pdf: contrato.nombre_proyecto_pdf || contrato.nombre_proyecto || null,
             logo_proyecto: contrato.logo_proyecto || null,
+            lote: contrato.lote || null,
+            manzana: contrato.manzana || null,
             fecha_firma: contrato.fecha_firma,
             id_convenio_activo: Number(contrato.id_convenio_activo || 0),
             precio_total_terreno: precioTerreno,

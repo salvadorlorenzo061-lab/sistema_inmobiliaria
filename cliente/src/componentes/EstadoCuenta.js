@@ -19,6 +19,7 @@ const EstadoCuenta = () => {
   const [resultados, setResultados] = useState([]);
   const [estado, setEstado] = useState(null);
   const [cantidad, setCantidad] = useState(5);
+  const [textoManual, setTextoManual] = useState('');
   const [cargando, setCargando] = useState(false);
 
   const buscar = async () => {
@@ -66,7 +67,8 @@ const EstadoCuenta = () => {
           fecha: item.fecha_pago,
           numero,
           monto: Number(item.monto_total_detalle ?? item.monto_cuota ?? 0),
-          banco: item.forma_pago || 'N/A',
+          banco: item.banco_pago || item.forma_pago || 'N/A',
+          boleta: item.boleta_referencia || 'N/A',
           recibo: item.correlativo || item.no_referencia || 'N/A',
           capital: Number(fila.capital_cuota || 0),
           interes: Number(fila.interes_mes || 0)
@@ -98,7 +100,15 @@ const EstadoCuenta = () => {
     const dorado = [194, 145, 35];
     const logo = logoNormalizado(contrato.logo_proyecto || contrato.logo_empresa_pdf);
     if (logo) {
-      try { doc.addImage(logo, logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', 73, 7, 70, 28, 'logo-proyecto', 'FAST'); } catch (e) { console.warn(e); }
+      try {
+        const propiedades = doc.getImageProperties(logo);
+        const maxW = 62;
+        const maxH = 24;
+        const escala = Math.min(maxW / propiedades.width, maxH / propiedades.height);
+        const logoW = propiedades.width * escala;
+        const logoH = propiedades.height * escala;
+        doc.addImage(logo, logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', (ancho - logoW) / 2, 7, logoW, logoH, 'logo-proyecto', 'FAST');
+      } catch (e) { console.warn(e); }
     }
     doc.setTextColor(...azul);
     doc.setFont('helvetica', 'bold');
@@ -115,7 +125,13 @@ const EstadoCuenta = () => {
     dato('ID CLIENTE', contrato.numero_identificacion || contrato.id_residente, 118, 59, 153);
     dato('LOTE / MANZANA', `${contrato.lote || 'N/A'} / ${contrato.manzana || 'N/A'}`, 118, 66, 153);
     dato('TELÉFONO', contrato.telefono, 118, 73, 153);
-    dato('ESTADO', Number(estado.saldoPendiente || 0) <= 0 ? 'SOLVENTE' : 'PENDIENTE', 118, 80, 153);
+    const moraRegistrada = Number(contrato.mora_registrada || 0);
+    const estadoCuenta = Number(estado.saldoPendiente || 0) <= 0
+      ? 'CANCELADO'
+      : moraRegistrada > 0
+        ? 'MORA'
+        : resumen.cuotasPagadas > 0 ? 'AL DÍA' : 'PENDIENTE';
+    dato('ESTADO', estadoCuenta, 118, 80, 153);
     doc.setFillColor(...azul); doc.rect(12, 87, ancho - 24, 6, 'F');
     doc.setTextColor(255); doc.setFontSize(8); doc.text('RESUMEN DE SU CUENTA', ancho / 2, 91.2, { align: 'center' });
     autoTable(doc, {
@@ -124,21 +140,27 @@ const EstadoCuenta = () => {
         ['Precio total', moneda(contrato.monto_total), 'Enganche', moneda(contrato.enganche), 'Saldo financiado', moneda(resumen.capital)],
         ['Tasa anual', `${Number(contrato.interes_porcentaje || 0).toFixed(2)}%`, 'Cuota mensual', moneda(resumen.montoCuota), 'Plazo original', `${resumen.cuotas} meses`],
         ['Capital pagado', moneda(resumen.capitalPagado), 'Cuotas pagadas', String(resumen.cuotasPagadas), 'Saldo de capital', moneda(resumen.saldoCapital)],
-        ['Próxima cuota', String(resumen.proxima || 'N/A'), 'Cuotas pendientes', String(Math.max(resumen.cuotas - resumen.cuotasPagadas, 0)), 'Saldo total', moneda(estado.saldoPendiente)]
+        ['Próxima cuota', String(resumen.proxima || 'N/A'), 'Cuotas pendientes', String(Math.max(resumen.cuotas - resumen.cuotasPagadas, 0)), 'Saldo total', moneda(estado.saldoPendiente)],
+        ['Mora registrada', moneda(moraRegistrada), '', '', '', '']
       ],
       columnStyles: { 0: { fontStyle: 'bold' }, 2: { fontStyle: 'bold' }, 4: { fontStyle: 'bold' } }
     });
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 5, margin: { left: 12, right: 12 }, theme: 'plain',
-      head: [[{ content: `ÚLTIMOS ${cantidad} PAGOS REGISTRADOS`, colSpan: 8, styles: { fillColor: azul, halign: 'center' } }], ['Fecha pago', 'Tipo', 'Monto', 'Cuota', 'Banco', 'Recibo', 'Capital', 'Interés']],
-      body: resumen.movimientos.length ? resumen.movimientos.map((m) => [fecha(m.fecha), 'CUOTA', moneda(m.monto), m.numero, m.banco, m.recibo, moneda(m.capital), moneda(m.interes)]) : [['', 'Sin pagos registrados', '', '', '', '', '', '']],
-      styles: { fontSize: 7, halign: 'center', cellPadding: 1.3 }, headStyles: { fillColor: dorado, textColor: 255, fontStyle: 'bold' }
+      head: [[{ content: `ÚLTIMOS ${cantidad} PAGOS REGISTRADOS`, colSpan: 9, styles: { fillColor: azul, halign: 'center' } }], ['Fecha pago', 'Tipo', 'Monto', 'Cuota', 'Banco', 'Boleta', 'Recibo', 'Capital', 'Interés']],
+      body: resumen.movimientos.length ? resumen.movimientos.map((m) => [fecha(m.fecha), 'CUOTA', moneda(m.monto), m.numero, m.banco, m.boleta, m.recibo, moneda(m.capital), moneda(m.interes)]) : [['', 'Sin pagos registrados', '', '', '', '', '', '', '']],
+      styles: { fontSize: 6.3, halign: 'center', cellPadding: 1.1 }, headStyles: { fillColor: dorado, textColor: 255, fontStyle: 'bold' }
     });
     const y = doc.lastAutoTable.finalY + 7;
     doc.setFillColor(...azul); doc.rect(12, y, ancho - 24, 6, 'F');
     doc.setTextColor(255); doc.text('INFORMACIÓN IMPORTANTE', ancho / 2, y + 4.2, { align: 'center' });
     doc.setTextColor(70); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
     doc.text('Este documento presenta los pagos vigentes registrados. Las facturas anuladas no forman parte de este estado de cuenta.', ancho / 2, y + 12, { align: 'center' });
+    doc.setDrawColor(80, 80, 80);
+    doc.rect(28, y + 17, ancho - 56, 18);
+    doc.setFontSize(8);
+    const textoIngresado = String(textoManual || '').trim() || 'SALDO A CANCELAR: PENDIENTE DE INGRESAR';
+    doc.text(doc.splitTextToSize(textoIngresado, ancho - 64), ancho / 2, y + 23, { align: 'center' });
     doc.line(42, 244, 82, 244); doc.line(137, 244, 177, 244);
     doc.text('Elaboró / Revisó', 62, 249, { align: 'center' }); doc.text('Sello / Autorización', 157, 249, { align: 'center' });
     doc.save(`EstadoCuenta_${contrato.codigo_contrato || 'cliente'}.pdf`);
@@ -159,8 +181,9 @@ const EstadoCuenta = () => {
             <h4 className="mb-0">{estado.contrato.nombre}</h4>
             <div className="d-flex gap-2"><select className="form-select" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))}><option value={5}>Últimos 5 movimientos</option><option value={10}>Últimos 10 movimientos</option></select><button className="btn btn-danger text-nowrap" onClick={exportarPDF}>Descargar PDF</button></div>
           </div>
+          <div className="mb-3"><label className="form-label fw-bold">Texto manual para el PDF</label><textarea className="form-control" rows="2" value={textoManual} onChange={(e) => setTextoManual(e.target.value)} placeholder="Ejemplo: Saldo a cancelar, observaciones o nota autorizada..." /></div>
           <div className="row g-3 mb-3"><div className="col-md-4"><div className="alert alert-primary mb-0"><strong>Contrato:</strong> {estado.contrato.codigo_contrato}</div></div><div className="col-md-4"><div className="alert alert-success mb-0"><strong>Total pagado:</strong> {moneda(estado.totalPagado)}</div></div><div className="col-md-4"><div className="alert alert-warning mb-0"><strong>Saldo pendiente:</strong> {moneda(estado.saldoPendiente)}</div></div></div>
-          <div className="table-responsive"><table className="table table-striped table-bordered"><thead className="table-dark"><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Recibo</th><th>Capital</th><th>Interés</th></tr></thead><tbody>{resumen.movimientos.length ? resumen.movimientos.map((m) => <tr key={m.id}><td>{fecha(m.fecha)}</td><td>{m.numero}</td><td>{moneda(m.monto)}</td><td>{m.banco}</td><td>{m.recibo}</td><td>{moneda(m.capital)}</td><td>{moneda(m.interes)}</td></tr>) : <tr><td colSpan="7" className="text-center">No hay movimientos registrados.</td></tr>}</tbody></table></div>
+          <div className="table-responsive"><table className="table table-striped table-bordered"><thead className="table-dark"><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Boleta</th><th>Recibo</th><th>Capital</th><th>Interés</th></tr></thead><tbody>{resumen.movimientos.length ? resumen.movimientos.map((m) => <tr key={m.id}><td>{fecha(m.fecha)}</td><td>{m.numero}</td><td>{moneda(m.monto)}</td><td>{m.banco}</td><td>{m.boleta}</td><td>{m.recibo}</td><td>{moneda(m.capital)}</td><td>{moneda(m.interes)}</td></tr>) : <tr><td colSpan="8" className="text-center">No hay movimientos registrados.</td></tr>}</tbody></table></div>
         </>}
       </div>
     </div>

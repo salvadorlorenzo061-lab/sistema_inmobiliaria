@@ -454,7 +454,7 @@ const CuentaEstado = () => {
     const codigoContrato = String(contrato?.codigo_contrato || 'SIN-CODIGO');
     const nombreResidente = String(contrato?.nombre_residente || 'SIN-CLIENTE');
     const nombreProyecto = String(contrato?.nombre_proyecto_pdf || contrato?.nombre_proyecto || 'PROYECTO');
-    const lote = String(contrato?.lote || contrato?.manzana || 'N/A');
+    const lote = `${String(contrato?.lote || 'N/A')} / ${String(contrato?.manzana || 'N/A')}`;
     const logoProyecto = normalizeImageDataUrl(
       contrato?.logo_proyecto || contrato?.logo_empresa_pdf || contrato?.logo_empresa || ''
     );
