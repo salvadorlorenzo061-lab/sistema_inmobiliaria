@@ -20,6 +20,8 @@ const EstadoCuenta = () => {
   const [estado, setEstado] = useState(null);
   const [cantidad, setCantidad] = useState(5);
   const [textoManual, setTextoManual] = useState('');
+  const [historial, setHistorial] = useState([]);
+  const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [cargando, setCargando] = useState(false);
 
   const buscar = async () => {
@@ -43,6 +45,8 @@ const EstadoCuenta = () => {
       const { data } = await axios.get(`${API_BASE_URL}/api/estado_cuenta/estado-cuenta/${idContrato}`, { params: { _refresh: Date.now() } });
       setEstado(data);
       setResultados([]);
+      const historialResponse = await axios.get(`${API_BASE_URL}/api/estado_cuenta/historial/${idContrato}`);
+      setHistorial(Array.isArray(historialResponse.data) ? historialResponse.data : []);
     } catch (error) {
       Swal.fire('Error', error?.response?.data || 'No fue posible cargar el estado de cuenta.', 'error');
     } finally {
@@ -91,7 +95,7 @@ const EstadoCuenta = () => {
     };
   }, [estado, cantidad]);
 
-  const exportarPDF = () => {
+  const exportarPDF = (textoConfirmado = textoManual) => {
     if (!estado?.contrato || !resumen) return;
     const contrato = estado.contrato;
     const doc = new jsPDF('p', 'mm', 'letter');
@@ -159,11 +163,43 @@ const EstadoCuenta = () => {
     doc.setDrawColor(80, 80, 80);
     doc.rect(28, y + 17, ancho - 56, 18);
     doc.setFontSize(8);
-    const textoIngresado = String(textoManual || '').trim() || 'SALDO A CANCELAR: PENDIENTE DE INGRESAR';
+    const textoIngresado = String(textoConfirmado || '').trim();
     doc.text(doc.splitTextToSize(textoIngresado, ancho - 64), ancho / 2, y + 23, { align: 'center' });
     doc.line(42, 244, 82, 244); doc.line(137, 244, 177, 244);
     doc.text('Elaboró / Revisó', 62, 249, { align: 'center' }); doc.text('Sello / Autorización', 157, 249, { align: 'center' });
     doc.save(`EstadoCuenta_${contrato.codigo_contrato || 'cliente'}.pdf`);
+  };
+
+  const generarEstadoCuenta = async () => {
+    if (!estado?.contrato) return;
+    const resultado = await Swal.fire({
+      title: 'Texto manual del estado de cuenta',
+      input: 'textarea',
+      inputValue: textoManual,
+      inputPlaceholder: 'Ejemplo: SALDO A CANCELAR: Q 10,000.00',
+      inputAttributes: { rows: '4' },
+      showCancelButton: true,
+      confirmButtonText: 'Guardar y generar PDF',
+      cancelButtonText: 'Cancelar',
+      inputValidator: (valor) => !String(valor || '').trim() ? 'Debe ingresar el texto que aparecerá en el PDF.' : undefined
+    });
+    if (!resultado.isConfirmed) return;
+    const texto = String(resultado.value || '').trim();
+    try {
+      const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+      await axios.post(`${API_BASE_URL}/api/estado_cuenta/historial`, {
+        id_contrato: estado.contrato.id_contrato,
+        id_usuario: usuario.id_usuario || null,
+        texto_manual: texto,
+        cantidad_movimientos: cantidad
+      });
+      setTextoManual(texto);
+      const { data } = await axios.get(`${API_BASE_URL}/api/estado_cuenta/historial/${estado.contrato.id_contrato}`);
+      setHistorial(Array.isArray(data) ? data : []);
+      exportarPDF(texto);
+    } catch (error) {
+      Swal.fire('Error', error?.response?.data?.message || 'No se pudo guardar el historial del estado de cuenta.', 'error');
+    }
   };
 
   return <div className="p-4">
@@ -179,9 +215,9 @@ const EstadoCuenta = () => {
         {estado && resumen && <>
           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-4 mb-3">
             <h4 className="mb-0">{estado.contrato.nombre}</h4>
-            <div className="d-flex gap-2"><select className="form-select" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))}><option value={5}>Últimos 5 movimientos</option><option value={10}>Últimos 10 movimientos</option></select><button className="btn btn-danger text-nowrap" onClick={exportarPDF}>Descargar PDF</button></div>
+            <div className="d-flex gap-2"><select className="form-select" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))}><option value={5}>Últimos 5 movimientos</option><option value={10}>Últimos 10 movimientos</option></select><button className="btn btn-outline-secondary text-nowrap" onClick={() => setMostrarHistorial((valor) => !valor)}>Historial ({historial.length})</button><button className="btn btn-danger text-nowrap" onClick={generarEstadoCuenta}>Generar PDF</button></div>
           </div>
-          <div className="mb-3"><label className="form-label fw-bold">Texto manual para el PDF</label><textarea className="form-control" rows="2" value={textoManual} onChange={(e) => setTextoManual(e.target.value)} placeholder="Ejemplo: Saldo a cancelar, observaciones o nota autorizada..." /></div>
+          {mostrarHistorial && <div className="card border-secondary mb-3"><div className="card-header fw-bold">Historial de estados de cuenta generados</div><div className="table-responsive"><table className="table table-sm table-striped mb-0"><thead><tr><th>Fecha</th><th>Usuario</th><th>Movimientos</th><th>Texto registrado</th></tr></thead><tbody>{historial.length ? historial.map((item) => <tr key={item.id_estado_cuenta}><td>{fecha(item.fecha_generacion)}</td><td>{item.nombre_usuario}</td><td>{item.cantidad_movimientos}</td><td>{item.texto_manual}</td></tr>) : <tr><td colSpan="4" className="text-center">Aún no se han generado estados de cuenta.</td></tr>}</tbody></table></div></div>}
           <div className="row g-3 mb-3"><div className="col-md-4"><div className="alert alert-primary mb-0"><strong>Contrato:</strong> {estado.contrato.codigo_contrato}</div></div><div className="col-md-4"><div className="alert alert-success mb-0"><strong>Total pagado:</strong> {moneda(estado.totalPagado)}</div></div><div className="col-md-4"><div className="alert alert-warning mb-0"><strong>Saldo pendiente:</strong> {moneda(estado.saldoPendiente)}</div></div></div>
           <div className="table-responsive"><table className="table table-striped table-bordered"><thead className="table-dark"><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Boleta</th><th>Recibo</th><th>Capital</th><th>Interés</th></tr></thead><tbody>{resumen.movimientos.length ? resumen.movimientos.map((m) => <tr key={m.id}><td>{fecha(m.fecha)}</td><td>{m.numero}</td><td>{moneda(m.monto)}</td><td>{m.banco}</td><td>{m.boleta}</td><td>{m.recibo}</td><td>{moneda(m.capital)}</td><td>{moneda(m.interes)}</td></tr>) : <tr><td colSpan="8" className="text-center">No hay movimientos registrados.</td></tr>}</tbody></table></div>
         </>}

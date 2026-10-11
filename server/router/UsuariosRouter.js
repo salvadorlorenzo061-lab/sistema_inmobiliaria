@@ -220,6 +220,23 @@ router.get("/", (req, res) => {
     });
 });
 
+router.get('/perfil/:id_usuario', (req, res) => {
+    db.query(`
+        SELECT u.id_usuario, u.nombre, u.correo, u.id_rol, u.estado, u.permisos,
+               u.foto_perfil, r.nombre_rol
+        FROM usuarios u
+        INNER JOIN roles r ON r.id_rol = u.id_rol
+        WHERE u.id_usuario = ? LIMIT 1
+    `, [req.params.id_usuario], (err, rows) => {
+        if (err) return res.status(500).send({ message: 'No se pudo actualizar el perfil.' });
+        if (!rows?.length) return res.status(404).send({ message: 'Usuario no encontrado.' });
+        const usuario = rows[0];
+        try { usuario.permisos = usuario.permisos ? JSON.parse(usuario.permisos) : []; } catch { usuario.permisos = []; }
+        usuario.nombre_usuario = usuario.nombre;
+        return res.json(usuario);
+    });
+});
+
 // === ACTUALIZAR USUARIO ===
 router.put("/actualizar", async (req, res) => {
     // CAMBIO: Cambiamos rol por id_rol

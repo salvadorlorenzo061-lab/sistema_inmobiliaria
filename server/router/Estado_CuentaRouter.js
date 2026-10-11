@@ -44,6 +44,52 @@ const ensureFacturasHistorialTable = () => {
 
 ensureFacturasHistorialTable();
 
+db.query(`
+    CREATE TABLE IF NOT EXISTS estado_cuenta_historial (
+        id_estado_cuenta BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        id_contrato INT NOT NULL,
+        id_usuario INT NULL,
+        texto_manual TEXT NULL,
+        cantidad_movimientos INT NOT NULL DEFAULT 5,
+        fecha_generacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_estado_cuenta_contrato (id_contrato),
+        INDEX idx_estado_cuenta_fecha (fecha_generacion)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`, (err) => {
+    if (err) console.error('Error asegurando historial de estados de cuenta:', err.message);
+});
+
+router.get('/historial/:id_contrato', (req, res) => {
+    db.query(`
+        SELECT h.*, COALESCE(u.nombre, 'Usuario no disponible') AS nombre_usuario
+        FROM estado_cuenta_historial h
+        LEFT JOIN usuarios u ON u.id_usuario = h.id_usuario
+        WHERE h.id_contrato = ?
+        ORDER BY h.fecha_generacion DESC, h.id_estado_cuenta DESC
+    `, [req.params.id_contrato], (err, rows) => {
+        if (err) return res.status(500).send({ message: 'No se pudo consultar el historial.' });
+        return res.json(rows || []);
+    });
+});
+
+router.post('/historial', (req, res) => {
+    const idContrato = Number(req.body?.id_contrato || 0);
+    const idUsuario = Number(req.body?.id_usuario || 0) || null;
+    const textoManual = String(req.body?.texto_manual || '').trim();
+    const cantidadMovimientos = [5, 10].includes(Number(req.body?.cantidad_movimientos))
+        ? Number(req.body.cantidad_movimientos) : 5;
+    if (!idContrato) return res.status(400).send({ message: 'Contrato inválido.' });
+    if (!textoManual) return res.status(400).send({ message: 'Debe ingresar el texto manual del estado de cuenta.' });
+    db.query(`
+        INSERT INTO estado_cuenta_historial
+            (id_contrato, id_usuario, texto_manual, cantidad_movimientos)
+        VALUES (?, ?, ?, ?)
+    `, [idContrato, idUsuario, textoManual, cantidadMovimientos], (err, result) => {
+        if (err) return res.status(500).send({ message: 'No se pudo guardar el estado de cuenta.' });
+        return res.status(201).json({ id_estado_cuenta: result.insertId, message: 'Estado de cuenta registrado.' });
+    });
+});
+
 // === BUSCAR RESIDENTE PARA ESTADO DE CUENTA ===
 router.get("/buscar-residente", (req, res) => {
     const { criterio } = req.query;

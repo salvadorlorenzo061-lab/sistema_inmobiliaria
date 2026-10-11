@@ -117,16 +117,7 @@ function MenuGeneral() {
     );
     const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
     const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
-    const fallbackPermisos = getFallbackPermisosByRole(rolNormalizado);
-    const rolTieneAccesoCaja = rolNormalizado.includes('jurid')
-      || rolNormalizado.includes('legal')
-      || (rolNormalizado.includes('gestor') && rolNormalizado.includes('cobro'));
-    const perfilCaja = permisosNormalizados.size === 0
-      && detectarPerfilCaja(rolNormalizado, permisosNormalizados);
-    const permisosEfectivos = new Set([
-      ...permisosNormalizados,
-      ...((perfilCaja || rolTieneAccesoCaja) ? Array.from(fallbackPermisos) : [])
-    ]);
+    const permisosEfectivos = permisosNormalizados;
 
     return modulesConfig.filter((modulo) => {
       if (esAdmin || modulo.id === 'menu_general') {

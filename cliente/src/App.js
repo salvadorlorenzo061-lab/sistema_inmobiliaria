@@ -4,6 +4,8 @@ import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-rou
 import { modulesConfig } from './config/modulesConfig';
 import Login from './componentes/Login';
 import Swal from 'sweetalert2';
+import axios from 'axios';
+import { API_BASE_URL } from './config';
 
 const normalizeText = (value = '') => value
   .toString()
@@ -229,11 +231,21 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const cargarUsuarioActivo = () => {
+    const cargarUsuarioActivo = async () => {
       try {
         const data = JSON.parse(localStorage.getItem('usuario') || '{}');
         setUsuarioActivo(data || {});
         setIsAuthenticated(Boolean(data && data.id_usuario));
+        if (data?.id_usuario) {
+          try {
+            const { data: perfilActual } = await axios.get(`${API_BASE_URL}/api/usuarios/perfil/${data.id_usuario}`);
+            const actualizado = { ...data, ...perfilActual };
+            localStorage.setItem('usuario', JSON.stringify(actualizado));
+            setUsuarioActivo(actualizado);
+          } catch {
+            // Conserva la sesión local si temporalmente no hay conexión.
+          }
+        }
       } catch {
         setUsuarioActivo({});
         setIsAuthenticated(false);
@@ -293,16 +305,7 @@ function App() {
     );
     const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
     const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
-    const fallbackPermisos = getFallbackPermisosByRole(rolNormalizado);
-    const rolTieneAccesoCaja = rolNormalizado.includes('jurid')
-      || rolNormalizado.includes('legal')
-      || (rolNormalizado.includes('gestor') && rolNormalizado.includes('cobro'));
-    const perfilCaja = permisosNormalizados.size === 0
-      && detectarPerfilCaja(rolNormalizado, permisosNormalizados);
-    const permisosEfectivos = new Set([
-      ...permisosNormalizados,
-      ...((perfilCaja || rolTieneAccesoCaja) ? Array.from(fallbackPermisos) : [])
-    ]);
+    const permisosEfectivos = permisosNormalizados;
 
     return modulesConfig.filter((module) => {
       if (esAdmin) {
