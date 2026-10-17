@@ -31,6 +31,7 @@ const PERMISOS_MODULOS = [
   'Reporte de Facturas',
   'Tabla de Amortización',
   'Cuadre de Facturación',
+  'Cuadre de Facturación Nuevo',
   'Resoluciones Facturas',
   'Bitácora',
   'Detalle de Pagos'
