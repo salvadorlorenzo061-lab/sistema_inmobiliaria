@@ -71,7 +71,7 @@ router.get('/reporte', (req, res) => {
             fh.id_pago,
             COALESCE(fh.id_usuario, p.id_usuario),
             UPPER(TRIM(fh.estado_factura))
-        HAVING COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), '') NOT LIKE 'TMP-%'
+        HAVING COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), '') COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%'
         ORDER BY fecha_evento, fh.id_pago
     `;
 

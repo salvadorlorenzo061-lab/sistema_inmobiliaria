@@ -670,8 +670,8 @@ const obtenerCuadre = (scope) => (req, res) => {
                 COUNT(*) AS total_facturas,
                 SUM(CASE WHEN base.estado_factura = 'EMITIDA' THEN 1 ELSE 0 END) AS facturas_emitidas,
                 SUM(CASE WHEN base.estado_factura = 'ANULADA' THEN 1 ELSE 0 END) AS facturas_anuladas,
-                MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
-                MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
+                MIN(CASE WHEN base.no_referencia COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
+                MAX(CASE WHEN base.no_referencia COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
                 ROUND(SUM(base.subtotal), 2) AS subtotal,
                 ROUND(SUM(base.iva_total), 2) AS iva_total,
                 ROUND(SUM(base.monto_mora), 2) AS monto_mora,
@@ -688,8 +688,8 @@ const obtenerCuadre = (scope) => (req, res) => {
                 COUNT(*) AS total_facturas,
                 SUM(CASE WHEN base.estado_factura = 'EMITIDA' THEN 1 ELSE 0 END) AS facturas_emitidas,
                 SUM(CASE WHEN base.estado_factura = 'ANULADA' THEN 1 ELSE 0 END) AS facturas_anuladas,
-                MIN(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
-                MAX(CASE WHEN base.no_referencia NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
+                MIN(CASE WHEN base.no_referencia COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_inicial,
+                MAX(CASE WHEN base.no_referencia COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%' THEN base.no_referencia END) AS correlativo_final,
                 ROUND(SUM(base.subtotal), 2) AS subtotal,
                 ROUND(SUM(base.iva_total), 2) AS iva_total,
                 ROUND(SUM(base.monto_mora), 2) AS monto_mora,
@@ -760,7 +760,7 @@ const obtenerCuadre = (scope) => (req, res) => {
         ) pd ON pd.id_pago = fh.id_pago
         WHERE ${whereSql}${filtroUsuarioSql}${filtroAccionSql}
         GROUP BY fh.id_pago, COALESCE(fh.id_usuario, p.id_usuario), UPPER(TRIM(fh.estado_factura))
-        HAVING COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), '') NOT LIKE 'TMP-%'
+        HAVING COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), '') COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%'
     `;
     const { resumenUsuariosQuery, totalGeneralQuery, detalleFacturasQuery } = buildQueries(detalleBase);
 
