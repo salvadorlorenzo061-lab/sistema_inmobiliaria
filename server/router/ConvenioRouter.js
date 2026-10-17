@@ -44,7 +44,8 @@ const asegurarTablaConvenios = async () => {
     const existentes = new Set((columnas || []).map((fila) => fila.column_name));
     const faltantes = [
         ['monto_cuotas_financiadas', 'DECIMAL(12,2) NOT NULL DEFAULT 0'],
-        ['monto_enganche_pendiente', 'DECIMAL(12,2) NOT NULL DEFAULT 0']
+        ['monto_enganche_pendiente', 'DECIMAL(12,2) NOT NULL DEFAULT 0'],
+        ['alcance_convenio', "VARCHAR(20) NOT NULL DEFAULT 'total'"]
     ].filter(([nombre]) => !existentes.has(nombre));
     for (const [nombre, definicion] of faltantes) {
         await queryAsync(`ALTER TABLE convenio_pagos ADD COLUMN ${nombre} ${definicion}`);
@@ -111,6 +112,19 @@ const normalizarEstado = (estado) => {
     const value = String(estado || '').trim().toLowerCase();
     const permitidos = ['activo', 'pendiente', 'pagado', 'cumplido', 'incumplido', 'anulado'];
     return permitidos.includes(value) ? value : 'pendiente';
+};
+
+// Alcance del convenio: 'total' (enganche + cuotas financiadas), 'cuotas'
+// (solo cuotas financiadas) o 'enganche' (solo capital/enganche pendiente).
+// Los servicios nunca entran al convenio.
+const ALCANCES_CONVENIO = ['total', 'cuotas', 'enganche'];
+
+const calcularMontoPorAlcance = (deuda, alcance) => {
+    const cuotas = Number(deuda?.cuotas_financiadas_pendientes || 0);
+    const enganche = Number(deuda?.enganche_pendiente || 0);
+    if (alcance === 'cuotas') return redondear2(cuotas);
+    if (alcance === 'enganche') return redondear2(enganche);
+    return redondear2(cuotas + enganche);
 };
 
 router.get('/', async (_req, res) => {
@@ -191,7 +205,10 @@ router.get('/saldo-pendiente/:id_contrato', async (req, res) => {
         }
         const deuda = await obtenerDeudaElegibleConvenio(idContrato);
         if (!deuda) return res.status(404).json({ message: 'El contrato no existe.' });
-        return res.status(200).json(deuda);
+        return res.status(200).json({
+            ...deuda,
+            solvente: redondear2(deuda.cuotas_financiadas_pendientes + deuda.enganche_pendiente) <= 0.009
+        });
     } catch (error) {
         console.error('Error calculando saldo para convenio:', error);
         return res.status(500).json({ message: 'No se pudo calcular el saldo pendiente del contrato.' });
@@ -208,6 +225,9 @@ router.post('/crear', async (req, res) => {
         const fechaInicio = String(req.body?.fecha_inicio || '').trim() || null;
         const observaciones = String(req.body?.observaciones || '').trim() || null;
         const estado = normalizarEstado(req.body?.estado || 'activo');
+        const alcance = ALCANCES_CONVENIO.includes(String(req.body?.alcance_convenio || '').toLowerCase())
+            ? String(req.body.alcance_convenio).toLowerCase()
+            : 'total';
 
         if (!Number.isInteger(idContrato) || idContrato <= 0) {
             return res.status(400).json({ message: 'Debe seleccionar un contrato valido.' });
@@ -217,11 +237,16 @@ router.post('/crear', async (req, res) => {
         if (!deuda) {
             return res.status(400).json({ message: 'El contrato seleccionado no existe.' });
         }
-        const montoOriginal = deuda.total_pendiente_convenio;
+        const montoOriginal = calcularMontoPorAlcance(deuda, alcance);
         const saldoActual = montoOriginal;
         const montoCuota = Math.ceil(montoOriginal / cuotasPactadas);
         if (montoOriginal <= 0 || montoCuota <= 0) {
-            return res.status(400).json({ message: 'El contrato no tiene cuotas financiadas ni enganche pendientes para convenio.' });
+            const textoAlcance = alcance === 'cuotas'
+                ? 'cuotas financiadas pendientes'
+                : alcance === 'enganche'
+                    ? 'enganche pendiente'
+                    : 'cuotas financiadas ni enganche pendientes';
+            return res.status(400).json({ message: `El contrato no tiene ${textoAlcance} para convenio.` });
         }
 
         const activos = await queryAsync(`
@@ -238,11 +263,11 @@ router.post('/crear', async (req, res) => {
             `
                 INSERT INTO convenio_pagos
                     (id_contrato, fecha_convenio, monto_original, saldo_actual, cuotas_pactadas, monto_cuota,
-                     fecha_inicio, observaciones, estado, monto_cuotas_financiadas, monto_enganche_pendiente)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     fecha_inicio, observaciones, estado, monto_cuotas_financiadas, monto_enganche_pendiente, alcance_convenio)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
             [idContrato, fechaConvenio, montoOriginal, saldoActual, cuotasPactadas, montoCuota,
-                fechaInicio, observaciones, estado, deuda.cuotas_financiadas_pendientes, deuda.enganche_pendiente]
+                fechaInicio, observaciones, estado, deuda.cuotas_financiadas_pendientes, deuda.enganche_pendiente, alcance]
         );
 
         const nuevoId = Number(insertResult?.insertId || 0);

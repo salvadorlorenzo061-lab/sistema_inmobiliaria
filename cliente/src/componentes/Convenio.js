@@ -36,6 +36,7 @@ function Convenio() {
   const [fecha_inicio, setFechaInicio] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [estado, setEstado] = useState('pendiente');
+  const [alcanceConvenio, setAlcanceConvenio] = useState('total');
 
   const [convenios, setConvenios] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -70,6 +71,26 @@ function Convenio() {
     }
   }, [monto_original, cuotas_pactadas]);
 
+  const aplicarAlcance = (nuevoAlcance, deuda) => {
+    if (!deuda) return;
+    const cuotas = Number(deuda.cuotas_financiadas_pendientes || 0);
+    const enganche = Number(deuda.enganche_pendiente || 0);
+    const base = nuevoAlcance === 'cuotas' ? cuotas : nuevoAlcance === 'enganche' ? enganche : cuotas + enganche;
+    setMontoOriginal(base > 0 ? base.toFixed(2) : '0.00');
+    setSaldoActual(base > 0 ? base.toFixed(2) : '0.00');
+  };
+
+  const cambiarAlcance = (nuevoAlcance) => {
+    setAlcanceConvenio(nuevoAlcance);
+    if (!esEdicion) aplicarAlcance(nuevoAlcance, residenteSeleccionado);
+  };
+
+  const etiquetaAlcance = (alcance) => {
+    if (alcance === 'cuotas') return 'Solo cuotas financiadas';
+    if (alcance === 'enganche') return 'Solo enganche (capital)';
+    return 'Total deuda (enganche + cuotas)';
+  };
+
   const limpiarFormulario = () => {
     setIdConvenio('');
     setIdContrato('');
@@ -81,6 +102,7 @@ function Convenio() {
     setFechaInicio('');
     setObservaciones('');
     setEstado('pendiente');
+    setAlcanceConvenio('total');
     setBusquedaResidente('');
     setResultadosResidentes([]);
     setResidenteSeleccionado(null);
@@ -103,6 +125,7 @@ function Convenio() {
     setFechaInicio(item.fecha_inicio ? String(item.fecha_inicio).slice(0, 10) : '');
     setObservaciones(String(item.observaciones || ''));
     setEstado(String(item.estado || 'pendiente'));
+    setAlcanceConvenio(String(item.alcance_convenio || 'total'));
     setBusquedaResidente(`${item.nombre_residente || ''} · ${item.codigo_contrato || `#${item.id_contrato}`}`);
     setResultadosResidentes([]);
     setResidenteSeleccionado({
@@ -147,10 +170,9 @@ function Convenio() {
     try {
       const res = await Axios.get(`${API_URL}/saldo-pendiente/${item.id_contrato}`);
       const deuda = res?.data || {};
-      const montoBase = Number(deuda.total_pendiente_convenio || 0);
       setResidenteSeleccionado({ ...item, ...deuda, cargando_saldo: false });
-      setMontoOriginal(montoBase > 0 ? montoBase.toFixed(2) : '0.00');
-      setSaldoActual(montoBase > 0 ? montoBase.toFixed(2) : '0.00');
+      setAlcanceConvenio('total');
+      aplicarAlcance('total', deuda);
     } catch (error) {
       setMontoOriginal('');
       setSaldoActual('');
@@ -179,7 +201,8 @@ function Convenio() {
       monto_cuota,
       fecha_inicio: fecha_inicio || null,
       observaciones,
-      estado
+      estado,
+      alcance_convenio: alcanceConvenio
     };
 
     try {
@@ -278,6 +301,7 @@ function Convenio() {
         body: [
           ['Fecha convenio', item?.fecha_convenio ? new Date(item.fecha_convenio).toLocaleDateString('es-GT') : 'N/A'],
           ['Fecha inicio pagos', item?.fecha_inicio ? new Date(item.fecha_inicio).toLocaleDateString('es-GT') : 'N/A'],
+          ['Alcance del convenio', etiquetaAlcance(item?.alcance_convenio)],
           ['Monto original', `Q${Math.round(montoOriginalNum)}`],
           ['Saldo actual', `Q${Math.round(saldoActualNum)}`],
           ['Cuotas pactadas', String(cuotasNum || 0)],
@@ -499,9 +523,48 @@ function Convenio() {
                           <strong>Próxima cuota contractual:</strong> {residenteSeleccionado.proxima_cuota || '-'}
                           {' · '}
                           <strong>Total para convenio:</strong> Q{Number(residenteSeleccionado.total_pendiente_convenio || 0).toFixed(2)}
+                          <br />
+                          <small className="text-muted">Los cargos por servicios no forman parte de la deuda del convenio.</small>
+                        </div>
+                      )}
+                      {!residenteSeleccionado.cargando_saldo && residenteSeleccionado.solvente === true && (
+                        <div className="alert alert-success mt-2 mb-0 py-2">
+                          <strong>Contrato solvente:</strong> no tiene deuda de enganche ni cuotas financiadas. Ya puede emitirse el finiquito desde el módulo de Contratos Legales.
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {residenteSeleccionado && !esEdicion && residenteSeleccionado.solvente !== true && (
+                  <div className="col-12 mb-3">
+                    <label className="form-label fw-bold">Alcance del convenio:</label>
+                    <div className="d-flex gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        className={`btn fw-bold ${alcanceConvenio === 'total' ? 'btn-primary' : 'btn-outline-primary'}`}
+                        onClick={() => cambiarAlcance('total')}
+                      >
+                        TOTAL DEUDA (Enganche + Cuotas)
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn fw-bold ${alcanceConvenio === 'cuotas' ? 'btn-primary' : 'btn-outline-primary'}`}
+                        onClick={() => cambiarAlcance('cuotas')}
+                        disabled={Number(residenteSeleccionado.cuotas_financiadas_pendientes || 0) <= 0}
+                      >
+                        SOLO CUOTAS FINANCIADAS
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn fw-bold ${alcanceConvenio === 'enganche' ? 'btn-primary' : 'btn-outline-primary'}`}
+                        onClick={() => cambiarAlcance('enganche')}
+                        disabled={Number(residenteSeleccionado.enganche_pendiente || 0) <= 0}
+                      >
+                        SOLO ENGANCHE (CAPITAL)
+                      </button>
+                    </div>
+                    <small className="text-muted">El monto del convenio se recalcula según el alcance elegido.</small>
                   </div>
                 )}
 
