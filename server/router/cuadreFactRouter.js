@@ -64,6 +64,7 @@ router.get('/reporte', (req, res) => {
                  ELSE COALESCE(NULLIF(p.monto_total_pagado, 0), doc.total_documento, 0)
             END AS total_cobrado
         FROM (
+        
             SELECT
                 fh.id_pago,
                 COALESCE(MAX(fh.id_usuario), MAX(p_filtro.id_usuario)) AS id_usuario,
