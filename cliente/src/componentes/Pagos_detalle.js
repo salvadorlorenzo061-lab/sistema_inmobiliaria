@@ -3,6 +3,7 @@ import Axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { buildConsolidatedInvoiceRows, renderFacturaComprobante, formatearNotaMoraExonerada } from '../utils/facturaPdf';
 import { API_BASE_URL } from '../config';
@@ -350,6 +351,94 @@ function PagosDetalle() {
     doc.save(`Factura_${correlativo.replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
   };
 
+  const moneda = (v) => `Q ${Number(v || 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const descargarPdfResumen = () => {
+    const lista = detallesFiltrados;
+    if (!lista.length) {
+      Swal.fire({ icon: 'info', title: 'Sin datos', text: 'No hay comprobantes para el filtro actual.' });
+      return;
+    }
+    const emitidas = lista.filter((x) => String(x.estado_factura || 'EMITIDA').toUpperCase() === 'EMITIDA');
+    const anuladas = lista.filter((x) => String(x.estado_factura || '').toUpperCase() === 'ANULADA');
+    const totalEmitido = emitidas.reduce((acc, x) => acc + Number(x.subtotal || 0), 0);
+    const totalAnulado = anuladas.reduce((acc, x) => acc + Number(x.subtotal || 0), 0);
+    const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+    const ahora = new Date().toLocaleString('es-GT');
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+    doc.setFillColor(20, 45, 65);
+    doc.rect(0, 0, 279, 24, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+    doc.text('RESUMEN DE COMPROBANTES - EMITIDAS Y ANULADAS', 140, 10, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+    doc.text(`Generado: ${ahora}  |  Generado por: ${usuario.nombre || 'N/A'}  |  Filtro: ${filtroEstado}`, 14, 19);
+
+    doc.setTextColor(30, 30, 30);
+    autoTable(doc, {
+      startY: 30,
+      head: [['Emitidas', 'Anuladas', 'Total emitido', 'Total anulado', 'Neto']],
+      body: [[
+        String(emitidas.length),
+        String(anuladas.length),
+        moneda(totalEmitido),
+        moneda(totalAnulado),
+        moneda(totalEmitido - totalAnulado)
+      ]],
+      styles: { fontSize: 10, halign: 'center', fontStyle: 'bold' },
+      headStyles: { fillColor: [23, 162, 184], halign: 'center' }
+    });
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(15, 81, 50);
+    doc.text(`FACTURAS EMITIDAS (${emitidas.length})`, 14, doc.lastAutoTable.finalY + 9);
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 12,
+      head: [['Fecha', 'Correlativo', 'Concepto', 'Período / Cuota', 'Cobrado por', 'Subtotal']],
+      body: emitidas.length
+        ? emitidas.map((x) => [
+            new Date(x.fecha_evento).toLocaleString('es-GT'),
+            x.correlativo || 'Sin correlativo',
+            String(x.tipo_concepto || '').toUpperCase(),
+            `${x.mes_pagado ? `Mes: ${x.mes_pagado}` : ''}${x.numero_cuota_afectada ? ` | Cuota No. ${x.numero_cuota_afectada}` : ''}` || '—',
+            x.usuario_cobro || `Usuario #${x.id_usuario || 'N/A'}`,
+            moneda(x.subtotal)
+          ])
+        : [['—', 'Sin facturas emitidas', '—', '—', '—', '—']],
+      styles: { fontSize: 7.5 },
+      headStyles: { fillColor: [25, 135, 84] },
+      columnStyles: { 5: { halign: 'right' } }
+    });
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(132, 32, 41);
+    doc.text(`FACTURAS ANULADAS (${anuladas.length})`, 14, doc.lastAutoTable.finalY + 9);
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 12,
+      head: [['Fecha anulación', 'Correlativo', 'Cobrado por', 'Anulado por', 'Motivo de anulación', 'Monto anulado']],
+      body: anuladas.length
+        ? anuladas.map((x) => [
+            new Date(x.fecha_evento).toLocaleString('es-GT'),
+            x.correlativo || 'Sin correlativo',
+            x.usuario_cobro || `Usuario #${x.id_usuario || 'N/A'}`,
+            x.anulado_por || 'N/A',
+            x.motivo_anulacion || 'Sin motivo registrado',
+            moneda(x.subtotal)
+          ])
+        : [['—', 'Sin facturas anuladas', '—', '—', '—', '—']],
+      styles: { fontSize: 7.5 },
+      headStyles: { fillColor: [220, 53, 69] },
+      columnStyles: { 5: { halign: 'right' } }
+    });
+
+    const totalPaginas = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= totalPaginas; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8); doc.setTextColor(120);
+      doc.text(`Página ${i} de ${totalPaginas}`, 270, 210, { align: 'right' });
+    }
+    doc.save(`Resumen_Comprobantes_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   const getDetalles = useCallback(() => {
     Axios.get(API_URL).then(res => setDetalles(res.data)).catch(err => console.error(err));
   }, [API_URL]);
@@ -434,7 +523,7 @@ function PagosDetalle() {
         </div>
         <div className="col-md-3 text-end d-flex gap-2">
           <button className="btn btn-outline-secondary fw-bold" onClick={getDetalles}>↻ ACTUALIZAR</button>
-          <button className="btn btn-secondary fw-bold w-100" disabled>HISTORIAL INMUTABLE</button>
+          <button className="btn btn-success fw-bold" onClick={descargarPdfResumen}>⬇ PDF RESUMEN</button>
         </div>
       </div>
       </div>
@@ -451,6 +540,7 @@ function PagosDetalle() {
             <th>SUBTOTAL</th>
             <th>ESTADO</th>
             <th>COBRADO POR</th>
+            <th>OBSERVACIONES</th>
             <th>ACCIONES</th>
           </tr>
         </thead>
@@ -474,6 +564,16 @@ function PagosDetalle() {
                 </span>
               </td>
               <td>{val.usuario_cobro || `Usuario #${val.id_usuario || 'N/A'}`}</td>
+              <td>
+                {val.estado_factura === 'ANULADA' ? (
+                  <div className="small">
+                    <div className="text-danger fw-bold">Anulado por: {val.anulado_por || 'N/A'}</div>
+                    <div className="text-muted">{val.motivo_anulacion || 'Sin motivo registrado'}</div>
+                  </div>
+                ) : (
+                  <span className="text-muted">—</span>
+                )}
+              </td>
               <td>
                 <button onClick={() => generarFacturaDesdeDetalle(val)} className="btn btn-secondary btn-sm m-1 fw-bold">PDF</button>
               </td>

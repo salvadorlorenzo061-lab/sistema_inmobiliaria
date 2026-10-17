@@ -121,13 +121,20 @@ export default function CuadreFact() {
     doc.text(`FACTURAS ANULADAS (${anuladas.length})`, 14, doc.lastAutoTable.finalY + 10);
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 13,
-      head: [['Fecha anulación', 'Usuario', 'Correlativo', 'Motivo', 'Monto anulado']],
+      head: [['Fecha anulación', 'Usuario cobró', 'Correlativo', 'Anulado por', 'Motivo de anulación', 'Monto anulado']],
       body: anuladas.length
-        ? anuladas.map((x) => [new Date(x.fecha_evento).toLocaleString('es-GT'), x.nombre_usuario, x.correlativo, 'Documento anulado', moneda(Math.abs(Number(x.total_cobrado || 0)))])
-        : [['—', 'Sin facturas anuladas en el período', '—', '—', '—']],
-      styles: { fontSize: 8 },
+        ? anuladas.map((x) => [
+            new Date(x.fecha_evento).toLocaleString('es-GT'),
+            x.nombre_usuario,
+            x.correlativo,
+            x.anulado_por || 'N/A',
+            x.motivo_anulacion || 'Sin motivo',
+            moneda(Math.abs(Number(x.total_cobrado || 0)))
+          ])
+        : [['—', 'Sin facturas anuladas en el período', '—', '—', '—', '—']],
+      styles: { fontSize: 7.5 },
       headStyles: { fillColor: [220, 53, 69] },
-      columnStyles: { 4: { halign: 'right' } }
+      columnStyles: { 5: { halign: 'right' } }
     });
 
     const totalPaginas = doc.internal.getNumberOfPages();

@@ -62,9 +62,17 @@ router.get('/reporte', (req, res) => {
             CASE WHEN doc.estado_factura = 'ANULADA'
                  THEN -COALESCE(NULLIF(p.monto_total_pagado, 0), doc.total_documento, 0)
                  ELSE COALESCE(NULLIF(p.monto_total_pagado, 0), doc.total_documento, 0)
-            END AS total_cobrado
+            END AS total_cobrado,
+            CASE WHEN doc.estado_factura = 'ANULADA'
+                 THEN COALESCE(ad.motivo, 'Sin motivo registrado')
+                 ELSE NULL
+            END AS motivo_anulacion,
+            CASE WHEN doc.estado_factura = 'ANULADA'
+                 THEN COALESCE(ua.nombre, CONCAT('Usuario #', ad.id_usuario_autoriza), 'N/A')
+                 ELSE NULL
+            END AS anulado_por
         FROM (
-        
+
             SELECT
                 fh.id_pago,
                 COALESCE(MAX(fh.id_usuario), MAX(p_filtro.id_usuario)) AS id_usuario,
@@ -79,6 +87,8 @@ router.get('/reporte', (req, res) => {
         ) doc
         LEFT JOIN pagos p ON p.id_pago = doc.id_pago
         LEFT JOIN usuarios u ON u.id_usuario = doc.id_usuario
+        LEFT JOIN anulacion_deuda ad ON ad.id_pago = doc.id_pago AND UPPER(TRIM(ad.estado_factura)) = 'ANULADA'
+        LEFT JOIN usuarios ua ON ua.id_usuario = ad.id_usuario_autoriza
         WHERE COALESCE(NULLIF(doc.correlativo, ''), p.no_referencia, '') COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%'
         ORDER BY doc.fecha_evento, doc.id_pago
     `;

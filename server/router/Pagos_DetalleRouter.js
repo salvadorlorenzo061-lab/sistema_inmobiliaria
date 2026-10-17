@@ -158,12 +158,18 @@ router.get("/", (req, res) => {
             u.nombre AS usuario_cobro,
             COALESCE(fh.rol_usuario_emisor, rc.nombre_rol) AS rol_usuario_cobro,
             CASE
-                WHEN fh.estado_factura = 'ANULADA' THEN 'Documento anulado (evidencia historica)'
+                WHEN fh.estado_factura = 'ANULADA' THEN COALESCE(ad.motivo, 'Documento anulado (evidencia historica)')
                 ELSE NULL
-            END AS motivo_anulacion
+            END AS motivo_anulacion,
+            CASE
+                WHEN fh.estado_factura = 'ANULADA' THEN COALESCE(ua.nombre, CONCAT('Usuario #', ad.id_usuario_autoriza), 'N/A')
+                ELSE NULL
+            END AS anulado_por
         FROM facturas_historial fh
         LEFT JOIN usuarios u ON u.id_usuario = fh.id_usuario
         LEFT JOIN roles rc ON rc.id_rol = u.id_rol
+        LEFT JOIN anulacion_deuda ad ON ad.id_pago = fh.id_pago AND UPPER(TRIM(ad.estado_factura)) = 'ANULADA'
+        LEFT JOIN usuarios ua ON ua.id_usuario = ad.id_usuario_autoriza
         ORDER BY fh.id_historial DESC
     `;
 
