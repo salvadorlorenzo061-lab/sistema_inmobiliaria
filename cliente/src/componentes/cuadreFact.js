@@ -1,100 +1,191 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import axios from 'axios';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import Swal from 'sweetalert2';
-import { API_BASE_URL } from '../config';
+const express = require('express');
+const db = require('../Conexion');
 
-const hoyLocal = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-const fechaInput = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const moneda = (v) => `Q ${Number(v || 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const rango = (tipo) => {
-  const hoy = new Date(); const inicio = new Date(hoy); const fin = new Date(hoy);
-  if (tipo === 'semana') { inicio.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7)); fin.setDate(inicio.getDate() + 6); }
-  if (tipo === 'quincena') { inicio.setDate(hoy.getDate() <= 15 ? 1 : 16); fin.setDate(hoy.getDate() <= 15 ? 15 : new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()); }
-  if (tipo === 'mes') { inicio.setDate(1); fin.setDate(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()); }
-  return { inicio: fechaInput(inicio), fin: fechaInput(fin) };
-};
+const router = express.Router();
+router.use(express.json({ limit: '20mb' }));
 
-export default function CuadreFact() {
-  const API = `${API_BASE_URL}/api/cuadre_fact`;
-  const [periodo, setPeriodo] = useState('dia');
-  const [inicio, setInicio] = useState(hoyLocal());
-  const [fin, setFin] = useState(hoyLocal());
-  const [estado, setEstado] = useState('todas');
-  const [idUsuario, setIdUsuario] = useState('');
-  const [usuarios, setUsuarios] = useState([]);
-  const [reporte, setReporte] = useState(null);
-  const [historial, setHistorial] = useState([]);
-  const [verHistorial, setVerHistorial] = useState(false);
-  const [cargando, setCargando] = useState(false);
+// Creación automática de la tabla de historial de cuadres si no existe
+db.query(`
+    CREATE TABLE IF NOT EXISTS cuadre_fact_historial (
+        id_cuadre BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        id_usuario_generador INT NULL,
+        fecha_inicio DATE NOT NULL,
+        fecha_fin DATE NOT NULL,
+        filtro_estado VARCHAR(20) NOT NULL DEFAULT 'todas',
+        filtro_usuario INT NULL,
+        reporte_json LONGTEXT NOT NULL,
+        pdf_base64 LONGTEXT NOT NULL,
+        fecha_generacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cuadre_fact_fecha (fecha_generacion)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`, (err) => {
+    if (err) console.error('Error creando historial del cuadre de facturación:', err.message);
+});
 
-  const cargarHistorial = useCallback(async () => {
-    try { const { data } = await axios.get(`${API}/historial`); setHistorial(Array.isArray(data) ? data : []); } catch { setHistorial([]); }
-  }, [API]);
+// Endpoint principal para generar el reporte de cuadre
+router.get('/reporte', (req, res) => {
+    const inicio = String(req.query.fecha_inicio || '');
+    const fin = String(req.query.fecha_fin || '');
+    const estado = String(req.query.estado || 'todas').toLowerCase();
+    const idUsuario = Number(req.query.id_usuario || 0);
 
-  useEffect(() => {
-    axios.get(`${API_BASE_URL}/api/usuarios`).then(({ data }) => setUsuarios(Array.isArray(data) ? data : [])).catch(() => setUsuarios([]));
-    cargarHistorial();
-  }, [cargarHistorial]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) \vert{}\vert{} !/^\d{4}-\d{2}-\d{2}$/.test(fin) || inicio > fin) {
+        return res.status(400).send({ message: 'Debe indicar un rango de fechas válido.' });
+    }
+    if (!['todas', 'emitida', 'anulada'].includes(estado)) {
+        return res.status(400).send({ message: 'Estado de factura inválido.' });
+    }
 
-  const cambiarPeriodo = (valor) => { setPeriodo(valor); const r = rango(valor); setInicio(r.inicio); setFin(r.fin); };
+    const filtros = ['DATE(fh.fecha_evento) BETWEEN ? AND ?'];
+    const params = [inicio, fin];
 
-  const consultar = async () => {
-    if (!inicio || !fin || inicio > fin) return Swal.fire('Rango inválido', 'Revise las fechas del cuadre.', 'warning');
-    setCargando(true);
-    try {
-      const { data } = await axios.get(`${API}/reporte`, { params: { fecha_inicio: inicio, fecha_fin: fin, estado, id_usuario: idUsuario || undefined } });
-      setReporte(data);
-    } catch (error) {
-      setReporte(null); Swal.fire('No se pudo generar el cuadre', error?.response?.data?.message || 'Error del servidor.', 'error');
-    } finally { setCargando(false); }
-  };
+    if (estado !== 'todas') {
+        filtros.push('UPPER(TRIM(fh.estado_factura)) = ?');
+        params.push(estado.toUpperCase());
+    } else {
+        filtros.push("UPPER(TRIM(fh.estado_factura)) IN ('EMITIDA', 'ANULADA')");
+    }
 
-  const crearPdf = () => {
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.text('CUADRE DE FACTURACIÓN POR USUARIO', 140, 15, { align: 'center' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(`Período: ${reporte.fecha_inicio} al ${reporte.fecha_fin}`, 14, 24);
-    doc.text(`Emitidas: ${reporte.totales.emitidas}   Anuladas: ${reporte.totales.anuladas}   Total emitido: ${moneda(reporte.totales.total_emitido)}   Total anulado: ${moneda(reporte.totales.total_anulado)}   Neto: ${moneda(reporte.totales.neto)}`, 14, 31);
-    autoTable(doc, { startY: 38, head: [['Usuario', 'Emitidas', 'Anuladas', 'Correlativo inicial', 'Correlativo final', 'Emitido', 'Anulado', 'Neto']], body: reporte.resumen_usuarios.map((x) => [x.nombre_usuario, x.emitidas, x.anuladas, x.correlativo_inicial || 'N/A', x.correlativo_final || 'N/A', moneda(x.total_emitido), moneda(x.total_anulado), moneda(x.neto)]), styles: { fontSize: 8 }, headStyles: { fillColor: [20, 45, 65] } });
-    autoTable(doc, { startY: doc.lastAutoTable.finalY + 8, head: [['Fecha', 'Usuario', 'Correlativo', 'Estado', 'Forma de pago', 'Total']], body: reporte.detalle.map((x) => [new Date(x.fecha_evento).toLocaleString('es-GT'), x.nombre_usuario, x.correlativo, x.estado_factura, x.forma_pago, moneda(x.total_cobrado)]), styles: { fontSize: 7.5 }, headStyles: { fillColor: [23, 162, 184] } });
-    return doc;
-  };
+    if (idUsuario > 0) {
+        filtros.push('COALESCE(fh.id_usuario, p.id_usuario) = ?');
+        params.push(idUsuario);
+    }
 
-  const guardarPdf = async () => {
-    if (!reporte) return;
-    try {
-      const doc = crearPdf(); const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
-      await axios.post(`${API}/historial`, { id_usuario_generador: usuario.id_usuario, fecha_inicio: inicio, fecha_fin: fin, filtro_estado: estado, filtro_usuario: idUsuario || null, reporte, pdf_base64: doc.output('datauristring').split(',')[1] });
-      doc.save(`CuadreFacturacion_${inicio}_${fin}.pdf`); await cargarHistorial();
-    } catch (error) { Swal.fire('Error', error?.response?.data?.message || 'No se pudo guardar el PDF.', 'error'); }
-  };
+    const sql = `
+        SELECT
+            fh.id_pago,
+            COALESCE(fh.id_usuario, p.id_usuario) AS id_usuario,
+            COALESCE(MAX(u.nombre), CONCAT('Usuario #', COALESCE(fh.id_usuario, p.id_usuario)), 'Sin asignación') AS nombre_usuario,
+            UPPER(TRIM(fh.estado_factura)) AS estado_factura,
+            MAX(fh.fecha_evento) AS fecha_evento,
+            COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), CONCAT('PAGO-', fh.id_pago)) AS correlativo,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(MAX(p.forma_pago), 'N/A') END AS forma_pago,
+            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
+                 THEN -COALESCE(MAX(NULLIF(p.monto_total_pagado, 0)), SUM(COALESCE(fh.subtotal, 0)), 0)
+                 ELSE COALESCE(MAX(NULLIF(p.monto_total_pagado, 0)), SUM(COALESCE(fh.subtotal, 0)), 0)
+            END AS total_cobrado
+        FROM facturas_historial fh
+        LEFT JOIN pagos p ON p.id_pago = fh.id_pago
+        LEFT JOIN usuarios u ON u.id_usuario = COALESCE(fh.id_usuario, p.id_usuario)
+        WHERE ${filtros.join(' AND ')}
+        GROUP BY
+            fh.id_pago,
+            COALESCE(fh.id_usuario, p.id_usuario),
+            UPPER(TRIM(fh.estado_factura))
+        HAVING correlativo NOT LIKE 'TMP-%'
+        ORDER BY fecha_evento, fh.id_pago
+    `;
 
-  const descargarHistorico = async (item) => {
-    try {
-      const { data } = await axios.get(`${API}/historial/${item.id_cuadre}/pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(data); const a = document.createElement('a'); a.href = url; a.download = `CuadreFacturacion_${item.id_cuadre}.pdf`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch { Swal.fire('Error', 'No se pudo descargar el PDF histórico.', 'error'); }
-  };
+    db.query(sql, params, (err, rows) => {
+        if (err) {
+            console.error('Error generando cuadre de facturación:', err.code, err.message);
+            return res.status(500).send({
+                message: 'No se pudo generar el cuadre de facturación.',
+                detail: `${err.code || ''} ${err.message || ''}`.trim()
+            });
+        }
 
-  return <div className="container mt-4">
-    <div className="card shadow-sm border-0"><div className="card-header bg-info fw-bold fs-5">Cuadre de Facturación por Usuario</div><div className="card-body">
-      <div className="row g-3 align-items-end">
-        <div className="col-md-2"><label className="fw-bold">Período</label><select className="form-select" value={periodo} onChange={(e) => cambiarPeriodo(e.target.value)}><option value="dia">Diario</option><option value="semana">Semanal</option><option value="quincena">Quince días</option><option value="mes">Mensual</option></select></div>
-        <div className="col-md-2"><label className="fw-bold">Estado</label><select className="form-select" value={estado} onChange={(e) => setEstado(e.target.value)}><option value="todas">Emitidas y anuladas</option><option value="emitida">Emitidas</option><option value="anulada">Anuladas</option></select></div>
-        <div className="col-md-3"><label className="fw-bold">Usuario cobrador</label><select className="form-select" value={idUsuario} onChange={(e) => setIdUsuario(e.target.value)}><option value="">Todos los usuarios</option>{usuarios.map((u) => <option key={u.id_usuario} value={u.id_usuario}>{u.nombre}</option>)}</select></div>
-        <div className="col-md-2"><label className="fw-bold">Fecha inicio</label><input type="date" className="form-control" value={inicio} onChange={(e) => setInicio(e.target.value)} /></div>
-        <div className="col-md-2"><label className="fw-bold">Fecha fin</label><input type="date" className="form-control" value={fin} onChange={(e) => setFin(e.target.value)} /></div>
-        <div className="col-md-2"><button className="btn btn-info fw-bold w-100" onClick={consultar} disabled={cargando}>{cargando ? 'CONSULTANDO...' : 'GENERAR REPORTE'}</button></div>
-        <div className="col-md-2"><button className="btn btn-outline-secondary fw-bold w-100" onClick={() => setVerHistorial(!verHistorial)}>HISTORIAL ({historial.length})</button></div>
-      </div>
-      {verHistorial && <div className="table-responsive mt-3"><table className="table table-sm table-striped"><thead><tr><th>Generado</th><th>Rango</th><th>Usuario</th><th>PDF</th></tr></thead><tbody>{historial.map((h) => <tr key={h.id_cuadre}><td>{new Date(h.fecha_generacion).toLocaleString('es-GT')}</td><td>{String(h.fecha_inicio).slice(0, 10)} al {String(h.fecha_fin).slice(0, 10)}</td><td>{h.generado_por}</td><td><button className="btn btn-sm btn-danger" onClick={() => descargarHistorico(h)}>Descargar PDF</button></td></tr>)}</tbody></table></div>}
-      {reporte && <><div className="row g-2 mt-3"><div className="col"><div className="alert alert-primary">Emitidas: <b>{reporte.totales.emitidas}</b></div></div><div className="col"><div className="alert alert-danger">Anuladas: <b>{reporte.totales.anuladas}</b></div></div><div className="col"><div className="alert alert-success">Total emitido: <b>{moneda(reporte.totales.total_emitido)}</b></div></div><div className="col"><div className="alert alert-warning">Neto: <b>{moneda(reporte.totales.neto)}</b></div></div></div>
-      <button className="btn btn-danger mb-3" onClick={guardarPdf}>Guardar y descargar PDF</button>
-      <div className="table-responsive"><table className="table table-bordered table-striped"><thead className="table-dark"><tr><th>Usuario</th><th>Emitidas</th><th>Anuladas</th><th>Correlativo inicial</th><th>Correlativo final</th><th>Total emitido</th><th>Total anulado</th><th>Neto</th></tr></thead><tbody>{reporte.resumen_usuarios.map((x) => <tr key={x.id_usuario}><td>{x.nombre_usuario}</td><td>{x.emitidas}</td><td>{x.anuladas}</td><td>{x.correlativo_inicial}</td><td>{x.correlativo_final}</td><td>{moneda(x.total_emitido)}</td><td>{moneda(x.total_anulado)}</td><td>{moneda(x.neto)}</td></tr>)}</tbody></table></div></>}
-    </div></div>
-  </div>;
-}
+        const detalle = rows || [];
+        const porUsuario = new Map();
+
+        detalle.forEach((fila) => {
+            const clave = Number(fila.id_usuario || 0);
+            if (!porUsuario.has(clave)) {
+                porUsuario.set(clave, {
+                    id_usuario: clave,
+                    nombre_usuario: fila.nombre_usuario,
+                    emitidas: 0,
+                    anuladas: 0,
+                    total_emitido: 0,
+                    total_anulado: 0,
+                    neto: 0,
+                    correlativo_inicial: null,
+                    correlativo_final: null
+                });
+            }
+
+            const item = porUsuario.get(clave);
+
+            if (fila.estado_factura === 'ANULADA') {
+                item.anuladas += 1;
+                item.total_anulado += Math.abs(Number(fila.total_cobrado || 0));
+            } else {
+                item.emitidas += 1;
+                item.total_emitido += Number(fila.total_cobrado || 0);
+            }
+
+            item.neto += Number(fila.total_cobrado || 0);
+            item.correlativo_inicial = item.correlativo_inicial || fila.correlativo;
+            item.correlativo_final = fila.correlativo;
+        });
+
+        const resumen = Array.from(porUsuario.values()).map((item) => ({
+            ...item,
+            total_emitido: Number(item.total_emitido.toFixed(2)),
+            total_anulado: Number(item.total_anulado.toFixed(2)),
+            neto: Number(item.neto.toFixed(2))
+        }));
+
+        const totales = resumen.reduce((acc, item) => ({
+            emitidas: acc.emitidas + item.emitidas,
+            anuladas: acc.anuladas + item.anuladas,
+            total_emitido: acc.total_emitido + item.total_emitido,
+            total_anulado: acc.total_anulado + item.total_anulado,
+            neto: acc.neto + item.neto
+        }), { emitidas: 0, anuladas: 0, total_emitido: 0, total_anulado: 0, neto: 0 });
+
+        return res.json({ fecha_inicio: inicio, fecha_fin: fin, resumen_usuarios: resumen, detalle, totales });
+    });
+});
+
+// Endpoint para obtener el historial de reportes generados
+router.get('/historial', (req, res) => {
+    db.query(`
+        SELECT h.id_cuadre, h.fecha_inicio, h.fecha_fin, h.filtro_estado, h.fecha_generacion,
+               COALESCE(u.nombre, 'Usuario no disponible') AS generado_por
+        FROM cuadre_fact_historial h 
+        LEFT JOIN usuarios u ON u.id_usuario = h.id_usuario_generador
+        ORDER BY h.fecha_generacion DESC, h.id_cuadre DESC 
+        LIMIT 100
+    `, (err, rows) => {
+        if (err) return res.status(500).send({ message: 'No se pudo consultar el historial.' });
+        return res.json(rows || []);
+    });
+});
+
+// Endpoint para guardar un nuevo cuadre en el historial
+router.post('/historial', (req, res) => {
+    const pdf = String(req.body.pdf_base64 || '').replace(/^data:application\/pdf;base64,/, '');
+    if (!pdf || !req.body.reporte) return res.status(400).send({ message: 'El PDF y el reporte son obligatorios.' });
+
+    db.query(`
+        INSERT INTO cuadre_fact_historial
+        (id_usuario_generador, fecha_inicio, fecha_fin, filtro_estado, filtro_usuario, reporte_json, pdf_base64)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+        Number(req.body.id_usuario_generador) || null,
+        req.body.fecha_inicio,
+        req.body.fecha_fin,
+        req.body.filtro_estado || 'todas',
+        Number(req.body.filtro_usuario) || null,
+        JSON.stringify(req.body.reporte),
+        pdf
+    ], (err, result) => {
+        if (err) return res.status(500).send({ message: 'No se pudo guardar el cuadre.' });
+        return res.status(201).json({ id_cuadre: result.insertId });
+    });
+});
+
+// Endpoint para descargar el PDF almacenado en el historial
+router.get('/historial/:id/pdf', (req, res) => {
+    db.query('SELECT pdf_base64 FROM cuadre_fact_historial WHERE id_cuadre = ? LIMIT 1', [req.params.id], (err, rows) => {
+        if (err) return res.status(500).send({ message: 'No se pudo recuperar el PDF.' });
+        if (!rows?.[0]?.pdf_base64) return res.status(404).send({ message: 'PDF no disponible.' });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="CuadreFacturacion_${req.params.id}.pdf"`);
+        return res.send(Buffer.from(rows[0].pdf_base64, 'base64'));
+    });
+});
+
+module.exports = router;
