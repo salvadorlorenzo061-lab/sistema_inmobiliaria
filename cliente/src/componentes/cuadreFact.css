@@ -1,0 +1,86 @@
+.cf-root { max-width: 1400px; }
+
+.cf-card { border-radius: 10px; overflow: hidden; }
+
+.cf-header {
+  background: linear-gradient(90deg, #17a2b8 0%, #138496 100%);
+  color: #fff;
+  padding: 1.25rem 1.5rem;
+}
+.cf-header h4 { font-weight: 700; letter-spacing: 0.2px; }
+.cf-header small { color: rgba(255, 255, 255, 0.85); }
+
+.cf-filtros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.9rem;
+  align-items: end;
+}
+.cf-campo label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: #445;
+  margin-bottom: 0.3rem;
+}
+.cf-acciones {
+  display: flex;
+  gap: 0.6rem;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+}
+.cf-acciones .btn { min-width: 170px; }
+
+.cf-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.9rem;
+  margin: 1.25rem 0;
+}
+.cf-kpi {
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+.cf-kpi span { font-size: 0.8rem; opacity: 0.9; }
+.cf-kpi b { font-size: 1.3rem; margin-top: 0.15rem; }
+.cf-kpi--emitidas { background: #0d6efd; }
+.cf-kpi--anuladas { background: #dc3545; }
+.cf-kpi--emitido { background: #198754; }
+.cf-kpi--anulado { background: #fd7e14; }
+.cf-kpi--neto { background: #ffc107; color: #212529; }
+
+.cf-subtitulo {
+  font-weight: 700;
+  color: #142d41;
+  border-left: 4px solid #17a2b8;
+  padding-left: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.cf-tabla thead th {
+  background: #142d41;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.82rem;
+  vertical-align: middle;
+}
+.cf-tabla tbody td { font-size: 0.86rem; }
+
+.cf-badge {
+  display: inline-block;
+  padding: 0.2em 0.55em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 50rem;
+}
+.cf-badge--emitida { background: #d1e7dd; color: #0f5132; }
+.cf-badge--anulada { background: #f8d7da; color: #842029; }
+
+@media (max-width: 768px) {
+  .cf-acciones { flex-direction: column; }
+  .cf-acciones .btn { width: 100%; }
+}

@@ -36,43 +36,50 @@ router.get('/reporte', (req, res) => {
     const filtros = ['DATE(fh.fecha_evento) BETWEEN ? AND ?'];
     const params = [inicio, fin];
     if (estado !== 'todas') {
-        filtros.push('UPPER(TRIM(fh.estado_factura)) = ?');
+        filtros.push("UPPER(TRIM(fh.estado_factura)) = ?");
         params.push(estado.toUpperCase());
     } else {
         filtros.push("UPPER(TRIM(fh.estado_factura)) IN ('EMITIDA', 'ANULADA')");
     }
     if (idUsuario > 0) {
-        filtros.push('COALESCE(fh.id_usuario, p.id_usuario) = ?');
+        filtros.push('COALESCE(fh.id_usuario, p_filtro.id_usuario) = ?');
         params.push(idUsuario);
     }
 
-    // Consulta directa sobre facturas_historial (mismo patron que
-    // pagos_detalle/reporte-facturas, que si funciona en produccion): GROUP BY
-    // sobre la tabla base y JOINs simples, sin tabla derivada anidada. Las
-    // columnas de pagos/usuarios van agregadas con MAX porque el JOIN es 1:1.
+    // Estrategia compatible con ONLY_FULL_GROUP_BY: primero se consolida cada
+    // factura en una tabla derivada (una fila por id_pago + estado), y luego se
+    // une a pagos/usuarios (relacion 1:1) sin necesidad de agregar columnas del
+    // JOIN. Asi se evita el error "Expression ... is not in GROUP BY clause".
     const sql = `
         SELECT
-            fh.id_pago,
-            COALESCE(fh.id_usuario, p.id_usuario) AS id_usuario,
-            COALESCE(MAX(u.nombre), CONCAT('Usuario #', COALESCE(fh.id_usuario, p.id_usuario)), 'Sin asignación') AS nombre_usuario,
-            UPPER(TRIM(fh.estado_factura)) AS estado_factura,
-            MAX(fh.fecha_evento) AS fecha_evento,
-            COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), CONCAT('PAGO-', fh.id_pago)) AS correlativo,
-            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(MAX(p.forma_pago), 'N/A') END AS forma_pago,
-            CASE WHEN UPPER(TRIM(fh.estado_factura)) = 'ANULADA'
-                 THEN -COALESCE(MAX(NULLIF(p.monto_total_pagado, 0)), SUM(COALESCE(fh.subtotal, 0)), 0)
-                 ELSE COALESCE(MAX(NULLIF(p.monto_total_pagado, 0)), SUM(COALESCE(fh.subtotal, 0)), 0)
+            doc.id_pago,
+            doc.id_usuario,
+            COALESCE(u.nombre, CONCAT('Usuario #', doc.id_usuario), 'Sin asignación') AS nombre_usuario,
+            doc.estado_factura,
+            doc.fecha_evento,
+            COALESCE(NULLIF(doc.correlativo, ''), p.no_referencia, CONCAT('PAGO-', doc.id_pago)) AS correlativo,
+            CASE WHEN doc.estado_factura = 'ANULADA' THEN 'ANULACION' ELSE COALESCE(p.forma_pago, 'N/A') END AS forma_pago,
+            CASE WHEN doc.estado_factura = 'ANULADA'
+                 THEN -COALESCE(NULLIF(p.monto_total_pagado, 0), doc.total_documento, 0)
+                 ELSE COALESCE(NULLIF(p.monto_total_pagado, 0), doc.total_documento, 0)
             END AS total_cobrado
-        FROM facturas_historial fh
-        LEFT JOIN pagos p ON p.id_pago = fh.id_pago
-        LEFT JOIN usuarios u ON u.id_usuario = COALESCE(fh.id_usuario, p.id_usuario)
-        WHERE ${filtros.join(' AND ')}
-        GROUP BY
-            fh.id_pago,
-            COALESCE(fh.id_usuario, p.id_usuario),
-            UPPER(TRIM(fh.estado_factura))
-        HAVING COALESCE(MAX(NULLIF(fh.correlativo, '')), MAX(p.no_referencia), '') COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%'
-        ORDER BY fecha_evento, fh.id_pago
+        FROM (
+            SELECT
+                fh.id_pago,
+                COALESCE(MAX(fh.id_usuario), MAX(p_filtro.id_usuario)) AS id_usuario,
+                UPPER(TRIM(MAX(fh.estado_factura))) AS estado_factura,
+                MAX(fh.fecha_evento) AS fecha_evento,
+                MAX(NULLIF(fh.correlativo, '')) AS correlativo,
+                SUM(COALESCE(fh.subtotal, 0)) AS total_documento
+            FROM facturas_historial fh
+            LEFT JOIN pagos p_filtro ON p_filtro.id_pago = fh.id_pago
+            WHERE ${filtros.join(' AND ')}
+            GROUP BY fh.id_pago, UPPER(TRIM(fh.estado_factura))
+        ) doc
+        LEFT JOIN pagos p ON p.id_pago = doc.id_pago
+        LEFT JOIN usuarios u ON u.id_usuario = doc.id_usuario
+        WHERE COALESCE(NULLIF(doc.correlativo, ''), p.no_referencia, '') COLLATE utf8mb4_general_ci NOT LIKE 'TMP-%'
+        ORDER BY doc.fecha_evento, doc.id_pago
     `;
 
     db.query(sql, params, (err, rows) => {
