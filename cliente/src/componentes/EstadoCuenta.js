@@ -59,7 +59,13 @@ const EstadoCuenta = () => {
     const contrato = estado.contrato;
     const capital = Math.max(Number(contrato.monto_total || 0) - Number(contrato.enganche || 0), 0);
     const cuotas = Math.max(Number(contrato.cuotas_pactadas || contrato.plazo_meses || 0), 0);
-    const tabla = generarTablaAmortizacion(capital, Number(contrato.interes_porcentaje || 0), cuotas);
+    const tabla = generarTablaAmortizacion(
+      capital,
+      Number(contrato.interes_porcentaje || 0),
+      cuotas,
+      0,
+      Number(contrato.monto_cuota || 0)
+    );
     const porCuota = new Map(tabla.map((fila) => [Number(fila.numero_cuota), fila]));
     const movimientos = (Array.isArray(estado.cuotasDetalle) ? estado.cuotasDetalle : [])
       .filter((item) => Number(item.numero_cuota || 0) > 0)

@@ -181,6 +181,19 @@ function Resoluciones_facturas() {
     .filter((proyecto) => String(proyecto?.id_empresa) === String(idEmpresa))
     .map((proyecto) => String(proyecto.id_proyecto));
 
+  const seleccionarTodasEmpresasYProyectos = () => {
+    setEmpresasSeleccionadas(empresasList.map((empresa) => String(empresa.id_empresa)));
+    setProyectosSeleccionados(proyectosList.map((proyecto) => String(proyecto.id_proyecto)));
+    setProyectosReasignar([]);
+  };
+
+  const manejarCambioRolResolucion = (nuevoRol) => {
+    setRol(nuevoRol);
+    if (String(nuevoRol || '').toLowerCase() === 'juridico') {
+      seleccionarTodasEmpresasYProyectos();
+    }
+  };
+
   // Devuelve la resolucion de OTRO usuario que ya tiene asignado el proyecto (o null).
   const obtenerAsignacionAjena = (proyecto) => {
     const idsGrupo = new Set((resolucionesEdicionGrupo || []).map((item) => Number(item?.id_resolucion)));
@@ -194,16 +207,16 @@ function Resoluciones_facturas() {
     }) || null;
   };
 
-  const proyectoBloqueado = (proyecto) => (
-    !!obtenerAsignacionAjena(proyecto) && !proyectosReasignar.includes(String(proyecto.id_proyecto))
-  );
+  const proyectoBloqueado = (proyecto) => rol !== 'juridico'
+    && !!obtenerAsignacionAjena(proyecto)
+    && !proyectosReasignar.includes(String(proyecto.id_proyecto));
 
   useEffect(() => {
     const bloqueados = new Set();
     const ajenos = new Set();
     proyectosList.forEach((proyecto) => {
       const id = String(proyecto.id_proyecto);
-      if (obtenerAsignacionAjena(proyecto)) {
+      if (rol !== 'juridico' && obtenerAsignacionAjena(proyecto)) {
         ajenos.add(id);
         if (!proyectosReasignar.includes(id)) bloqueados.add(id);
       }
@@ -213,7 +226,7 @@ function Resoluciones_facturas() {
     const rea = proyectosReasignar.filter((id) => ajenos.has(id));
     if (rea.length !== proyectosReasignar.length) setProyectosReasignar(rea);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id_usuario, Resoluciones_facturasList, proyectosList, resolucionesEdicionGrupo, proyectosReasignar, proyectosSeleccionados]);
+  }, [id_usuario, rol, Resoluciones_facturasList, proyectosList, resolucionesEdicionGrupo, proyectosReasignar, proyectosSeleccionados]);
 
   const reasignarProyecto = (idProyecto) => {
     const id = String(idProyecto);
@@ -279,9 +292,10 @@ function Resoluciones_facturas() {
       <div className="mb-3 border rounded p-2 bg-light">
         <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
         <small className="text-muted d-block mb-2">Marca los proyectos que podrá cobrar el usuario asignado.</small>
-        <div className="alert alert-warning py-1 px-2 small mb-2">
-          Un proyecto solo puede estar asignado a una persona para evitar cobros y correlativos duplicados. Las empresas sí pueden repetirse entre usuarios.
-          Si un proyecto ya está asignado a otra persona, usa "Asignar a este usuario" para quitárselo y pasarlo a este.
+        <div className={`alert ${rol === 'juridico' ? 'alert-info' : 'alert-warning'} py-1 px-2 small mb-2`}>
+          {rol === 'juridico'
+            ? 'Jurídico puede usar los proyectos de todas las empresas. Esta autorización no quita proyectos a los demás usuarios.'
+            : 'Un proyecto solo puede estar asignado a una persona para evitar cobros y correlativos duplicados. Si ya está asignado, usa "Asignar a este usuario" para transferirlo.'}
         </div>
         {proyectosPorEmpresaSeleccionada.map((grupo) => (
           <div key={`${prefijo}-proy-${grupo.id_empresa}`} className="mb-2">
@@ -296,17 +310,21 @@ function Resoluciones_facturas() {
                       className="form-check-input me-1"
                       type="checkbox"
                       id={`${prefijo}-chk-${proyecto.id_proyecto}`}
-                      disabled={!!ajena && !reasignando}
+                      disabled={proyectoBloqueado(proyecto)}
                       checked={proyectosSeleccionados.includes(String(proyecto.id_proyecto))}
                       onChange={() => toggleProyectoSeleccionado(proyecto.id_proyecto)}
                     />
                     <label className="form-check-label" htmlFor={`${prefijo}-chk-${proyecto.id_proyecto}`}>{proyecto.nombre} (ID: {proyecto.id_proyecto})</label>
                     {ajena && !reasignando && (
                       <>
-                        <span className="badge bg-danger">Ya asignado a {ajena.nombre_usuario || `Usuario #${ajena.id_usuario}`}</span>
-                        <button type="button" className="btn btn-sm btn-outline-primary py-0" disabled={!id_usuario} title={id_usuario ? '' : 'Seleccione primero el usuario'} onClick={() => reasignarProyecto(proyecto.id_proyecto)}>
-                          Asignar a este usuario
-                        </button>
+                        <span className={`badge ${rol === 'juridico' ? 'bg-info text-dark' : 'bg-danger'}`}>
+                          {rol === 'juridico' ? 'Compartido con' : 'Ya asignado a'} {ajena.nombre_usuario || `Usuario #${ajena.id_usuario}`}
+                        </span>
+                        {rol !== 'juridico' && (
+                          <button type="button" className="btn btn-sm btn-outline-primary py-0" disabled={!id_usuario} title={id_usuario ? '' : 'Seleccione primero el usuario'} onClick={() => reasignarProyecto(proyecto.id_proyecto)}>
+                            Asignar a este usuario
+                          </button>
+                        )}
                       </>
                     )}
                     {ajena && reasignando && (
@@ -837,7 +855,11 @@ function Resoluciones_facturas() {
     setFecha_autorizacion(toDateInputValue(val.fecha_autorizacion));
     setFecha_vencimiento(toDateInputValue(val.fecha_vencimiento));
     setEstado(val.estado);
-    setRol(String(val.rol || 'caja'));
+    const rolResolucion = String(val.rol || 'caja').toLowerCase();
+    setRol(rolResolucion);
+    if (rolResolucion === 'juridico') {
+      seleccionarTodasEmpresasYProyectos();
+    }
     setResolucionesEdicionGrupo(resolucionesGrupo);
     setShowEditModal(true);
   };
@@ -1020,7 +1042,11 @@ function Resoluciones_facturas() {
                       );
                     })}
                   </div>
-                  <small className="text-muted">Si marcas checkboxes, se creará una resolución por cada empresa seleccionada.</small>
+                  <small className={rol === 'juridico' ? 'text-warning d-block' : 'text-muted'}>
+                    {rol === 'juridico'
+                      ? 'Se incluirán todas las empresas y proyectos. La resolución se registrará por empresa; confirma que su autorización aplica a cada una.'
+                      : 'Si marcas checkboxes, se creará una resolución por cada empresa seleccionada.'}
+                  </small>
                 </div>
                 {renderProyectosPorEmpresa('reg')}
                 <div className="mb-3">
@@ -1069,7 +1095,7 @@ function Resoluciones_facturas() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Rol para uso de correlativos:</label>
-                  <select value={rol} onChange={(e) => setRol(e.target.value)} className="form-select">
+                  <select value={rol} onChange={(e) => manejarCambioRolResolucion(e.target.value)} className="form-select">
                     <option value="caja">Caja</option>
                     <option value="juridico">Juridico</option>
                     <option value="ambos">Ambos</option>
@@ -1126,7 +1152,11 @@ function Resoluciones_facturas() {
                       );
                     })}
                   </div>
-                  <small className="text-muted">Puedes marcar varias empresas; se asignará sin duplicar resoluciones existentes.</small>
+                  <small className={rol === 'juridico' ? 'text-warning d-block' : 'text-muted'}>
+                    {rol === 'juridico'
+                      ? 'Se incluirán todas las empresas y proyectos. La resolución se registrará por empresa; confirma que su autorización aplica a cada una.'
+                      : 'Puedes marcar varias empresas; se asignará sin duplicar resoluciones existentes.'}
+                  </small>
                 </div>
                 {renderProyectosPorEmpresa('edit')}
                 <div className="mb-3">
@@ -1174,7 +1204,7 @@ function Resoluciones_facturas() {
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-bold">Rol para uso de correlativos:</label>
-                  <select value={rol} onChange={(e) => setRol(e.target.value)} className="form-select">
+                  <select value={rol} onChange={(e) => manejarCambioRolResolucion(e.target.value)} className="form-select">
                     <option value="caja">Caja</option>
                     <option value="juridico">Juridico</option>
                     <option value="ambos">Ambos</option>

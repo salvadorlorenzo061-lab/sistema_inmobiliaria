@@ -196,7 +196,13 @@ const EstadoCuenta = () => {
     const engancheContrato = Math.max(Number(contrato.enganche || 0), 0);
     const interesAnualContrato = Math.max(Number(contrato.interes_porcentaje || 0), 0);
     const capitalFinanciado = Math.max(montoTotalContrato - engancheContrato, 0);
-    const tablaAmortizacion = generarTablaAmortizacion(capitalFinanciado, interesAnualContrato, cuotasPactadas);
+    const tablaAmortizacion = generarTablaAmortizacion(
+      capitalFinanciado,
+      interesAnualContrato,
+      cuotasPactadas,
+      0,
+      Number(contrato.monto_cuota || 0)
+    );
     const montoCuota = Number(contrato.monto_cuota || 0) || calcularCuotaFija(capitalFinanciado, interesAnualContrato, cuotasPactadas);
     const ultimaCuota = Number(tablaAmortizacion[tablaAmortizacion.length - 1]?.cuota_estimada || montoCuota || 0);
     const totalConIntereses = Number(tablaAmortizacion.reduce((total, fila) => total + Number(fila?.cuota_estimada || 0), engancheContrato).toFixed(2));

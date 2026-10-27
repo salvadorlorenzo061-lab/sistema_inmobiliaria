@@ -168,8 +168,8 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   const capRest   = mTotal - enganche;
   const intPct    = parseFloat(datosContrato.interes_porcentaje) || 14;
   const nCuotas   = parseInt(datosContrato.plazo_meses || datosContrato.cuotas_pactadas) || 60;
-  const tablaAmortizacion = generarTablaAmortizacion(capRest, intPct, nCuotas);
   const vCuota    = parseFloat(datosContrato.monto_cuota) || calcularCuotaFija(capRest, intPct, nCuotas);
+  const tablaAmortizacion = generarTablaAmortizacion(capRest, intPct, nCuotas, 0, vCuota);
   const ultCuota  = Number(tablaAmortizacion[tablaAmortizacion.length - 1]?.cuota_estimada || vCuota || 0);
   const totalCInt = tablaAmortizacion.length
     ? tablaAmortizacion.reduce((sum, fila) => sum + Number(fila.cuota_estimada || 0), 0)

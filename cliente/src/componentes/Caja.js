@@ -207,7 +207,7 @@ const Caja = () => {
             interesPorcentaje,
             cuotasPactadas,
             0,
-            tieneConvenioActivo ? cuotaRegularGuardada : 0
+            cuotaRegularGuardada
         );
         const tablaAmortizacion = tieneConvenioActivo
             ? tablaContratoCompleta

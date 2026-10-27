@@ -79,6 +79,7 @@ const guardarProyectosResolucion = (idResolucion, idEmpresa, proyectosIds, callb
 // pueden repetirse). Si llega en `reasignar_proyectos`, se le quita al otro usuario.
 const validarProyectosExclusivos = (req, res, next) => {
     const body = req.body || {};
+    if (String(body.rol || '').trim().toLowerCase() === 'juridico') return next();
     if (!Array.isArray(body.proyectos_ids)) return next();
 
     const idUsuario = Number(body.id_usuario);

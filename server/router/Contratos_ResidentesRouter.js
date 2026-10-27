@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
-const { calcularCuotaPlana, calcularTotalPlanPlano, sqlCuotaPlana, sqlTotalPlanPlano } = require('../utils/amortizacion');
+const { calcularTotalPlanPlano, resolverCuotaFijaPlan, sqlCuotaPlana, sqlTotalPlanPlano } = require('../utils/amortizacion');
 
 const EXT_TO_MIME = {
     '.pdf': 'application/pdf',
@@ -64,20 +64,11 @@ const ensureFileExtension = (filename = '', mimeType = '', fallbackBase = 'archi
     return `${baseName || fallbackBase}${inferredExt}`;
 };
 
-// Unica formula del sistema: plan lineal oficial (capital fijo + interes fijo
-// por mes, identico al de las tablas PDF), ver server/utils/amortizacion.js.
-const calcularCuotaFijaContrato = (capital = 0, tasaAnual = 0, cuotas = 0) => (
-    calcularCuotaPlana(capital, tasaAnual, cuotas)
-);
-
-const normalizarCuotaContrato = (_cuotaManual = 0, capital = 0, tasaAnual = 0, cuotas = 0) => {
+const normalizarCuotaContrato = (cuotaManual = 0, capital = 0, tasaAnual = 0, cuotas = 0) => {
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     const principal = Math.max(Number(capital || 0), 0);
     const tasa = Math.max(Number(tasaAnual || 0), 0);
-    // La cuota contractual nunca se toma de un valor manual anterior: se
-    // deriva siempre de capital, tasa y plazo para que Contratos, Caja y PDF
-    // reproduzcan exactamente el mismo plan.
-    return calcularCuotaFijaContrato(principal, tasa, plazo);
+    return resolverCuotaFijaPlan(principal, tasa, plazo, cuotaManual);
 };
 
 const normalizeMesInicioPagos = (value, fallback = 1) => {
@@ -809,9 +800,8 @@ const backfillVentasPropiedad = () => {
     });
 };
 
-// Migra todos los contratos financiados históricos al plan lineal oficial.
-// No conserva cuotas manuales: capital, tasa y plazo son la fuente de verdad.
-const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
+// Completa cuotas históricas faltantes sin reemplazar montos pactados manualmente.
+const completarCuotasFaltantesExistentes = (callback = () => {}) => {
     const cuotasSql = 'COALESCE(NULLIF(c.cuotas_pactadas, 0), NULLIF(c.plazo_meses, 0), 1)';
     const capitalSql = 'GREATEST(ROUND(COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0), 2), 0)';
     const cuotaPlanaSql = sqlCuotaPlana(capitalSql, 'c.interes_porcentaje', cuotasSql);
@@ -821,13 +811,13 @@ const normalizarCuotasAutomaticasExistentes = (callback = () => {}) => {
         WHERE ${cuotasSql} > 0
           AND ${capitalSql} > 0
           AND LOWER(COALESCE(c.modalidad_pago, 'financiado')) <> 'contado'
-          AND ABS(COALESCE(c.monto_cuota, 0) - ${cuotaPlanaSql}) >= 0.01
+          AND COALESCE(c.monto_cuota, 0) <= 0
     `, (err, result) => {
         if (err) {
-            console.error('Error normalizando cuotas automáticas existentes:', err.message);
+            console.error('Error completando cuotas faltantes existentes:', err.message);
             return callback(err);
         }
-        console.log(`Cuotas automáticas existentes normalizadas: ${result?.affectedRows || 0}`);
+        console.log(`Cuotas faltantes completadas: ${result?.affectedRows || 0}`);
         return callback(null);
     });
 };
@@ -1080,7 +1070,7 @@ ensureProyectoColumn();
 ensureFormatoContratoColumn();
 ensureInteresPorcentajeColumn();
 ensureFinancialContractColumns();
-normalizarCuotasAutomaticasExistentes(() => backfillSaldoPendienteContrato());
+completarCuotasFaltantesExistentes(() => backfillSaldoPendienteContrato());
 ensurePropertyContractColumns((propertyErr) => {
     if (propertyErr) return console.error('No se pudieron preparar las columnas de propiedad:', propertyErr.message);
     ensureVentasPropiedadSchema((ventasErr) => {
