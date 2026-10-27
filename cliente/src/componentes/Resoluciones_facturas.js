@@ -434,6 +434,38 @@ function Resoluciones_facturas() {
       }
     });
 
+    // Proyectos asignados por empresa (sin filas guardadas = todos los de la empresa).
+    const resolucionesGrupoPdf = (Array.isArray(Resoluciones_facturasList) ? Resoluciones_facturasList : [])
+      .filter((item) => val?.resoluciones_ids?.includes(Number(item?.id_resolucion)));
+    const filasProyectos = [];
+    resolucionesGrupoPdf.forEach((item) => {
+      const guardados = String(item?.proyectos_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+      const proyectosEmpresa = proyectosList.filter((p) => String(p?.id_empresa) === String(item?.id_empresa));
+      const asignados = guardados.length
+        ? proyectosEmpresa.filter((p) => guardados.includes(String(p.id_proyecto)))
+        : proyectosEmpresa;
+      asignados.forEach((p) => {
+        filasProyectos.push([getNombreEmpresa(item?.id_empresa), `${p.nombre} (ID: ${p.id_proyecto})`]);
+      });
+    });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(40, 40, 40);
+    const tituloProyectosY = doc.lastAutoTable.finalY + 10;
+    doc.text("PROYECTOS ASIGNADOS", 14, tituloProyectosY);
+
+    autoTable(doc, {
+      startY: tituloProyectosY + 3,
+      head: [['EMPRESA', 'PROYECTO']],
+      body: filasProyectos.length
+        ? filasProyectos
+        : [[{ content: 'Sin proyectos asignados.', colSpan: 2, styles: { halign: 'center' } }]],
+      theme: 'striped',
+      headStyles: { fillColor: [41, 128, 185], fontSize: 9.5, halign: 'left' },
+      styles: { fontSize: 9, cellPadding: 3 }
+    });
+
     const finalY = doc.lastAutoTable.finalY + 12;
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8);
