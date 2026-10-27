@@ -37,6 +37,7 @@ export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
   const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
 
   if (principal <= 0 || plazo <= 0) return 0;
+  if (tasa <= 0) return redondearMoneda(principal / plazo);
 
   const interesTotal = principal * (tasa / 100) * (plazo / 12);
   return Math.ceil((principal + interesTotal) / plazo);
@@ -47,7 +48,9 @@ export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
 const resolverCuotaFijaPlan = (principal, tasa, plazo, cuotaPersonalizada = 0) => {
   const calculada = calcularCuotaFija(principal, tasa, plazo);
   const totalFinanciado = principal + principal * (Math.max(numeroSeguro(tasa, 0), 0) / 100) * (plazo / 12);
-  const personalizada = Math.round(Math.max(numeroSeguro(cuotaPersonalizada, 0), 0));
+  const personalizada = numeroSeguro(tasa, 0) <= 0
+    ? redondearMoneda(Math.max(numeroSeguro(cuotaPersonalizada, 0), 0))
+    : Math.round(Math.max(numeroSeguro(cuotaPersonalizada, 0), 0));
   const personalizadaValida = personalizada > 0
     && (plazo <= 1 || personalizada * (plazo - 1) < totalFinanciado);
   return personalizadaValida ? personalizada : calculada;
@@ -74,8 +77,9 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
     const capitalCuota = esUltimaCuota
       ? redondearMoneda(saldo)
       : redondearMoneda(Math.min(capitalRegular, saldo));
-    const pago = cuotaFija;
-    const interesMes = redondearMoneda(Math.max(pago - capitalCuota, 0));
+    // Sin interes la ultima cuota es el saldo residual exacto.
+    const pago = tasa <= 0 && esUltimaCuota ? capitalCuota : cuotaFija;
+    const interesMes = tasa <= 0 ? 0 : redondearMoneda(Math.max(pago - capitalCuota, 0));
     const saldoFinal = redondearMoneda(Math.max(saldo - capitalCuota, 0));
     interesAcumulado = redondearMoneda(interesAcumulado + interesMes);
 
@@ -100,5 +104,6 @@ export const calcularTotalPlanPlano = (capital, tasaAnual, cuotas) => {
   const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
   const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
   if (principal <= 0 || plazo <= 0) return 0;
+  if (numeroSeguro(tasaAnual, 0) <= 0) return principal;
   return redondearMoneda(calcularCuotaFija(principal, tasaAnual, plazo) * plazo);
 };

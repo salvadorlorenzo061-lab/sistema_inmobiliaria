@@ -1402,7 +1402,7 @@ router.get("/meses-pendientes", (req, res) => {
                 let cuotasPendientesContrato = 0;
 
                 const cuotasRestantesPorSaldo = (montoCuota > 0 && saldoPendiente > 0)
-                    ? Math.ceil(saldoPendiente / montoCuota)
+                    ? Math.max(Math.ceil((saldoPendiente - 0.5) / montoCuota), 1)
                     : 0;
 
                 if (tieneConvenioActivo) {
@@ -2455,7 +2455,7 @@ router.post("/procesar-pago", bloquearCobroSiExisteMora, (req, res) => {
             // El flujo cobrable nunca puede superar las cuotas pactadas del contrato.
             const cuotasRestantesContrato = (cuotaBaseParaSaldo > 0 && saldoActual > 0)
                 ? Math.min(
-                    Math.max(Math.ceil(saldoActual / cuotaBaseParaSaldo), 1),
+                    Math.max(Math.ceil((saldoActual - 0.5) / cuotaBaseParaSaldo), 1),
                     Math.max(cuotasBaseInteres, 1)
                 )
                 : Math.max(mesesAProcesar.length, 1);
