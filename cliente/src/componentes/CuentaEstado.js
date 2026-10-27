@@ -393,8 +393,24 @@ const CuentaEstado = () => {
       };
       return [filaEnganche, ...tabla];
     }
+    // Simulacion libre: se muestra el enganche escrito en el formulario.
+    const engancheManual = toNumber(engancheRegistrado, 0);
+    if (!contrato && simulacion && engancheManual > 0 && tabla.length) {
+      const capitalManual = toNumber(simulacion.capital_restante, 0);
+      return [{
+        indice: 0,
+        numero_cuota: 0,
+        saldo_inicial: capitalManual,
+        capital_cuota: 0,
+        interes_mes: 0,
+        cuota_estimada: engancheManual,
+        saldo_final: capitalManual,
+        interes_acumulado: 0,
+        estado: 'PENDIENTE'
+      }, ...tabla];
+    }
     return tabla;
-  }, [simulacion, contrato]);
+  }, [simulacion, contrato, engancheRegistrado]);
 
   const generarCuotasPactadasEnCaja = async () => {
     if (!contrato?.id_contrato || !simulacion || !tablaAmortizacionPendiente.length) {
