@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { getLogoValidation, leerImagenComoBase64, generarPdfListadoConLogo } from '../utils/catalogoLogoPdf';
+import { getLogoValidation, leerImagenComoBase64, generarPdfFicha } from '../utils/catalogoLogoPdf';
 
 function Proyecto() {
   const [proyectos, setProyectos] = useState([]);
@@ -66,15 +66,29 @@ function Proyecto() {
     </div>
   );
 
-  const exportarPdf = () => {
-    generarPdfListadoConLogo({
-      titulo: 'LISTADO DE PROYECTOS',
-      encabezados: ['ID', 'Proyecto', 'NIT', 'Empresa', 'Estado'],
-      filas: proyectosFiltrados.map((item) => ({
-        logo: item.logo,
-        celdas: [`#${item.id_proyecto}`, item.nombre || '', item.nit || '', item.nombre_empresa || 'Sin empresa', String(item.estado || 'activo').toUpperCase()]
-      })),
-      nombreArchivo: 'Listado_Proyectos.pdf'
+  const exportarPdf = async (item) => {
+    let servicios = [];
+    try {
+      const res = await Axios.get(`${API_URL}/servicios/${item.id_proyecto}`);
+      servicios = Array.isArray(res.data?.servicios) ? res.data.servicios : [];
+    } catch (error) {
+      console.error('No se pudieron cargar los servicios para el PDF:', error);
+    }
+
+    generarPdfFicha({
+      titulo: 'REPORTE DE PROYECTO',
+      logo: item.logo,
+      datos: [
+        ['ID proyecto', `#${item.id_proyecto}`],
+        ['Proyecto', item.nombre],
+        ['NIT', item.nit],
+        ['Empresa', item.nombre_empresa || 'Sin empresa'],
+        ['Estado', String(item.estado || 'activo').toUpperCase()]
+      ],
+      tablaTitulo: 'Servicios asignados',
+      tablaEncabezados: ['Servicio', 'Costo'],
+      tablaFilas: servicios.map((s) => [s.nombre_servicio, `Q ${Number(s.costo_servicio || 0).toFixed(2)}`]),
+      nombreArchivo: `Proyecto_${item.id_proyecto}.pdf`
     });
   };
 
@@ -282,9 +296,6 @@ function Proyecto() {
             </div>
           </div>
           <div className="col-md-3 text-end">
-            <button className="btn btn-outline-danger fw-bold w-100 mb-2" onClick={exportarPdf}>
-              📄 PDF
-            </button>
             <button
               className="btn btn-success fw-bold w-100"
               onClick={() => {
@@ -333,6 +344,7 @@ function Proyecto() {
                 <td>
                   <div className="d-flex gap-1">
                     <button className="btn btn-info btn-sm fw-bold" onClick={() => abrirEditarModal(item)}>EDITAR</button>
+                    <button className="btn btn-outline-danger btn-sm fw-bold" onClick={() => exportarPdf(item)}>PDF</button>
                     <button className="btn btn-primary btn-sm fw-bold" onClick={() => abrirServiciosModal(item)}>SERVICIOS</button>
                     <button className="btn btn-danger btn-sm fw-bold" onClick={() => eliminarProyecto(item)}>ELIMINAR</button>
                   </div>

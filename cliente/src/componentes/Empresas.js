@@ -3,7 +3,7 @@ import Axios from "axios";
 import { API_BASE_URL } from '../config';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
-import { generarPdfListadoConLogo } from '../utils/catalogoLogoPdf';
+import { generarPdfFicha } from '../utils/catalogoLogoPdf';
 
 const getLogoValidation = (logoData = "") => {
   if (!logoData) {
@@ -260,23 +260,32 @@ function Empresas() {
   const empresasPaginadas = empresasFiltradas.slice(startIndex, endIndex);
 
   // Resetear página cuando se busca
-  const exportarPdf = () => {
-    generarPdfListadoConLogo({
-      titulo: 'LISTADO DE EMPRESAS',
-      encabezados: ['ID', 'Nombre corporativo', 'NIT', 'Tipo', 'País', 'Moneda', 'Estado'],
-      filas: empresasFiltradas.map((item) => ({
-        logo: item.logo,
-        celdas: [
-          `#${item.id_empresa}`,
-          String(item.nombre_empresa || '').toUpperCase(),
-          item.nit || 'C/F',
-          item.id_empresa_matriz ? 'PROYECTO' : 'MATRIZ',
-          item.pais || '',
-          item.moneda || '',
-          String(item.estado || '').toUpperCase()
-        ]
-      })),
-      nombreArchivo: 'Listado_Empresas.pdf'
+  const exportarPdf = async (item) => {
+    let proyectos = [];
+    try {
+      const res = await Axios.get(`${API_BASE_URL}/api/proyectos`);
+      proyectos = (Array.isArray(res.data) ? res.data : []).filter((p) => String(p.id_empresa) === String(item.id_empresa));
+    } catch (error) {
+      console.error('No se pudieron cargar los proyectos para el PDF:', error);
+    }
+
+    generarPdfFicha({
+      titulo: 'REPORTE DE EMPRESA',
+      logo: item.logo,
+      datos: [
+        ['ID empresa', `#${item.id_empresa}`],
+        ['Nombre corporativo', String(item.nombre_empresa || '').toUpperCase()],
+        ['NIT', item.nit || 'C/F'],
+        ['Tipo', item.id_empresa_matriz ? 'PROYECTO' : 'MATRIZ'],
+        ['Empresa matriz', obtenerNombreMatriz(item)],
+        ['País', item.pais],
+        ['Moneda', item.moneda],
+        ['Estado', String(item.estado || '').toUpperCase()]
+      ],
+      tablaTitulo: 'Proyectos de la empresa',
+      tablaEncabezados: ['ID', 'Proyecto', 'NIT', 'Estado'],
+      tablaFilas: proyectos.map((p) => [`#${p.id_proyecto}`, p.nombre, p.nit, String(p.estado || '').toUpperCase()]),
+      nombreArchivo: `Empresa_${item.id_empresa}.pdf`
     });
   };
   const handleBusquedaChange = (e) => {
@@ -306,9 +315,6 @@ function Empresas() {
             </div>
           </div>
           <div className="col-md-3 text-end">
-            <button className="btn btn-outline-danger fw-bold w-100 mb-2" onClick={exportarPdf}>
-              📄 PDF
-            </button>
             <button 
               className="btn btn-info fw-bold w-100 text-dark" 
               onClick={() => { limpiarCampos(); setShowRegModal(true); }}
@@ -368,6 +374,7 @@ function Empresas() {
                 <td>
                   <div className="btn-group" role="group">
                     <button type="button" onClick={() => abrirEditarModal(val)} className="btn btn-warning btn-sm m-1 fw-bold text-dark">EDITAR</button>
+                    <button type="button" onClick={() => exportarPdf(val)} className="btn btn-outline-danger btn-sm m-1 fw-bold">PDF</button>
                     <button type="button" onClick={() => deleteEmpresa(val)} className="btn btn-danger btn-sm m-1 fw-bold">ELIMINAR</button>
                   </div>
                 </td>

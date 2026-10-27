@@ -32,40 +32,51 @@ const formatoImagenPdf = (dataUrl) => {
   return f === 'JPG' ? 'JPEG' : f;
 };
 
-// filas: [{ logo, celdas: [...] }]; la primera columna del PDF es el logo.
-export const generarPdfListadoConLogo = ({ titulo, encabezados, filas, nombreArchivo }) => {
-  const doc = new jsPDF('l', 'mm', 'letter');
+// datos: [[etiqueta, valor]]; tabla opcional con detalle relacionado.
+export const generarPdfFicha = ({ titulo, logo, datos, tablaTitulo, tablaEncabezados, tablaFilas, nombreArchivo }) => {
+  const doc = new jsPDF('p', 'mm', 'letter');
   const pageWidth = doc.internal.pageSize.getWidth();
+
+  if (logo && getLogoValidation(logo).isValid) {
+    try {
+      doc.addImage(logo, formatoImagenPdf(logo), 14, 10, 36, 22, undefined, 'FAST');
+    } catch {
+      // logo ilegible: se omite
+    }
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(28, 46, 64);
-  doc.text('GRUPO DE INVERSIONES', pageWidth / 2, 14, { align: 'center' });
+  doc.text('GRUPO DE INVERSIONES', pageWidth / 2, 18, { align: 'center' });
   doc.setFontSize(12);
-  doc.text(titulo, pageWidth / 2, 21, { align: 'center' });
+  doc.text(titulo, pageWidth / 2, 26, { align: 'center' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-GT')}   |   Registros: ${filas.length}`, pageWidth / 2, 26, { align: 'center' });
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-GT')}`, pageWidth - 14, 12, { align: 'right' });
 
   autoTable(doc, {
-    startY: 30,
-    head: [['Logo', ...encabezados]],
-    body: filas.map((fila) => ['', ...fila.celdas]),
+    startY: 38,
+    body: datos.map(([etiqueta, valor]) => [etiqueta, String(valor ?? '')]),
     theme: 'grid',
-    headStyles: { fillColor: [28, 46, 64], fontSize: 8 },
-    styles: { fontSize: 8, valign: 'middle', minCellHeight: 14 },
-    columnStyles: { 0: { cellWidth: 24 } },
-    didDrawCell: (data) => {
-      if (data.section !== 'body' || data.column.index !== 0) return;
-      const logo = filas[data.row.index]?.logo;
-      if (!logo || !getLogoValidation(logo).isValid) return;
-      try {
-        doc.addImage(logo, formatoImagenPdf(logo), data.cell.x + 2, data.cell.y + 1.5, 20, 11, undefined, 'FAST');
-      } catch {
-        // logo ilegible: se deja la celda vacia
-      }
-    }
+    styles: { fontSize: 9, cellPadding: 2.5 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, fillColor: [244, 246, 248] } }
   });
+
+  if (Array.isArray(tablaFilas)) {
+    const y = doc.lastAutoTable.finalY + 10;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(tablaTitulo || 'Detalle', 14, y);
+    autoTable(doc, {
+      startY: y + 3,
+      head: [tablaEncabezados],
+      body: tablaFilas.length ? tablaFilas : [[{ content: 'Sin registros.', colSpan: tablaEncabezados.length, styles: { halign: 'center' } }]],
+      theme: 'grid',
+      headStyles: { fillColor: [28, 46, 64], fontSize: 8 },
+      styles: { fontSize: 8 }
+    });
+  }
 
   doc.save(nombreArchivo);
 };
