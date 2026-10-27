@@ -27,18 +27,23 @@ const calcularInteresFijoMensual = (capital = 0, tasaAnual = 0) => {
     return redondear2((principal * (tasa / 100)) / 12);
 };
 
-// Cuota fija mensual: techo((capital + interes total del plan) / cuotas).
-// Con tasa 0% equivale a techo(capital / cuotas).
-const calcularCuotaPlana = (capital = 0, tasaAnual = 0, cuotas = 0) => {
+// Total exacto del plan: capital + interes total (sin redondear cuotas).
+const calcularTotalExactoPlan = (capital = 0, tasaAnual = 0, cuotas = 0) => {
     const principal = redondear2(Math.max(toNumber(capital, 0), 0));
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     const tasa = Math.max(toNumber(tasaAnual, 0), 0);
-
     if (principal <= 0 || plazo <= 0) return 0;
-    if (tasa <= 0) return redondear2(principal / plazo);
+    return redondear2(principal + principal * (tasa / 100) * (plazo / 12));
+};
 
-    const interesTotal = principal * (tasa / 100) * (plazo / 12);
-    return Math.ceil((principal + interesTotal) / plazo);
+// Cuota fija mensual ENTERA: piso(total del plan / cuotas). La ultima cuota
+// absorbe el residuo con decimales.
+const calcularCuotaPlana = (capital = 0, tasaAnual = 0, cuotas = 0) => {
+    const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+    const total = calcularTotalExactoPlan(capital, tasaAnual, plazo);
+    if (total <= 0 || plazo <= 0) return 0;
+    const entera = Math.floor(total / plazo);
+    return entera > 0 ? entera : redondear2(total / plazo);
 };
 
 // Una cuota personalizada (pactada manualmente) solo se respeta si amortiza
@@ -48,10 +53,8 @@ const resolverCuotaFijaPlan = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaPers
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     const tasa = Math.max(toNumber(tasaAnual, 0), 0);
     const calculada = calcularCuotaPlana(principal, tasa, plazo);
-    const totalFinanciado = principal + (principal * (tasa / 100) * (plazo / 12));
-    const personalizada = tasa <= 0
-        ? redondear2(Math.max(toNumber(cuotaPersonalizada, 0), 0))
-        : Math.round(Math.max(toNumber(cuotaPersonalizada, 0), 0));
+    const totalFinanciado = calcularTotalExactoPlan(principal, tasa, plazo);
+    const personalizada = Math.round(Math.max(toNumber(cuotaPersonalizada, 0), 0));
     const personalizadaValida = personalizada > 0
         && (plazo <= 1 || personalizada * (plazo - 1) < totalFinanciado);
     return personalizadaValida ? personalizada : calculada;
@@ -67,7 +70,8 @@ const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial 
     if (principal <= 0 || plazo <= 0) return [];
 
     const cuotaFija = resolverCuotaFijaPlan(principal, tasa, plazo, cuotaPersonalizada);
-    const capitalRegular = redondear2(principal / plazo);
+    const totalPlan = calcularTotalExactoPlan(principal, tasa, plazo);
+    const capitalRegular = tasa <= 0 ? cuotaFija : redondear2(principal / plazo);
     const tabla = [];
     let saldo = principal;
     let interesAcumulado = 0;
@@ -77,9 +81,9 @@ const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial 
         const capitalCuota = esUltima
             ? redondear2(saldo)
             : redondear2(Math.min(capitalRegular, saldo));
-        // Sin interes la ultima cuota es el saldo residual exacto.
-        const pago = tasa <= 0 && esUltima ? capitalCuota : cuotaFija;
-        const interesMes = tasa <= 0 ? 0 : redondear2(Math.max(pago - capitalCuota, 0));
+        // La ultima cuota recarga el residuo decimal del plan.
+        const pago = esUltima ? redondear2(totalPlan - cuotaFija * (plazo - 1)) : cuotaFija;
+        const interesMes = redondear2(Math.max(pago - capitalCuota, 0));
         const saldoFinal = redondear2(Math.max(saldo - capitalCuota, 0));
         interesAcumulado = redondear2(interesAcumulado + interesMes);
 
@@ -99,21 +103,17 @@ const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial 
     return tabla;
 };
 
-// Total del plan: cuota absoluta fija x numero de cuotas.
-const calcularTotalPlanPlano = (capital = 0, tasaAnual = 0, cuotas = 0) => {
-    const principal = redondear2(Math.max(toNumber(capital, 0), 0));
-    const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
-    if (principal <= 0 || plazo <= 0) return 0;
-    if (toNumber(tasaAnual, 0) <= 0) return principal;
-    return redondear2(calcularCuotaPlana(principal, tasaAnual, plazo) * plazo);
-};
+// Total del plan: capital + interes total exacto.
+const calcularTotalPlanPlano = (capital = 0, tasaAnual = 0, cuotas = 0) => (
+    calcularTotalExactoPlan(capital, tasaAnual, cuotas)
+);
 
 // Expresion SQL (MySQL) de la cuota plana, para migraciones de monto_cuota.
 const sqlCuotaPlana = (capitalExpr, tasaAnualExpr, cuotasExpr) => {
     const tasa = `COALESCE(${tasaAnualExpr}, 0)`;
     const n = `GREATEST(COALESCE((${cuotasExpr}), 1), 1)`;
     const p = `GREATEST(COALESCE((${capitalExpr}), 0), 0)`;
-    return `IF(${tasa} <= 0, ROUND(${p} / ${n}, 2), CEIL((${p} + (${p} * ${tasa} / 100 * (${n} / 12))) / ${n}))`;
+    return `GREATEST(FLOOR(ROUND(${p} + ${p} * ${tasa} / 100 * (${n} / 12), 2) / ${n}), 1)`;
 };
 
 // Total del plan en SQL: cuota absoluta fija x numero de cuotas.
@@ -121,7 +121,7 @@ const sqlTotalPlanPlano = (capitalExpr, tasaAnualExpr, cuotasExpr) => {
     const tasa = `COALESCE(${tasaAnualExpr}, 0)`;
     const n = `GREATEST(COALESCE((${cuotasExpr}), 1), 1)`;
     const p = `GREATEST(COALESCE((${capitalExpr}), 0), 0)`;
-    return `IF(${tasa} <= 0, ROUND(${p}, 2), ROUND(${sqlCuotaPlana(p, tasa, n)} * ${n}, 2))`;
+    return `ROUND(${p} + ${p} * ${tasa} / 100 * (${n} / 12), 2)`;
 };
 
 module.exports = {
@@ -129,6 +129,7 @@ module.exports = {
     redondear2,
     calcularInteresFijoMensual,
     calcularCuotaPlana,
+    calcularTotalExactoPlan,
     resolverCuotaFijaPlan,
     generarTablaPlana,
     calcularTotalPlanPlano,

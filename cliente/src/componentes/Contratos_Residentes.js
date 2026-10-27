@@ -402,9 +402,8 @@ function Contratos_Residentes() {
   const montoCuotaCalculado = calcularMontoCuotaContrato(monto_total, enganche, interes_porcentaje, cuotas_pactadas, plazo_meses);
   const montoCuotaGuardable = (() => {
     const manual = Number(String(monto_cuota_manual || '').trim());
-    const sinInteres = !(Number(interes_porcentaje || 0) > 0);
-    if (Number.isFinite(manual) && manual > 0) return sinInteres ? redondearMoneda(manual) : Math.round(manual);
-    return sinInteres ? redondearMoneda(montoCuotaCalculado) : Math.ceil(Number(montoCuotaCalculado || 0));
+    if (Number.isFinite(manual) && manual > 0) return Math.round(manual);
+    return Math.round(Number(montoCuotaCalculado || 0));
   })();
   const inicioPagosAutomatico = obtenerInicioPagosAutomatico(fecha_compra, fecha_firma);
   const cuotasCalculadasNumero = parseInt(obtenerCuotasEnvio(), 10) || 0;
@@ -1241,9 +1240,7 @@ function Contratos_Residentes() {
     setInteres_porcentaje(val.interes_porcentaje ?? '14');
     setMora(val.mora ?? '600');
     const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
-    const cuotaGuardada = Number(val.interes_porcentaje || 0) > 0
-      ? Math.round(Number(val.monto_cuota || 0))
-      : redondearMoneda(val.monto_cuota);
+    const cuotaGuardada = Math.round(Number(val.monto_cuota || 0));
     const cuotaGuardadaValida = cuotaGuardada > 0
       && (plazoContrato <= 1 || (cuotaGuardada * (plazoContrato - 1)) < totalConInteresesContrato);
     // Los contratos históricos con una última cuota negativa vuelven al cálculo

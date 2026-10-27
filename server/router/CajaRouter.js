@@ -1402,7 +1402,7 @@ router.get("/meses-pendientes", (req, res) => {
                 let cuotasPendientesContrato = 0;
 
                 const cuotasRestantesPorSaldo = (montoCuota > 0 && saldoPendiente > 0)
-                    ? Math.max(Math.ceil((saldoPendiente - 0.5) / montoCuota), 1)
+                    ? Math.max(Math.ceil((saldoPendiente - Math.max(totalCuotasContrato - 1, 0.5)) / montoCuota), 1)
                     : 0;
 
                 if (tieneConvenioActivo) {
