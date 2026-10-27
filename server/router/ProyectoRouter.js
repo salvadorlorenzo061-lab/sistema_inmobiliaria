@@ -69,6 +69,12 @@ const ensureTablaProyecto = () => {
 
 ensureTablaProyecto();
 
+db.query("SHOW COLUMNS FROM proyecto LIKE 'logo'", (err, rows) => {
+    if (err || (rows && rows.length)) return;
+    db.query('ALTER TABLE proyecto ADD COLUMN logo LONGTEXT NULL', (alterErr) => {
+        if (alterErr) console.error('Error creando columna logo en proyecto:', alterErr.message);
+    });
+});
 const ensureProyectoServiciosTable = () => {
     const sql = `
         CREATE TABLE IF NOT EXISTS proyecto_servicios (
@@ -275,6 +281,7 @@ router.get('/', (req, res) => {
             CAST(p.nit AS CHAR) AS nit,
             p.estado,
             p.id_empresa,
+            p.logo,
             e.nombre_empresa
         FROM proyecto p
         LEFT JOIN empresas e ON e.id_empresa = p.id_empresa
@@ -292,13 +299,14 @@ router.get('/', (req, res) => {
 });
 
 router.post('/crear', (req, res) => {
-    const { nombre, nit, estado, id_empresa } = req.body;
+    const { nombre, nit, estado, id_empresa, logo } = req.body;
 
     if (!nombre || !String(nombre).trim() || !id_empresa) {
         return res.status(400).send({ message: 'Nombre e ID de empresa son obligatorios' });
     }
 
     const nombreProyecto = String(nombre).trim();
+    const logoProyecto = logo ? String(logo) : null;
     const estadoProyecto = estado && String(estado).trim() ? String(estado).trim() : 'activo';
     const idEmpresa = Number(id_empresa);
 
@@ -331,8 +339,8 @@ router.post('/crear', (req, res) => {
                     }
 
                     db.query(
-                        'INSERT INTO proyecto (nombre, nit, estado, id_empresa) VALUES (?, ?, ?, ?)',
-                        [nombreProyecto, nitProyecto, estadoProyecto, idEmpresa],
+                        'INSERT INTO proyecto (nombre, nit, estado, id_empresa, logo) VALUES (?, ?, ?, ?, ?)',
+                        [nombreProyecto, nitProyecto, estadoProyecto, idEmpresa, logoProyecto],
                         (errInsert, resultInsert) => {
                             if (errInsert) {
                                 console.error(errInsert);
@@ -353,7 +361,7 @@ router.post('/crear', (req, res) => {
 
 router.put('/actualizar/:id_proyecto', (req, res) => {
     const { id_proyecto } = req.params;
-    const { nombre, nit, estado, id_empresa } = req.body;
+    const { nombre, nit, estado, id_empresa, logo } = req.body;
 
     if (!nombre || !String(nombre).trim() || !id_empresa) {
         return res.status(400).send({ message: 'Nombre e ID de empresa son obligatorios' });
@@ -379,9 +387,15 @@ router.put('/actualizar/:id_proyecto', (req, res) => {
 
             const nitProyecto = normalizarNitNumerico(nit || rowsEmpresa[0].nit);
 
+            // logo undefined = conservar el actual; cadena vacia = quitarlo.
+            const setLogo = logo === undefined ? '' : ', logo = ?';
+            const paramsUpdate = [nombreProyecto, nitProyecto, estadoProyecto, idEmpresa];
+            if (logo !== undefined) paramsUpdate.push(logo ? String(logo) : null);
+            paramsUpdate.push(idProyecto);
+
             db.query(
-                'UPDATE proyecto SET nombre = ?, nit = ?, estado = ?, id_empresa = ? WHERE id_proyecto = ?',
-                [nombreProyecto, nitProyecto, estadoProyecto, idEmpresa, idProyecto],
+                `UPDATE proyecto SET nombre = ?, nit = ?, estado = ?, id_empresa = ?${setLogo} WHERE id_proyecto = ?`,
+                paramsUpdate,
                 (errUpdate, resultUpdate) => {
                     if (errUpdate) {
                         console.error(errUpdate);

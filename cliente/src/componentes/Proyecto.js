@@ -4,6 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { getLogoValidation, leerImagenComoBase64, generarPdfListadoConLogo } from '../utils/catalogoLogoPdf';
 
 function Proyecto() {
   const [proyectos, setProyectos] = useState([]);
@@ -15,6 +16,8 @@ function Proyecto() {
   const [nit, setNit] = useState('');
   const [estado, setEstado] = useState('activo');
   const [idEmpresa, setIdEmpresa] = useState('');
+  const [logo, setLogo] = useState('');
+  const [logoValidation, setLogoValidation] = useState({ isValid: true, message: '', format: '' });
 
   const [busqueda, setBusqueda] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -35,6 +38,44 @@ function Proyecto() {
     setNit('');
     setEstado('activo');
     setIdEmpresa('');
+    setLogo('');
+    setLogoValidation({ isValid: true, message: '', format: '' });
+  };
+
+  const handleLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const base64 = await leerImagenComoBase64(file);
+    setLogo(base64);
+    setLogoValidation(getLogoValidation(base64));
+  };
+
+  const renderCampoLogo = (etiqueta) => (
+    <div className="mb-3">
+      <label className="form-label fw-bold">{etiqueta}</label>
+      <input type="file" className="form-control" accept="image/png,image/jpeg,image/webp" onChange={handleLogoChange} />
+      {!logoValidation.isValid && (
+        <div className="alert alert-danger py-1 px-2 small mt-2 mb-0">{logoValidation.message}</div>
+      )}
+      {logo && logoValidation.isValid && (
+        <div className="mt-2 d-flex align-items-center gap-2">
+          <img src={logo} alt="Previsualización" className="img-thumbnail" style={{ maxHeight: '100px', objectFit: 'contain' }} />
+          <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => { setLogo(''); setLogoValidation({ isValid: true, message: '', format: '' }); }}>Quitar</button>
+        </div>
+      )}
+    </div>
+  );
+
+  const exportarPdf = () => {
+    generarPdfListadoConLogo({
+      titulo: 'LISTADO DE PROYECTOS',
+      encabezados: ['ID', 'Proyecto', 'NIT', 'Empresa', 'Estado'],
+      filas: proyectosFiltrados.map((item) => ({
+        logo: item.logo,
+        celdas: [`#${item.id_proyecto}`, item.nombre || '', item.nit || '', item.nombre_empresa || 'Sin empresa', String(item.estado || 'activo').toUpperCase()]
+      })),
+      nombreArchivo: 'Listado_Proyectos.pdf'
+    });
   };
 
   const cargarDatos = useCallback(() => {
@@ -84,6 +125,8 @@ function Proyecto() {
     setNit(item.nit || '');
     setEstado(item.estado || 'activo');
     setIdEmpresa(String(item.id_empresa || ''));
+    setLogo(item.logo || '');
+    setLogoValidation(getLogoValidation(item.logo || ''));
     setShowEditModal(true);
   };
 
@@ -93,7 +136,12 @@ function Proyecto() {
       return;
     }
 
-    Axios.post(`${API_URL}/crear`, { nombre, nit, estado, id_empresa: idEmpresa })
+    if (!logoValidation.isValid) {
+      Swal.fire({ icon: 'warning', title: 'Logotipo inválido', text: logoValidation.message });
+      return;
+    }
+
+    Axios.post(`${API_URL}/crear`, { nombre, nit, estado, id_empresa: idEmpresa, logo })
       .then(() => {
         setShowRegModal(false);
         limpiarCampos();
@@ -115,7 +163,12 @@ function Proyecto() {
       return;
     }
 
-    Axios.put(`${API_URL}/actualizar/${idProyecto}`, { nombre, nit, estado, id_empresa: idEmpresa })
+    if (!logoValidation.isValid) {
+      Swal.fire({ icon: 'warning', title: 'Logotipo inválido', text: logoValidation.message });
+      return;
+    }
+
+    Axios.put(`${API_URL}/actualizar/${idProyecto}`, { nombre, nit, estado, id_empresa: idEmpresa, logo })
       .then(() => {
         setShowEditModal(false);
         limpiarCampos();
@@ -229,6 +282,9 @@ function Proyecto() {
             </div>
           </div>
           <div className="col-md-3 text-end">
+            <button className="btn btn-outline-danger fw-bold w-100 mb-2" onClick={exportarPdf}>
+              📄 PDF
+            </button>
             <button
               className="btn btn-success fw-bold w-100"
               onClick={() => {
@@ -246,6 +302,7 @@ function Proyecto() {
         <thead className="table-dark">
           <tr>
             <th>ID</th>
+            <th>LOGO</th>
             <th>PROYECTO</th>
             <th>NIT</th>
             <th>EMPRESA</th>
@@ -258,6 +315,13 @@ function Proyecto() {
             paginatedItems.map((item) => (
               <tr key={item.id_proyecto}>
                 <td>#{item.id_proyecto}</td>
+                <td>
+                  {item.logo ? (
+                    <img src={item.logo} alt="Logo" className="rounded shadow-sm" style={{ width: '55px', height: '40px', objectFit: 'contain', backgroundColor: '#fdfdfd' }} />
+                  ) : (
+                    <span className="text-muted" style={{ fontSize: '11px' }}>Sin logo</span>
+                  )}
+                </td>
                 <td className="fw-bold">{item.nombre}</td>
                 <td>{item.nit}</td>
                 <td>{item.nombre_empresa || 'Sin empresa'}</td>
@@ -277,7 +341,7 @@ function Proyecto() {
             ))
           ) : (
             <tr>
-              <td colSpan="6" className="text-center text-muted py-3">No hay proyectos registrados.</td>
+              <td colSpan="7" className="text-center text-muted py-3">No hay proyectos registrados.</td>
             </tr>
           )}
         </tbody>
@@ -325,6 +389,7 @@ function Proyecto() {
                     <option value="inactivo">Inactivo</option>
                   </select>
                 </div>
+                {renderCampoLogo('Logotipo o Imagen del Proyecto:')}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => { setShowRegModal(false); limpiarCampos(); }}>Cancelar</button>
@@ -368,6 +433,7 @@ function Proyecto() {
                     <option value="inactivo">Inactivo</option>
                   </select>
                 </div>
+                {renderCampoLogo('Modificar Logotipo:')}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => { setShowEditModal(false); limpiarCampos(); }}>Cancelar</button>

@@ -3,6 +3,7 @@ import Axios from "axios";
 import { API_BASE_URL } from '../config';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
+import { generarPdfListadoConLogo } from '../utils/catalogoLogoPdf';
 
 const getLogoValidation = (logoData = "") => {
   if (!logoData) {
@@ -259,6 +260,25 @@ function Empresas() {
   const empresasPaginadas = empresasFiltradas.slice(startIndex, endIndex);
 
   // Resetear página cuando se busca
+  const exportarPdf = () => {
+    generarPdfListadoConLogo({
+      titulo: 'LISTADO DE EMPRESAS',
+      encabezados: ['ID', 'Nombre corporativo', 'NIT', 'Tipo', 'País', 'Moneda', 'Estado'],
+      filas: empresasFiltradas.map((item) => ({
+        logo: item.logo,
+        celdas: [
+          `#${item.id_empresa}`,
+          String(item.nombre_empresa || '').toUpperCase(),
+          item.nit || 'C/F',
+          item.id_empresa_matriz ? 'PROYECTO' : 'MATRIZ',
+          item.pais || '',
+          item.moneda || '',
+          String(item.estado || '').toUpperCase()
+        ]
+      })),
+      nombreArchivo: 'Listado_Empresas.pdf'
+    });
+  };
   const handleBusquedaChange = (e) => {
     setBusqueda(e.target.value);
     setCurrentPage(1);
@@ -286,6 +306,9 @@ function Empresas() {
             </div>
           </div>
           <div className="col-md-3 text-end">
+            <button className="btn btn-outline-danger fw-bold w-100 mb-2" onClick={exportarPdf}>
+              📄 PDF
+            </button>
             <button 
               className="btn btn-info fw-bold w-100 text-dark" 
               onClick={() => { limpiarCampos(); setShowRegModal(true); }}
