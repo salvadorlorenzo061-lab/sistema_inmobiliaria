@@ -35,6 +35,7 @@ function Resoluciones_facturas() {
   const [empresasSeleccionadas, setEmpresasSeleccionadas] = useState([]);
   const [proyectosList, setProyectosList] = useState([]);
   const [proyectosSeleccionados, setProyectosSeleccionados] = useState([]);
+  const [proyectosReasignar, setProyectosReasignar] = useState([]);
   const [usuariosList, setUsuariosList] = useState([]);
   const [resolucionesEdicionGrupo, setResolucionesEdicionGrupo] = useState([]);
   
@@ -180,20 +181,69 @@ function Resoluciones_facturas() {
     .filter((proyecto) => String(proyecto?.id_empresa) === String(idEmpresa))
     .map((proyecto) => String(proyecto.id_proyecto));
 
+  // Devuelve la resolucion de OTRO usuario que ya tiene asignado el proyecto (o null).
+  const obtenerAsignacionAjena = (proyecto) => {
+    const idsGrupo = new Set((resolucionesEdicionGrupo || []).map((item) => Number(item?.id_resolucion)));
+    return (Array.isArray(Resoluciones_facturasList) ? Resoluciones_facturasList : []).find((item) => {
+      if (String(item?.estado || '').toLowerCase() !== 'activo') return false;
+      if (idsGrupo.has(Number(item?.id_resolucion))) return false;
+      if (id_usuario && String(item?.id_usuario) === String(id_usuario)) return false;
+      if (String(item?.id_empresa) !== String(proyecto?.id_empresa)) return false;
+      const ids = String(item?.proyectos_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+      return ids.length === 0 || ids.includes(String(proyecto.id_proyecto));
+    }) || null;
+  };
+
+  const proyectoBloqueado = (proyecto) => (
+    !!obtenerAsignacionAjena(proyecto) && !proyectosReasignar.includes(String(proyecto.id_proyecto))
+  );
+
+  useEffect(() => {
+    const bloqueados = new Set();
+    const ajenos = new Set();
+    proyectosList.forEach((proyecto) => {
+      const id = String(proyecto.id_proyecto);
+      if (obtenerAsignacionAjena(proyecto)) {
+        ajenos.add(id);
+        if (!proyectosReasignar.includes(id)) bloqueados.add(id);
+      }
+    });
+    const sel = proyectosSeleccionados.filter((id) => !bloqueados.has(id));
+    if (sel.length !== proyectosSeleccionados.length) setProyectosSeleccionados(sel);
+    const rea = proyectosReasignar.filter((id) => ajenos.has(id));
+    if (rea.length !== proyectosReasignar.length) setProyectosReasignar(rea);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id_usuario, Resoluciones_facturasList, proyectosList, resolucionesEdicionGrupo, proyectosReasignar, proyectosSeleccionados]);
+
+  const reasignarProyecto = (idProyecto) => {
+    const id = String(idProyecto);
+    setProyectosReasignar((prev) => [...new Set([...prev, id])]);
+    setProyectosSeleccionados((prev) => [...new Set([...prev, id])]);
+  };
+
+  const cancelarReasignacion = (idProyecto) => {
+    const id = String(idProyecto);
+    setProyectosReasignar((prev) => prev.filter((item) => item !== id));
+    setProyectosSeleccionados((prev) => prev.filter((item) => item !== id));
+  };
+
   const toggleEmpresaSeleccionada = (idEmpresa) => {
     const id = String(idEmpresa);
     const idsProyectos = idsProyectosDeEmpresa(id);
+    const idsLibres = proyectosList
+      .filter((proyecto) => String(proyecto?.id_empresa) === id && !proyectoBloqueado(proyecto))
+      .map((proyecto) => String(proyecto.id_proyecto));
     const yaSeleccionada = empresasSeleccionadas.includes(id);
     setEmpresasSeleccionadas((prev) => (
       yaSeleccionada
         ? prev.filter((item) => item !== id)
         : [...prev, id]
     ));
-    // Al marcar la empresa se marcan todos sus proyectos; al desmarcarla se quitan.
+    // Al marcar la empresa se marcan sus proyectos libres; al desmarcarla se quitan.
     setProyectosSeleccionados((prev) => (
       yaSeleccionada
         ? prev.filter((item) => !idsProyectos.includes(item))
-        : [...new Set([...prev, ...idsProyectos])]
+        : [...new Set([...prev, ...idsLibres])]
     ));
   };
 
@@ -229,21 +279,45 @@ function Resoluciones_facturas() {
       <div className="mb-3 border rounded p-2 bg-light">
         <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
         <small className="text-muted d-block mb-2">Marca los proyectos que podrá cobrar el usuario asignado.</small>
+        <div className="alert alert-warning py-1 px-2 small mb-2">
+          Un proyecto solo puede estar asignado a una persona para evitar cobros y correlativos duplicados. Las empresas sí pueden repetirse entre usuarios.
+          Si un proyecto ya está asignado a otra persona, usa "Asignar a este usuario" para quitárselo y pasarlo a este.
+        </div>
         {proyectosPorEmpresaSeleccionada.map((grupo) => (
           <div key={`${prefijo}-proy-${grupo.id_empresa}`} className="mb-2">
             <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
             {grupo.proyectos.length > 0 ? (
-              grupo.proyectos.map((proyecto) => (
-                <label key={`${prefijo}-proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`} className="form-check small mb-0 d-block">
-                  <input
-                    className="form-check-input me-2"
-                    type="checkbox"
-                    checked={proyectosSeleccionados.includes(String(proyecto.id_proyecto))}
-                    onChange={() => toggleProyectoSeleccionado(proyecto.id_proyecto)}
-                  />
-                  <span className="form-check-label">{proyecto.nombre} (ID: {proyecto.id_proyecto})</span>
-                </label>
-              ))
+              grupo.proyectos.map((proyecto) => {
+                const ajena = obtenerAsignacionAjena(proyecto);
+                const reasignando = proyectosReasignar.includes(String(proyecto.id_proyecto));
+                return (
+                  <div key={`${prefijo}-proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`} className="form-check small mb-0 d-flex align-items-center flex-wrap gap-2">
+                    <input
+                      className="form-check-input me-1"
+                      type="checkbox"
+                      id={`${prefijo}-chk-${proyecto.id_proyecto}`}
+                      disabled={!!ajena && !reasignando}
+                      checked={proyectosSeleccionados.includes(String(proyecto.id_proyecto))}
+                      onChange={() => toggleProyectoSeleccionado(proyecto.id_proyecto)}
+                    />
+                    <label className="form-check-label" htmlFor={`${prefijo}-chk-${proyecto.id_proyecto}`}>{proyecto.nombre} (ID: {proyecto.id_proyecto})</label>
+                    {ajena && !reasignando && (
+                      <>
+                        <span className="badge bg-danger">Ya asignado a {ajena.nombre_usuario || `Usuario #${ajena.id_usuario}`}</span>
+                        <button type="button" className="btn btn-sm btn-outline-primary py-0" disabled={!id_usuario} title={id_usuario ? '' : 'Seleccione primero el usuario'} onClick={() => reasignarProyecto(proyecto.id_proyecto)}>
+                          Asignar a este usuario
+                        </button>
+                      </>
+                    )}
+                    {ajena && reasignando && (
+                      <>
+                        <span className="badge bg-warning text-dark">Se quitará a {ajena.nombre_usuario || `Usuario #${ajena.id_usuario}`}</span>
+                        <button type="button" className="btn btn-sm btn-outline-secondary py-0" onClick={() => cancelarReasignacion(proyecto.id_proyecto)}>Cancelar</button>
+                      </>
+                    )}
+                  </div>
+                );
+              })
             ) : (
               <div className="small text-muted">Sin proyectos asociados.</div>
             )}
@@ -252,6 +326,19 @@ function Resoluciones_facturas() {
       </div>
     )
   );
+
+  const validarProyectosPorEmpresa = (empresasObjetivo) => {
+    const sinProyectos = empresasObjetivo.filter((idEmp) => (
+      idsProyectosDeEmpresa(idEmp).length > 0 && proyectosAsignadosDeEmpresa(idEmp).length === 0
+    ));
+    if (!sinProyectos.length) return true;
+    Swal.fire({
+      icon: 'warning',
+      title: 'Proyectos sin asignar',
+      text: `Seleccione al menos un proyecto disponible en: ${sinProyectos.map(getNombreEmpresa).join(', ')}. Los proyectos asignados a otra persona deben reasignarse explícitamente.`
+    });
+    return false;
+  };
 
   const calcularRangoFinalPorLote = (inicio) => {
     const n = Number(inicio);
@@ -366,6 +453,8 @@ function Resoluciones_facturas() {
       : (id_empresa ? [String(id_empresa)] : []);
     const empresasObjetivo = [...new Set(empresasObjetivoRaw.map((item) => String(item)))];
 
+    if (!validarProyectosPorEmpresa(empresasObjetivo)) return;
+
     if (!empresasObjetivo.length || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({
         position: "top-end",
@@ -419,13 +508,15 @@ function Resoluciones_facturas() {
               fecha_vencimiento,
               estado,
               rol,
-              proyectos_ids: proyectosAsignadosDeEmpresa(idEmp)
+              proyectos_ids: proyectosAsignadosDeEmpresa(idEmp),
+              reasignar_proyectos: proyectosReasignar
             });
           }
 
           return Axios.post(`${API_URL}/crear`, {
             id_empresa: idEmp,
             proyectos_ids: proyectosAsignadosDeEmpresa(idEmp),
+            reasignar_proyectos: proyectosReasignar,
             id_usuario,
             numero_resolucion,
             serie,
@@ -488,6 +579,8 @@ function Resoluciones_facturas() {
       : (id_empresa ? [String(id_empresa)] : []);
     const empresasObjetivo = [...new Set(empresasObjetivoRaw.map((item) => String(item)))];
 
+    if (!validarProyectosPorEmpresa(empresasObjetivo)) return;
+
     if (!id_resolucion || !empresasObjetivo.length || !id_usuario || !numero_resolucion || !serie.trim() || !rango_inicial.toString().trim() || !rango_final.toString().trim() || !fecha_autorizacion.trim() || !fecha_vencimiento.trim() || !estado.trim() || !rol.trim()) {
       Swal.fire({ icon: 'warning', title: 'Campos incompletos' });
       return;
@@ -511,6 +604,8 @@ function Resoluciones_facturas() {
 
     const payloadBase = {
       id_usuario,
+      reasignar_proyectos: proyectosReasignar,
+      resoluciones_excluir: (resolucionesEdicionGrupo || []).map((item) => Number(item?.id_resolucion)),
       numero_resolucion,
       serie,
       rango_inicial,
@@ -657,6 +752,7 @@ function Resoluciones_facturas() {
     setId_empresa("");
     setEmpresasSeleccionadas([]);
     setProyectosSeleccionados([]);
+    setProyectosReasignar([]);
     setId_usuario("");
     setNumero_resolucion(""); 
     setSerie(""); 
@@ -697,8 +793,9 @@ function Resoluciones_facturas() {
     const proyectosGuardados = new Set();
     resolucionesGrupo.forEach((item) => {
       const ids = String(item?.proyectos_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
-      (ids.length ? ids : idsProyectosDeEmpresa(item?.id_empresa)).forEach((id) => proyectosGuardados.add(String(id)));
+      (ids.length ? ids.filter((id) => id !== '0') : idsProyectosDeEmpresa(item?.id_empresa)).forEach((id) => proyectosGuardados.add(String(id)));
     });
+    setProyectosReasignar([]);
     setProyectosSeleccionados([...proyectosGuardados]);
     setNumero_resolucion(val.numero_resolucion);
     setSerie(val.serie);

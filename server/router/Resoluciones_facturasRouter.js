@@ -61,7 +61,10 @@ const guardarProyectosResolucion = (idResolucion, idEmpresa, proyectosIds, callb
 
     db.query('DELETE FROM resoluciones_facturas_proyectos WHERE id_resolucion = ?', [idResolucion], (delErr) => {
         if (delErr) return callback(delErr);
-        if (!ids.length) return callback(null);
+        // id_proyecto 0 = ninguno (evita que una resolucion sin filas aplique a todos).
+        if (!ids.length) {
+            return db.query('INSERT IGNORE INTO resoluciones_facturas_proyectos (id_resolucion, id_proyecto) VALUES (?, 0)', [idResolucion], callback);
+        }
 
         db.query(
             `INSERT INTO resoluciones_facturas_proyectos (id_resolucion, id_proyecto)
@@ -71,6 +74,92 @@ const guardarProyectosResolucion = (idResolucion, idEmpresa, proyectosIds, callb
         );
     });
 };
+
+// Un proyecto solo puede estar asignado a un usuario a la vez (las empresas si
+// pueden repetirse). Si llega en `reasignar_proyectos`, se le quita al otro usuario.
+const validarProyectosExclusivos = (req, res, next) => {
+    const body = req.body || {};
+    if (!Array.isArray(body.proyectos_ids)) return next();
+
+    const idUsuario = Number(body.id_usuario);
+    const ids = [...new Set(body.proyectos_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+    if (!ids.length || !Number.isInteger(idUsuario) || idUsuario <= 0) return next();
+
+    const reasignar = new Set((Array.isArray(body.reasignar_proyectos) ? body.reasignar_proyectos : []).map(Number));
+    const excluir = [...new Set([body.id_resolucion, ...(Array.isArray(body.resoluciones_excluir) ? body.resoluciones_excluir : [])]
+        .map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+
+    const sql = `
+        SELECT DISTINCT p.id_proyecto, p.nombre AS nombre_proyecto, rf.id_resolucion, u.nombre AS nombre_usuario
+        FROM resoluciones_facturas rf
+        INNER JOIN proyecto p ON p.id_empresa = rf.id_empresa
+        LEFT JOIN usuarios u ON u.id_usuario = rf.id_usuario
+        WHERE p.id_proyecto IN (?)
+          AND rf.id_usuario <> ?
+          AND LOWER(rf.estado) = 'activo'
+          ${excluir.length ? 'AND rf.id_resolucion NOT IN (?)' : ''}
+          AND (
+              EXISTS (SELECT 1 FROM resoluciones_facturas_proyectos x WHERE x.id_resolucion = rf.id_resolucion AND x.id_proyecto = p.id_proyecto)
+              OR NOT EXISTS (SELECT 1 FROM resoluciones_facturas_proyectos y WHERE y.id_resolucion = rf.id_resolucion)
+          )`;
+    const params = excluir.length ? [ids, idUsuario, excluir] : [ids, idUsuario];
+
+    db.query(sql, params, (err, rows) => {
+        if (err) {
+            console.log(err);
+            return res.status(500).send('Error validando proyectos');
+        }
+
+        const conflictos = rows || [];
+        const sinPermiso = conflictos.filter((r) => !reasignar.has(Number(r.id_proyecto)));
+        if (sinPermiso.length) {
+            const detalle = [...new Set(sinPermiso.map((r) => `${r.nombre_proyecto} (asignado a ${r.nombre_usuario || 'otro usuario'})`))].join(', ');
+            return res.status(409).send({ message: `No se puede asignar proyectos que ya tienen otra persona asignada: ${detalle}.` });
+        }
+        if (!conflictos.length) return next();
+
+        const porResolucion = new Map();
+        conflictos.forEach((r) => {
+            const lista = porResolucion.get(Number(r.id_resolucion)) || [];
+            lista.push(Number(r.id_proyecto));
+            porResolucion.set(Number(r.id_resolucion), lista);
+        });
+
+        const quitar = (resoluciones, indice) => {
+            if (indice >= resoluciones.length) return next();
+            const [idRes, proyectos] = resoluciones[indice];
+            const siguiente = (e) => {
+                if (e) {
+                    console.log(e);
+                    return res.status(500).send('Error al reasignar proyectos');
+                }
+                return quitar(resoluciones, indice + 1);
+            };
+
+            // Si la resolucion aplicaba a toda la empresa, se vuelven explicitos sus proyectos antes de quitar.
+            db.query(
+                `INSERT IGNORE INTO resoluciones_facturas_proyectos (id_resolucion, id_proyecto)
+                 SELECT rf.id_resolucion, p.id_proyecto FROM resoluciones_facturas rf
+                 INNER JOIN proyecto p ON p.id_empresa = rf.id_empresa
+                 WHERE rf.id_resolucion = ?
+                   AND NOT EXISTS (SELECT 1 FROM resoluciones_facturas_proyectos z WHERE z.id_resolucion = rf.id_resolucion)`,
+                [idRes],
+                (e1) => {
+                    if (e1) return siguiente(e1);
+                    db.query('DELETE FROM resoluciones_facturas_proyectos WHERE id_resolucion = ? AND id_proyecto IN (?)', [idRes, proyectos], (e2) => {
+                        if (e2) return siguiente(e2);
+                        db.query('INSERT IGNORE INTO resoluciones_facturas_proyectos (id_resolucion, id_proyecto) SELECT ?, 0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM resoluciones_facturas_proyectos WHERE id_resolucion = ?)', [idRes, idRes], siguiente);
+                    });
+                }
+            );
+        };
+
+        quitar([...porResolucion.entries()], 0);
+    });
+};
+
+router.post('/crear', validarProyectosExclusivos);
+router.put('/actualizar', validarProyectosExclusivos);
 
 const validarUsuario = (idUsuario, callback) => {
     const id = Number(idUsuario);
