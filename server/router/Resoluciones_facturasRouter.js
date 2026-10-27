@@ -45,6 +45,33 @@ const ensureIdUsuarioColumn = () => {
 
 ensureIdUsuarioColumn();
 
+// Sin filas = la resolucion aplica a todos los proyectos de la empresa.
+db.query(`CREATE TABLE IF NOT EXISTS resoluciones_facturas_proyectos (
+    id_resolucion INT NOT NULL,
+    id_proyecto INT NOT NULL,
+    PRIMARY KEY (id_resolucion, id_proyecto)
+)`, (err) => {
+    if (err) console.error('Error creando resoluciones_facturas_proyectos:', err.message);
+});
+
+// proyectosIds undefined = no modificar la asignacion actual.
+const guardarProyectosResolucion = (idResolucion, idEmpresa, proyectosIds, callback) => {
+    if (!Array.isArray(proyectosIds)) return callback(null);
+    const ids = [...new Set(proyectosIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+
+    db.query('DELETE FROM resoluciones_facturas_proyectos WHERE id_resolucion = ?', [idResolucion], (delErr) => {
+        if (delErr) return callback(delErr);
+        if (!ids.length) return callback(null);
+
+        db.query(
+            `INSERT INTO resoluciones_facturas_proyectos (id_resolucion, id_proyecto)
+             SELECT ?, p.id_proyecto FROM proyecto p WHERE p.id_empresa = ? AND p.id_proyecto IN (?)`,
+            [idResolucion, idEmpresa, ids],
+            callback
+        );
+    });
+};
+
 const validarUsuario = (idUsuario, callback) => {
     const id = Number(idUsuario);
     if (!Number.isInteger(id) || id <= 0) {
@@ -184,20 +211,32 @@ router.post("/crear", (req, res) => {
                                     return res.status(500).send("Error al actualizar la resolución existente");
                                 }
 
-                                return res.status(200).send("Resolución existente actualizada correctamente");
+                                return guardarProyectosResolucion(idResolucionExistente, id_empresa, req.body?.proyectos_ids, (proyErr) => {
+                                    if (proyErr) {
+                                        console.log(proyErr);
+                                        return res.status(500).send("Error al guardar los proyectos de la resolución");
+                                    }
+                                    return res.status(200).send("Resolución existente actualizada correctamente");
+                                });
                             });
                         }
 
                         const sqlInsert = 'INSERT INTO resoluciones_facturas (id_empresa, id_usuario, numero_resolucion, serie, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
                         const values = [id_empresa, idUsuarioValido, numeroResolucionNormalizado, serieNormalizada, rango_inicial, rango_final, correlativo_actual, fecha_autorizacion, fecha_vencimiento, estado, rol];
 
-                        db.query(sqlInsert, values, (insertErr) => {
+                        db.query(sqlInsert, values, (insertErr, insertResult) => {
                             if (insertErr) {
                                 console.log(insertErr);
                                 return res.status(500).send("Error al registrar la resolución");
                             }
 
-                            return res.status(200).send("Resolución registrada con éxito!!!");
+                            return guardarProyectosResolucion(insertResult.insertId, id_empresa, req.body?.proyectos_ids, (proyErr) => {
+                                if (proyErr) {
+                                    console.log(proyErr);
+                                    return res.status(500).send("Error al guardar los proyectos de la resolución");
+                                }
+                                return res.status(200).send("Resolución registrada con éxito!!!");
+                            });
                         });
                     }
                 );
@@ -212,7 +251,8 @@ router.get("/", (req, res) => {
         SELECT
             rf.*, 
             u.nombre AS nombre_usuario,
-            u.correo AS correo_usuario
+            u.correo AS correo_usuario,
+            (SELECT GROUP_CONCAT(rfp.id_proyecto) FROM resoluciones_facturas_proyectos rfp WHERE rfp.id_resolucion = rf.id_resolucion) AS proyectos_ids
         FROM resoluciones_facturas rf
         LEFT JOIN usuarios u ON u.id_usuario = rf.id_usuario
     `;
@@ -308,10 +348,16 @@ router.put("/actualizar", (req, res) => {
                 db.query(sqlUpdate, valuesNormalizados, (err, result) => {
                     if (err) {
                         console.log(err);
-                        res.status(500).send("Error al actualizar");
-                    } else {
-                        res.status(200).send("Resolución actualizada correctamente");
+                        return res.status(500).send("Error al actualizar");
                     }
+
+                    guardarProyectosResolucion(id_resolucion, id_empresa, req.body?.proyectos_ids, (proyErr) => {
+                        if (proyErr) {
+                            console.log(proyErr);
+                            return res.status(500).send("Error al guardar los proyectos de la resolución");
+                        }
+                        res.status(200).send("Resolución actualizada correctamente");
+                    });
                 });
             }
         );
@@ -327,6 +373,7 @@ router.delete("/delete/:id_resolucion", (req, res) => {
             console.log(err);
             res.status(500).send("Error al eliminar");
         } else {
+            db.query('DELETE FROM resoluciones_facturas_proyectos WHERE id_resolucion = ?', [id_resolucion], () => {});
             res.status(200).send("Resolución eliminada correctamente"); 
         }
     });

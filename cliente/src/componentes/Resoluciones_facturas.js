@@ -34,6 +34,7 @@ function Resoluciones_facturas() {
   const [empresasList, setEmpresasList] = useState([]);
   const [empresasSeleccionadas, setEmpresasSeleccionadas] = useState([]);
   const [proyectosList, setProyectosList] = useState([]);
+  const [proyectosSeleccionados, setProyectosSeleccionados] = useState([]);
   const [usuariosList, setUsuariosList] = useState([]);
   const [resolucionesEdicionGrupo, setResolucionesEdicionGrupo] = useState([]);
   
@@ -175,14 +176,36 @@ function Resoluciones_facturas() {
     }
   }, [id_usuario, usuariosDisponibles]);
 
+  const idsProyectosDeEmpresa = (idEmpresa) => proyectosList
+    .filter((proyecto) => String(proyecto?.id_empresa) === String(idEmpresa))
+    .map((proyecto) => String(proyecto.id_proyecto));
+
   const toggleEmpresaSeleccionada = (idEmpresa) => {
     const id = String(idEmpresa);
+    const idsProyectos = idsProyectosDeEmpresa(id);
+    const yaSeleccionada = empresasSeleccionadas.includes(id);
     setEmpresasSeleccionadas((prev) => (
-      prev.includes(id)
+      yaSeleccionada
         ? prev.filter((item) => item !== id)
         : [...prev, id]
     ));
+    // Al marcar la empresa se marcan todos sus proyectos; al desmarcarla se quitan.
+    setProyectosSeleccionados((prev) => (
+      yaSeleccionada
+        ? prev.filter((item) => !idsProyectos.includes(item))
+        : [...new Set([...prev, ...idsProyectos])]
+    ));
   };
+
+  const toggleProyectoSeleccionado = (idProyecto) => {
+    const id = String(idProyecto);
+    setProyectosSeleccionados((prev) => (
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    ));
+  };
+
+  const proyectosAsignadosDeEmpresa = (idEmpresa) => idsProyectosDeEmpresa(idEmpresa)
+    .filter((id) => proyectosSeleccionados.includes(id));
 
   const idsEmpresasObjetivo = empresasSeleccionadas.length
     ? empresasSeleccionadas
@@ -200,6 +223,35 @@ function Resoluciones_facturas() {
       proyectos
     };
   });
+
+  const renderProyectosPorEmpresa = (prefijo) => (
+    idsEmpresasObjetivo.length > 0 && (
+      <div className="mb-3 border rounded p-2 bg-light">
+        <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
+        <small className="text-muted d-block mb-2">Marca los proyectos que podrá cobrar el usuario asignado.</small>
+        {proyectosPorEmpresaSeleccionada.map((grupo) => (
+          <div key={`${prefijo}-proy-${grupo.id_empresa}`} className="mb-2">
+            <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
+            {grupo.proyectos.length > 0 ? (
+              grupo.proyectos.map((proyecto) => (
+                <label key={`${prefijo}-proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`} className="form-check small mb-0 d-block">
+                  <input
+                    className="form-check-input me-2"
+                    type="checkbox"
+                    checked={proyectosSeleccionados.includes(String(proyecto.id_proyecto))}
+                    onChange={() => toggleProyectoSeleccionado(proyecto.id_proyecto)}
+                  />
+                  <span className="form-check-label">{proyecto.nombre} (ID: {proyecto.id_proyecto})</span>
+                </label>
+              ))
+            ) : (
+              <div className="small text-muted">Sin proyectos asociados.</div>
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  );
 
   const calcularRangoFinalPorLote = (inicio) => {
     const n = Number(inicio);
@@ -366,12 +418,14 @@ function Resoluciones_facturas() {
               fecha_autorizacion,
               fecha_vencimiento,
               estado,
-              rol
+              rol,
+              proyectos_ids: proyectosAsignadosDeEmpresa(idEmp)
             });
           }
 
           return Axios.post(`${API_URL}/crear`, {
             id_empresa: idEmp,
+            proyectos_ids: proyectosAsignadosDeEmpresa(idEmp),
             id_usuario,
             numero_resolucion,
             serie,
@@ -497,6 +551,7 @@ function Resoluciones_facturas() {
             Axios.put(`${API_URL}/actualizar`, {
               id_resolucion: idResolucionActual,
               id_empresa: Number(idEmp),
+              proyectos_ids: proyectosAsignadosDeEmpresa(idEmp),
               ...payloadBase
             })
           );
@@ -523,6 +578,7 @@ function Resoluciones_facturas() {
               Axios.put(`${API_URL}/actualizar`, {
                 id_resolucion: Number(resolucionExistente.id_resolucion),
                 id_empresa: Number(idEmp),
+                proyectos_ids: proyectosAsignadosDeEmpresa(idEmp),
                 ...payloadBase
               })
             );
@@ -532,6 +588,7 @@ function Resoluciones_facturas() {
           operaciones.push(
             Axios.post(`${API_URL}/crear`, {
               id_empresa: Number(idEmp),
+              proyectos_ids: proyectosAsignadosDeEmpresa(idEmp),
               ...payloadBase
             })
           );
@@ -599,6 +656,7 @@ function Resoluciones_facturas() {
     setId_resolucion("");
     setId_empresa("");
     setEmpresasSeleccionadas([]);
+    setProyectosSeleccionados([]);
     setId_usuario("");
     setNumero_resolucion(""); 
     setSerie(""); 
@@ -635,6 +693,13 @@ function Resoluciones_facturas() {
       ? val.empresas_ids.map((item) => String(item))
       : (val.id_empresa ? [String(val.id_empresa)] : []));
     setId_usuario(val.id_usuario ? String(val.id_usuario) : '');
+    // Sin proyectos guardados = todos los proyectos de la empresa.
+    const proyectosGuardados = new Set();
+    resolucionesGrupo.forEach((item) => {
+      const ids = String(item?.proyectos_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+      (ids.length ? ids : idsProyectosDeEmpresa(item?.id_empresa)).forEach((id) => proyectosGuardados.add(String(id)));
+    });
+    setProyectosSeleccionados([...proyectosGuardados]);
     setNumero_resolucion(val.numero_resolucion);
     setSerie(val.serie);
     setRango_inicial(val.rango_inicial); 
@@ -828,27 +893,7 @@ function Resoluciones_facturas() {
                   </div>
                   <small className="text-muted">Si marcas checkboxes, se creará una resolución por cada empresa seleccionada.</small>
                 </div>
-                {idsEmpresasObjetivo.length > 0 && (
-                  <div className="mb-3 border rounded p-2 bg-light">
-                    <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
-                    {proyectosPorEmpresaSeleccionada.map((grupo) => (
-                      <div key={`proy-${grupo.id_empresa}`} className="mb-2">
-                        <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
-                        {grupo.proyectos.length > 0 ? (
-                          <ul className="small mb-1 ps-3">
-                            {grupo.proyectos.map((proyecto) => (
-                              <li key={`proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`}>
-                                {proyecto.nombre} (ID: {proyecto.id_proyecto})
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="small text-muted">Sin proyectos asociados.</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {renderProyectosPorEmpresa('reg')}
                 <div className="mb-3">
                   <label className="form-label fw-bold">Usuario asignado</label>
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
@@ -954,27 +999,7 @@ function Resoluciones_facturas() {
                   </div>
                   <small className="text-muted">Puedes marcar varias empresas; se asignará sin duplicar resoluciones existentes.</small>
                 </div>
-                {idsEmpresasObjetivo.length > 0 && (
-                  <div className="mb-3 border rounded p-2 bg-light">
-                    <div className="fw-bold mb-1">Proyectos de las empresas seleccionadas</div>
-                    {proyectosPorEmpresaSeleccionada.map((grupo) => (
-                      <div key={`edit-proy-${grupo.id_empresa}`} className="mb-2">
-                        <div className="small fw-bold text-primary">{grupo.nombre_empresa}</div>
-                        {grupo.proyectos.length > 0 ? (
-                          <ul className="small mb-1 ps-3">
-                            {grupo.proyectos.map((proyecto) => (
-                              <li key={`edit-proy-item-${grupo.id_empresa}-${proyecto.id_proyecto}`}>
-                                {proyecto.nombre} (ID: {proyecto.id_proyecto})
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="small text-muted">Sin proyectos asociados.</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {renderProyectosPorEmpresa('edit')}
                 <div className="mb-3">
                   <label className="form-label fw-bold">Usuario asignado</label>
                   <select value={id_usuario} onChange={(e) => setId_usuario(e.target.value)} className="form-select">
