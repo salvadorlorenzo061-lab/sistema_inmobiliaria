@@ -782,11 +782,18 @@ function Contratos_Residentes() {
     })
     .catch((error) => {
       const respuesta = error?.response?.data;
+      const respuestaHtml = typeof respuesta === 'string' && /<!doctype html|<html[\s>]/i.test(respuesta);
       const mensaje = (typeof respuesta === 'string' ? respuesta : respuesta?.message)
         || error?.message
         || "No se pudo actualizar el contrato";
       console.error('[contratos][actualizar] error:', error);
-      Swal.fire({ icon: "error", title: "Error al modificar", text: mensaje });
+      Swal.fire({
+        icon: "error",
+        title: "Error al modificar",
+        text: respuestaHtml
+          ? `El servidor devolvió un error interno (HTTP ${error?.response?.status || 500}). No se confirmó el guardado. Revise los registros del servicio API y vuelva a intentarlo.`
+          : mensaje
+      });
     });
   };
 

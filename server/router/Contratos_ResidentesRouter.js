@@ -6,7 +6,13 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
-const { calcularTotalPlanPlano, resolverCuotaFijaPlan, sqlCuotaPlana, sqlTotalPlanPlano } = require('../utils/amortizacion');
+const {
+    calcularTotalPlanPlano,
+    resolverCuotaFijaPlan,
+    validarCuotaPersonalizada,
+    sqlCuotaPlana,
+    sqlTotalPlanPlano
+} = require('../utils/amortizacion');
 
 const EXT_TO_MIME = {
     '.pdf': 'application/pdf',
