@@ -71,6 +71,14 @@ const normalizarCuotaContrato = (cuotaManual = 0, capital = 0, tasaAnual = 0, cu
     return resolverCuotaFijaPlan(principal, tasa, plazo, cuotaManual);
 };
 
+const validarCuotaManualSolicitada = (cuotaValue, capital, tasaAnual, cuotas) => {
+    const cuotaSolicitada = Math.round(Number(cuotaValue || 0));
+    const cuotaAutomatica = calcularCuotaPlana(capital, tasaAnual, cuotas);
+    return cuotaSolicitada <= 0
+        || cuotaSolicitada === cuotaAutomatica
+        || validarCuotaPersonalizada(capital, tasaAnual, cuotas, cuotaSolicitada);
+};
+
 const normalizeMesInicioPagos = (value, fallback = 1) => {
     const numero = parseInt(value, 10);
     const respaldo = Math.max(1, Math.min(12, parseInt(fallback, 10) || 1));
@@ -1342,6 +1350,11 @@ router.post("/crear", (req, res) => {
         const interesPorcentajeNumerico = modalidadPagoNormalizada === 'contado' ? 0 : Number(interes_porcentaje || 0);
         const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
         const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
+        if (!validarCuotaManualSolicitada(monto_cuota, capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)) {
+            return res.status(400).send({
+                message: 'La cuota manual debe superar el interés mensual y amortizar el saldo dentro del plazo, dejando una última cuota positiva.'
+            });
+        }
         const montoCuotaNormalizado = normalizarCuotaContrato(
             monto_cuota,
             capitalFinanciado,
@@ -1600,6 +1613,11 @@ router.put("/actualizar", (req, res) => {
     const interesPorcentajeNumerico = modalidadPagoNormalizada === 'contado' ? 0 : Number(interes_porcentaje || 0);
     const cuotasPagadasNormalizadas = Math.max(parseInt(cuotas_pagadas || 0, 10), 0);
     const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
+    if (!validarCuotaManualSolicitada(monto_cuota, capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)) {
+        return res.status(400).send({
+            message: 'La cuota manual debe superar el interés mensual y amortizar el saldo dentro del plazo, dejando una última cuota positiva.'
+        });
+    }
     const montoCuotaNormalizado = normalizarCuotaContrato(
         monto_cuota,
         capitalFinanciado,

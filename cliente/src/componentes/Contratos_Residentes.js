@@ -4,7 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-import { calcularCuotaFija, calcularTotalPlanPlano, redondearMoneda } from '../utils/amortizacion';
+import { calcularCuotaFija, calcularInteresFijoMensual, calcularTotalPlanPlano, redondearMoneda, validarCuotaPersonalizada } from '../utils/amortizacion';
 import { descargarPdfContrato, imprimirPdfContrato } from '../utils/contractPdfGenerator';
 import { descargarPdfFiniquito } from '../utils/finiquitoPdfGenerator';
 
@@ -414,6 +414,10 @@ function Contratos_Residentes() {
   );
   const cuotasPendientesCalculadas = Math.max(cuotasCalculadasNumero - cuotasPagadasNumero, 0);
   const saldoPendienteVisibleCalculado = calcularSaldoPendienteDesdeCuota();
+  const capitalFinanciadoContrato = Math.max(Number(monto_total || 0) - Number(enganche || 0), 0);
+  const interesFijoMensualContrato = calcularInteresFijoMensual(capitalFinanciadoContrato, Number(interes_porcentaje || 0));
+  const cuotaManualDiferenteDeAutomatica = Math.round(Number(monto_cuota_manual || 0)) > 0
+    && Math.round(Number(monto_cuota_manual || 0)) !== Math.round(Number(montoCuotaCalculado || 0));
 
   const obtenerPrecioTotalConIntereses = () => {
     const montoTotalNumero = Number(monto_total || 0);
@@ -475,6 +479,11 @@ function Contratos_Residentes() {
   const precioTotalConInteresesCalculado = obtenerPrecioTotalConIntereses();
   const precioProyectoConEngancheEInteresesCalculado = obtenerPrecioProyectoConEngancheEIntereses();
   const ultimaCuotaCalculada = obtenerUltimaCuotaCalculada();
+  const detalleCuotaManual = modalidad_pago !== 'contado'
+    && cuotaManualDiferenteDeAutomatica
+    && validarCuotaPersonalizada(capitalFinanciadoContrato, Number(interes_porcentaje || 0), cuotasCalculadasNumero, montoCuotaGuardable)
+    ? `Manual: Q ${montoCuotaGuardable.toLocaleString('es-GT')} = Q ${redondearMoneda(montoCuotaGuardable - interesFijoMensualContrato).toLocaleString('es-GT')} a capital + Q ${interesFijoMensualContrato.toLocaleString('es-GT')} de interés. Última cuota: Q ${redondearMoneda(Number(precioTotalConInteresesCalculado || 0) - (montoCuotaGuardable * Math.max(cuotasCalculadasNumero - 1, 0))).toLocaleString('es-GT')}.`
+    : '';
 
 
   const normalizarMesInicioPagos = (valor) => {
@@ -507,9 +516,19 @@ function Contratos_Residentes() {
     if (!String(monto_total || '').trim()) return "Debe ingresar el precio total del contrato.";
     if (!String(obtenerCuotasEnvio() || '').trim()) return "Debe ingresar la cantidad de cuotas.";
     if (montoCuotaGuardable <= 0) return "Debe indicar un monto de cuota válido.";
-    if (cuotasCalculadasNumero > 1 && (montoCuotaGuardable * (cuotasCalculadasNumero - 1)) >= Number(precioTotalConInteresesCalculado || 0)) {
-      const cuotaMaxima = Math.max(Math.floor((Number(precioTotalConInteresesCalculado || 0) - 0.01) / (cuotasCalculadasNumero - 1)), 0);
-      return `La cuota regular es demasiado alta. Ingrese un valor máximo de Q ${cuotaMaxima.toLocaleString('es-GT')} para conservar una última cuota positiva.`;
+    if (cuotaManualDiferenteDeAutomatica && !validarCuotaPersonalizada(
+      capitalFinanciadoContrato,
+      Number(interes_porcentaje || 0),
+      cuotasCalculadasNumero,
+      montoCuotaGuardable
+    )) {
+      if (montoCuotaGuardable <= interesFijoMensualContrato) {
+        return `La cuota manual debe superar el interés mensual de Q ${interesFijoMensualContrato.toLocaleString('es-GT')} para amortizar capital.`;
+      }
+      const cuotaMaxima = Math.max(Math.floor(
+        interesFijoMensualContrato + ((capitalFinanciadoContrato - 0.01) / Math.max(cuotasCalculadasNumero - 1, 1))
+      ), 0);
+      return `La cuota manual es demasiado alta para el plazo. Ingrese un máximo de Q ${cuotaMaxima.toLocaleString('es-GT')} para conservar capital pendiente en la última cuota.`;
     }
     if (dia_pago_limite === '') return "Debe indicar los días de gracia.";
     if (!fecha_firma) return "Debe ingresar la fecha de firma.";
@@ -1196,15 +1215,6 @@ function Contratos_Residentes() {
       }
       return {};
     })();
-    const capitalFinanciado = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
-    const totalConInteresesContrato = (() => {
-      if (!Number.isFinite(capitalFinanciado) || capitalFinanciado <= 0) return 0;
-      const cuotasNumero = Number(val.cuotas_pactadas || val.plazo_meses || 0);
-      if (!Number.isFinite(cuotasNumero) || cuotasNumero <= 0) return 0;
-      const interesNumero = Number(val.interes_porcentaje ?? 0);
-      // Plan lineal oficial: total = capital + interes fijo mensual x cuotas.
-      return calcularTotalPlanPlano(capitalFinanciado, interesNumero, cuotasNumero);
-    })();
     setId_contrato(val.id_contrato);
     setCodigo_contrato(val.codigo_contrato);
     setId_residente(val.id_residente);
@@ -1241,8 +1251,17 @@ function Contratos_Residentes() {
     setMora(val.mora ?? '600');
     const plazoContrato = parseInt(String(val.cuotas_pactadas || val.plazo_meses || '').trim(), 10);
     const cuotaGuardada = Math.round(Number(val.monto_cuota || 0));
-    const cuotaGuardadaValida = cuotaGuardada > 0
-      && (plazoContrato <= 1 || (cuotaGuardada * (plazoContrato - 1)) < totalConInteresesContrato);
+    const capitalFinanciadoContrato = Math.max(Number(val.monto_total || 0) - Number(val.enganche || 0), 0);
+    const cuotaGuardadaValida = cuotaGuardada > 0 && (
+      cuotaGuardada === Math.round(calcularMontoCuotaContrato(
+        val.monto_total,
+        val.enganche,
+        val.interes_porcentaje,
+        val.cuotas_pactadas || val.plazo_meses,
+        val.cuotas_pactadas || val.plazo_meses
+      ) || 0)
+      || validarCuotaPersonalizada(capitalFinanciadoContrato, Number(val.interes_porcentaje || 0), plazoContrato, cuotaGuardada)
+    );
     // Los contratos históricos con una última cuota negativa vuelven al cálculo
     // automático para poder editarlos sin sobrecobrar en Caja.
     setMonto_cuota_manual(cuotaGuardadaValida ? String(cuotaGuardada) : '');
@@ -1707,6 +1726,7 @@ function Contratos_Residentes() {
                     onChange={e => setMonto_cuota_manual(e.target.value)}
                   />
                   <small className="text-muted">Automática: Q {montoCuotaCalculado || '0'}. Puede escribir una cuota entera diferente.</small>
+                  {detalleCuotaManual && <small className="d-block text-primary fw-semibold">{detalleCuotaManual}</small>}
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>
@@ -2017,6 +2037,7 @@ function Contratos_Residentes() {
                     onChange={e => setMonto_cuota_manual(e.target.value)}
                   />
                   <small className="text-muted">Automática: Q {montoCuotaCalculado || '0'}. Puede escribir una cuota entera diferente.</small>
+                  {detalleCuotaManual && <small className="d-block text-primary fw-semibold">{detalleCuotaManual}</small>}
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Mora por mes vencido (Q):</label>

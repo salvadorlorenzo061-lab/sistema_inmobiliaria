@@ -46,22 +46,30 @@ const calcularCuotaPlana = (capital = 0, tasaAnual = 0, cuotas = 0) => {
     return entera > 0 ? entera : redondear2(total / plazo);
 };
 
-// Una cuota personalizada (pactada manualmente) solo se respeta si amortiza
-// el plan completo dentro del plazo (regla historica del sistema).
-const resolverCuotaFijaPlan = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaPersonalizada = 0) => {
+const validarCuotaPersonalizada = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaPersonalizada = 0) => {
     const principal = redondear2(Math.max(toNumber(capital, 0), 0));
-    const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     const tasa = Math.max(toNumber(tasaAnual, 0), 0);
-    const calculada = calcularCuotaPlana(principal, tasa, plazo);
-    const totalFinanciado = calcularTotalExactoPlan(principal, tasa, plazo);
+    const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
     const personalizada = Math.round(Math.max(toNumber(cuotaPersonalizada, 0), 0));
-    const personalizadaValida = personalizada > 0
-        && (plazo <= 1 || personalizada * (plazo - 1) < totalFinanciado);
+    if (personalizada <= 0 || principal <= 0 || plazo <= 1) return false;
+
+    const interesMensual = calcularInteresFijoMensual(principal, tasa);
+    const capitalPorCuota = redondear2(personalizada - interesMensual);
+    return capitalPorCuota > 0 && redondear2(capitalPorCuota * (plazo - 1)) < principal;
+};
+
+// La cuota manual debe cubrir el interes fijo y dejar saldo positivo para la
+// ultima cuota dentro del plazo acordado.
+const resolverCuotaFijaPlan = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaPersonalizada = 0) => {
+    const calculada = calcularCuotaPlana(capital, tasaAnual, cuotas);
+    const personalizada = Math.round(Math.max(toNumber(cuotaPersonalizada, 0), 0));
+    const personalizadaValida = personalizada !== calculada
+        && validarCuotaPersonalizada(capital, tasaAnual, cuotas, personalizada);
     return personalizadaValida ? personalizada : calculada;
 };
 
-// Tabla completa: capital regular fijo; al vencimiento se ajustan el capital
-// residual y el interes para mantener invariable la cuota absoluta.
+// Tabla completa: el plan automatico conserva su reparto original; el plan
+// manual mantiene el interes mensual y aplica el excedente a capital.
 const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial = 0, cuotaPersonalizada = 0) => {
     const principal = redondear2(Math.max(toNumber(capital, 0), 0));
     const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
@@ -71,7 +79,11 @@ const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial 
 
     const cuotaFija = resolverCuotaFijaPlan(principal, tasa, plazo, cuotaPersonalizada);
     const totalPlan = calcularTotalExactoPlan(principal, tasa, plazo);
-    const capitalRegular = tasa <= 0 ? cuotaFija : redondear2(principal / plazo);
+    const cuotaManualActiva = cuotaFija !== calcularCuotaPlana(principal, tasa, plazo);
+    const interesMensualFijo = calcularInteresFijoMensual(principal, tasa);
+    const capitalRegular = cuotaManualActiva
+        ? redondear2(cuotaFija - interesMensualFijo)
+        : (tasa <= 0 ? cuotaFija : redondear2(principal / plazo));
     const tabla = [];
     let saldo = principal;
     let interesAcumulado = 0;
@@ -83,7 +95,9 @@ const generarTablaPlana = (capital = 0, tasaAnual = 0, cuotas = 0, cuotaInicial 
             : redondear2(Math.min(capitalRegular, saldo));
         // La ultima cuota recarga el residuo decimal del plan.
         const pago = esUltima ? redondear2(totalPlan - cuotaFija * (plazo - 1)) : cuotaFija;
-        const interesMes = redondear2(Math.max(pago - capitalCuota, 0));
+        const interesMes = cuotaManualActiva && !esUltima
+            ? interesMensualFijo
+            : redondear2(Math.max(pago - capitalCuota, 0));
         const saldoFinal = redondear2(Math.max(saldo - capitalCuota, 0));
         interesAcumulado = redondear2(interesAcumulado + interesMes);
 
@@ -133,6 +147,7 @@ module.exports = {
     resolverCuotaFijaPlan,
     generarTablaPlana,
     calcularTotalPlanPlano,
+    validarCuotaPersonalizada,
     sqlCuotaPlana,
     sqlTotalPlanPlano
 };

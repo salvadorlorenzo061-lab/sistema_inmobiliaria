@@ -48,14 +48,25 @@ export const calcularCuotaFija = (capital, tasaAnual, cuotas) => {
   return entera > 0 ? entera : redondearMoneda(total / plazo);
 };
 
-// Una cuota personalizada (pactada manualmente) solo se respeta si amortiza
-// el plan completo dentro del plazo (regla historica del sistema).
+export const validarCuotaPersonalizada = (capital, tasaAnual, cuotas, cuotaPersonalizada) => {
+  const principal = redondearMoneda(Math.max(numeroSeguro(capital, 0), 0));
+  const tasa = Math.max(numeroSeguro(tasaAnual, 0), 0);
+  const plazo = Math.max(parseInt(cuotas || 0, 10), 0);
+  const personalizada = Math.round(Math.max(numeroSeguro(cuotaPersonalizada, 0), 0));
+  if (personalizada <= 0 || principal <= 0 || plazo <= 1) return false;
+
+  const interesMensual = calcularInteresFijoMensual(principal, tasa);
+  const capitalPorCuota = redondearMoneda(personalizada - interesMensual);
+  return capitalPorCuota > 0 && redondearMoneda(capitalPorCuota * (plazo - 1)) < principal;
+};
+
+// La cuota manual debe cubrir el interes fijo y dejar saldo positivo para la
+// ultima cuota dentro del plazo acordado.
 const resolverCuotaFijaPlan = (principal, tasa, plazo, cuotaPersonalizada = 0) => {
   const calculada = calcularCuotaFija(principal, tasa, plazo);
-  const totalFinanciado = calcularTotalPlanPlano(principal, tasa, plazo);
   const personalizada = Math.round(Math.max(numeroSeguro(cuotaPersonalizada, 0), 0));
-  const personalizadaValida = personalizada > 0
-    && (plazo <= 1 || personalizada * (plazo - 1) < totalFinanciado);
+  const personalizadaValida = personalizada !== calculada
+    && validarCuotaPersonalizada(principal, tasa, plazo, personalizada);
   return personalizadaValida ? personalizada : calculada;
 };
 
@@ -66,12 +77,15 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
   const numeroBase = Math.max(parseInt(cuotaInicial || 0, 10), 0);
   if (principal <= 0 || plazo <= 0) return [];
 
-  // Cuota absoluta rigida: el capital regular es principal / plazo. En el
-  // ultimo periodo se aplica el residuo de capital y el interes se despeja
-  // por diferencia para conservar exactamente la misma cuota pactada.
+  // El plan automatico conserva su reparto original. En el manual, el interes
+  // mensual pactado se mantiene fijo y el excedente de cuota amortiza capital.
   const cuotaFija = resolverCuotaFijaPlan(principal, tasa, plazo, cuotaFijaPersonalizada);
   const totalPlan = calcularTotalPlanPlano(principal, tasa, plazo);
-  const capitalRegular = tasa <= 0 ? cuotaFija : redondearMoneda(principal / plazo);
+  const cuotaManualActiva = cuotaFija !== calcularCuotaFija(principal, tasa, plazo);
+  const interesMensualFijo = calcularInteresFijoMensual(principal, tasa);
+  const capitalRegular = cuotaManualActiva
+    ? redondearMoneda(cuotaFija - interesMensualFijo)
+    : (tasa <= 0 ? cuotaFija : redondearMoneda(principal / plazo));
   const tabla = [];
   let saldo = principal;
   let interesAcumulado = 0;
@@ -83,7 +97,9 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
       : redondearMoneda(Math.min(capitalRegular, saldo));
     // La ultima cuota recarga el residuo decimal del plan.
     const pago = esUltimaCuota ? redondearMoneda(totalPlan - cuotaFija * (plazo - 1)) : cuotaFija;
-    const interesMes = redondearMoneda(Math.max(pago - capitalCuota, 0));
+    const interesMes = cuotaManualActiva && !esUltimaCuota
+      ? interesMensualFijo
+      : redondearMoneda(Math.max(pago - capitalCuota, 0));
     const saldoFinal = redondearMoneda(Math.max(saldo - capitalCuota, 0));
     interesAcumulado = redondearMoneda(interesAcumulado + interesMes);
 
@@ -102,4 +118,3 @@ export const generarTablaAmortizacion = (capital, tasaAnual, cuotas, cuotaInicia
 
   return tabla;
 };
-
