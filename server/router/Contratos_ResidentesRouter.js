@@ -7,6 +7,7 @@ const path = require('path');
 const multer = require('multer');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 const {
+    calcularCuotaPlana,
     calcularTotalPlanPlano,
     resolverCuotaFijaPlan,
     validarCuotaPersonalizada,
