@@ -816,9 +816,24 @@ function Contratos_Residentes() {
     });
   };
 
-  const imprimirContrato = (val) => {
+  const buscarResidenteContrato = async (idResidente) => {
+    const coincide = (r) => String(r.id_residente) === String(idResidente);
+    const local = residentesList.find(coincide);
+    if (local) return local;
     try {
-      const residente = residentesList.find(r => String(r.id_residente) === String(val.id_residente));
+      const res = await Axios.get(`${API_BASE_URL}/api/residentes`);
+      const lista = Array.isArray(res.data) ? res.data : [];
+      if (lista.length) setResidentesList(lista);
+      return lista.find(coincide) || null;
+    } catch (error) {
+      console.error('Error al recargar clientes', error);
+      return null;
+    }
+  };
+
+  const imprimirContrato = async (val) => {
+    try {
+      const residente = await buscarResidenteContrato(val.id_residente);
       
       if (!residente) {
         Swal.fire({ icon: "error", title: "Error", text: "No se encontraron datos del cliente" });
@@ -860,9 +875,9 @@ function Contratos_Residentes() {
     }
   };
 
-  const descargarContratoPdf = (val) => {
+  const descargarContratoPdf = async (val) => {
     try {
-      const residente = residentesList.find(r => String(r.id_residente) === String(val.id_residente));
+      const residente = await buscarResidenteContrato(val.id_residente);
 
       if (!residente) {
         Swal.fire({ icon: "error", title: "Error", text: "No se encontraron datos del cliente" });
