@@ -264,13 +264,14 @@ export const buildConsolidatedInvoiceRows = (detalles = [], options = {}) => {
  */
 export const renderFacturaComprobante = (doc, datos = {}) => {
   const {
-    titulo = ['RECIBO DE CAJA O', 'COMPROBANTE DE PAGO'],
+    titulo: tituloPersonalizado = null,
     logo = '',
     empresa = {},
     documentoNo = 'N/A',
     fechaEmision = null,
     cliente = {},
     contrato = 'N/A',
+    propiedad = {},
     pago = {},
     rolUsuarioCobro = '',
     encabezados = ['Concepto / Cuota', 'Mes Afectado', 'Total'],
@@ -282,6 +283,12 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
 
   const pW = doc.internal.pageSize.getWidth();
   const pH = doc.internal.pageSize.getHeight();
+  const rolNormalizado = String(rolUsuarioCobro || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const titulo = tituloPersonalizado
+    || (rolNormalizado.includes('juridic') ? ['RECIBO JURÍDICO', ''] : ['RECIBO DE CAJA', '']);
   const fecha = fechaEmision instanceof Date && !Number.isNaN(fechaEmision.getTime())
     ? fechaEmision
     : new Date();
@@ -319,8 +326,9 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   doc.rect(140, y - 2, 63, 30);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text(String(titulo[0] || ''), 171.5, y + 4, { align: 'center' });
-  doc.text(String(titulo[1] || ''), 171.5, y + 9, { align: 'center' });
+  const segundaLinea = String(titulo[1] || '');
+  doc.text(String(titulo[0] || ''), 171.5, segundaLinea ? y + 4 : y + 7, { align: 'center' });
+  if (segundaLinea) doc.text(segundaLinea, 171.5, y + 9, { align: 'center' });
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.2);
   doc.text(`Documento No: ${texto(documentoNo)}`, 171.5, y + 15, { align: 'center' });
@@ -370,6 +378,16 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   doc.text('NIT:', 120, y);
   doc.setFont('Helvetica', 'normal');
   doc.text(texto(cliente?.nit, 'CF'), 131, y);
+  y += 6;
+
+  doc.setFont('Helvetica', 'bold');
+  doc.text('Lote:', 12, y);
+  doc.setFont('Helvetica', 'normal');
+  doc.text(texto(propiedad?.lote), 24, y);
+  doc.setFont('Helvetica', 'bold');
+  doc.text('Manzana:', 120, y);
+  doc.setFont('Helvetica', 'normal');
+  doc.text(texto(propiedad?.manzana), 143, y);
   y += 8;
 
   // Datos de pago
@@ -388,7 +406,7 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   doc.setFont('Helvetica', 'bold');
   doc.text('Referencia:', 120, y);
   doc.setFont('Helvetica', 'normal');
-  const esPagoBancario = metodo.includes('deposit') || metodo.includes('transfer');
+  const esPagoBancario = metodo.includes('deposit') || metodo.includes('transfer') || metodo.includes('cheque');
   const referenciaPrincipal = esPagoBancario
     ? texto(pago?.boletaReferencia || pago?.referencia || documentoNo)
     : texto(pago?.referencia || documentoNo);

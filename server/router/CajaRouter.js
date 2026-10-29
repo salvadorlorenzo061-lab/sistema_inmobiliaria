@@ -900,7 +900,7 @@ router.get("/residentes-pendientes", (req, res) => {
             COALESCE(conv.monto_cuota, c.monto_cuota) AS monto_cuota,
             COALESCE(conv.cuotas_pactadas, c.cuotas_pactadas) AS cuotas_pactadas,
             COALESCE(pagos_resumen.cuotas_pagadas, COALESCE(c.cuotas_pagadas, 0)) AS cuotas_pagadas,
-            c.interes_porcentaje, c.mora, c.fecha_compra, c.fecha_firma, c.dia_pago_limite, tc.id_tipo_contrato,
+            c.interes_porcentaje, c.mora, c.numero_lote, c.manzana, c.fecha_compra, c.fecha_firma, c.dia_pago_limite, tc.id_tipo_contrato,
             tc.nombre_tipo_contrato AS nombre_contrato,
             conv.id_convenio AS id_convenio_activo,
             conv.fecha_inicio AS convenio_fecha_inicio,
@@ -1032,6 +1032,8 @@ router.get("/buscar-residente", (req, res) => {
             COALESCE(pagos_resumen.cuotas_pagadas, COALESCE(c.cuotas_pagadas, 0)) AS cuotas_pagadas,
             c.interes_porcentaje,
             c.mora,
+            c.numero_lote,
+            c.manzana,
             c.fecha_compra,
             c.fecha_firma,
             c.dia_pago_limite,
@@ -1948,9 +1950,18 @@ const bloquearCobroSiExisteMora = (req, res, next) => {
             if (!debeValidarMora) return next();
 
             const sqlMora = `
-                SELECT COALESCE(SUM(CASE WHEN COALESCE(c.mora, 0) > 0 THEN c.mora ELSE m.monto_mora END), 0) AS total_mora
+                SELECT m.id_morosidad, m.mes_atrasado,
+                       CASE WHEN COALESCE(c.mora, 0) > 0 THEN c.mora ELSE m.monto_mora END AS monto_mora,
+                       COALESCE(vp.fecha_compra, c.fecha_compra, c.fecha_firma) AS fecha_contrato,
+                       COALESCE(c.dia_pago_limite, 5) AS dias_gracia,
+                       c.mes_inicio_pagos, c.anio_inicio_pagos, c.dia_inicio_pagos
                 FROM morosidad m
                 INNER JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
+                LEFT JOIN (
+                    SELECT id_contrato, MAX(fecha_compra) AS fecha_compra
+                    FROM ventas_propiedad
+                    GROUP BY id_contrato
+                ) vp ON vp.id_contrato = c.id_contrato
                 WHERE m.id_contrato = ?
                   AND LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
                   AND NOT EXISTS (
@@ -1971,7 +1982,14 @@ const bloquearCobroSiExisteMora = (req, res, next) => {
                     if (String(moraErr?.code || '').toUpperCase() === 'ER_NO_SUCH_TABLE') return next();
                     return res.status(500).send('No se pudo validar la mora pendiente del cliente.');
                 }
-                const totalMora = Number(moraRows?.[0]?.total_mora || 0);
+                // Mismo criterio que /moras-pendientes: solo mora vencida, una por mes.
+                const morasPorMes = new Map();
+                (moraRows || []).forEach((row) => {
+                    if (!esMoraContractualVencida(row.mes_atrasado, row.fecha_contrato, row.dias_gracia, row.mes_inicio_pagos, row.anio_inicio_pagos, row.dia_inicio_pagos)) return;
+                    const clave = normalizeText(String(row.mes_atrasado || '').replace(/\s+/g, ' ').trim());
+                    if (!morasPorMes.has(clave)) morasPorMes.set(clave, Number(row.monto_mora || 0));
+                });
+                const totalMora = Array.from(morasPorMes.values()).reduce((sum, monto) => sum + monto, 0);
                 if (totalMora > 0) {
                     return res.status(409).send({
                         code: 'CLIENTE_CON_MORA',
@@ -2112,9 +2130,9 @@ router.post("/procesar-pago", bloquearCobroSiExisteMora, (req, res) => {
     const montoAbonoCapitalSolicitado = parseFloat(monto_abono_capital || 0);
     const montoInteresSolicitado = parseFloat(monto_interes || 0);
     const metodoPagoNormalizado = normalizeText(metodo_pago || '');
-    const esPagoBancario = metodoPagoNormalizado.includes('deposit') || metodoPagoNormalizado.includes('transfer');
+    const esPagoBancario = metodoPagoNormalizado.includes('deposit') || metodoPagoNormalizado.includes('transfer') || metodoPagoNormalizado.includes('cheque');
     if (esPagoBancario && (!String(banco_pago || '').trim() || !String(fecha_operacion || '').trim() || !String(boleta_referencia || no_referencia || '').trim())) {
-        return res.status(400).send('Para depósito o transferencia debes indicar banco, fecha de operación y número de referencia o boleta.');
+        return res.status(400).send('Para depósito, transferencia o cheque de caja debes indicar banco, fecha de operación y número de referencia, boleta o cheque.');
     }
     const montoTerrenoTotalBase = Number.isFinite(montoTerrenoSolicitado)
         ? parseFloat(Math.max(montoTerrenoSolicitado, 0).toFixed(2))

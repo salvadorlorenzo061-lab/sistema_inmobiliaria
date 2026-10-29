@@ -382,6 +382,10 @@ function AnulacionDeuda() {
         contrato: documento?.contrato?.codigo_contrato
           || contratoInfo?.codigo_contrato
           || `#${anulacion.id_contrato || "-"}`,
+        propiedad: {
+          lote: documento?.contrato?.numero_lote || contratoInfo?.numero_lote,
+          manzana: documento?.contrato?.manzana || contratoInfo?.manzana
+        },
         pago: {
           metodo: documento?.metodo_pago,
           referencia: documento?.correlativo || correlativoTexto,

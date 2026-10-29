@@ -1592,10 +1592,10 @@ const Caja = () => {
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase();
-        const esPagoBancario = metodoPagoNormalizado.includes('deposit') || metodoPagoNormalizado.includes('transfer');
+        const esPagoBancario = metodoPagoNormalizado.includes('deposit') || metodoPagoNormalizado.includes('transfer') || metodoPagoNormalizado.includes('cheque');
 
         if (esPagoBancario && (!bancoPago.trim() || !fechaOperacion || !referencia.trim())) {
-            mostrarToast('Para depósito o transferencia debes indicar banco, fecha de operación y número de referencia o boleta.', 'warning');
+            mostrarToast('Para depósito, transferencia o cheque de caja debes indicar banco, fecha de operación y número de referencia, boleta o cheque.', 'warning');
             return;
         }
         const morasExoneradasPayload = seExoneraMoraDelCobro
@@ -2082,8 +2082,8 @@ const Caja = () => {
                     nit: residente?.nit
                 },
                 contrato: residente?.codigo_contrato,
-                pago: {
-                    metodo: recibo?.metodo_pago || metodoPago,
+                propiedad: { lote: residente?.numero_lote, manzana: residente?.manzana },
+                pago: {                    metodo: recibo?.metodo_pago || metodoPago,
                     referencia,
                     banco: bancoPago,
                     fechaOperacion,
@@ -3019,6 +3019,7 @@ const Caja = () => {
                                                 <option value="Efectivo">Efectivo</option>
                                                 <option value="Depósito Bancario">Depósito Bancario</option>
                                                 <option value="Transferencia">Transferencia</option>
+                                                <option value="Cheque de Caja">Cheque de Caja</option>
                                             </select>
                                         </div>
                                     </div>

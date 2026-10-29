@@ -216,8 +216,9 @@ router.get('/documento/:id_pago', (req, res) => {
             r.direccion_notificacion,
             c.codigo_contrato,
             c.enganche AS enganche_contrato,
-            tc.nombre_tipo_contrato AS nombre_contrato,
-            p.forma_pago,
+            c.numero_lote AS numero_lote_contrato,
+            c.manzana AS manzana_contrato,
+            tc.nombre_tipo_contrato AS nombre_contrato,            p.forma_pago,
             p.no_referencia,
             p.banco_pago,
             p.fecha_operacion,
@@ -349,7 +350,9 @@ router.get('/documento/:id_pago', (req, res) => {
             contrato: {
                 codigo_contrato: base.codigo_contrato || 'N/A',
                 nombre_contrato: base.nombre_contrato || 'N/A',
-                enganche: Number(base.enganche_contrato || 0)
+                enganche: Number(base.enganche_contrato || 0),
+                numero_lote: base.numero_lote_contrato || null,
+                manzana: base.manzana_contrato || null
             },
             empresa: {
                 nombre_empresa: base.nombre_empresa || 'Inmobiliaria',

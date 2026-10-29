@@ -328,6 +328,7 @@ function PagosDetalle() {
           nit: documento?.cliente?.nit
         },
         contrato: documento?.contrato?.codigo_contrato,
+        propiedad: { lote: documento?.contrato?.numero_lote, manzana: documento?.contrato?.manzana },
         pago: {
           metodo: documento?.metodo_pago,
           referencia: correlativo,

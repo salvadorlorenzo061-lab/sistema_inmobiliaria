@@ -106,6 +106,8 @@ const ReporteFacturas = () => {
           nit: documento?.cliente?.nit
         },
         contrato: documento?.contrato?.codigo_contrato,
+        propiedad: { lote: documento?.contrato?.numero_lote, manzana: documento?.contrato?.manzana },
+        rolUsuarioCobro: documento?.rol_usuario_cobro || '',
         pago: {
           metodo: documento?.metodo_pago,
           referencia: correlativo,
