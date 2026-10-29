@@ -67,25 +67,41 @@ const EstadoCuenta = () => {
       Number(contrato.monto_cuota || 0)
     );
     const porCuota = new Map(tabla.map((fila) => [Number(fila.numero_cuota), fila]));
-    const movimientos = (Array.isArray(estado.cuotasDetalle) ? estado.cuotasDetalle : [])
-      .filter((item) => Number(item.numero_cuota || 0) > 0)
-      .map((item) => {
+    const movimientosCuotas = (Array.isArray(estado.cuotasDetalle) ? estado.cuotasDetalle : [])
+      .map((item, indice) => {
         const numero = Number(item.numero_cuota || 0);
+        const esEnganche = String(item.tipos_concepto || '').toLowerCase() === 'enganche' || numero === 0;
         const fila = porCuota.get(numero) || {};
         return {
-          id: `${item.id_pago}-${numero}`,
+          id: `${item.id_pago}-${numero}-${indice}`,
           fecha: item.fecha_pago,
-          numero,
+          numero: esEnganche ? 'Enganche' : numero,
+          numeroCuota: esEnganche ? 0 : numero,
           monto: Number(item.monto_total_detalle ?? item.monto_cuota ?? 0),
           banco: item.banco_pago || item.forma_pago || 'N/A',
           boleta: item.boleta_referencia || 'N/A',
           recibo: item.correlativo || item.no_referencia || 'N/A',
-          capital: Number(fila.capital_cuota || 0),
-          interes: Number(fila.interes_mes || 0)
+          capital: esEnganche ? Number(item.monto_total_detalle || 0) : Number(fila.capital_cuota || 0),
+          interes: esEnganche ? 0 : Number(fila.interes_mes || 0)
         };
-      })
+      });
+    const movimientosOtros = (Array.isArray(estado.otrosPagos) ? estado.otrosPagos : [])
+      .filter((item) => String(item.tipo_concepto || '').toLowerCase() !== 'mora_exonerada')
+      .map((item, indice) => ({
+        id: `otro-${item.id_pago_detalle || item.id_pago}-${indice}`,
+        fecha: item.fecha_pago,
+        numero: item.concepto || 'Otro pago',
+        numeroCuota: 0,
+        monto: Number(item.monto || 0),
+        banco: item.banco_pago || item.forma_pago || 'N/A',
+        boleta: item.boleta_referencia || 'N/A',
+        recibo: item.correlativo || item.no_referencia || 'N/A',
+        capital: 0,
+        interes: 0
+      }));
+    const movimientos = [...movimientosCuotas, ...movimientosOtros]
       .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    const cuotasPagadas = new Set(movimientos.map((item) => item.numero)).size;
+    const cuotasPagadas = new Set(movimientos.filter((item) => item.numeroCuota > 0).map((item) => item.numeroCuota)).size;
     const capitalPagado = tabla.slice(0, cuotasPagadas).reduce((suma, fila) => suma + Number(fila.capital_cuota || 0), 0);
     const proxima = Math.min(cuotasPagadas + 1, cuotas);
     return {
@@ -158,7 +174,7 @@ const EstadoCuenta = () => {
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 5, margin: { left: 12, right: 12 }, theme: 'plain',
       head: [[{ content: `ÚLTIMOS ${cantidad} PAGOS REGISTRADOS`, colSpan: 9, styles: { fillColor: azul, halign: 'center' } }], ['Fecha pago', 'Tipo', 'Monto', 'Cuota', 'Banco', 'Boleta', 'Recibo', 'Capital', 'Interés']],
-      body: resumen.movimientos.length ? resumen.movimientos.map((m) => [fecha(m.fecha), 'CUOTA', moneda(m.monto), m.numero, m.banco, m.boleta, m.recibo, moneda(m.capital), moneda(m.interes)]) : [['', 'Sin pagos registrados', '', '', '', '', '', '', '']],
+      body: resumen.movimientos.length ? resumen.movimientos.map((m) => [fecha(m.fecha), typeof m.numero === 'number' ? 'CUOTA' : 'PAGO', moneda(m.monto), m.numero, m.banco, m.boleta, m.recibo, moneda(m.capital), moneda(m.interes)]) : [['', 'Sin pagos registrados', '', '', '', '', '', '', '']],
       styles: { fontSize: 6.3, halign: 'center', cellPadding: 1.1 }, headStyles: { fillColor: dorado, textColor: 255, fontStyle: 'bold' }
     });
     const y = doc.lastAutoTable.finalY + 7;
