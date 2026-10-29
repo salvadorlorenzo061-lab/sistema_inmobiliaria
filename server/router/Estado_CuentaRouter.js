@@ -390,10 +390,10 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                     db.query(queryDetalleCuotas, [id_contrato], (detalleErr, detalleCuotasResult) => {
                         if (detalleErr) {
                             console.error("Error al obtener detalle de cuotas:", detalleErr.message);
-                            return responderEstadoCuenta([]);
+                            detalleCuotasResult = [];
                         }
 
-                        const queryOtrosPagos = `
+                        const construirQueryOtrosPagos = (montoExoneradoSql) => `
                             SELECT
                                 pd.id_pago_detalle,
                                 p.id_pago,
@@ -414,14 +414,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                                 pd.tipo_concepto,
                                 pd.mes_pagado,
                                 CASE
-                                    WHEN pd.tipo_concepto = 'mora_exonerada' THEN COALESCE((
-                                        SELECT MAX(fh_ref.subtotal)
-                                        FROM facturas_historial fh_ref
-                                        WHERE fh_ref.id_pago = p.id_pago
-                                          AND fh_ref.estado_factura = 'EMITIDA'
-                                          AND fh_ref.tipo_concepto = 'mora_exonerada'
-                                          AND LOWER(TRIM(COALESCE(fh_ref.mes_pagado, ''))) = LOWER(TRIM(COALESCE(pd.mes_pagado, '')))
-                                    ), 0)
+                                    WHEN pd.tipo_concepto = 'mora_exonerada' THEN ${montoExoneradoSql}
                                     ELSE pd.subtotal
                                 END AS monto,
                                 (SELECT MAX(fh.correlativo)
@@ -441,7 +434,26 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                             ORDER BY p.fecha_pago DESC, p.id_pago DESC, pd.id_pago_detalle ASC
                         `;
 
-                        db.query(queryOtrosPagos, queryPagosParams, (otrosErr, otrosPagosResult) => {
+                        const montoExoneradoConSubconsulta = `COALESCE((
+                                        SELECT MAX(fh_ref.subtotal)
+                                        FROM facturas_historial fh_ref
+                                        WHERE fh_ref.id_pago = p.id_pago
+                                          AND fh_ref.estado_factura = 'EMITIDA'
+                                          AND fh_ref.tipo_concepto = 'mora_exonerada'
+                                          AND LOWER(TRIM(COALESCE(fh_ref.mes_pagado, ''))) COLLATE utf8mb4_general_ci = LOWER(TRIM(COALESCE(pd.mes_pagado, ''))) COLLATE utf8mb4_general_ci
+                                    ), 0)`;
+
+                        // Si la subconsulta falla (p. ej. por collation), se reintenta sin ella para
+                        // que los cobros de mora y servicios nunca desaparezcan del informe.
+                        const consultarOtrosPagos = (callback) => {
+                            db.query(construirQueryOtrosPagos(montoExoneradoConSubconsulta), queryPagosParams, (otrosErr, rows) => {
+                                if (!otrosErr) return callback(null, rows);
+                                console.error('Error al obtener mora y servicios (reintentando simplificado):', otrosErr.message);
+                                db.query(construirQueryOtrosPagos('pd.subtotal'), queryPagosParams, callback);
+                            });
+                        };
+
+                        consultarOtrosPagos((otrosErr, otrosPagosResult) => {
                             if (otrosErr) {
                                 console.error('Error al obtener mora y servicios:', otrosErr.message);
                                 return responderEstadoCuenta(detalleCuotasResult, []);
