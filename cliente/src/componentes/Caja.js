@@ -1541,7 +1541,14 @@ const Caja = () => {
         const montoServicios = esUsuarioGestorCobros ? 0 : parseFloat(montoServiciosSeleccionado || 0);
         const montoSolicitado = esUsuarioJuridico
             ? parseFloat((Number(montoServiciosSeleccionado || 0) + Number(montoMora || 0)).toFixed(2))
-            : parseFloat(montoAPagar || 0);
+            : (parseFloat(montoAPagar || 0) > 0
+                ? parseFloat(montoAPagar || 0)
+                : parseFloat((
+                    Number(montoTotalSeleccionado || 0)
+                    || (String(numCuota || '') === '0' && !(mesesSeleccionados || []).length
+                        ? Math.max(Number(datosDeuda?.enganche_pendiente || 0), 0)
+                        : 0)
+                ).toFixed(2)));
         const tieneServicioRegularSeleccionado = (serviciosContrato || []).some((servicio) => (
             serviciosSeleccionados.includes(servicio.id_servicio) && !servicio.es_extraordinario
         ));
