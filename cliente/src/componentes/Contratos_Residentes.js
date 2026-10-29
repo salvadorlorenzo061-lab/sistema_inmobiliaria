@@ -690,7 +690,7 @@ function Contratos_Residentes() {
             medida_norte, medida_sur, medida_oriente, medida_poniente,
             // Datos económicos
             enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-            mes_inicio_pagos: payload.mes_inicio_pagos, anio_inicio_pagos: payload.anio_inicio_pagos
+            mes_inicio_pagos: payload.mes_inicio_pagos, anio_inicio_pagos: payload.anio_inicio_pagos, dia_inicio_pagos: payload.dia_inicio_pagos
           };
           
           // Descargar PDF automáticamente
@@ -862,9 +862,9 @@ function Contratos_Residentes() {
         medida_norte, medida_sur, medida_oriente, medida_poniente,
         // Datos económicos
         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-        mes_inicio_pagos: val.mes_inicio_pagos, anio_inicio_pagos: val.anio_inicio_pagos
+        mes_inicio_pagos: val.mes_inicio_pagos, anio_inicio_pagos: val.anio_inicio_pagos, dia_inicio_pagos: val.dia_inicio_pagos
       };
-      
+
       // Generar e imprimir PDF
       imprimirPdfContrato(datosParaPdf, residente);
       
@@ -906,7 +906,7 @@ function Contratos_Residentes() {
         medida_norte, medida_sur, medida_oriente, medida_poniente,
         // Datos económicos
         enganche, interes_porcentaje, mora, porcentaje_dominio, plazo_meses,
-        mes_inicio_pagos: val.mes_inicio_pagos, anio_inicio_pagos: val.anio_inicio_pagos
+        mes_inicio_pagos: val.mes_inicio_pagos, anio_inicio_pagos: val.anio_inicio_pagos, dia_inicio_pagos: val.dia_inicio_pagos
       };
 
       // Generar y descargar PDF automático con el formato programado.

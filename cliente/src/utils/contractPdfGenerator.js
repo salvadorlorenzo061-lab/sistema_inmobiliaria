@@ -176,10 +176,15 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
     : (vCuota * nCuotas);
   const mora      = parseFloat(datosContrato.mora)               || 600;
   const diasGracia = Number(datosContrato.dia_pago_limite ?? 5);
-  const diaVencimiento = fechaCompraObj.getDate();
+  const diaVencimiento = Math.min(31, Math.max(1, Number(datosContrato.dia_inicio_pagos) || fechaCompraObj.getDate()));
   const plazo     = parseInt(datosContrato.plazo_meses)          || 60;
   const pctDominio= parseInt(datosContrato.porcentaje_dominio)   || 80;
-  const primerPagoCalendario = obtenerPrimerPagoCalendario(datosContrato.fecha_compra, datosContrato.fecha_firma);
+  const mesGuardado = Number(datosContrato.mes_inicio_pagos || 0);
+  const anioGuardado = Number(datosContrato.anio_inicio_pagos || 0);
+  const inicioGuardadoValido = mesGuardado >= 1 && mesGuardado <= 12 && anioGuardado >= 1900;
+  const primerPagoCalendario = inicioGuardadoValido
+    ? new Date(anioGuardado, mesGuardado - 1, 1)
+    : obtenerPrimerPagoCalendario(datosContrato.fecha_compra, datosContrato.fecha_firma);
   const mesInicio = primerPagoCalendario
     ? String(primerPagoCalendario.getMonth() + 1)
     : (datosContrato.mes_inicio_pagos || '7');

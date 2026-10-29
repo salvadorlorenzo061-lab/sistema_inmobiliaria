@@ -353,7 +353,12 @@ export const generarPdfContrato = (datosContrato, datosResidente) => {
         return new Date(base.getFullYear(), base.getMonth() + 1, 1);
     };
 
-    const primerPagoCalendario = obtenerPrimerPagoCalendario(datosContrato.fecha_compra, datosContrato.fecha_firma);
+    const mesGuardado = Number(datosContrato.mes_inicio_pagos || 0);
+    const anioGuardado = Number(datosContrato.anio_inicio_pagos || 0);
+    const inicioGuardadoValido = mesGuardado >= 1 && mesGuardado <= 12 && anioGuardado >= 1900;
+    const primerPagoCalendario = inicioGuardadoValido
+        ? new Date(anioGuardado, mesGuardado - 1, 1)
+        : obtenerPrimerPagoCalendario(datosContrato.fecha_compra, datosContrato.fecha_firma);
     const mesInicio = monthToWords(primerPagoCalendario ? String(primerPagoCalendario.getMonth() + 1) : (datosContrato.mes_inicio_pagos || '7'));
     const anioInicio = yearToWords(primerPagoCalendario ? String(primerPagoCalendario.getFullYear()) : (datosContrato.anio_inicio_pagos || '2026'));
 

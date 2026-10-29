@@ -28,12 +28,29 @@ const formatearFechaVista = (fecha) => {
   return `${day}/${month}/${year}`;
 };
 
-const construirFechaVencimiento = (numeroCuota, fechaBase) => {
+const fechaCalendario = (valor) => {
+  if (!valor) return null;
+  const coincide = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (coincide) return new Date(Number(coincide[1]), Number(coincide[2]) - 1, Number(coincide[3]));
+  const fecha = new Date(valor);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+};
+
+// Misma regla que Caja y Estado de Cuenta: la cuota 1 vence en el mes/dia de inicio de pagos del
+// contrato; la cuota 0 (enganche) en la fecha de compra/firma.
+const construirFechaVencimiento = (numeroCuota, contrato = {}) => {
   if (!numeroCuota && numeroCuota !== 0) return '';
-  const base = fechaBase ? new Date(fechaBase) : new Date();
-  if (Number.isNaN(base.getTime())) return '';
-  const fecha = new Date(base.getFullYear(), base.getMonth() + Number(numeroCuota), 15);
-  return formatearFechaVista(fecha);
+  const base = fechaCalendario(contrato?.fecha_compra || contrato?.fecha_firma) || new Date();
+  const cuota = Number(numeroCuota);
+  if (cuota === 0) return formatearFechaVista(base);
+  const anio = Number(contrato?.anio_inicio_pagos || base.getFullYear());
+  const mes = Number(contrato?.mes_inicio_pagos || (base.getMonth() + 2));
+  const dia = Math.max(1, Math.min(31, Number(contrato?.dia_inicio_pagos || base.getDate() || 1)));
+  const indiceMes = (mes - 1) + Math.max(cuota - 1, 0);
+  const anioDestino = anio + Math.floor(indiceMes / 12);
+  const mesDestino = ((indiceMes % 12) + 12) % 12;
+  const ultimoDia = new Date(anioDestino, mesDestino + 1, 0).getDate();
+  return formatearFechaVista(new Date(anioDestino, mesDestino, Math.min(dia, ultimoDia)));
 };
 
 const normalizeImageDataUrl = (value = '') => {
@@ -547,7 +564,7 @@ const CuentaEstado = () => {
       ]],
       body: tablaAmortizacionPendiente.map((row, index) => {
         const cuotaNumero = Number(row.numero_cuota ?? (index + 1));
-        const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
+        const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato);
         const saldoCapital = Number(row.saldo_final ?? 0);
         const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
@@ -643,7 +660,7 @@ const CuentaEstado = () => {
 
     const filas = tablaAmortizacionPendiente.map((row, index) => {
       const cuotaNumero = Number(row.numero_cuota ?? (index + 1));
-      const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
+      const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato);
       const saldoCapital = Number(row.saldo_final ?? 0);
       const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
@@ -919,7 +936,7 @@ const CuentaEstado = () => {
                         <tbody>
                           {tablaAmortizacionPendiente.map((row, index) => {
                             const cuotaNumero = Number(row.numero_cuota ?? (index + 1));
-                            const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato?.fecha_firma || new Date());
+                            const fechaVencimiento = construirFechaVencimiento(cuotaNumero, contrato);
                             const saldoCapital = Number(row.saldo_final ?? 0);
                             const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
