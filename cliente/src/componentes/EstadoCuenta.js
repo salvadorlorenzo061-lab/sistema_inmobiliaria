@@ -128,12 +128,12 @@ const EstadoCuenta = () => {
     if (logo) {
       try {
         const propiedades = doc.getImageProperties(logo);
-        const maxW = 62;
-        const maxH = 24;
+        const maxW = 78;
+        const maxH = 34;
         const escala = Math.min(maxW / propiedades.width, maxH / propiedades.height);
         const logoW = propiedades.width * escala;
         const logoH = propiedades.height * escala;
-        doc.addImage(logo, logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', (ancho - logoW) / 2, 7, logoW, logoH, 'logo-proyecto', 'FAST');
+        doc.addImage(logo, logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', 17, 7, logoW, logoH, 'logo-proyecto', 'FAST');
       } catch (e) { console.warn(e); }
     }
     doc.setTextColor(...azul);

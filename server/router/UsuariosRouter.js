@@ -94,7 +94,7 @@ router.post('/login', (req, res) => {
     }
 
     const query = `
-        SELECT u.id_usuario, u.nombre, u.correo, u.clave, u.id_rol, u.estado, u.permisos, u.foto_perfil, r.nombre_rol
+        SELECT u.id_usuario, u.nombre, u.correo, u.clave, u.id_rol, u.estado, u.permisos, (u.permisos IS NOT NULL AND TRIM(u.permisos) <> '') AS permisos_configurados, u.foto_perfil, r.nombre_rol
         FROM usuarios u
         INNER JOIN roles r ON u.id_rol = r.id_rol
         WHERE u.correo = ?
@@ -144,6 +144,7 @@ router.post('/login', (req, res) => {
             nombre_rol: usuario.nombre_rol,
             estado: usuario.estado,
             permisos,
+            permisos_configurados: Boolean(usuario.permisos_configurados),
             foto_perfil: usuario.foto_perfil || null
         });
     });
@@ -205,7 +206,7 @@ router.post("/crear", async (req, res) => {
 router.get("/", (req, res) => {
     // CAMBIO: Traemos el nombre_rol desde la tabla roles para que el frontend lo use fácilmente
     const query = `
-        SELECT u.id_usuario, u.nombre, u.correo, u.id_rol, u.estado, u.permisos, u.foto_perfil, r.nombre_rol,
+        SELECT u.id_usuario, u.nombre, u.correo, u.id_rol, u.estado, u.permisos, (u.permisos IS NOT NULL AND TRIM(u.permisos) <> '') AS permisos_configurados, u.foto_perfil, r.nombre_rol,
                1 AS clave_protegida
         FROM usuarios u
         INNER JOIN roles r ON u.id_rol = r.id_rol
@@ -222,7 +223,7 @@ router.get("/", (req, res) => {
 
 router.get('/perfil/:id_usuario', (req, res) => {
     db.query(`
-        SELECT u.id_usuario, u.nombre, u.correo, u.id_rol, u.estado, u.permisos,
+        SELECT u.id_usuario, u.nombre, u.correo, u.id_rol, u.estado, u.permisos, (u.permisos IS NOT NULL AND TRIM(u.permisos) <> '') AS permisos_configurados,
                u.foto_perfil, r.nombre_rol
         FROM usuarios u
         INNER JOIN roles r ON r.id_rol = u.id_rol

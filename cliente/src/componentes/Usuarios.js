@@ -6,41 +6,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { API_BASE_URL } from '../config';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
-
-const PERMISOS_MODULOS = [
-  'Residentes',
-  'Menu General',
-  'Usuarios',
-  'Roles Sistema',
-  'Contratos Legales',
-  'Modalidades Contrato',
-  'Catálogo Servicios',
-  'Servicio',
-  'Empresa',
-  'Empresa-Proyecto',
-  'Proyectos',
-  'Caja (General)',
-  'Caja Ingresos Manual',
-  'Mora y Atrasos',
-  'Convenio de Pagos',
-  'Anulación Deuda',
-  'Cobros Extra',
-  'Pagos',
-  'Detalle Pagos',
-  'Dashboard Financiero',
-  'Reporte de Facturas',
-  'Tabla de Amortización',
-  'Cuadre de Facturación',
-  'Cuadre de Facturación Nuevo',
-  'Resoluciones Facturas',
-  'Bitácora',
-  'Detalle de Pagos'
-  ,'Estado de Cuenta'
-];
-
-// Se conserva el valor técnico "Residentes" en permisos existentes para no
-// invalidar accesos guardados; únicamente cambia su etiqueta visible.
-const etiquetaPermiso = (permiso) => permiso === 'Residentes' ? 'Clientes' : permiso;
+import { MODULOS_PERMISOS, etiquetaModuloPermiso, normalizarPermisos, parsePermisos } from '../utils/modulePermissions';
 
 function Usuarios() {
   const [id_usuario, setId_usuario] = useState("");
@@ -265,6 +231,7 @@ function Usuarios() {
           id_rol,
           estado,
           permisos: [...permisos],
+          permisos_configurados: true,
           foto_perfil
         };
         localStorage.setItem('usuario', JSON.stringify(actualizado));
@@ -319,7 +286,7 @@ function Usuarios() {
   };
 
   const seleccionarTodosPermisos = () => {
-    setPermisos(PERMISOS_MODULOS);
+    setPermisos(MODULOS_PERMISOS.map(({ id }) => id));
   };
 
   const limpiarPermisos = () => {
@@ -357,8 +324,14 @@ function Usuarios() {
     setEstado(val.estado);
     setFoto_perfil(val.foto_perfil || '');
     try {
-      const permisosUsuario = val.permisos ? JSON.parse(val.permisos) : [];
-      setPermisos(Array.isArray(permisosUsuario) ? permisosUsuario : []);
+      const esAdmin = /admin|administrador|superusuario/i.test(val.nombre_rol || '');
+      const permisosConfigurados = val.permisos_configurados === true
+        || val.permisos_configurados === 1
+        || val.permisos_configurados === '1';
+      const permisosUsuario = normalizarPermisos(parsePermisos(val.permisos));
+      setPermisos(esAdmin && !permisosConfigurados
+        ? MODULOS_PERMISOS.map(({ id }) => id)
+        : permisosUsuario);
     } catch {
       setPermisos([]);
     }
@@ -434,7 +407,7 @@ function Usuarios() {
         <tbody>
           {usuariosPaginados.length > 0 ? (
             usuariosPaginados.map((val) => {
-              const permisosLista = parsePermisosUsuario(val.permisos);
+              const permisosLista = normalizarPermisos(parsePermisosUsuario(val.permisos));
               const permisosOcultos = permisosLista.slice(3);
 
               return (
@@ -465,12 +438,12 @@ function Usuarios() {
                   {permisosLista.length > 0 ? (
                     <div className="d-flex flex-wrap gap-1">
                       {permisosLista.slice(0, 3).map((permiso) => (
-                        <span key={`${val.id_usuario}-${permiso}`} className="badge bg-dark">{etiquetaPermiso(permiso)}</span>
+                        <span key={`${val.id_usuario}-${permiso}`} className="badge bg-dark">{etiquetaModuloPermiso(permiso)}</span>
                       ))}
                       {permisosLista.length > 3 && (
                         <span
                           className="badge bg-secondary"
-                          title={permisosOcultos.map(etiquetaPermiso).join(', ')}
+                          title={permisosOcultos.map(etiquetaModuloPermiso).join(', ')}
                           style={{ cursor: 'help' }}
                         >
                           +{permisosLista.length - 3} más
@@ -568,17 +541,17 @@ function Usuarios() {
                       <button type="button" className="btn btn-sm btn-outline-success" onClick={seleccionarTodosPermisos}>Seleccionar Todo</button>
                       <button type="button" className="btn btn-sm btn-outline-secondary" onClick={limpiarPermisos}>Limpiar</button>
                     </div>
-                    {PERMISOS_MODULOS.map((permiso) => (
-                      <div key={permiso} className="form-check">
+                    {MODULOS_PERMISOS.map((permiso) => (
+                      <div key={permiso.id} className="form-check">
                         <input
                           className="form-check-input"
                           type="checkbox"
-                          id={`perm-reg-${permiso}`}
-                          checked={permisos.includes(permiso)}
-                          onChange={() => togglePermiso(permiso)}
+                          id={`perm-reg-${permiso.id}`}
+                          checked={permisos.includes(permiso.id)}
+                          onChange={() => togglePermiso(permiso.id)}
                         />
-                        <label className="form-check-label" htmlFor={`perm-reg-${permiso}`}>
-                          {etiquetaPermiso(permiso)}
+                        <label className="form-check-label" htmlFor={`perm-reg-${permiso.id}`}>
+                          {permiso.label}
                         </label>
                       </div>
                     ))}
@@ -654,17 +627,17 @@ function Usuarios() {
                       <button type="button" className="btn btn-sm btn-outline-success" onClick={seleccionarTodosPermisos}>Seleccionar Todo</button>
                       <button type="button" className="btn btn-sm btn-outline-secondary" onClick={limpiarPermisos}>Limpiar</button>
                     </div>
-                    {PERMISOS_MODULOS.map((permiso) => (
-                      <div key={permiso} className="form-check">
+                    {MODULOS_PERMISOS.map((permiso) => (
+                      <div key={permiso.id} className="form-check">
                         <input
                           className="form-check-input"
                           type="checkbox"
-                          id={`perm-edit-${permiso}`}
-                          checked={permisos.includes(permiso)}
-                          onChange={() => togglePermiso(permiso)}
+                          id={`perm-edit-${permiso.id}`}
+                          checked={permisos.includes(permiso.id)}
+                          onChange={() => togglePermiso(permiso.id)}
                         />
-                        <label className="form-check-label" htmlFor={`perm-edit-${permiso}`}>
-                          {etiquetaPermiso(permiso)}
+                        <label className="form-check-label" htmlFor={`perm-edit-${permiso.id}`}>
+                          {permiso.label}
                         </label>
                       </div>
                     ))}

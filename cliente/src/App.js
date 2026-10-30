@@ -6,113 +6,7 @@ import Login from './componentes/Login';
 import Swal from 'sweetalert2';
 import axios from 'axios';
 import { API_BASE_URL } from './config';
-
-const normalizeText = (value = '') => value
-  .toString()
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .trim();
-
-const MODULE_PERMISSION_ALIASES = {
-  residentes: ['residentes', 'clientes'],
-  servicio: ['servicio', 'servicios basicos'],
-  estado_cuenta_resumen: ['estado de cuenta'],
-  estado_cuenta: ['detalle de pagos', 'detalle pagos'],
-  menu_general: ['menu principal', 'menu general'],
-  anulacion_deuda: ['anular cobro', 'anulacion deuda', 'anulacion de deuda'],
-  convenio: ['convenio', 'convenio pagos', 'convenio de pagos'],
-  caja_ingresos: ['caja ingresos manual'],
-  asignar_correlativo: ['asignar correlativos', 'asignar correlativo', 'cuadre de facturacion', 'cuadre diario', 'cuadre semanal', 'cuadre quincenal', 'cuadre mensual', 'cuadre anual'],
-  cuadre_fact: ['cuadre de facturacion nuevo', 'cuadre fact'],
-  proyectos: ['proyecto', 'proyectos', 'catalogo de proyectos', 'catalogo proyectos'],
-  empresa_proyecto: ['empresa proyecto', 'empresa-proyecto', 'proyecto empresa'],
-  dashboard_financiero: ['dashboard', 'dashboard financiero', 'reportes', 'reporte financiero', 'estadisticas', 'reportes financieros']
-};
-
-const getFallbackPermisosByRole = (rolNormalizado = '') => {
-  if (rolNormalizado.includes('jurid') || rolNormalizado.includes('legal')) {
-    return new Set([
-      normalizeText('Caja (General)'),
-      normalizeText('Mora y Atrasos'),
-      normalizeText('Anular Cobro')
-    ]);
-  }
-
-  if (rolNormalizado.includes('cobro') || rolNormalizado.includes('caja')) {
-    return new Set([
-      normalizeText('Caja (General)'),
-      normalizeText('Caja Ingresos Manual'),
-      normalizeText('Mora y Atrasos'),
-      normalizeText('Anular Cobro'),
-      normalizeText('Convenio de Pagos'),
-      normalizeText('Tabla de Amortización'),
-      normalizeText('Pagos'),
-      normalizeText('Detalle Pagos'),
-      normalizeText('Dashboard Financiero'),
-      normalizeText('Reportes'),
-      normalizeText('Reporte de Facturas')
-    ]);
-  }
-
-  return new Set();
-};
-
-const parsePermisos = (permisos) => {
-  if (Array.isArray(permisos)) {
-    return permisos;
-  }
-
-  if (typeof permisos === 'string' && permisos.trim()) {
-    try {
-      const parsed = JSON.parse(permisos);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
-};
-
-const extraerPermisoTokens = (item) => {
-  if (!item) {
-    return [];
-  }
-
-  if (typeof item === 'string' || typeof item === 'number') {
-    return [normalizeText(item)];
-  }
-
-  if (typeof item === 'object') {
-    return [
-      item.id,
-      item.nombre,
-      item.label,
-      item.modulo,
-      item.path
-    ]
-      .filter((value) => value !== null && typeof value !== 'undefined' && String(value).trim())
-      .map((value) => normalizeText(String(value).replace(/^\//, '')));
-  }
-
-  return [];
-};
-
-const detectarPerfilCaja = (rolNormalizado, permisosNormalizados) => {
-  if (rolNormalizado.includes('cobro') || rolNormalizado.includes('caja')) {
-    return true;
-  }
-
-  const pistasCaja = ['caja', 'cobro', 'morosidad', 'pagos', 'convenio'];
-  for (const permiso of permisosNormalizados) {
-    if (pistasCaja.some((pista) => permiso.includes(pista))) {
-      return true;
-    }
-  }
-
-  return false;
-};
+import { modulosPermitidosParaUsuario } from './utils/modulePermissions';
 
 const showFadeToast = (message, icon = 'info') => {
   Swal.fire({
@@ -300,36 +194,7 @@ function App() {
       return [];
     }
 
-    const permisos = parsePermisos(usuarioActivo.permisos);
-    const permisosNormalizados = new Set(
-      permisos.flatMap((item) => extraerPermisoTokens(item)).filter(Boolean)
-    );
-    const rolNormalizado = normalizeText(usuarioActivo.nombre_rol);
-    const esAdmin = rolNormalizado.includes('admin') || rolNormalizado.includes('administrador') || rolNormalizado.includes('superusuario');
-    const permisosEfectivos = permisosNormalizados;
-
-    return modulesConfig.filter((module) => {
-      if (esAdmin) {
-        return true;
-      }
-
-      if (module.id === 'menu_general') {
-        return true;
-      }
-
-      if (permisosEfectivos.size === 0) {
-        return false;
-      }
-
-      const candidates = [
-        module.id,
-        module.label,
-        module.path.replace('/', ''),
-        ...(MODULE_PERMISSION_ALIASES[module.id] || [])
-      ].map(normalizeText);
-
-      return candidates.some((candidate) => permisosEfectivos.has(candidate));
-    });
+    return modulosPermitidosParaUsuario(modulesConfig, usuarioActivo);
   }, [isAuthenticated, usuarioActivo]);
 
   const categories = useMemo(() => {
