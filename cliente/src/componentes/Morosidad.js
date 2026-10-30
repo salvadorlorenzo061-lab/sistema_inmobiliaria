@@ -45,42 +45,6 @@ function Morosidad() {
     });
   };
 
-  const exonerarMora = async (mora) => {
-    const { value: motivo, isConfirmed } = await Swal.fire({
-      title: 'Exonerar mora',
-      html: `<div class="text-start mb-2">${mora.nombre_residente || ''} — ${mora.mes_atrasado} — Q${Number(mora.monto_mora || 0).toFixed(2)}</div>`,
-      input: 'textarea',
-      inputLabel: 'Razón de la exoneración',
-      inputPlaceholder: 'Escriba el motivo por el cual se exonera esta mora...',
-      inputAttributes: { maxlength: 500 },
-      showCancelButton: true,
-      confirmButtonText: 'Exonerar mora',
-      cancelButtonText: 'Cancelar',
-      inputValidator: (valor) => (!String(valor || '').trim() ? 'La razón es obligatoria.' : undefined)
-    });
-    if (!isConfirmed) return;
-
-    let idUsuario = null;
-    try {
-      idUsuario = Number(JSON.parse(localStorage.getItem('usuario') || '{}')?.id_usuario) || null;
-    } catch (_error) {
-      idUsuario = null;
-    }
-
-    try {
-      await Axios.post(`${API_BASE_URL}/api/caja/exonerar-moras`, {
-        id_contrato: mora.id_contrato,
-        id_usuario: idUsuario,
-        motivo: String(motivo).trim(),
-        moras: [{ id_morosidad: mora.id_morosidad, mes_atrasado: mora.mes_atrasado, monto_mora: mora.monto_mora }]
-      });
-      await cargarMorosidades();
-      Swal.fire({ icon: 'success', title: 'Mora exonerada', timer: 1500, showConfirmButton: false });
-    } catch (error) {
-      Swal.fire({ icon: 'error', title: 'Error', text: error?.response?.data || 'No se pudo exonerar la mora.' });
-    }
-  };
-
   const generarMoraAutomatica = async () => {
     if (procesando) return;
 
@@ -136,11 +100,10 @@ function Morosidad() {
 
     if (estado === 'pagado') acumulado.pagado += monto;
     else if (estado === 'anulado') acumulado.anulado += monto;
-    else if (estado === 'exonerada') acumulado.exonerado += monto;
     else acumulado.pendiente += monto;
 
     return acumulado;
-  }, { pendiente: 0, pagado: 0, anulado: 0, exonerado: 0 });
+  }, { pendiente: 0, pagado: 0, anulado: 0 });
 
   const formatearMonto = (monto) => `Q${Number(monto || 0).toFixed(2)}`;
 
@@ -182,7 +145,6 @@ function Morosidad() {
     doc.text(`Total pendiente: ${formatearMonto(totales.pendiente)}`, 14, 41);
     doc.text(`Total pagado: ${formatearMonto(totales.pagado)}`, 95, 41);
     doc.text(`Total anulado: ${formatearMonto(totales.anulado)}`, 176, 41);
-    doc.text(`Total exonerado: ${formatearMonto(totales.exonerado)}`, 220, 41);
 
     autoTable(doc, {
       startY: 47,
@@ -252,7 +214,6 @@ function Morosidad() {
             <option value="pendiente">Pendiente</option>
             <option value="pagado">Pagado</option>
             <option value="anulado">Anulado</option>
-            <option value="exonerada">Exonerada</option>
           </select>
         </div>
         <div className="col-md-3 d-flex gap-2">
@@ -266,7 +227,7 @@ function Morosidad() {
       </div>
 
       <div className="row g-3 mb-3">
-        <div className="col-md-3">
+        <div className="col-md-4">
           <div className="card border-danger shadow-sm h-100">
             <div className="card-body py-2">
               <div className="text-danger fw-bold">TOTAL PENDIENTE</div>
@@ -274,7 +235,7 @@ function Morosidad() {
             </div>
           </div>
         </div>
-        <div className="col-md-3">
+        <div className="col-md-4">
           <div className="card border-success shadow-sm h-100">
             <div className="card-body py-2">
               <div className="text-success fw-bold">TOTAL PAGADO</div>
@@ -282,19 +243,11 @@ function Morosidad() {
             </div>
           </div>
         </div>
-        <div className="col-md-3">
+        <div className="col-md-4">
           <div className="card border-dark shadow-sm h-100">
             <div className="card-body py-2">
               <div className="text-dark fw-bold">TOTAL ANULADO</div>
               <div className="fs-5 fw-bold">{formatearMonto(totales.anulado)}</div>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3">
-          <div className="card border-warning shadow-sm h-100">
-            <div className="card-body py-2">
-              <div className="text-warning fw-bold">TOTAL EXONERADO</div>
-              <div className="fs-5 fw-bold">{formatearMonto(totales.exonerado)}</div>
             </div>
           </div>
         </div>
@@ -325,30 +278,16 @@ function Morosidad() {
               <td>{val.dias_retraso} días</td>
               <td className="fw-bold">Q{val.monto_mora}</td>
               <td>
-                <span className={`badge bg-${val.estado === 'pagado' ? 'success' : val.estado === 'anulado' ? 'dark' : val.estado === 'exonerada' ? 'warning text-dark' : 'danger'}`}>
+                <span className={`badge bg-${val.estado === 'pagado' ? 'success' : val.estado === 'anulado' ? 'dark' : 'danger'}`}>
                   {val.estado.toUpperCase()}
                 </span>
-                {val.estado === 'exonerada' && val.motivo_exoneracion && (
-                  <div className="small text-muted mt-1"><strong>Razón:</strong> {val.motivo_exoneracion}</div>
-                )}
               </td>
               <td>
-                {val.estado === 'exonerada' ? (
-                  <span className="text-muted small">Exonerada</span>
-                ) : (
-                  <>
-                    <select className="form-select form-select-sm" value={val.estado} onChange={(e) => actualizarEstado(val.id_morosidad, e.target.value)}>
-                        <option value="pendiente">Pendiente</option>
-                        <option value="pagado">Pagado</option>
-                        <option value="anulado">Anulado</option>
-                    </select>
-                    {val.estado === 'pendiente' && (
-                      <button type="button" className="btn btn-sm btn-warning fw-bold w-100 mt-1" onClick={() => exonerarMora(val)}>
-                        Exonerar mora
-                      </button>
-                    )}
-                  </>
-                )}
+                <select className="form-select form-select-sm" value={val.estado} onChange={(e) => actualizarEstado(val.id_morosidad, e.target.value)}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagado">Pagado</option>
+                    <option value="anulado">Anulado</option>
+                </select>
               </td>
             </tr>
           ))}
