@@ -1942,21 +1942,7 @@ const bloquearCobroSiExisteMora = (req, res, next) => {
         if (rolErr) return res.status(500).send('No se pudo validar el rol para revisar la mora.');
         if (contextoRol?.esJuridico) return next();
 
-        const sqlCorrelativos = `
-            SELECT (
-                EXISTS(SELECT 1 FROM asignar_correlativos ac
-                       WHERE ac.id_usuario = ? AND ac.estado = 'activo'
-                         AND COALESCE(ac.correlativo_actual, ac.correlativo_inicio) <= ac.correlativo_fin)
-                OR EXISTS(SELECT 1 FROM resoluciones_facturas rf
-                          WHERE rf.id_usuario = ? AND LOWER(TRIM(COALESCE(rf.estado, 'activo'))) = 'activo'
-                            AND rf.correlativo_actual BETWEEN rf.rango_inicial AND rf.rango_final)
-            ) AS tiene_correlativos
-        `;
-        db.query(sqlCorrelativos, [idUsuario, idUsuario], (corrErr, corrRows) => {
-            if (corrErr) return res.status(500).send('No se pudieron validar los correlativos del usuario.');
-            const debeValidarMora = Boolean(contextoRol?.esGestorCobros) || Number(corrRows?.[0]?.tiene_correlativos || 0) === 1;
-            if (!debeValidarMora) return next();
-
+        {
             const sqlMora = `
                 SELECT m.id_morosidad, m.mes_atrasado,
                        CASE WHEN COALESCE(c.mora, 0) > 0 THEN c.mora ELSE m.monto_mora END AS monto_mora,
@@ -2007,7 +1993,7 @@ const bloquearCobroSiExisteMora = (req, res, next) => {
                 }
                 return next();
             });
-        });
+        }
     });
 };
 

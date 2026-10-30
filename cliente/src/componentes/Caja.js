@@ -1460,8 +1460,7 @@ const Caja = () => {
     const ejecutarCobro = async (e) => {
         e.preventDefault();
 
-        const usuarioSujetoABloqueoMora = !esUsuarioJuridico
-            && (esUsuarioGestorCobros || Boolean(estadoCorrelativoUsuario?.disponible));
+        const usuarioSujetoABloqueoMora = !esUsuarioJuridico;
         if (usuarioSujetoABloqueoMora && Number(moraPendienteTotalVista || 0) > 0) {
             await Swal.fire({
                 icon: 'warning',
@@ -2448,6 +2447,13 @@ const Caja = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {!esUsuarioJuridico && moraPendienteTotalVista > 0 && (
+                                    <div className="alert alert-danger py-2 mb-3">
+                                        <div className="fw-bold">⚠️ El cliente tiene mora pendiente: Q{moraPendienteTotalVista.toFixed(2)}</div>
+                                        <small>Debe pasar al área Jurídico para pagar o exonerar la mora. Una vez resuelta, podrá cobrar el enganche, las cuotas financiadas o el pago total en Caja.</small>
+                                    </div>
+                                )}
 
                                 {estadoCorrelativo && (
                                     <div className={`alert ${estadoCorrelativo.disponible ? 'alert-info' : 'alert-warning'} py-2 mb-3`}>
