@@ -345,7 +345,6 @@ const Caja = () => {
     const [montoEngancheSeleccionado, setMontoEngancheSeleccionado] = useState(0);
     const [montoInteresSeleccionado, setMontoInteresSeleccionado] = useState(0);
     const [morasPendientes, setMorasPendientes] = useState([]);
-    const [morasExoneradasHistorial, setMorasExoneradasHistorial] = useState([]);
     const [procesandoExoneracion, setProcesandoExoneracion] = useState(false);
     const [morasSeleccionadas, setMorasSeleccionadas] = useState([]);
     const [quitarMoraTodo, setQuitarMoraTodo] = useState(false);
@@ -883,7 +882,6 @@ const Caja = () => {
         setMontoEngancheSeleccionado(0);
         setMontoInteresSeleccionado(0);
         setMorasPendientes([]);
-        setMorasExoneradasHistorial([]);
         setMorasSeleccionadas([]);
         setQuitarMoraTodo(false);
         setQuitarMoraMesesSeleccionados(false);
@@ -1262,7 +1260,6 @@ const Caja = () => {
                 const moras = Array.isArray(morasRes?.data?.moras) ? morasRes.data.moras : [];
                 setMorasPendientes(moras);
                 setMorasSeleccionadas([]);
-                await cargarHistorialExoneraciones(residente.id_contrato);
             } catch (moraError) {
                 console.error('Error al consultar moras pendientes:', moraError);
                 setMorasPendientes([]);
@@ -1460,17 +1457,6 @@ const Caja = () => {
         setMontoAPagar(String((Number(montoTotalSeleccionado || 0) + Number(moraIncluidaEnEsteRol || 0)).toFixed(2)));
     }, [morasPendientes, mesesSeleccionados, montoTotalSeleccionado, quitarMoraTodo, quitarMoraMesesSeleccionados]);
 
-    // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
-    const cargarHistorialExoneraciones = async (idContrato = datosDeuda?.id_contrato) => {
-        if (!idContrato) return;
-        try {
-            const response = await axios.get(`${API_BASE_URL}/api/caja/moras-exoneradas/${idContrato}`);
-            setMorasExoneradasHistorial(response?.data?.exoneraciones || []);
-        } catch {
-            setMorasExoneradasHistorial([]);
-        }
-    };
-
     const exonerarMorasSeleccionadas = async () => {
         const moras = (morasPendientes || []).filter((mora) =>
             (mesesSeleccionados || []).some((mes) => compararMesesMoraLocal(mes, mora?.mes_atrasado))
@@ -1491,7 +1477,6 @@ const Caja = () => {
             setQuitarMoraMesesSeleccionados(false);
             const response = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${datosDeuda.id_contrato}`);
             setMorasPendientes(response?.data?.moras || []);
-            await cargarHistorialExoneraciones(datosDeuda.id_contrato);
             mostrarToast('Mora exonerada y registrada correctamente.', 'success');
         } catch (error) {
             mostrarToast(error?.response?.data || 'No se pudo exonerar la mora.', 'error');
@@ -1500,24 +1485,7 @@ const Caja = () => {
         }
     };
 
-    const restablecerExoneracion = async (idExoneracion) => {
-        setProcesandoExoneracion(true);
-        try {
-            await axios.post(`${API_BASE_URL}/api/caja/restablecer-exoneracion`, {
-                id_exoneracion: idExoneracion,
-                id_usuario: obtenerUsuarioActivo()
-            });
-            const response = await axios.get(`${API_BASE_URL}/api/caja/moras-pendientes/${datosDeuda.id_contrato}`);
-            setMorasPendientes(response?.data?.moras || []);
-            await cargarHistorialExoneraciones(datosDeuda.id_contrato);
-            mostrarToast('Exoneración restablecida; la mora vuelve a estar pendiente.', 'success');
-        } catch (error) {
-            mostrarToast(error?.response?.data || 'No se pudo restablecer la exoneración.', 'error');
-        } finally {
-            setProcesandoExoneracion(false);
-        }
-    };
-
+    // Procesar Cobro utilizando el puerto correcto 3001 y Generar PDF
     const ejecutarCobro = async (e) => {
         e.preventDefault();
 
@@ -2920,17 +2888,6 @@ const Caja = () => {
                                                         {procesandoExoneracion ? 'Procesando...' : '✓ Exonerar mora seleccionada'}
                                                     </button>
                                                     <small className="text-muted d-block mt-2">Esta acción no genera factura, cobro ni correlativo.</small>
-                                                </div>
-                                            )}
-                                            {morasExoneradasHistorial.filter((item) => item.estado === 'EXONERADA').length > 0 && (
-                                                <div className="border rounded p-3 mb-3">
-                                                    <div className="fw-bold mb-2">Moras exoneradas</div>
-                                                    {morasExoneradasHistorial.filter((item) => item.estado === 'EXONERADA').map((item) => (
-                                                        <div key={item.id_exoneracion} className="d-flex justify-content-between align-items-center border-bottom py-2">
-                                                            <span>{item.mes_atrasado} — Q{Number(item.monto_exonerado || 0).toFixed(2)}</span>
-                                                            <button type="button" className="btn btn-sm btn-outline-secondary" disabled={procesandoExoneracion} onClick={() => restablecerExoneracion(item.id_exoneracion)}>Restablecer exoneración</button>
-                                                        </div>
-                                                    ))}
                                                 </div>
                                             )}
                                             <div className="alert alert-success py-2 mb-3">
