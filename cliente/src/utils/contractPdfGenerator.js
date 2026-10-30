@@ -142,7 +142,6 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   const vRegFolio  = datosContrato.registro_folio      || '120';
   const vRegLibro  = datosContrato.registro_libro      || '853';
 
-  
   // Comprador
   const cNombre    = datosResidente.nombre             || '[NOMBRE COMPRADOR]';
   const cEdad      = datosResidente.edad               || '[EDAD]';
