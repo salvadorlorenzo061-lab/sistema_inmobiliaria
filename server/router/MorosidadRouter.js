@@ -342,7 +342,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     const moraExistenteRows = await queryAsync(`
         SELECT id_contrato, mes_atrasado, estado
         FROM morosidad
-        WHERE LOWER(COALESCE(estado, 'pendiente')) IN ('pendiente', 'pagado')
+        WHERE LOWER(COALESCE(estado, 'pendiente')) IN ('pendiente', 'pagado', 'anulado')
     `);
 
     const pagosPorContrato = new Map();
@@ -356,9 +356,10 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     moraExistenteRows.forEach((r) => {
         const key = String(r.id_contrato);
         const mes = String(r.mes_atrasado || '').trim();
-        const estado = String(r.estado || 'pendiente').trim().toLowerCase();
 
-        if (!mes || estado === 'anulado') return;
+
+        // Las moras anuladas/exoneradas también cuentan como existentes para no regenerarlas.
+        if (!mes) return;
         if (!morasExistentesPorContrato.has(key)) morasExistentesPorContrato.set(key, new Set());
 
         // La clave de deduplicación es por contrato + mes con año, no por la etiqueta visual
@@ -470,7 +471,10 @@ router.get("/", (req, res) => {
             r.dpi,
             r.id_residente,
             COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_empresa,
-            COALESCE(em.nit, er.nit) AS nit_empresa
+            COALESCE(em.nit, er.nit) AS nit_empresa,
+            ex.id_exoneracion AS id_exoneracion_activa,
+            ex.motivo AS motivo_exoneracion,
+            ex.fecha_exoneracion
         FROM morosidad m
         INNER JOIN (
             SELECT MAX(id_morosidad) AS id_morosidad
@@ -481,11 +485,23 @@ router.get("/", (req, res) => {
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
+        LEFT JOIN (
+            SELECT id_contrato, LOWER(TRIM(mes_atrasado)) AS mes_key, MAX(id_exoneracion) AS id_exoneracion
+            FROM morosidad_exoneraciones
+            WHERE estado = 'EXONERADA'
+            GROUP BY id_contrato, LOWER(TRIM(mes_atrasado))
+        ) ea ON ea.id_contrato = m.id_contrato AND ea.mes_key = LOWER(TRIM(m.mes_atrasado))
+        LEFT JOIN morosidad_exoneraciones ex ON ex.id_exoneracion = ea.id_exoneracion
         ORDER BY m.id_morosidad DESC
     `;
 
     db.query(sql, (err, result) => {
         if (err) return res.status(500).send("Error");
+        result.forEach((fila) => {
+            if (fila.id_exoneracion_activa && String(fila.estado || '').toLowerCase() === 'anulado') {
+                fila.estado = 'exonerada';
+            }
+        });
         return res.send(result);
     });
 });
