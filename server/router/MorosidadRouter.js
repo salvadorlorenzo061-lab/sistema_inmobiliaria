@@ -301,7 +301,6 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             c.fecha_firma,
             c.mes_inicio_pagos,
             c.anio_inicio_pagos,
-            c.dia_inicio_pagos,
             c.dia_pago_limite,
             c.monto_cuota,
             c.monto_total,
@@ -315,7 +314,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             FROM ventas_propiedad
             GROUP BY id_contrato
         ) vp ON vp.id_contrato = c.id_contrato
-        WHERE LOWER(TRIM(COALESCE(c.estado, ''))) = 'activo'
+        WHERE c.estado = 'activo'
                     AND (? IS NULL OR c.id_contrato = ?)
         `, [idContrato, idContrato]);
 
@@ -340,57 +339,31 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         `);
     }
 
-    if (await existeTabla('morosidad_exoneraciones')) {
-        await queryAsync(`
-            UPDATE morosidad m
-            INNER JOIN (
-                SELECT DISTINCT id_contrato, LOWER(TRIM(mes_atrasado)) AS mes_normalizado
-                FROM morosidad_exoneraciones
-                WHERE UPPER(TRIM(COALESCE(estado, ''))) = 'EXONERADA'
-            ) ex ON ex.id_contrato = m.id_contrato
-                AND ex.mes_normalizado = LOWER(TRIM(m.mes_atrasado))
-            SET m.estado = 'anulado'
-            WHERE LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
-        `);
-    }
-
     const moraExistenteRows = await queryAsync(`
         SELECT id_contrato, mes_atrasado, estado
         FROM morosidad
+        WHERE LOWER(COALESCE(estado, 'pendiente')) IN ('pendiente', 'pagado')
     `);
-    const morasExoneradasRows = await existeTabla('morosidad_exoneraciones')
-        ? await queryAsync(`
-            SELECT id_contrato, mes_atrasado
-            FROM morosidad_exoneraciones
-            WHERE UPPER(TRIM(COALESCE(estado, ''))) = 'EXONERADA'
-        `)
-        : [];
 
     const pagosPorContrato = new Map();
     pagosRows.forEach((r) => {
         const key = String(r.id_contrato);
         if (!pagosPorContrato.has(key)) pagosPorContrato.set(key, new Set());
-        pagosPorContrato.get(key).add(normalizarClaveMesPersistida(r.mes_pagado || ''));
+        pagosPorContrato.get(key).add(String(r.mes_pagado || '').trim());
     });
 
     const morasExistentesPorContrato = new Map();
     moraExistenteRows.forEach((r) => {
         const key = String(r.id_contrato);
         const mes = String(r.mes_atrasado || '').trim();
+        const estado = String(r.estado || 'pendiente').trim().toLowerCase();
 
-        if (!mes) return;
+        if (!mes || estado === 'anulado') return;
         if (!morasExistentesPorContrato.has(key)) morasExistentesPorContrato.set(key, new Set());
 
         // La clave de deduplicación es por contrato + mes con año, no por la etiqueta visual
         // de la interfaz; eso evita que una edición del contrato genere la misma mora dos veces
         // con la misma fecha contractual y salve el estado real en BD.
-        morasExistentesPorContrato.get(key).add(normalizarClaveMesPersistida(mes));
-    });
-    morasExoneradasRows.forEach((r) => {
-        const key = String(r.id_contrato);
-        const mes = String(r.mes_atrasado || '').trim();
-        if (!mes) return;
-        if (!morasExistentesPorContrato.has(key)) morasExistentesPorContrato.set(key, new Set());
         morasExistentesPorContrato.get(key).add(normalizarClaveMesPersistida(mes));
     });
 
@@ -421,9 +394,8 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         const anioInicio = Number(contrato.anio_inicio_pagos || 0);
         const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
             && Number.isInteger(anioInicio) && anioInicio >= 1900;
-        const diaInicioPagos = Math.max(1, Math.min(31, Number(contrato.dia_inicio_pagos || inicioRaw.getDate() || 1)));
         const primerVencimiento = inicioConfiguradoValido
-            ? crearFechaLocal(new Date(anioInicio, mesInicio - 1, diaInicioPagos), 0)
+            ? crearFechaLocal(new Date(anioInicio, mesInicio - 1, inicioRaw.getDate()), 0)
             : crearFechaLocal(inicioRaw, 1);
         let numeroCuota = 1;
 
@@ -431,31 +403,19 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         const morasSet = morasExistentesPorContrato.get(String(contrato.id_contrato)) || new Set();
 
         while (numeroCuota <= totalCuotas) {
-            const fechaPeriodo = crearFechaLocal(primerVencimiento, numeroCuota - 1);
-            const mesPeriodo = new Date(fechaPeriodo.getFullYear(), fechaPeriodo.getMonth(), 1);
-            if (mesPeriodo >= mesActual) break;
-
-            const mesVencimiento = inicioConfiguradoValido
-                ? new Date(fechaPeriodo.getFullYear(), fechaPeriodo.getMonth() + 1, 1)
-                : new Date(fechaPeriodo.getFullYear(), fechaPeriodo.getMonth(), 1);
-            const ultimoDiaMesVencimiento = new Date(
-                mesVencimiento.getFullYear(),
-                mesVencimiento.getMonth() + 1,
-                0
-            ).getDate();
-            const fechaVencimiento = new Date(
-                mesVencimiento.getFullYear(),
-                mesVencimiento.getMonth(),
-                Math.min(diaInicioPagos, ultimoDiaMesVencimiento)
-            );
+            const fechaVencimiento = crearFechaLocal(primerVencimiento, numeroCuota - 1);
+            const mesVencimiento = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), 1);
+            // El mes calendario actual aun no se considera vencido. La mora
+            // empieza a evaluarse desde el mes siguiente y tras la gracia.
+            if (mesVencimiento >= mesActual) break;
             const fechaInicioMora = obtenerFechaInicioMora(fechaVencimiento, diasGracia);
             if (fechaInicioMora > hoy) break;
 
-            const etiquetaMes = labelMes(fechaPeriodo);
+            const etiquetaMes = labelMes(fechaVencimiento);
             const vencido = hoy >= fechaInicioMora;
 
             const claveMes = normalizarClaveMesPersistida(etiquetaMes);
-            if (vencido && !pagadosSet.has(claveMes) && !morasSet.has(claveMes)) {
+            if (vencido && !pagadosSet.has(etiquetaMes) && !morasSet.has(claveMes)) {
                 const msPorDia = 1000 * 60 * 60 * 24;
                 const diasRetraso = Math.max(Math.floor((hoy - fechaVencimiento) / msPorDia), 1);
                 const moraCalculada = moraContrato > 0
@@ -504,8 +464,6 @@ router.get("/", (req, res) => {
     const sql = `
         SELECT
             m.*, 
-            ex.id_exoneracion AS id_exoneracion_activa,
-            ex.monto_exonerado AS monto_exonerado_activo,
             c.codigo_contrato,
             r.nombre AS nombre_residente,
             r.numero_identificacion,
@@ -519,15 +477,6 @@ router.get("/", (req, res) => {
             FROM morosidad
             GROUP BY id_contrato, LOWER(TRIM(mes_atrasado))
         ) ultima_mora ON ultima_mora.id_morosidad = m.id_morosidad
-        LEFT JOIN (
-            SELECT id_contrato, LOWER(TRIM(mes_atrasado)) AS mes_normalizado, MAX(id_exoneracion) AS id_exoneracion
-            FROM morosidad_exoneraciones
-            WHERE UPPER(TRIM(COALESCE(estado, ''))) = 'EXONERADA'
-            GROUP BY id_contrato, LOWER(TRIM(mes_atrasado))
-        ) ultima_exoneracion
-            ON ultima_exoneracion.id_contrato = m.id_contrato
-            AND ultima_exoneracion.mes_normalizado = LOWER(TRIM(m.mes_atrasado))
-        LEFT JOIN morosidad_exoneraciones ex ON ex.id_exoneracion = ultima_exoneracion.id_exoneracion
         LEFT JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
@@ -537,16 +486,7 @@ router.get("/", (req, res) => {
 
     db.query(sql, (err, result) => {
         if (err) return res.status(500).send("Error");
-        const morosidadesConEstado = result.map((mora) => ({
-            ...mora,
-            estado: mora.id_exoneracion_activa
-                ? 'exonerada'
-                : String(mora.estado || 'pendiente').trim().toLowerCase(),
-            monto_exonerado: mora.id_exoneracion_activa
-                ? Number(mora.monto_exonerado_activo || 0)
-                : null
-        }));
-        return res.send(morosidadesConEstado);
+        return res.send(result);
     });
 });
 

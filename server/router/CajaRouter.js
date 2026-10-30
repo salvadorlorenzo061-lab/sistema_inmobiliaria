@@ -1810,13 +1810,6 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
                                 AND UPPER(TRIM(COALESCE(fh_mora.estado_factura, ''))) = 'ANULADA'
                           )
                     )
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM morosidad_exoneraciones me
-                        WHERE me.id_contrato = m.id_contrato
-                          AND LOWER(TRIM(me.mes_atrasado)) = LOWER(TRIM(m.mes_atrasado))
-                          AND UPPER(TRIM(COALESCE(me.estado, ''))) = 'EXONERADA'
-                    )
         ORDER BY m.id_morosidad ASC
     `;
 
