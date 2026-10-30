@@ -461,7 +461,37 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     return { generated: inserts.length, examinedContracts: contratos.length };
 };
 
-router.get("/", (req, res) => {
+const asegurarTablaExoneraciones = async () => {
+    await queryAsync(`
+        CREATE TABLE IF NOT EXISTS morosidad_exoneraciones (
+            id_exoneracion BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id_contrato INT NOT NULL,
+            id_morosidad INT NULL,
+            id_usuario INT NULL,
+            mes_atrasado VARCHAR(80) NOT NULL,
+            monto_exonerado DECIMAL(12,2) NOT NULL DEFAULT 0,
+            estado VARCHAR(20) NOT NULL DEFAULT 'EXONERADA',
+            fecha_exoneracion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            motivo VARCHAR(500) NULL,
+            fecha_restablecimiento DATETIME NULL,
+            id_usuario_restablece INT NULL,
+            INDEX idx_exoneracion_contrato (id_contrato),
+            INDEX idx_exoneracion_mora (id_morosidad)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    const cols = await queryAsync("SHOW COLUMNS FROM morosidad_exoneraciones LIKE 'motivo'");
+    if (!cols.length) {
+        await queryAsync('ALTER TABLE morosidad_exoneraciones ADD COLUMN motivo VARCHAR(500) NULL AFTER fecha_exoneracion');
+    }
+};
+
+router.get("/", async (req, res) => {
+    try {
+        await asegurarTablaExoneraciones();
+    } catch (error) {
+        console.error('Error asegurando tabla de exoneraciones:', error?.message);
+    }
+
     const sql = `
         SELECT
             m.*, 
@@ -496,7 +526,10 @@ router.get("/", (req, res) => {
     `;
 
     db.query(sql, (err, result) => {
-        if (err) return res.status(500).send("Error");
+        if (err) {
+            console.error('Error listando morosidad:', err.message);
+            return res.status(500).send("Error");
+        }
         result.forEach((fila) => {
             if (fila.id_exoneracion_activa && String(fila.estado || '').toLowerCase() === 'anulado') {
                 fila.estado = 'exonerada';
