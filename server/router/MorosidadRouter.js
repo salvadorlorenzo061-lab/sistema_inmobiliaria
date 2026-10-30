@@ -301,6 +301,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             c.fecha_firma,
             c.mes_inicio_pagos,
             c.anio_inicio_pagos,
+            c.dia_inicio_pagos,
             c.dia_pago_limite,
             c.monto_cuota,
             c.monto_total,
@@ -314,7 +315,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
             FROM ventas_propiedad
             GROUP BY id_contrato
         ) vp ON vp.id_contrato = c.id_contrato
-        WHERE c.estado = 'activo'
+        WHERE LOWER(TRIM(COALESCE(c.estado, ''))) = 'activo'
                     AND (? IS NULL OR c.id_contrato = ?)
         `, [idContrato, idContrato]);
 
@@ -369,7 +370,7 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     pagosRows.forEach((r) => {
         const key = String(r.id_contrato);
         if (!pagosPorContrato.has(key)) pagosPorContrato.set(key, new Set());
-        pagosPorContrato.get(key).add(String(r.mes_pagado || '').trim());
+        pagosPorContrato.get(key).add(normalizarClaveMesPersistida(r.mes_pagado || ''));
     });
 
     const morasExistentesPorContrato = new Map();
@@ -420,8 +421,9 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         const anioInicio = Number(contrato.anio_inicio_pagos || 0);
         const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
             && Number.isInteger(anioInicio) && anioInicio >= 1900;
+        const diaInicioPagos = Math.max(1, Math.min(31, Number(contrato.dia_inicio_pagos || inicioRaw.getDate() || 1)));
         const primerVencimiento = inicioConfiguradoValido
-            ? crearFechaLocal(new Date(anioInicio, mesInicio - 1, inicioRaw.getDate()), 0)
+            ? crearFechaLocal(new Date(anioInicio, mesInicio - 1, diaInicioPagos), 0)
             : crearFechaLocal(inicioRaw, 1);
         let numeroCuota = 1;
 
@@ -429,19 +431,31 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         const morasSet = morasExistentesPorContrato.get(String(contrato.id_contrato)) || new Set();
 
         while (numeroCuota <= totalCuotas) {
-            const fechaVencimiento = crearFechaLocal(primerVencimiento, numeroCuota - 1);
-            const mesVencimiento = new Date(fechaVencimiento.getFullYear(), fechaVencimiento.getMonth(), 1);
-            // El mes calendario actual aun no se considera vencido. La mora
-            // empieza a evaluarse desde el mes siguiente y tras la gracia.
-            if (mesVencimiento >= mesActual) break;
+            const fechaPeriodo = crearFechaLocal(primerVencimiento, numeroCuota - 1);
+            const mesPeriodo = new Date(fechaPeriodo.getFullYear(), fechaPeriodo.getMonth(), 1);
+            if (mesPeriodo >= mesActual) break;
+
+            const mesVencimiento = inicioConfiguradoValido
+                ? new Date(fechaPeriodo.getFullYear(), fechaPeriodo.getMonth() + 1, 1)
+                : new Date(fechaPeriodo.getFullYear(), fechaPeriodo.getMonth(), 1);
+            const ultimoDiaMesVencimiento = new Date(
+                mesVencimiento.getFullYear(),
+                mesVencimiento.getMonth() + 1,
+                0
+            ).getDate();
+            const fechaVencimiento = new Date(
+                mesVencimiento.getFullYear(),
+                mesVencimiento.getMonth(),
+                Math.min(diaInicioPagos, ultimoDiaMesVencimiento)
+            );
             const fechaInicioMora = obtenerFechaInicioMora(fechaVencimiento, diasGracia);
             if (fechaInicioMora > hoy) break;
 
-            const etiquetaMes = labelMes(fechaVencimiento);
+            const etiquetaMes = labelMes(fechaPeriodo);
             const vencido = hoy >= fechaInicioMora;
 
             const claveMes = normalizarClaveMesPersistida(etiquetaMes);
-            if (vencido && !pagadosSet.has(etiquetaMes) && !morasSet.has(claveMes)) {
+            if (vencido && !pagadosSet.has(claveMes) && !morasSet.has(claveMes)) {
                 const msPorDia = 1000 * 60 * 60 * 24;
                 const diasRetraso = Math.max(Math.floor((hoy - fechaVencimiento) / msPorDia), 1);
                 const moraCalculada = moraContrato > 0
