@@ -339,10 +339,23 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         `);
     }
 
+    if (await existeTabla('morosidad_exoneraciones')) {
+        await queryAsync(`
+            UPDATE morosidad m
+            INNER JOIN (
+                SELECT DISTINCT id_contrato, LOWER(TRIM(mes_atrasado)) AS mes_normalizado
+                FROM morosidad_exoneraciones
+                WHERE UPPER(TRIM(COALESCE(estado, ''))) = 'EXONERADA'
+            ) ex ON ex.id_contrato = m.id_contrato
+                AND ex.mes_normalizado = LOWER(TRIM(m.mes_atrasado))
+            SET m.estado = 'anulado'
+            WHERE LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
+        `);
+    }
+
     const moraExistenteRows = await queryAsync(`
         SELECT id_contrato, mes_atrasado, estado
         FROM morosidad
-        WHERE LOWER(COALESCE(estado, 'pendiente')) IN ('pendiente', 'pagado')
     `);
 
     const pagosPorContrato = new Map();
@@ -356,9 +369,8 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
     moraExistenteRows.forEach((r) => {
         const key = String(r.id_contrato);
         const mes = String(r.mes_atrasado || '').trim();
-        const estado = String(r.estado || 'pendiente').trim().toLowerCase();
 
-        if (!mes || estado === 'anulado') return;
+        if (!mes) return;
         if (!morasExistentesPorContrato.has(key)) morasExistentesPorContrato.set(key, new Set());
 
         // La clave de deduplicación es por contrato + mes con año, no por la etiqueta visual
