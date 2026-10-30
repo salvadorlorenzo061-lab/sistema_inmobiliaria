@@ -10,6 +10,7 @@ import { API_BASE_URL } from '../config';
 function Morosidad() {
   const [morosidades, setMorosidades] = useState([]);
   const [procesando, setProcesando] = useState(false);
+  const [procesandoExoneracion, setProcesandoExoneracion] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [busqueda, setBusqueda] = useState('');
   const [busquedaAplicada, setBusquedaAplicada] = useState('');
@@ -19,7 +20,7 @@ function Morosidad() {
   const API_URL = `${API_BASE_URL}/api/morosidad`;
 
   const cargarMorosidades = () => {
-    Axios.get(API_URL).then(res => setMorosidades(res.data));
+    return Axios.get(API_URL).then(res => setMorosidades(res.data));
   };
 
   useEffect(() => {
@@ -43,6 +44,35 @@ function Morosidad() {
         cargarMorosidades();
         Swal.fire({ icon: "success", title: "Estado Actualizado", timer: 1500, showConfirmButton: false });
     });
+  };
+
+  const restablecerExoneracion = async (idExoneracion) => {
+    setProcesandoExoneracion(true);
+    try {
+      let idUsuario = null;
+      try {
+        const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+        const id = Number(usuario?.id_usuario);
+        idUsuario = Number.isInteger(id) && id > 0 ? id : null;
+      } catch {
+        idUsuario = null;
+      }
+
+      await Axios.post(`${API_BASE_URL}/api/caja/restablecer-exoneracion`, {
+        id_exoneracion: idExoneracion,
+        id_usuario: idUsuario
+      });
+      await cargarMorosidades();
+      Swal.fire({ icon: 'success', title: 'Exoneración restablecida', text: 'La mora vuelve a estar pendiente.' });
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'No se pudo restablecer',
+        text: error?.response?.data || 'No se pudo restablecer la exoneración.'
+      });
+    } finally {
+      setProcesandoExoneracion(false);
+    }
   };
 
   const generarMoraAutomatica = async () => {
@@ -294,12 +324,22 @@ function Morosidad() {
                 </span>
               </td>
               <td>
-                <select className="form-select form-select-sm" value={val.estado} disabled={val.estado === 'exonerada'} onChange={(e) => actualizarEstado(val.id_morosidad, e.target.value)}>
+                {val.estado === 'exonerada' ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled={procesandoExoneracion}
+                    onClick={() => restablecerExoneracion(val.id_exoneracion_activa)}
+                  >
+                    {procesandoExoneracion ? 'Procesando...' : 'Restablecer exoneración'}
+                  </button>
+                ) : (
+                  <select className="form-select form-select-sm" value={val.estado} onChange={(e) => actualizarEstado(val.id_morosidad, e.target.value)}>
                     <option value="pendiente">Pendiente</option>
                     <option value="pagado">Pagado</option>
-                    <option value="exonerada" disabled>Exonerada</option>
                     <option value="anulado">Anulado</option>
-                </select>
+                  </select>
+                )}
               </td>
             </tr>
           ))}
