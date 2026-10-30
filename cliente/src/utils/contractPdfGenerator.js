@@ -150,6 +150,7 @@ export const generarPdfContrato = (datosContrato={}, datosResidente={}) => {
   const cProfesion = datosResidente.profesion          || '[PROFESIÓN]';
   const cDpi       = datosResidente.numero_identificacion || '[DPI]';
 
+  
   // Propiedad
   const pFinca    = datosContrato.numero_finca       || '30052';
   const pFolio    = datosContrato.folio_propiedad    || '133';
