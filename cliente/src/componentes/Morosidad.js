@@ -99,11 +99,12 @@ function Morosidad() {
     const monto = Number(mora.monto_mora || 0);
 
     if (estado === 'pagado') acumulado.pagado += monto;
+    else if (estado === 'exonerada') acumulado.exonerado += Number(mora.monto_exonerado ?? monto);
     else if (estado === 'anulado') acumulado.anulado += monto;
     else acumulado.pendiente += monto;
 
     return acumulado;
-  }, { pendiente: 0, pagado: 0, anulado: 0 });
+  }, { pendiente: 0, pagado: 0, exonerado: 0, anulado: 0 });
 
   const formatearMonto = (monto) => `Q${Number(monto || 0).toFixed(2)}`;
 
@@ -142,9 +143,10 @@ function Morosidad() {
     doc.text(`Fecha: ${fecha}`, 14, 29);
     doc.text(`Filtro: ${busquedaAplicada || 'Todos'} | Estado: ${estadoFiltro === 'todos' ? 'Todos' : estadoFiltro.toUpperCase()}`, 14, 35);
     doc.setFontSize(9);
-    doc.text(`Total pendiente: ${formatearMonto(totales.pendiente)}`, 14, 41);
-    doc.text(`Total pagado: ${formatearMonto(totales.pagado)}`, 95, 41);
-    doc.text(`Total anulado: ${formatearMonto(totales.anulado)}`, 176, 41);
+    doc.text(`Pendiente: ${formatearMonto(totales.pendiente)}`, 14, 41);
+    doc.text(`Pagado: ${formatearMonto(totales.pagado)}`, 78, 41);
+    doc.text(`Exonerado: ${formatearMonto(totales.exonerado)}`, 142, 41);
+    doc.text(`Anulado: ${formatearMonto(totales.anulado)}`, 210, 41);
 
     autoTable(doc, {
       startY: 47,
@@ -156,7 +158,7 @@ function Morosidad() {
         mora.codigo_contrato ? `#${mora.codigo_contrato}` : `#${mora.id_contrato}`,
         mora.mes_atrasado || '',
         `${mora.dias_retraso || 0}`,
-        `Q${Number(mora.monto_mora || 0).toFixed(2)}`,
+        `Q${Number(mora.estado === 'exonerada' ? mora.monto_exonerado ?? mora.monto_mora : mora.monto_mora || 0).toFixed(2)}`,
         String(mora.estado || 'pendiente').toUpperCase(),
         mora.nombre_empresa || 'Sin empresa'
       ]),
@@ -213,6 +215,7 @@ function Morosidad() {
             <option value="todos">Todos los estados</option>
             <option value="pendiente">Pendiente</option>
             <option value="pagado">Pagado</option>
+            <option value="exonerada">Exonerada</option>
             <option value="anulado">Anulado</option>
           </select>
         </div>
@@ -227,7 +230,7 @@ function Morosidad() {
       </div>
 
       <div className="row g-3 mb-3">
-        <div className="col-md-4">
+        <div className="col-md-3">
           <div className="card border-danger shadow-sm h-100">
             <div className="card-body py-2">
               <div className="text-danger fw-bold">TOTAL PENDIENTE</div>
@@ -235,7 +238,7 @@ function Morosidad() {
             </div>
           </div>
         </div>
-        <div className="col-md-4">
+        <div className="col-md-3">
           <div className="card border-success shadow-sm h-100">
             <div className="card-body py-2">
               <div className="text-success fw-bold">TOTAL PAGADO</div>
@@ -243,7 +246,15 @@ function Morosidad() {
             </div>
           </div>
         </div>
-        <div className="col-md-4">
+        <div className="col-md-3">
+          <div className="card border-warning shadow-sm h-100">
+            <div className="card-body py-2">
+              <div className="text-warning-emphasis fw-bold">TOTAL EXONERADO</div>
+              <div className="fs-5 fw-bold">{formatearMonto(totales.exonerado)}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
           <div className="card border-dark shadow-sm h-100">
             <div className="card-body py-2">
               <div className="text-dark fw-bold">TOTAL ANULADO</div>
@@ -276,16 +287,17 @@ function Morosidad() {
               <td>{val.nombre_empresa || 'Sin empresa'}</td>
               <td>{val.mes_atrasado}</td>
               <td>{val.dias_retraso} días</td>
-              <td className="fw-bold">Q{val.monto_mora}</td>
+              <td className="fw-bold">Q{val.estado === 'exonerada' ? Number(val.monto_exonerado ?? val.monto_mora).toFixed(2) : val.monto_mora}</td>
               <td>
-                <span className={`badge bg-${val.estado === 'pagado' ? 'success' : val.estado === 'anulado' ? 'dark' : 'danger'}`}>
+                <span className={`badge bg-${val.estado === 'pagado' ? 'success' : val.estado === 'exonerada' ? 'warning text-dark' : val.estado === 'anulado' ? 'dark' : 'danger'}`}>
                   {val.estado.toUpperCase()}
                 </span>
               </td>
               <td>
-                <select className="form-select form-select-sm" value={val.estado} onChange={(e) => actualizarEstado(val.id_morosidad, e.target.value)}>
+                <select className="form-select form-select-sm" value={val.estado} disabled={val.estado === 'exonerada'} onChange={(e) => actualizarEstado(val.id_morosidad, e.target.value)}>
                     <option value="pendiente">Pendiente</option>
                     <option value="pagado">Pagado</option>
+                    <option value="exonerada" disabled>Exonerada</option>
                     <option value="anulado">Anulado</option>
                 </select>
               </td>

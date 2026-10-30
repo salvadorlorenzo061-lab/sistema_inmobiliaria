@@ -464,6 +464,8 @@ router.get("/", (req, res) => {
     const sql = `
         SELECT
             m.*, 
+            ex.id_exoneracion AS id_exoneracion_activa,
+            ex.monto_exonerado AS monto_exonerado_activo,
             c.codigo_contrato,
             r.nombre AS nombre_residente,
             r.numero_identificacion,
@@ -477,6 +479,15 @@ router.get("/", (req, res) => {
             FROM morosidad
             GROUP BY id_contrato, LOWER(TRIM(mes_atrasado))
         ) ultima_mora ON ultima_mora.id_morosidad = m.id_morosidad
+        LEFT JOIN (
+            SELECT id_contrato, LOWER(TRIM(mes_atrasado)) AS mes_normalizado, MAX(id_exoneracion) AS id_exoneracion
+            FROM morosidad_exoneraciones
+            WHERE UPPER(TRIM(COALESCE(estado, ''))) = 'EXONERADA'
+            GROUP BY id_contrato, LOWER(TRIM(mes_atrasado))
+        ) ultima_exoneracion
+            ON ultima_exoneracion.id_contrato = m.id_contrato
+            AND ultima_exoneracion.mes_normalizado = LOWER(TRIM(m.mes_atrasado))
+        LEFT JOIN morosidad_exoneraciones ex ON ex.id_exoneracion = ultima_exoneracion.id_exoneracion
         LEFT JOIN contratos_residentes c ON c.id_contrato = m.id_contrato
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
@@ -486,7 +497,16 @@ router.get("/", (req, res) => {
 
     db.query(sql, (err, result) => {
         if (err) return res.status(500).send("Error");
-        return res.send(result);
+        const morosidadesConEstado = result.map((mora) => ({
+            ...mora,
+            estado: mora.id_exoneracion_activa
+                ? 'exonerada'
+                : String(mora.estado || 'pendiente').trim().toLowerCase(),
+            monto_exonerado: mora.id_exoneracion_activa
+                ? Number(mora.monto_exonerado_activo || 0)
+                : null
+        }));
+        return res.send(morosidadesConEstado);
     });
 });
 
