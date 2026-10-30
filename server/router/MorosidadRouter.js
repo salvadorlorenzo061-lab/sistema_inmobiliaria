@@ -520,7 +520,7 @@ router.get("/", async (req, res) => {
         result = await queryAsync(sql);
     } catch (err) {
         console.error('Error listando morosidad:', err?.message);
-        return res.status(500).send("Error");
+        return res.status(500).send(`Error listando morosidad: ${err?.sqlMessage || err?.message || 'desconocido'}`);
     }
 
     // Las exoneraciones se agregan aparte: si fallan, el listado sigue mostrándose.
