@@ -357,6 +357,13 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         SELECT id_contrato, mes_atrasado, estado
         FROM morosidad
     `);
+    const morasExoneradasRows = await existeTabla('morosidad_exoneraciones')
+        ? await queryAsync(`
+            SELECT id_contrato, mes_atrasado
+            FROM morosidad_exoneraciones
+            WHERE UPPER(TRIM(COALESCE(estado, ''))) = 'EXONERADA'
+        `)
+        : [];
 
     const pagosPorContrato = new Map();
     pagosRows.forEach((r) => {
@@ -376,6 +383,13 @@ const calcularMorasAutomaticas = async (idContrato = null) => {
         // La clave de deduplicación es por contrato + mes con año, no por la etiqueta visual
         // de la interfaz; eso evita que una edición del contrato genere la misma mora dos veces
         // con la misma fecha contractual y salve el estado real en BD.
+        morasExistentesPorContrato.get(key).add(normalizarClaveMesPersistida(mes));
+    });
+    morasExoneradasRows.forEach((r) => {
+        const key = String(r.id_contrato);
+        const mes = String(r.mes_atrasado || '').trim();
+        if (!mes) return;
+        if (!morasExistentesPorContrato.has(key)) morasExistentesPorContrato.set(key, new Set());
         morasExistentesPorContrato.get(key).add(normalizarClaveMesPersistida(mes));
     });
 
