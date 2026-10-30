@@ -501,10 +501,7 @@ router.get("/", async (req, res) => {
             r.dpi,
             r.id_residente,
             COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_empresa,
-            COALESCE(em.nit, er.nit) AS nit_empresa,
-            ex.id_exoneracion AS id_exoneracion_activa,
-            ex.motivo AS motivo_exoneracion,
-            ex.fecha_exoneracion
+            COALESCE(em.nit, er.nit) AS nit_empresa
         FROM morosidad m
         INNER JOIN (
             SELECT MAX(id_morosidad) AS id_morosidad
@@ -515,30 +512,41 @@ router.get("/", async (req, res) => {
         LEFT JOIN residentes r ON r.id_residente = c.id_residente
         LEFT JOIN empresas em ON em.id_empresa = c.id_empresa_marca
         LEFT JOIN empresas er ON er.id_empresa = r.id_empresa
-        LEFT JOIN (
-            SELECT id_contrato, LOWER(TRIM(mes_atrasado)) AS mes_key, MAX(id_exoneracion) AS id_exoneracion
-            FROM morosidad_exoneraciones
-            WHERE estado = 'EXONERADA'
-            GROUP BY id_contrato, LOWER(TRIM(mes_atrasado))
-        ) ea ON ea.id_contrato = m.id_contrato AND ea.mes_key = LOWER(TRIM(m.mes_atrasado))
-        LEFT JOIN morosidad_exoneraciones ex ON ex.id_exoneracion = ea.id_exoneracion
         ORDER BY m.id_morosidad DESC
     `;
 
-    db.query(sql, (err, result) => {
-        if (err) {
-            console.error('Error listando morosidad:', err.message);
-            return res.status(500).send("Error");
-        }
+    let result;
+    try {
+        result = await queryAsync(sql);
+    } catch (err) {
+        console.error('Error listando morosidad:', err?.message);
+        return res.status(500).send("Error");
+    }
+
+    // Las exoneraciones se agregan aparte: si fallan, el listado sigue mostrándose.
+    try {
+        const exoneraciones = await queryAsync(
+            "SELECT id_exoneracion, id_contrato, mes_atrasado, motivo, fecha_exoneracion FROM morosidad_exoneraciones WHERE estado = 'EXONERADA' ORDER BY id_exoneracion ASC"
+        );
+        const porMes = new Map();
+        exoneraciones.forEach((ex) => {
+            porMes.set(`${ex.id_contrato}|${String(ex.mes_atrasado || '').trim().toLowerCase()}`, ex);
+        });
         result.forEach((fila) => {
-            if (fila.id_exoneracion_activa && String(fila.estado || '').toLowerCase() === 'anulado') {
+            const ex = porMes.get(`${fila.id_contrato}|${String(fila.mes_atrasado || '').trim().toLowerCase()}`);
+            if (ex && String(fila.estado || '').toLowerCase() === 'anulado') {
                 fila.estado = 'exonerada';
+                fila.id_exoneracion_activa = ex.id_exoneracion;
+                fila.motivo_exoneracion = ex.motivo;
+                fila.fecha_exoneracion = ex.fecha_exoneracion;
             }
         });
-        return res.send(result);
-    });
-});
+    } catch (error) {
+        console.error('No se pudieron leer exoneraciones:', error?.message);
+    }
 
+    return res.send(result);
+});
 router.post('/generar-automatico', async (req, res) => {
     try {
         const idContratoSolicitado = Number(req.body?.id_contrato || 0);
