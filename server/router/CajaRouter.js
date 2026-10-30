@@ -1803,6 +1803,7 @@ router.get('/moras-pendientes/:id_contrato', (req, res) => {
                 ) vp ON vp.id_contrato = c.id_contrato
                 WHERE m.id_contrato = ?
                     AND LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
+                    AND m.id_morosidad = (SELECT MAX(m2.id_morosidad) FROM morosidad m2 WHERE m2.id_contrato = m.id_contrato AND LOWER(TRIM(m2.mes_atrasado)) = LOWER(TRIM(m.mes_atrasado)))
                     AND NOT EXISTS (
                         SELECT 1
                         FROM pagos p_mora
@@ -1958,6 +1959,7 @@ const bloquearCobroSiExisteMora = (req, res, next) => {
                 ) vp ON vp.id_contrato = c.id_contrato
                 WHERE m.id_contrato = ?
                   AND LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
+                    AND m.id_morosidad = (SELECT MAX(m2.id_morosidad) FROM morosidad m2 WHERE m2.id_contrato = m.id_contrato AND LOWER(TRIM(m2.mes_atrasado)) = LOWER(TRIM(m.mes_atrasado)))
                   AND NOT EXISTS (
                       SELECT 1 FROM pagos p_mora
                       INNER JOIN pagos_detalle pd_mora ON pd_mora.id_pago = p_mora.id_pago
