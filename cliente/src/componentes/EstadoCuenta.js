@@ -152,12 +152,8 @@ const EstadoCuenta = () => {
     dato('LOTE / MANZANA', `${contrato.lote || 'N/A'} / ${contrato.manzana || 'N/A'}`, 118, 66, 153);
     dato('TELÉFONO', contrato.telefono, 118, 73, 153);
     const moraRegistrada = Number(contrato.mora_registrada || 0);
-    const estadoCuenta = Number(estado.saldoPendiente || 0) <= 0
-      ? 'CANCELADO'
-      : moraRegistrada > 0
-        ? 'MORA'
-        : resumen.cuotasPagadas > 0 ? 'AL DÍA' : 'PENDIENTE';
-    dato('ESTADO', estadoCuenta, 118, 80, 153);
+    const estadoCuenta = moraRegistrada > 0 ? 'MORA' : 'SOLVENTE';
+    dato('ESTADO MORA', estadoCuenta, 118, 80, 153);
     doc.setFillColor(...azul); doc.rect(12, 87, ancho - 24, 6, 'F');
     doc.setTextColor(255); doc.setFontSize(8); doc.text('RESUMEN DE SU CUENTA', ancho / 2, 91.2, { align: 'center' });
     autoTable(doc, {
