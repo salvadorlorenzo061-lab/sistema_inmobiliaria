@@ -199,10 +199,14 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
             COALESCE((
                 SELECT SUM(mora_unica.monto_mora)
                 FROM (
-                    SELECT m.id_contrato, LOWER(TRIM(m.mes_atrasado)) AS mes_mora, MAX(m.monto_mora) AS monto_mora
+                    SELECT m.id_contrato, LOWER(TRIM(m.mes_atrasado)) AS mes_mora, m.monto_mora AS monto_mora
                     FROM morosidad m
-                    WHERE LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) NOT IN ('pagado', 'exonerada', 'anulada')
-                    GROUP BY m.id_contrato, LOWER(TRIM(m.mes_atrasado))
+                    WHERE LOWER(TRIM(COALESCE(m.estado, 'pendiente'))) = 'pendiente'
+                      AND m.id_morosidad = (
+                          SELECT MAX(m2.id_morosidad) FROM morosidad m2
+                          WHERE m2.id_contrato = m.id_contrato
+                            AND LOWER(TRIM(m2.mes_atrasado)) = LOWER(TRIM(m.mes_atrasado))
+                      )
                 ) mora_unica
                 WHERE mora_unica.id_contrato = c.id_contrato
             ), 0) AS mora_registrada,
