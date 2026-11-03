@@ -5,10 +5,10 @@
 //   node scripts/reset_datos_prueba.js --ejecutar          -> borra (exige CONFIRMAR_RESET=BORRAR en el entorno)
 // Opciones:
 //   --incluir-bitacora        tambien vacia la bitacora
-//   --reiniciar-correlativos  devuelve cada asignacion de correlativos a su numero inicial
 //
-// NO toca: residentes, usuarios, roles, empresas, proyectos, servicios, tipos de contrato,
-// resoluciones de factura ni asignaciones de correlativos (salvo --reiniciar-correlativos).
+// NO toca: residentes, usuarios, roles, empresas, proyectos, servicios ni tipos de contrato.
+// Si borra resoluciones de factura y asignaciones de correlativos: habra que crearlas de nuevo
+// (Resoluciones de Factura y Asignar Correlativo) antes de poder cobrar.
 // HAGA UN RESPALDO (mysqldump) ANTES DE EJECUTAR: el borrado no se puede deshacer.
 
 const db = require('../Conexion');
@@ -16,7 +16,6 @@ const db = require('../Conexion');
 const args = new Set(process.argv.slice(2));
 const ejecutar = args.has('--ejecutar');
 const incluirBitacora = args.has('--incluir-bitacora');
-const reiniciarCorrelativos = args.has('--reiniciar-correlativos');
 
 const TABLAS = [
     'anulacion_deuda',
@@ -35,6 +34,9 @@ const TABLAS = [
     'estado_cuenta_historial',
     'cuadre_fact_historial',
     'cuadre_facturacion_historial',
+    'asignar_correlativos',
+    'resoluciones_facturas_proyectos',
+    'resoluciones_facturas',
     'notificaciones_log'
 ];
 if (incluirBitacora) TABLAS.push('bitacora');
@@ -75,12 +77,6 @@ const main = async () => {
         for (const tabla of objetivo) {
             await consulta(`TRUNCATE TABLE \`${tabla}\``);
             console.log(`Vaciada: ${tabla}`);
-        }
-        if (reiniciarCorrelativos && existentes.includes('asignar_correlativos')) {
-            const r = await consulta(
-                `UPDATE asignar_correlativos SET correlativo_actual = correlativo_inicio, estado = 'activo', fecha_cierre = NULL`
-            );
-            console.log(`Correlativos reiniciados: ${r.affectedRows} asignacion(es)`);
         }
     } finally {
         await consulta('SET FOREIGN_KEY_CHECKS = 1');
