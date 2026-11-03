@@ -3,6 +3,7 @@ import Axios from "axios";
 import { API_BASE_URL } from '../config';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -35,6 +36,36 @@ function Bitacora() {
   }, [API_URL]);
 
   useEffect(() => { getBitacora(); }, [getBitacora]);
+
+  const vaciarBitacora = async () => {
+    const confirmacion = await Swal.fire({
+      title: 'Vaciar bitácora',
+      html: 'Se eliminarán <b>todos</b> los registros de la bitácora. Esta acción no se puede deshacer.<br/>Escriba <b>VACIAR</b> para confirmar.',
+      icon: 'warning',
+      input: 'text',
+      showCancelButton: true,
+      confirmButtonText: 'Vaciar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#dc3545',
+      preConfirm: (valor) => {
+        if (String(valor || '').trim().toUpperCase() !== 'VACIAR') {
+          Swal.showValidationMessage('Debe escribir VACIAR');
+          return false;
+        }
+        return true;
+      }
+    });
+    if (!confirmacion.isConfirmed) return;
+
+    try {
+      await Axios.delete(`${API_URL}/vaciar`, { data: { confirmacion: 'VACIAR' } });
+      setCurrentPage(1);
+      getBitacora();
+      Swal.fire({ title: 'Bitácora vaciada', icon: 'success', timer: 1800, showConfirmButton: false });
+    } catch (error) {
+      Swal.fire({ title: 'Error', text: 'No se pudo vaciar la bitácora.', icon: 'error' });
+    }
+  };
 
   // Filtrado combinado: Barra de búsqueda + Selector de Estado (Éxito / Fallido)
   const registrosFiltrados = bitacoraList.filter((item) => {
@@ -126,7 +157,7 @@ function Bitacora() {
         </div>
 
         {/* Filtro por estado del log */}
-        <div className="col-md-3 d-flex gap-2">
+        <div className="col-md-4 d-flex flex-wrap gap-2">
           <select 
             className="form-select bg-secondary text-white border-0" 
             value={filtroEstado} 
@@ -138,6 +169,9 @@ function Bitacora() {
           </select>
           <button type="button" className="btn btn-danger text-nowrap" onClick={descargarPDF} disabled={!registrosFiltrados.length}>
             📄 PDF
+          </button>
+          <button type="button" className="btn btn-outline-light text-nowrap" onClick={vaciarBitacora} disabled={!bitacoraList.length}>
+            🗑️ Vaciar bitácora
           </button>
         </div>
       </div>

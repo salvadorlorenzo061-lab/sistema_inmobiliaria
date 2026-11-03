@@ -64,4 +64,41 @@ router.post("/crear", (req, res) => {
     );
 });
 
+// === 3. VACIAR BITÁCORA (conserva la estructura; deja un registro de quién la vació) ===
+router.delete("/vaciar", (req, res) => {
+    if (req.body && req.body.confirmacion !== 'VACIAR') {
+        return res.status(400).send("Confirmación inválida.");
+    }
+
+    let usuario = 'Desconocido';
+    try {
+        usuario = decodeURIComponent(req.headers['x-user-name'] || '') || usuario;
+    } catch (e) { /* encabezado mal codificado */ }
+    const idUsuario = Number(req.headers['x-user-id']) || null;
+
+    db.query("DELETE FROM bitacora", (err, result) => {
+        if (err) {
+            console.error("🔴 ERROR AL VACIAR BITÁCORA:", err);
+            return res.status(500).send("No se pudo vaciar la bitácora.");
+        }
+        const eliminados = result ? result.affectedRows : 0;
+
+        db.query("ALTER TABLE bitacora AUTO_INCREMENT = 1", () => {
+            const ahora = new Date();
+            db.query(
+                `INSERT INTO bitacora (id_usuario, nombre_usuario, usuario_nombre, accion, descripcion, ip_direccion, fecha_hora, estado, fecha_registro)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'exitoso', ?)`,
+                [
+                    idUsuario, usuario, usuario, 'ELIMINADO',
+                    `${usuario} vació la bitácora (${eliminados} registros eliminados)`,
+                    obtenerIP ? obtenerIP(req) : null,
+                    ahora.toISOString().slice(0, 19).replace('T', ' '),
+                    ahora.toISOString().slice(0, 10)
+                ],
+                () => res.status(200).send({ mensaje: "Bitácora vaciada.", eliminados })
+            );
+        });
+    });
+});
+
 module.exports = router;
