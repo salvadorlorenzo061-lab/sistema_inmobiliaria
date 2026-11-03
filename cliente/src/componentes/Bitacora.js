@@ -3,6 +3,8 @@ import Axios from "axios";
 import { API_BASE_URL } from '../config';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 function Bitacora() {
   const [bitacoraList, setBitacoraList] = useState([]);
@@ -63,6 +65,42 @@ function Bitacora() {
     setCurrentPage(1);
   };
 
+  const descargarPDF = () => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const ahora = new Date();
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('BITÁCORA DEL SISTEMA', pageWidth / 2, 14, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Generado: ${ahora.toLocaleDateString()} ${ahora.toLocaleTimeString()}  |  Registros: ${registrosFiltrados.length}`, pageWidth / 2, 20, { align: 'center' });
+
+    autoTable(doc, {
+      startY: 25,
+      head: [['Fecha / Hora', 'Usuario', 'Rol', 'Acción', 'Descripción', 'Estado']],
+      body: registrosFiltrados.map((item) => [
+        `${new Date(item.fecha).toLocaleDateString()} ${new Date(item.fecha).toLocaleTimeString()}`,
+        String(item.nombre_usuario || 'DESCONOCIDO').toUpperCase(),
+        item.nombre_rol || '-',
+        getEtiquetaAccion(item.accion),
+        item.descripcion || '-',
+        esEstadoFallido(item.estado) ? 'FALLIDO' : 'OK'
+      ]),
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'middle' },
+      headStyles: { fillColor: [33, 37, 41], textColor: 255 },
+      columnStyles: { 4: { cellWidth: 110 } },
+      didDrawPage: () => {
+        doc.setFontSize(8);
+        doc.text(`Página ${doc.internal.getNumberOfPages()}`, pageWidth - 14, doc.internal.pageSize.getHeight() - 6, { align: 'right' });
+      }
+    });
+
+    doc.save(`Bitacora_${ahora.toISOString().slice(0, 10)}.pdf`);
+  };
+
   return (
     <div className='container mt-4'>
       <div className="module-header">
@@ -88,7 +126,7 @@ function Bitacora() {
         </div>
 
         {/* Filtro por estado del log */}
-        <div className="col-md-3">
+        <div className="col-md-3 d-flex gap-2">
           <select 
             className="form-select bg-secondary text-white border-0" 
             value={filtroEstado} 
@@ -98,6 +136,9 @@ function Bitacora() {
             <option value="exitoso">✅ Éxitosos / Correctos</option>
             <option value="fallido">❌ Advertencias / Fallidos</option>
           </select>
+          <button type="button" className="btn btn-danger text-nowrap" onClick={descargarPDF} disabled={!registrosFiltrados.length}>
+            📄 PDF
+          </button>
         </div>
       </div>
       </div>
