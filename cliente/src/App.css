@@ -1030,4 +1030,129 @@ body::-webkit-scrollbar {
   animation: swal-toast-fade-out 0.2s ease-in forwards;
 }
 
+/* ===== Capa responsive global (Chrome, Firefox, Opera, Android e iOS) ===== */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+img,
+canvas,
+svg,
+video {
+  max-width: 100%;
+}
+
+@media (max-width: 992px) {
+  .app-main-content {
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+    min-width: 0;
+  }
+
+  .app-sidebar {
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Deja de recortar contenido ancho: las tablas se desplazan por si mismas */
+  .container-fluid,
+  .row {
+    overflow-x: visible;
+  }
+
+  /* Tablas desplazables horizontalmente sin cambiar el codigo de cada modulo */
+  .table-responsive,
+  .app-main-content table.table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-main-content table.table th,
+  .app-main-content table.table td {
+    white-space: nowrap;
+  }
+
+  /* 16px evita el zoom automatico de iOS al enfocar un campo */
+  input.form-control,
+  select.form-select,
+  textarea.form-control,
+  .form-control,
+  .form-select {
+    font-size: 16px;
+    min-height: 40px;
+  }
+
+  .btn {
+    min-height: 40px;
+  }
+
+  .btn-group,
+  .d-flex.gap-2,
+  .estado-cuenta-actions {
+    flex-wrap: wrap;
+  }
+
+  .card-header.d-flex,
+  .module-header .d-flex {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Modales de Bootstrap a pantalla casi completa */
+  .modal-dialog {
+    margin: 0.5rem;
+    max-width: calc(100vw - 1rem);
+  }
+
+  .modal-dialog.modal-lg,
+  .modal-dialog.modal-xl {
+    max-width: calc(100vw - 1rem);
+  }
+
+  .modal-content {
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .modal-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* SweetAlert2 */
+  .swal2-popup {
+    width: calc(100vw - 1.5rem) !important;
+    max-width: 32rem;
+    padding: 1rem !important;
+    font-size: 0.95rem;
+  }
+
+  .swal2-html-container {
+    overflow-wrap: anywhere;
+  }
+
+  .swal2-actions {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  }
+
+  @media (max-width: 400px) {
+  .menu-principal-tiles {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+}
+
 
