@@ -569,7 +569,7 @@ const CuentaEstado = () => {
         const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
         return [
-          cuotaNumero === 0 ? 'Cuota 0 / Enganche' : String(cuotaNumero),
+          cuotaNumero === 0 ? 'ENGANCHE' : `Cuota financiada ${cuotaNumero}`,
           fechaVencimiento,
           formatoMoneda(row.cuota_estimada || row.cuota || 0),
           'Q 0.00',
@@ -665,7 +665,7 @@ const CuentaEstado = () => {
       const estadoFila = String(row.estado || 'PENDIENTE').toUpperCase();
 
       return [
-        cuotaNumero === 0 ? 'Cuota 0 / Enganche' : cuotaNumero,
+        cuotaNumero === 0 ? 'ENGANCHE' : `Cuota financiada ${cuotaNumero}`,
         fechaVencimiento,
         Number(row.cuota_estimada || row.cuota || 0),
         0,
@@ -942,7 +942,7 @@ const CuentaEstado = () => {
 
                             return (
                               <tr key={row.indice ?? cuotaNumero}>
-                                <td className="fw-bold">{cuotaNumero === 0 ? 'Cuota 0 / Enganche' : cuotaNumero}</td>
+                                <td className="fw-bold">{cuotaNumero === 0 ? 'ENGANCHE' : `Cuota financiada ${cuotaNumero}`}</td>
                                 <td>{fechaVencimiento || '—'}</td>
                                 <td>{formatoMoneda(row.cuota_estimada || row.cuota || 0)}</td>
                                 <td>Q 0.00</td>

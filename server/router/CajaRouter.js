@@ -184,9 +184,7 @@ const esMoraContractualVencida = (mesTexto, fechaContratoRaw, diasGraciaRaw, mes
 
     // El periodo iniciado en el mes de la cuota vence el mismo dia del mes siguiente
     // (ej. inicio 2/01 -> vencimiento 2/02), no dentro del mismo mes de la cuota.
-    const mesVencimiento = inicioConfiguradoValido
-        ? new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 1)
-        : mesCuota;
+    const mesVencimiento = mesCuota;
     const ultimoDiaMesVencimiento = new Date(mesVencimiento.getFullYear(), mesVencimiento.getMonth() + 1, 0).getDate();
     const fechaVencimiento = new Date(
         mesVencimiento.getFullYear(),

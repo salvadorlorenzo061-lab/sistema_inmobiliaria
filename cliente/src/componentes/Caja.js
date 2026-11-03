@@ -625,9 +625,7 @@ const Caja = () => {
         if (mesEvaluado >= mesActual) return false;
 
         // El periodo iniciado en el mes de la cuota vence el mismo dia del mes siguiente.
-        const mesVencimiento = inicioConfiguradoValido
-            ? new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 1)
-            : mesCuota;
+        const mesVencimiento = mesCuota;
         const ultimoDiaMesVencimiento = new Date(mesVencimiento.getFullYear(), mesVencimiento.getMonth() + 1, 0).getDate();
         const fechaVencimiento = new Date(
             mesVencimiento.getFullYear(),
@@ -663,10 +661,8 @@ const Caja = () => {
         const inicioConfiguradoValido = Number.isInteger(mesInicio) && mesInicio >= 1 && mesInicio <= 12
             && Number.isInteger(anioInicio) && anioInicio >= 1900;
         const diaInicio = Math.max(1, Math.min(31, Number(diaInicioRaw || fechaContrato.getDate() || 1)));
-        const mesVencimiento = inicioConfiguradoValido
-            ? new Date(mesCuota.getFullYear(), mesCuota.getMonth() + 1, 1)
-            : mesCuota;
-        const ultimoDiaMes = new Date(mesVencimiento.getFullYear(), mesVencimiento.getMonth() + 1, 0).getDate();
+        const mesVencimiento = mesCuota;
+        const ultimoDiaMes =  new Date(mesVencimiento.getFullYear(), mesVencimiento.getMonth() + 1, 0).getDate();
         const fechaVencimiento = new Date(
             mesVencimiento.getFullYear(),
             mesVencimiento.getMonth(),
