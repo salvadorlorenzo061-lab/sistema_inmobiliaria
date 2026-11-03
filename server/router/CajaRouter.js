@@ -4,6 +4,7 @@ const router = express.Router();
 const cors = require('cors');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
 const { generarTablaPlana, sqlTotalPlanPlano } = require('../utils/amortizacion');
+const { notificarFacturaEmitida } = require('../notificaciones');
 
 router.use(cors());
 router.use(express.json());
@@ -3110,6 +3111,9 @@ router.post("/procesar-pago", bloquearCobroSiExisteMora, (req, res) => {
                                         const finalizarCommit = () => {
                                             db.commit((err) => {
                                                 if (err) return db.rollback(() => res.status(500).send("Error al confirmar base de datos."));
+
+                                                // Aviso por correo fuera del flujo de cobro: nunca bloquea ni falla la factura.
+                                                notificarFacturaEmitida({ idContrato: id_contrato, correlativo: correlativoAsignado, total: totalTransaccion });
 
                                                 // Obtener empresa real del contrato para membrete/logo
                                                 const empresaQuery = `
