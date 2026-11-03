@@ -1155,4 +1155,33 @@ video {
   }
 }
 
+  /* Paginacion profesional y adaptable */
+  .pagination-bar .pagination {
+    gap: 2px;
+  }
+
+  .pagination-bar .page-link {
+    min-width: 36px;
+    text-align: center;
+    border-radius: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 576px) {
+    .pagination-bar {
+      flex-direction: column;
+      align-items: center !important;
+      text-align: center;
+    }
+
+    .pagination-bar .pagination-summary {
+      font-size: 0.85rem;
+    }
+
+    .pagination-bar .page-link {
+      min-width: 34px;
+      padding: 0.35rem 0.5rem;
+    }
+  }
+
 

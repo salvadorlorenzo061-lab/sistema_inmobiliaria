@@ -52,38 +52,58 @@ export const PaginationControls = ({
     onPageChange(targetPage);
   };
 
+  // Ventana de paginas: 1 ... actual-1, actual, actual+1 ... ultima
+  const paginasVisibles = [];
+  const agregarPagina = (valor) => {
+    if (paginasVisibles[paginasVisibles.length - 1] !== valor) paginasVisibles.push(valor);
+  };
+  for (let pagina = 1; pagina <= effectiveTotalPages; pagina += 1) {
+    const cercana = Math.abs(pagina - safeCurrentPage) <= 1;
+    if (pagina === 1 || pagina === effectiveTotalPages || cercana) {
+      agregarPagina(pagina);
+    } else {
+      agregarPagina(pagina < safeCurrentPage ? 'inicio...' : 'fin...');
+    }
+  }
+
   return (
-    <div className={`d-flex justify-content-between align-items-center mt-4 p-3 bg-light rounded ${className}`.trim()}>
-      <span className="text-muted fw-bold">
+    <div className={`pagination-bar d-flex justify-content-between align-items-center flex-wrap gap-2 mt-4 p-3 bg-light rounded ${className}`.trim()}>
+      <span className="text-muted fw-bold pagination-summary">
         Mostrando {visibleStart}-{visibleEnd} de {totalCount} {itemLabel}
       </span>
-      <nav>
-        <ul className="pagination m-0">
+      <nav aria-label="Paginación">
+        <ul className="pagination pagination-sm m-0 flex-wrap justify-content-center">
           <li className={`page-item ${safeCurrentPage === 1 ? 'disabled' : ''}`}>
-            <button type="button" className="page-link" onClick={() => goToPage(1)} disabled={safeCurrentPage === 1}>
-              «« Primera
+            <button type="button" className="page-link" onClick={() => goToPage(1)} disabled={safeCurrentPage === 1} aria-label="Primera página">
+              ««
             </button>
           </li>
           <li className={`page-item ${safeCurrentPage === 1 ? 'disabled' : ''}`}>
-            <button type="button" className="page-link" onClick={() => goToPage(safeCurrentPage - 1)} disabled={safeCurrentPage === 1}>
-              « Anterior
+            <button type="button" className="page-link" onClick={() => goToPage(safeCurrentPage - 1)} disabled={safeCurrentPage === 1} aria-label="Página anterior">
+              «
             </button>
           </li>
-          {Array.from({ length: effectiveTotalPages }, (_, i) => i + 1).map((page) => (
-            <li key={page} className={`page-item ${safeCurrentPage === page ? 'active' : ''}`}>
-              <button type="button" className="page-link" onClick={() => goToPage(page)}>
-                {page}
-              </button>
-            </li>
+          {paginasVisibles.map((page) => (
+            typeof page === 'string' ? (
+              <li key={page} className="page-item disabled">
+                <span className="page-link">…</span>
+              </li>
+            ) : (
+              <li key={page} className={`page-item ${safeCurrentPage === page ? 'active' : ''}`}>
+                <button type="button" className="page-link" onClick={() => goToPage(page)}>
+                  {page}
+                </button>
+              </li>
+            )
           ))}
           <li className={`page-item ${safeCurrentPage === effectiveTotalPages ? 'disabled' : ''}`}>
-            <button type="button" className="page-link" onClick={() => goToPage(safeCurrentPage + 1)} disabled={safeCurrentPage === effectiveTotalPages}>
-              Siguiente »
+            <button type="button" className="page-link" onClick={() => goToPage(safeCurrentPage + 1)} disabled={safeCurrentPage === effectiveTotalPages} aria-label="Página siguiente">
+              »
             </button>
           </li>
           <li className={`page-item ${safeCurrentPage === effectiveTotalPages ? 'disabled' : ''}`}>
-            <button type="button" className="page-link" onClick={() => goToPage(effectiveTotalPages)} disabled={safeCurrentPage === effectiveTotalPages}>
-              Última »»
+            <button type="button" className="page-link" onClick={() => goToPage(effectiveTotalPages)} disabled={safeCurrentPage === effectiveTotalPages} aria-label="Última página">
+              »»
             </button>
           </li>
         </ul>

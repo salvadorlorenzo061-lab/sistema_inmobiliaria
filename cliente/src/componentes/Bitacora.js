@@ -132,9 +132,9 @@ function Bitacora() {
             value={filtroEstado} 
             onChange={handleFiltroChange}
           >
-            <option value="todos">👁️ Ver Todos los Estados</option>
-            <option value="exitoso">✅ Éxitosos / Correctos</option>
-            <option value="fallido">❌ Advertencias / Fallidos</option>
+            <option value="todos">Todos los estados</option>
+            <option value="exitoso">✅ Correctos</option>
+            <option value="fallido">❌ Fallidos</option>
           </select>
           <button type="button" className="btn btn-danger text-nowrap" onClick={descargarPDF} disabled={!registrosFiltrados.length}>
             📄 PDF
@@ -158,7 +158,7 @@ function Bitacora() {
               <th>ESTADO</th>
             </tr>
           </thead>
-          <tbody>{registrosPaginados.length > 0 ? registrosPaginados.map((val) => (<tr key={val.id_bitacora} className={(esEstadoFallido(val.estado) || val.estado === null) ? 'table-danger' : ''}><th className="text-center">#{val.id_bitacora}</th><td className="text-center text-nowrap" style={{ fontSize: '0.85rem' }}>{new Date(val.fecha).toLocaleDateString()}<br /><span className="text-muted">{new Date(val.fecha).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</span></td><td><strong className="text-dark">{(val.nombre_usuario || 'DESCONOCIDO').toUpperCase()}</strong><br /><small className="text-muted">ID Empleado: #{val.id_usuario}</small></td><td className="text-center"><span className="badge bg-light text-dark border">{val.nombre_rol || `Rol #${val.id_rol}`}</span></td><td><span className="badge bg-primary text-wrap text-start">{getEtiquetaAccion(val.accion)}</span></td><td style={{ fontSize: '0.9rem' }} className="text-secondary">{val.descripcion || '-'}</td><td className="text-center text-monospace text-muted" style={{ fontSize: '0.85rem' }}><code>{val.ip_direccion || '127.0.0.1'}</code></td><td className="text-center"><span className={`badge rounded-pill ${esEstadoFallido(val.estado) ? 'bg-danger' : 'bg-success'}`}>{esEstadoFallido(val.estado) ? '⚠️ FAIL' : '✅ OK'}</span></td></tr>)) : (<tr><td colSpan="8" className="text-center text-muted py-4 fs-5">No se registran firmas de auditoría bajo los criterios ingresados.</td></tr>)}</tbody>
+          <tbody>{registrosPaginados.length > 0 ? registrosPaginados.map((val) => (<tr key={val.id_bitacora} className={(esEstadoFallido(val.estado) || val.estado === null) ? 'table-danger' : ''}><th className="text-center">#{val.id_bitacora}</th><td className="text-center text-nowrap" style={{ fontSize: '0.85rem' }}>{new Date(val.fecha).toLocaleDateString()}<br /><span className="text-muted">{new Date(val.fecha).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</span></td><td><strong className="text-dark">{(val.nombre_usuario || 'DESCONOCIDO').toUpperCase()}</strong><br /><small className="text-muted">ID Empleado: #{val.id_usuario}</small></td><td className="text-center"><span className="badge bg-light text-dark border">{val.nombre_rol || '-'}</span></td><td><span className="badge bg-primary text-wrap text-start">{getEtiquetaAccion(val.accion)}</span></td><td style={{ fontSize: '0.9rem' }} className="text-secondary">{val.descripcion || '-'}</td><td className="text-center text-monospace text-muted" style={{ fontSize: '0.85rem' }}><code>{val.ip_direccion || '127.0.0.1'}</code></td><td className="text-center"><span className={`badge rounded-pill ${esEstadoFallido(val.estado) ? 'bg-danger' : 'bg-success'}`}>{esEstadoFallido(val.estado) ? '⚠️ FAIL' : '✅ OK'}</span></td></tr>)) : (<tr><td colSpan="8" className="text-center text-muted py-4 fs-5">No se registran firmas de auditoría bajo los criterios ingresados.</td></tr>)}</tbody>
         </table>
       </div>
 
