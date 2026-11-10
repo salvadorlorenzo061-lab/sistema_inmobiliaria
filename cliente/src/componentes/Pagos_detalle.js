@@ -314,6 +314,7 @@ function PagosDetalle() {
         logo: empresaLogo,
         empresa: {
           nombre: nombreEmpresa,
+          nombre_proyecto: documento?.empresa?.nombre_proyecto,
           nit: documento?.empresa?.nit,
           pais: documento?.empresa?.pais,
           moneda: documento?.empresa?.moneda

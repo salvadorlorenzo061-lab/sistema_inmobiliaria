@@ -366,6 +366,7 @@ function AnulacionDeuda() {
         logo: logoFactura,
         empresa: {
           nombre: documento?.empresa?.nombre_empresa || nombreMarca,
+          nombre_proyecto: documento?.empresa?.nombre_proyecto || contratoInfo?.nombre_proyecto_pdf || contratoInfo?.nombre_proyecto,
           nit: documento?.empresa?.nit || contratoInfo?.nit_empresa,
           pais: documento?.empresa?.pais || contratoInfo?.pais_empresa,
           moneda: documento?.empresa?.moneda || contratoInfo?.moneda_empresa

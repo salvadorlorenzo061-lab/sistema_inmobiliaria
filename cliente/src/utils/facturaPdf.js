@@ -281,6 +281,7 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
     notaPie = 'Gracias por su pago. Conservar este documento para cualquier aclaración fiscal y administrativa.'
   } = datos;
 
+  const nombreProyecto = String(empresa?.nombre_proyecto || '').trim();
   const pW = doc.internal.pageSize.getWidth();
   const pH = doc.internal.pageSize.getHeight();
   const rolNormalizado = String(rolUsuarioCobro || '')
@@ -316,9 +317,16 @@ export const renderFacturaComprobante = (doc, datos = {}) => {
   doc.text(String(empresa?.nombre || 'CORPORACION DE INVERSION INMOBILIARIA').toUpperCase(), 46, y + 5);
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text(`NIT: ${texto(empresa?.nit)}`, 46, y + 10);
-  doc.text(`País: ${texto(empresa?.pais, 'Guatemala')}`, 46, y + 14.5);
-  doc.text(`Moneda: ${texto(empresa?.moneda, 'GTQ')}`, 46, y + 19);
+  const lineasProyecto = nombreProyecto
+    ? doc.splitTextToSize(`Proyecto: ${nombreProyecto}`, 91).slice(0, 2)
+    : [];
+  if (nombreProyecto) {
+    doc.text(lineasProyecto, 46, y + 10);
+  }
+  const desplazamientoEncabezado = lineasProyecto.length * 4.5;
+  doc.text(`NIT: ${texto(empresa?.nit)}`, 46, y + 10 + desplazamientoEncabezado);
+  doc.text(`País: ${texto(empresa?.pais, 'Guatemala')}`, 46, y + 14.5 + desplazamientoEncabezado);
+  doc.text(`Moneda: ${texto(empresa?.moneda, 'GTQ')}`, 46, y + 19 + desplazamientoEncabezado);
 
   doc.setFillColor(245, 245, 245);
   doc.rect(140, y - 2, 63, 30, 'F');

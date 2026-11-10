@@ -2009,6 +2009,7 @@ const Caja = () => {
                 logo: logoEmpresa,
                 empresa: {
                     nombre: empresa?.nombre_empresa || empresa?.nombre || residente?.nombre_marca_pdf || "CORPORACION DE INVERSION INMOBILIARIA",
+                    nombre_proyecto: empresa?.nombre_proyecto || residente?.nombre_proyecto_pdf || residente?.nombre_proyecto,
                     nit: empresa?.nit,
                     pais: empresa?.pais,
                     moneda: empresa?.moneda

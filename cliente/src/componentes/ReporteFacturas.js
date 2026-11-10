@@ -92,6 +92,7 @@ const ReporteFacturas = () => {
         logo,
         empresa: {
           nombre: documento?.empresa?.nombre_empresa,
+          nombre_proyecto: documento?.empresa?.nombre_proyecto,
           nit: documento?.empresa?.nit_empresa,
           pais: documento?.empresa?.pais,
           moneda: documento?.empresa?.moneda
