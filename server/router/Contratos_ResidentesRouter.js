@@ -12,7 +12,8 @@ const {
     resolverCuotaFijaPlan,
     validarCuotaPersonalizada,
     sqlCuotaPlana,
-    sqlTotalPlanPlano
+    sqlTotalPlanPlano,
+    sqlToleranciaSaldoPlan
 } = require('../utils/amortizacion');
 
 const EXT_TO_MIME = {
@@ -844,6 +845,10 @@ const backfillSaldoPendienteContrato = () => {
         'c.interes_porcentaje',
         'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
     );
+    const toleranciaSaldoSql = sqlToleranciaSaldoPlan(
+        'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+        'c.interes_porcentaje', 'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)', 'c.monto_cuota'
+    );
     db.query(`
         UPDATE contratos_residentes c
         LEFT JOIN (
@@ -854,7 +859,7 @@ const backfillSaldoPendienteContrato = () => {
             GROUP BY p.id_contrato
         ) pagos ON pagos.id_contrato = c.id_contrato
         SET c.saldo_pendiente = CASE
-            WHEN (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
+            WHEN (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0)) <= ${toleranciaSaldoSql} THEN 0
             ELSE (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0))
         END
     `, (err) => {
@@ -878,6 +883,10 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
         'c.interes_porcentaje',
         'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
     );
+    const toleranciaSaldoSql = sqlToleranciaSaldoPlan(
+        'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+        'c.interes_porcentaje', 'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)', 'c.monto_cuota'
+    );
 
     db.query(`
         UPDATE contratos_residentes c
@@ -889,7 +898,7 @@ const recalcularSaldoPendienteContrato = (idContrato, callback = () => {}) => {
             GROUP BY p.id_contrato
         ) pagos ON pagos.id_contrato = c.id_contrato
         SET c.saldo_pendiente = CASE
-            WHEN (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
+            WHEN (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0)) <= ${toleranciaSaldoSql} THEN 0
             ELSE (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0))
         END
         WHERE c.id_contrato = ?
@@ -1359,7 +1368,7 @@ router.post("/crear", (req, res) => {
         const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
         if (!validarCuotaManualSolicitada(monto_cuota, capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)) {
             return res.status(400).send({
-                message: 'La cuota manual debe superar el interés mensual y amortizar el saldo dentro del plazo, dejando una última cuota positiva.'
+                message: 'La cuota manual debe superar el interés mensual, dejar una última cuota no negativa y permitir al menos Q 0.01 de capital en cada cuota cobrable.'
             });
         }
         const montoCuotaNormalizado = normalizarCuotaContrato(
@@ -1622,7 +1631,7 @@ router.put("/actualizar", (req, res) => {
     const capitalFinanciado = Math.max(montoTotalNumerico - engancheNumerico, 0);
     if (!validarCuotaManualSolicitada(monto_cuota, capitalFinanciado, interesPorcentajeNumerico, cuotasNormalizadas)) {
         return res.status(400).send({
-            message: 'La cuota manual debe superar el interés mensual y amortizar el saldo dentro del plazo, dejando una última cuota positiva.'
+            message: 'La cuota manual debe superar el interés mensual, dejar una última cuota no negativa y permitir al menos Q 0.01 de capital en cada cuota cobrable.'
         });
     }
     const montoCuotaNormalizado = normalizarCuotaContrato(

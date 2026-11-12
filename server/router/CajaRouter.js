@@ -3,7 +3,7 @@ const db = require('../Conexion');
 const router = express.Router(); 
 const cors = require('cors');
 const { registrarAuditoria, obtenerIP } = require('../auditingMiddleware');
-const { generarTablaPlana, sqlTotalPlanPlano } = require('../utils/amortizacion');
+const { generarTablaPlana, sqlTotalPlanPlano, sqlToleranciaSaldoPlan } = require('../utils/amortizacion');
 const { notificarFacturaEmitida } = require('../notificaciones');
 
 router.use(cors());
@@ -3564,6 +3564,10 @@ router.post("/procesar-pago", bloquearCobroSiExisteMora, (req, res) => {
                                                 'c.interes_porcentaje',
                                                 'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)'
                                             );
+                                            const toleranciaSaldoSql = sqlToleranciaSaldoPlan(
+                                                'COALESCE(c.monto_total, 0) - COALESCE(c.enganche, 0)',
+                                                'c.interes_porcentaje', 'COALESCE(c.cuotas_pactadas, c.plazo_meses, 1)', 'c.monto_cuota'
+                                            );
                                             const finalizarConConvenio = () => sincronizarConvenio(descuentoCapital, () => sincronizarCuotasContrato(finalizarCommit));
 
                                             if (descuentoCapital > 0) {
@@ -3577,7 +3581,7 @@ router.post("/procesar-pago", bloquearCobroSiExisteMora, (req, res) => {
                                                         GROUP BY p.id_contrato
                                                     ) pagos ON pagos.id_contrato = c.id_contrato
                                                     SET c.saldo_pendiente = CASE
-                                                        WHEN (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0)) <= 0.5 THEN 0
+                                                        WHEN (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0)) <= ${toleranciaSaldoSql} THEN 0
                                                         ELSE (${totalPlanPlanoSql} - COALESCE(pagos.total_pagado, 0))
                                                     END,
                                                         c.estado = CASE

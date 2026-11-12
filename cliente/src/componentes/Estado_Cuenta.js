@@ -204,7 +204,7 @@ const EstadoCuenta = () => {
       Number(contrato.monto_cuota || 0)
     );
     const montoCuota = Number(contrato.monto_cuota || 0) || calcularCuotaFija(capitalFinanciado, interesAnualContrato, cuotasPactadas);
-    const ultimaCuota = Number(tablaAmortizacion[tablaAmortizacion.length - 1]?.cuota_estimada || montoCuota || 0);
+    const ultimaCuota = Number(tablaAmortizacion[tablaAmortizacion.length - 1]?.cuota_estimada ?? montoCuota ?? 0);
     const totalConIntereses = Number(tablaAmortizacion.reduce((total, fila) => total + Number(fila?.cuota_estimada || 0), engancheContrato).toFixed(2));
 
     return {
@@ -383,7 +383,7 @@ const EstadoCuenta = () => {
     const totalCuotas = Math.max(Number(cuotasPactadas || 0), 0);
     for (let cuota = 1; cuota <= totalCuotas; cuota += 1) {
       const detalle = detallePorCuota.get(cuota);
-      const montoProgramado = (cuota === totalCuotas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
+      const montoProgramado = cuota === totalCuotas ? ultimaCuota : montoCuota;
       if (detalle) {
         filas.push({ id: `cuota-${cuota}`, ...construirFilaPagada(detalle, `Cuota ${cuota}`, montoProgramado) });
       } else {
@@ -395,7 +395,7 @@ const EstadoCuenta = () => {
           noReferencia: '',
           monto: montoProgramado,
           recibo: '',
-          estado: 'PENDIENTE'
+          estado: montoProgramado === 0 && cuota === totalCuotas ? 'SIN CARGO' : 'PENDIENTE'
         });
       }
     }
@@ -618,7 +618,7 @@ const EstadoCuenta = () => {
         doc.text('Cada una', 79, resumenY + 25.2);
         doc.text(formatoMoneda(montoCuota), 125.2, resumenY + 25.2, { align: 'right' });
         doc.text('Una ultima', 79, resumenY + 34.3);
-        doc.text(formatoMoneda(ultimaCuota || montoCuota), 125.2, resumenY + 34.3, { align: 'right' });
+        doc.text(formatoMoneda(ultimaCuota), 125.2, resumenY + 34.3, { align: 'right' });
 
         doc.setFont('helvetica', 'bold');
         doc.text(String(cuotasPactadas || 0), 142.5, resumenY + 30, { align: 'center' });
@@ -674,7 +674,7 @@ const EstadoCuenta = () => {
         if (!detalle && !estaPendienteEnCaja) {
           continue;
         }
-        const montoProgramado = (i === cuotasPactadas && ultimaCuota > 0) ? ultimaCuota : montoCuota;
+        const montoProgramado = i === cuotasPactadas ? ultimaCuota : montoCuota;
         const serviciosFuenteFila = [detalle?.servicios_nombres, serviciosContratoNombres, serviciosCajaNombres]
           .map((txt) => String(txt || '').trim())
           .filter(Boolean)
@@ -887,7 +887,7 @@ const EstadoCuenta = () => {
         filasReporte.push(
           pagoDetalle
             ? crearFilaPago(pagoDetalle, fechaCuota, 'PAGADO', cuota)
-            : [fechaCuota || '', 'PENDIENTE DE PAGO', String(cuota), '', '', '', formatoMoneda((cuota === totalCuotas && ultimaCuota > 0) ? ultimaCuota : montoCuota), '']
+            : [fechaCuota || '', cuota === totalCuotas && ultimaCuota === 0 ? 'SIN CARGO' : 'PENDIENTE DE PAGO', String(cuota), '', '', '', formatoMoneda(cuota === totalCuotas ? ultimaCuota : montoCuota), '']
         );
       }
 

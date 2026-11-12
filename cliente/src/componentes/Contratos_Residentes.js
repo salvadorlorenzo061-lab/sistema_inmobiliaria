@@ -465,11 +465,10 @@ function Contratos_Residentes() {
     }
 
     const totalFinanciado = Number(obtenerPrecioTotalConIntereses() || 0);
-    const ultimaCuota = redondearMoneda(Math.max(
-      totalFinanciado - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0)),
-      0
-    ));
-    if (ultimaCuota <= 0) {
+    const ultimaCuota = redondearMoneda(
+      totalFinanciado - (cuotaRegular * Math.max(cuotasCalculadasNumero - 1, 0))
+    );
+    if (ultimaCuota < 0) {
       return '';
     }
 
@@ -482,7 +481,7 @@ function Contratos_Residentes() {
   const detalleCuotaManual = modalidad_pago !== 'contado'
     && cuotaManualDiferenteDeAutomatica
     && validarCuotaPersonalizada(capitalFinanciadoContrato, Number(interes_porcentaje || 0), cuotasCalculadasNumero, montoCuotaGuardable)
-    ? `Manual: Q ${montoCuotaGuardable.toLocaleString('es-GT')} = Q ${redondearMoneda(montoCuotaGuardable - interesFijoMensualContrato).toLocaleString('es-GT')} a capital + Q ${interesFijoMensualContrato.toLocaleString('es-GT')} de interés. Última cuota: Q ${redondearMoneda(Number(precioTotalConInteresesCalculado || 0) - (montoCuotaGuardable * Math.max(cuotasCalculadasNumero - 1, 0))).toLocaleString('es-GT')}.`
+    ? `Manual: Q ${montoCuotaGuardable.toLocaleString('es-GT')}. Última cuota: Q ${Number(ultimaCuotaCalculada).toLocaleString('es-GT')}.`
     : '';
 
 
@@ -525,10 +524,13 @@ function Contratos_Residentes() {
       if (montoCuotaGuardable <= interesFijoMensualContrato) {
         return `La cuota manual debe superar el interés mensual de Q ${interesFijoMensualContrato.toLocaleString('es-GT')} para amortizar capital.`;
       }
+      if (Number(precioTotalConInteresesCalculado || 0) - montoCuotaGuardable * (cuotasCalculadasNumero - 1) >= 0) {
+        return 'El capital financiado es demasiado pequeño para distribuir al menos Q 0.01 en cada cuota cobrable. Ajuste el plazo o la cuota manual.';
+      }
       const cuotaMaxima = Math.max(Math.floor(
-        interesFijoMensualContrato + ((capitalFinanciadoContrato - 0.01) / Math.max(cuotasCalculadasNumero - 1, 1))
+        Number(precioTotalConInteresesCalculado || 0) / Math.max(cuotasCalculadasNumero - 1, 1)
       ), 0);
-      return `La cuota manual es demasiado alta para el plazo. Ingrese un máximo de Q ${cuotaMaxima.toLocaleString('es-GT')} para conservar capital pendiente en la última cuota.`;
+      return `La cuota manual es demasiado alta para el plazo. Ingrese un máximo de Q ${cuotaMaxima.toLocaleString('es-GT')} para evitar una última cuota negativa.`;
     }
     if (dia_pago_limite === '') return "Debe indicar los días de gracia.";
     if (!fecha_firma) return "Debe ingresar la fecha de firma.";

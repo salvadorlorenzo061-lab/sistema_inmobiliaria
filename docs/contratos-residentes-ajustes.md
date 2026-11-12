@@ -34,6 +34,32 @@ Referencia:
 
 - `montoCuotaCalculado`
 
+### Cuota manual y última cuota
+
+La cuota manual entera debe superar el interés mensual y no puede hacer negativa
+la última cuota: para un plan de más de una cuota, su máximo es la parte entera
+de `total financiado con intereses / (número de cuotas - 1)`. La última cuota es
+el total financiado menos las cuotas anteriores; puede ser cero. Un importe
+superior a ese máximo liquidaría el saldo antes del plazo y no se admite.
+
+Cuando la cuota agota el capital antes de la última cuota según el reparto
+anterior, se redistribuye el capital entre las cuotas y se asigna a intereses el
+resto de cada pago. Esto mantiene el total de capital, intereses y pagos, y
+permite cobrar también una última cuota positiva menor o igual a Q 0.50. Los
+planes que ya cumplían la validación anterior conservan su reparto original;
+si su última cuota es de Q 0.50 o menos, el saldo se conserva hasta cobrarla.
+Sin un indicador persistente no es posible distinguir los contratos nuevos de
+los históricos: una cuota histórica antes considerada inválida puede empezar a
+utilizarse con esta regla.
+
+Ejemplo: capital Q 164,000, interés anual 14 %, 180 cuotas y cuota manual
+Q 2,830 dan 179 cuotas de Q 2,830 y una última cuota de Q 1,830, para un
+total financiado de Q 508,400.
+
+En casos extremos se rechaza la cuota si no es posible asignar al menos Q 0.01
+de capital a cada cuota positiva redistribuida: Caja requiere capital positivo
+para procesar una cuota financiada.
+
 ### 3. Cuota 0 siempre representa el enganche
 
 En `Caja.js` se dejo la regla de negocio asi:
