@@ -1395,6 +1395,7 @@ router.get("/meses-pendientes", (req, res) => {
                         registrarMesPagado(bruto, cuotaAfectada);
                     }
                 });
+                const mesesPagadosVivosSet = new Set(mesesPagadosSet);
 
                 // Importante: no se debe marcar un bloque completo de meses como pagados solo porque
                 // se detectó la cuota financiada más alta del historial. Eso provoca el salto artificial
@@ -1450,9 +1451,9 @@ router.get("/meses-pendientes", (req, res) => {
                         });
                     }
 
-                    // Si un mes fue anulado, debe volver a considerarse pendiente aunque haya quedado rastro legacy.
+                    // Una factura vigente posterior a la anulacion vuelve a pagar el mes.
                     mesesAnuladosSet.forEach((mes) => {
-                        if (mesesPagadosSet.has(mes)) {
+                        if (!mesesPagadosVivosSet.has(mes)) {
                             mesesPagadosSet.delete(mes);
                         }
                     });
@@ -1474,7 +1475,9 @@ router.get("/meses-pendientes", (req, res) => {
                         for (let indice = 0; indice < cuotasObjetivoMinimas; indice += 1) {
                             const cuotaHistorica = candidatosMeta[indice];
                             if (!cuotaHistorica) break;
-                            mesesPagadosSet.add(cuotaHistorica.mes);
+                            if (!mesesAnuladosSet.has(cuotaHistorica.mes)) {
+                                mesesPagadosSet.add(cuotaHistorica.mes);
+                            }
                         }
                     }
 
@@ -2435,8 +2438,8 @@ router.post("/procesar-pago", bloquearCobroSiExisteMora, (req, res) => {
             const cuotasPendientesContrato = Math.max(cuotasBaseInteres - cuotasPagadasContrato, 0);
             const montoOriginalContrato = Math.max(Number(saldoRows[0]?.monto_total_original || 0), 0);
             const capitalBaseInteresContrato = tieneConvenioActivoContrato
-                ? Math.round(montoOriginalContrato)
-                : Math.round(Math.max(montoOriginalContrato - engancheContrato, 0));
+                ? redondear2(montoOriginalContrato)
+                : redondear2(Math.max(montoOriginalContrato - engancheContrato, 0));
             const interesPlanContrato = tieneConvenioActivoContrato ? 0 : interesPorcentajeContrato;
             // Con convenio el plan se reparte solo entre las cuotas que quedan del convenio;
             // sin convenio se usa el plazo pactado completo del contrato (igual que el cliente).

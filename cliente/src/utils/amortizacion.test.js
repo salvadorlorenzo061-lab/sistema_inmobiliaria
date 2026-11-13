@@ -1,7 +1,14 @@
-import { calcularTotalPlanPlano, generarTablaAmortizacion, validarCuotaPersonalizada } from './amortizacion';
+import { calcularTotalPlanPlano, formatearCuota, generarTablaAmortizacion, validarCuotaPersonalizada } from './amortizacion';
 
 const backend = require('../../../server/utils/amortizacion');
 const round = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+test('muestra cuotas enteras sin decimales y la última con dos decimales', () => {
+  expect(formatearCuota(4710)).toBe('4710');
+  expect(formatearCuota(910, true)).toBe('910.00');
+  expect(formatearCuota(0.01, true)).toBe('0.01');
+  expect(formatearCuota(10.25)).toBe('10.25');
+});
 
 const verificarPlan = (capital, tasa, cuotas, cuota, ultimaEsperada) => {
   const tabla = generarTablaAmortizacion(capital, tasa, cuotas, 0, cuota);
@@ -32,10 +39,31 @@ test('permite Q 2,830 y conserva el total con una última cuota de Q 1,830', () 
   expect(backend.validarCuotaPersonalizada(164000, 14, 180, 2841)).toBe(false);
 });
 
+test('permite 59 cuotas de Q 4,710 y una última cuota de Q 910', () => {
+  expect(validarCuotaPersonalizada(164000, 14, 60, 4710)).toBe(true);
+  expect(backend.validarCuotaPersonalizada(164000, 14, 60, 4710)).toBe(true);
+  const tabla = verificarPlan(164000, 14, 60, 4710, 910);
+  expect(tabla.slice(0, -1).every((fila) => fila.cuota_estimada === 4710)).toBe(true);
+  expect(tabla[59].capital_cuota).toBe(535.29);
+  expect(tabla[59].interes_mes).toBe(374.71);
+  const pagadoAntesDeLaUltima = round(tabla.slice(0, -1).reduce((sum, fila) => sum + fila.cuota_estimada, 0));
+  const saldoAntesDeLaUltima = round(278800 - pagadoAntesDeLaUltima);
+  const saldoDespuesDelCobro = round(saldoAntesDeLaUltima - tabla[59].cuota_estimada);
+  expect(saldoAntesDeLaUltima).toBe(910);
+  expect(saldoDespuesDelCobro).toBe(0);
+  expect(round(saldoDespuesDelCobro + tabla[59].cuota_estimada)).toBe(910);
+});
+
 test('admite una última cuota cero o de un centavo y rechaza una negativa', () => {
+  expect(validarCuotaPersonalizada(17900, 0, 180, 100)).toBe(true);
+  expect(backend.validarCuotaPersonalizada(17900, 0, 180, 100)).toBe(true);
   verificarPlan(17900, 0, 180, 100, 0);
+  expect(validarCuotaPersonalizada(17900.01, 0, 180, 100)).toBe(true);
+  expect(backend.validarCuotaPersonalizada(17900.01, 0, 180, 100)).toBe(true);
   const tabla = verificarPlan(17900.01, 0, 180, 100, 0.01);
   expect(tabla[179].capital_cuota).toBe(0.01);
+  expect(validarCuotaPersonalizada(17899.99, 0, 180, 100)).toBe(false);
+  expect(backend.validarCuotaPersonalizada(17899.99, 0, 180, 100)).toBe(false);
   expect(validarCuotaPersonalizada(17900, 0, 180, 101)).toBe(false);
   expect(backend.validarCuotaPersonalizada(17900, 0, 180, 101)).toBe(false);
   expect(validarCuotaPersonalizada(0.01, 120000, 2, 2)).toBe(false);

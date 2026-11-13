@@ -41,6 +41,10 @@ la última cuota: para un plan de más de una cuota, su máximo es la parte ente
 de `total financiado con intereses / (número de cuotas - 1)`. La última cuota es
 el total financiado menos las cuotas anteriores; puede ser cero. Un importe
 superior a ese máximo liquidaría el saldo antes del plazo y no se admite.
+Una última cuota de Q 0.01 se muestra y se cobra con sus centavos; si es
+Q 0.00 no se factura la cuota financiada porque el saldo ya está solvente.
+Las cuotas regulares enteras se muestran sin decimales y la última con dos.
+Los desgloses de capital e interés y los totales conservan sus centavos.
 
 Cuando la cuota agota el capital antes de la última cuota según el reparto
 anterior, se redistribuye el capital entre las cuotas y se asigna a intereses el
@@ -55,6 +59,14 @@ utilizarse con esta regla.
 Ejemplo: capital Q 164,000, interés anual 14 %, 180 cuotas y cuota manual
 Q 2,830 dan 179 cuotas de Q 2,830 y una última cuota de Q 1,830, para un
 total financiado de Q 508,400.
+
+Con el mismo capital e interés en 60 cuotas, una cuota manual de Q 4,710
+produce 59 pagos de Q 4,710 y una última cuota de Q 910, con capital de
+Q 535.29 e interés de Q 374.71. Caja utiliza el número real de cuota para
+consultar el desglose; al anular un cobro final, el saldo y las cuotas
+pendientes se restauran y el contrato finalizado vuelve a estar activo.
+Si esa cuota se factura nuevamente, el cobro vigente prevalece sobre el
+historial de la factura anulada y el mes deja de aparecer pendiente.
 
 En casos extremos se rechaza la cuota si no es posible asignar al menos Q 0.01
 de capital a cada cuota positiva redistribuida: Caja requiere capital positivo

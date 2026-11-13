@@ -481,7 +481,7 @@ function Contratos_Residentes() {
   const detalleCuotaManual = modalidad_pago !== 'contado'
     && cuotaManualDiferenteDeAutomatica
     && validarCuotaPersonalizada(capitalFinanciadoContrato, Number(interes_porcentaje || 0), cuotasCalculadasNumero, montoCuotaGuardable)
-    ? `Manual: Q ${montoCuotaGuardable.toLocaleString('es-GT')}. Última cuota: Q ${Number(ultimaCuotaCalculada).toLocaleString('es-GT')}.`
+    ? `Manual: Q ${montoCuotaGuardable.toLocaleString('es-GT')}. Última cuota: Q ${Number(ultimaCuotaCalculada).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
     : '';
 
 

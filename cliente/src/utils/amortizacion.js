@@ -7,6 +7,11 @@ export const redondearMoneda = (value) => (
   Math.round((numeroSeguro(value, 0) + Number.EPSILON) * 100) / 100
 );
 
+export const formatearCuota = (valor, esUltima = false) => {
+  const monto = redondearMoneda(valor);
+  return esUltima || !Number.isInteger(monto) ? monto.toFixed(2) : String(monto);
+};
+
 // ============================================================================
 // SISTEMA LINEAL OFICIAL (cuota absoluta fija + ajuste residual final)
 // ============================================================================

@@ -823,7 +823,16 @@ router.post('/anular-por-correlativo', (req, res) => {
                                         0
                                     ),
                                     0
-                                )
+                                ),
+                                c.cuotas_pendientes = GREATEST(
+                                    COALESCE(c.cuotas_pactadas, c.plazo_meses, 0) - c.cuotas_pagadas,
+                                    0
+                                ),
+                                c.estado = CASE
+                                    WHEN c.saldo_pendiente > 0.009 AND LOWER(COALESCE(c.estado, '')) = 'finalizado'
+                                        THEN 'activo'
+                                    ELSE c.estado
+                                END
                                 WHERE c.id_contrato = ?
                             `,
                             [pago.id_contrato],
@@ -831,7 +840,21 @@ router.post('/anular-por-correlativo', (req, res) => {
                                 if (syncErr) {
                                     return db.rollback(() => res.status(500).send({ message: 'No se pudo recalcular las cuotas pagadas del contrato.' }));
                                 }
-                                return finishCallback();
+                                db.query(`
+                                    UPDATE ventas_propiedad vp
+                                    INNER JOIN contratos_residentes c ON c.id_contrato = vp.id_contrato
+                                    SET vp.saldo_pendiente = COALESCE(c.saldo_pendiente, 0),
+                                        vp.estado_venta = CASE
+                                            WHEN LOWER(COALESCE(c.estado, 'activo')) IN ('activo', 'vigente') THEN 'vigente'
+                                            ELSE LOWER(COALESCE(c.estado, 'vigente'))
+                                        END
+                                    WHERE c.id_contrato = ?
+                                `, [pago.id_contrato], (ventaErr) => {
+                                    if (ventaErr && !['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(ventaErr.code)) {
+                                        console.error('[anulacion] no se pudo sincronizar ventas_propiedad:', ventaErr.message);
+                                    }
+                                    return finishCallback();
+                                });
                             }
                         );
                     });

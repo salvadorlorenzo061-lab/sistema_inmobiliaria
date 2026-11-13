@@ -5,7 +5,7 @@ import Swal from 'sweetalert2';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { getPaginatedData, PaginationControls } from '../utils/paginationUtils';
 import { buildConsolidatedInvoiceRows, renderFacturaComprobante, formatearNotaMoraExonerada } from '../utils/facturaPdf';
-import { generarTablaAmortizacion } from '../utils/amortizacion';
+import { formatearCuota, generarTablaAmortizacion } from '../utils/amortizacion';
 import { API_BASE_URL } from '../config';
 
 // El sistema emite un unico formato de documento (FACTURA / COMPROBANTE DE COBRO).
@@ -179,8 +179,6 @@ const Caja = () => {
         const cuotasPagadas = Math.max(parseInt(contrato?.cuotas_pagadas || 0, 10), 0);
         const cuotasPendientes = Math.max(cuotasPactadas - cuotasPagadas, 0);
         const enganchePendiente = Math.max(parseFloat(contrato?.enganche_pendiente || 0), 0);
-        const cuotaEnganchePagada = enganche > 0 && enganchePagado >= (enganche - 0.01) ? 1 : 0;
-        const cuotasFinanciadasPagadas = Math.max(cuotasPagadas - cuotaEnganchePagada, 0);
         const interesPorcentaje = tieneConvenioActivo
             ? 0
             : Math.max(parseFloat(contrato?.interes_porcentaje || 0), 0);
@@ -211,7 +209,7 @@ const Caja = () => {
         );
         const tablaAmortizacion = tieneConvenioActivo
             ? tablaContratoCompleta
-            : tablaContratoCompleta.filter((fila) => Number(fila?.numero_cuota || 0) > cuotasFinanciadasPagadas);
+            : tablaContratoCompleta.filter((fila) => Number(fila?.numero_cuota || 0) > cuotasPagadas);
         const cuotaMensualConInteres = tablaAmortizacion[0]?.cuota_estimada || 0;
         // Capital de la cuota = cuota pactada - interes de la cuota (mismo desglose del contrato).
         const capitalPorCuota = parseFloat(Number(tablaAmortizacion[0]?.capital_cuota || 0).toFixed(2));
@@ -243,6 +241,7 @@ const Caja = () => {
             interesTotalContrato,
             interesPorCuota,
             cuotaTotalConInteres,
+            tablaContratoCompleta,
             tablaAmortizacion,
             cuotasRestantes,
             totalContratoConInteres
@@ -913,6 +912,7 @@ const Caja = () => {
         const planContrato = calcularPlanFinancieroContrato(residenteActual || {});
         const saldoPendiente = planContrato.saldoPendiente;
         const tablaAmortizacion = planContrato.tablaAmortizacion || [];
+        const tablaContratoCompleta = planContrato.tablaContratoCompleta || [];
 
         const obtenerNumeroCuotaMes = (mesEtiqueta = '') => {
             const mapNumero = Number(mesesDetalleMap?.[mesEtiqueta] || 0);
@@ -925,7 +925,7 @@ const Caja = () => {
         };
 
         const obtenerFilaAmortizacion = (numeroCuota) => (
-            tablaAmortizacion.find((fila) => fila.numero_cuota === numeroCuota) || null
+            tablaContratoCompleta.find((fila) => fila.numero_cuota === numeroCuota) || null
         );
         const obtenerFilaAmortizacionMes = (mesEtiqueta = '') => {
             const numeroCuota = obtenerNumeroCuotaMes(mesEtiqueta);
@@ -2082,15 +2082,16 @@ const Caja = () => {
     const tieneCuotaCeroPendiente = enganchePendiente > 0;
     const porcentajeInteresContrato = planFinancieroContrato.interesPorcentaje;
     const interesCalculadoContrato = planFinancieroContrato.interesTotalContrato;
-    const totalContratoConInteres = planFinancieroContrato.totalContratoConInteres;
     const cuotaInicioFinanciadaVista = 1;
     const tablaAmortizacionVista = planFinancieroContrato?.tablaAmortizacion || [];
     const primeraCuotaFinanciada = tablaAmortizacionVista[0] || {};
+    const numeroUltimaCuota = planFinancieroContrato.tablaContratoCompleta.slice(-1)[0]?.numero_cuota;
+    const esUltimaCuota = (numero) => Number(numero) > 0 && Number(numero) === numeroUltimaCuota;
     const capitalPorCuotaRegular = Number(primeraCuotaFinanciada.capital_cuota || 0);
     const interesPorCuotaRegular = Number(primeraCuotaFinanciada.interes_mes || 0);
     const cuotaRegularSinDecimales = Number(primeraCuotaFinanciada.cuota_estimada || 0);
     const obtenerFilaAmortizacionVista = (numeroCuota) => (
-        tablaAmortizacionVista.find((fila) => fila.numero_cuota === numeroCuota) || null
+        planFinancieroContrato.tablaContratoCompleta.find((fila) => fila.numero_cuota === numeroCuota) || null
     );
     const obtenerInteresPorNumeroCuotaVista = (numeroCuota) => (
         redondear2(obtenerFilaAmortizacionVista(numeroCuota)?.interes_mes || 0)
@@ -2371,16 +2372,16 @@ const Caja = () => {
                                 <div><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</div>
                             </div>
                             <div className="col-md-4 text-md-end mt-3 mt-md-0">
-                                <div><strong>Saldo pendiente:</strong> Q{Math.round(totalContratoConInteres)}</div>
-                                <div><strong>Capital pendiente:</strong> Q{Math.round(getSaldoDisplay(datosDeuda?.saldo_pendiente))}</div>
+                                <div><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
+                                <div><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</div>
                                 <div><strong>Capital financiado:</strong> Q{Math.round(planFinancieroContrato.capitalBaseInteres)}</div>
                                 {tieneCuotaCeroPendiente && (
                                     <div><strong>Cuota 0:</strong> Enganche Q{Math.round(enganchePendienteContrato)}</div>
                                 )}
-                                <div><strong>Capital por cuota:</strong> Q{Math.round(capitalPorCuotaRegular)}</div>
+                                <div><strong>Capital por cuota:</strong> Q{capitalPorCuotaRegular.toFixed(2)}</div>
                                 <div><strong>Interés pendiente ({porcentajeInteresContrato.toFixed(2)}%):</strong> Q{interesCalculadoContrato.toFixed(2)}</div>
-                                <div><strong>Interés por cuota:</strong> Q{Math.round(interesPorCuotaRegular)}</div>
-                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{Math.round(cuotaRegularSinDecimales)}</div>
+                                <div><strong>Interés por cuota:</strong> Q{interesPorCuotaRegular.toFixed(2)}</div>
+                                <div><strong>Cuota {cuotaInicioFinanciadaVista}+ (capital + interés):</strong> Q{formatearCuota(cuotaRegularSinDecimales, esUltimaCuota(primeraCuotaFinanciada.numero_cuota))}</div>
                             </div>
                         </div>
                         <hr />
@@ -2436,11 +2437,11 @@ const Caja = () => {
                                             <br /><small><strong>NIT:</strong> {getNitDisplay(datosDeuda.nit)}</small>
                                         </div>
                                         <div className="col-md-6 text-end">
-                                            <small><strong>Saldo pendiente:</strong> Q{totalContratoConInteres.toFixed(2)}</small><br />
+                                            <small><strong>Saldo pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
                                             <small><strong>Capital pendiente:</strong> Q{getSaldoDisplay(datosDeuda?.saldo_pendiente).toFixed(2)}</small><br />
-                                            <small><strong>Cuota fija:</strong> Q{Math.round(planFinancieroContrato.capitalPorCuota)}</small><br />
-                                            <small><strong>Interés por cuota:</strong> Q{Math.round(interesMensualSeleccionado)}</small><br />
-                                            <small><strong>Cuota pactada:</strong> Q{Math.round(planFinancieroContrato.cuotaTotalConInteres)}</small>
+                                            <small><strong>Cuota fija:</strong> Q{planFinancieroContrato.capitalPorCuota.toFixed(2)}</small><br />
+                                            <small><strong>Interés por cuota:</strong> Q{interesMensualSeleccionado.toFixed(2)}</small><br />
+                                            <small><strong>Cuota pactada:</strong> Q{formatearCuota(planFinancieroContrato.cuotaTotalConInteres, esUltimaCuota(primeraCuotaFinanciada.numero_cuota))}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -2535,9 +2536,9 @@ const Caja = () => {
                                     {/* Monto fijo y total a pagar */}
                                     {!esUsuarioJuridico && <div className="alert alert-info py-2 mb-3 d-flex justify-content-between align-items-center">
                                         <span>
-                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{Math.round(capitalPorCuotaRegular)}
+                                            <strong>Capital por mes (cuota {cuotaInicioFinanciadaVista}+):</strong> Q{capitalPorCuotaRegular.toFixed(2)}
                                             <br />
-                                            <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{Math.round(interesMensualSeleccionado)} / cuota
+                                            <strong>Interés ({porcentajeInteresContrato.toFixed(1)}% anual):</strong> Q{interesMensualSeleccionado.toFixed(2)} / cuota
                                             {tieneCuotaCeroPendiente && (
                                                 <>
                                                     <br />
@@ -2784,7 +2785,7 @@ const Caja = () => {
                                                             </div>
                                                             <div className="text-end">
                                                                 <div className="small text-muted">
-                                                                    Cuota: Q{Math.round(obtenerCuotaPactadaConRecargoVista(mes) - (esUsuarioGestorCobros ? 0 : obtenerMoraMesVista(mes)))}
+                                                                    Cuota: Q{formatearCuota(obtenerCuotaPactadaConRecargoVista(mes) - (esUsuarioGestorCobros ? 0 : obtenerMoraMesVista(mes)), esUltimaCuota(obtenerNumeroCuotaRealMesVista(mes)))}
                                                                 </div>
                                                                 {!esUsuarioGestorCobros && obtenerMoraMesVista(mes) > 0 && (
                                                                     <div className="small text-danger fw-bold">
@@ -2792,7 +2793,7 @@ const Caja = () => {
                                                                     </div>
                                                                 )}
                                                                 <span className="badge bg-primary fs-6">
-                                                                    Total: Q{Math.round(obtenerCuotaPactadaConRecargoVista(mes))}
+                                                                    Total: Q{formatearCuota(obtenerCuotaPactadaConRecargoVista(mes), esUltimaCuota(obtenerNumeroCuotaRealMesVista(mes)))}
                                                                 </span>
                                                             </div>
                                                             {mesesSeleccionados.includes(mes) && (
@@ -2809,7 +2810,7 @@ const Caja = () => {
                                         </div>
                                         {mesesSeleccionados.length > 0 && (
                                             <div className="alert alert-success mt-3 mb-0">
-                                                <strong>Total seleccionado:</strong> Q{Math.round(montoTotalSeleccionado + (esUsuarioGestorCobros ? 0 : moraTotalDistribuidaVista))}
+                                                <strong>Total seleccionado:</strong> Q{(montoTotalSeleccionado + (esUsuarioGestorCobros ? 0 : moraTotalDistribuidaVista)).toFixed(2)}
                                             </div>
                                         )}
                                     </div>}
