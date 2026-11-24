@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '../config';
-import { calcularCuotaFija, generarTablaAmortizacion } from '../utils/amortizacion';
+import { calcularCuotaFija, generarTablaAmortizacion, redondearMoneda } from '../utils/amortizacion';
 
 const moneda = (valor) => `Q ${Number(valor || 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fecha = (valor) => valor ? new Date(valor).toLocaleDateString('es-GT') : 'N/A';
@@ -90,19 +90,21 @@ const EstadoCuenta = () => {
       .map((item, indice) => ({
         id: `otro-${item.id_pago_detalle || item.id_pago}-${indice}`,
         fecha: item.fecha_pago,
-        numero: item.concepto || 'Otro pago',
+        numero: String(item.tipo_concepto || '').toLowerCase() === 'abono_capital' ? 'Abono a capital' : item.concepto || 'Otro pago',
         numeroCuota: 0,
         monto: Number(item.monto || 0),
         banco: item.banco_pago || item.forma_pago || 'N/A',
         boleta: item.boleta_referencia || 'N/A',
         recibo: item.correlativo || item.no_referencia || 'N/A',
-        capital: 0,
+        capital: String(item.tipo_concepto || '').toLowerCase() === 'abono_capital' ? Number(item.monto || 0) : 0,
         interes: 0
       }));
     const movimientos = [...movimientosCuotas, ...movimientosOtros]
       .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
     const cuotasPagadas = new Set(movimientos.filter((item) => item.numeroCuota > 0).map((item) => item.numeroCuota)).size;
-    const capitalPagado = tabla.slice(0, cuotasPagadas).reduce((suma, fila) => suma + Number(fila.capital_cuota || 0), 0);
+    const abonoCapital = Math.max(Number(contrato.abono_capital_total || 0), 0);
+    const capitalCuotas = tabla.slice(0, cuotasPagadas).reduce((suma, fila) => suma + Number(fila.capital_cuota || 0), 0);
+    const capitalPagado = redondearMoneda(Math.min(capital, capitalCuotas + abonoCapital));
     const proxima = Math.min(cuotasPagadas + 1, cuotas);
     return {
       capital,
@@ -111,7 +113,8 @@ const EstadoCuenta = () => {
       movimientos: movimientos.slice(0, cantidad),
       cuotasPagadas,
       capitalPagado,
-      saldoCapital: Math.max(capital - capitalPagado, 0),
+      abonoCapital,
+      saldoCapital: redondearMoneda(Math.max(capital - capitalPagado, 0)),
       proxima,
       montoCuota: Number(contrato.monto_cuota || 0) || calcularCuotaFija(capital, Number(contrato.interes_porcentaje || 0), cuotas)
     };
@@ -163,7 +166,7 @@ const EstadoCuenta = () => {
         ['Tasa anual', `${Number(contrato.interes_porcentaje || 0).toFixed(2)}%`, 'Cuota mensual', moneda(resumen.montoCuota), 'Plazo original', `${resumen.cuotas} meses`],
         ['Capital pagado', moneda(resumen.capitalPagado), 'Cuotas pagadas', String(resumen.cuotasPagadas), 'Saldo de capital', moneda(resumen.saldoCapital)],
         ['Próxima cuota', String(resumen.proxima || 'N/A'), 'Cuotas pendientes', String(Math.max(resumen.cuotas - resumen.cuotasPagadas, 0)), 'Saldo total', moneda(estado.saldoPendiente)],
-        ['Mora registrada', moneda(moraRegistrada), '', '', '', '']
+        ['Mora registrada', moneda(moraRegistrada), 'Abonos a capital', moneda(resumen.abonoCapital), '', '']
       ],
       columnStyles: { 0: { fontStyle: 'bold' }, 2: { fontStyle: 'bold' }, 4: { fontStyle: 'bold' } }
     });

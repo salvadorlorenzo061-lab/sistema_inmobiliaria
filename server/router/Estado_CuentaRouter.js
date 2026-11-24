@@ -197,6 +197,18 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                   )
             ), 0) AS total_pagado_real,
             COALESCE((
+                SELECT SUM(pd_capital.subtotal)
+                FROM pagos p_capital
+                INNER JOIN pagos_detalle pd_capital ON pd_capital.id_pago = p_capital.id_pago
+                WHERE p_capital.id_contrato = c.id_contrato
+                  AND pd_capital.tipo_concepto = 'abono_capital'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM facturas_historial fa_capital
+                      WHERE fa_capital.id_pago = p_capital.id_pago
+                        AND UPPER(TRIM(COALESCE(fa_capital.estado_factura, ''))) = 'ANULADA'
+                  )
+            ), 0) AS abono_capital_total,
+            COALESCE((
                 SELECT SUM(mora_unica.monto_mora)
                 FROM (
                     SELECT m.id_contrato, LOWER(TRIM(m.mes_atrasado)) AS mes_mora, m.monto_mora AS monto_mora
@@ -460,7 +472,7 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                         consultarOtrosPagos((otrosErr, otrosPagosResult) => {
                             if (otrosErr) {
                                 console.error('Error al obtener mora y servicios:', otrosErr.message);
-                                return responderEstadoCuenta(detalleCuotasResult, []);
+                                return res.status(500).send('No se pudo obtener el detalle de otros pagos.');
                             }
                             const filtroExoneracion = fecha_inicio && fecha_fin
                                 ? 'AND DATE(me.fecha_exoneracion) BETWEEN ? AND ?'
