@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('../Conexion');
-const { generarTablaPlana } = require('../utils/amortizacion');
+const { generarTablaPlana, calcularTotalPlanPlano } = require('../utils/amortizacion');
 
 const router = express.Router();
 
@@ -48,6 +48,10 @@ const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
             WHEN pd.tipo_concepto = 'abono_capital' THEN pd.subtotal
             ELSE 0
         END), 0) AS abono_capital_total,
+        COALESCE(SUM(CASE
+            WHEN pd.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital') THEN pd.subtotal
+            ELSE 0
+        END), 0) AS total_financiamiento_pagado,
         COALESCE(COUNT(DISTINCT CASE
             WHEN pd.numero_cuota_afectada > 0 AND pd.tipo_concepto = 'cuota_terreno' THEN pd.numero_cuota_afectada
             ELSE NULL
@@ -57,7 +61,7 @@ const RESUMEN_PAGOS_CONTRATO_SUBQUERY = `
     WHERE NOT EXISTS (
         SELECT 1 FROM facturas_historial fa
         WHERE fa.id_pago = p.id_pago
-          AND UPPER(COALESCE(fa.estado_factura, '')) = 'ANULADA'
+          AND UPPER(TRIM(COALESCE(fa.estado_factura, ''))) = 'ANULADA'
     )
     GROUP BY p.id_contrato
 `;
@@ -245,6 +249,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             COALESCE(pagos_resumen.capital_pagado_total, 0) AS capital_pagado_total,
             COALESCE(pagos_resumen.enganche_pagado, 0) AS enganche_pagado_total,
             COALESCE(pagos_resumen.abono_capital_total, 0) AS abono_capital_total,
+            COALESCE(pagos_resumen.total_financiamiento_pagado, 0) AS total_financiamiento_pagado,
             p.nombre AS nombre_proyecto,
             COALESCE(ep.logo, em.logo, er.logo) AS logo_proyecto,
             COALESCE(em.nombre_empresa, er.nombre_empresa) AS nombre_marca_pdf,
@@ -279,7 +284,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
                          AND NOT EXISTS (
                              SELECT 1 FROM facturas_historial fa
                              WHERE fa.id_pago = fh.id_pago
-                               AND UPPER(COALESCE(fa.estado_factura, '')) = 'ANULADA'
+                               AND UPPER(TRIM(COALESCE(fa.estado_factura, ''))) = 'ANULADA'
                          )
                     THEN 1 ELSE 0 END) = 1 THEN 'PAGADO'
                 ELSE 'PENDIENTE'
@@ -334,9 +339,14 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
                 : capitalInicialFinanciado - capitalPagado,
             0
         ));
+        const totalPlan = calcularTotalPlanPlano(capitalInicialFinanciado, toNumber(contrato.interes_porcentaje, 0), cuotasTotales);
+        const financiamientoLiquidado = !Number(contrato.id_convenio_activo || 0)
+            && capitalInicialFinanciado > 0 && cuotasTotales > 0
+            && round2(totalPlan - toNumber(contrato.total_financiamiento_pagado, 0)) <= 0;
         const cuotaSiguiente = enganchePendiente > 0.01
             ? 0
-            : (cuotasTotales > 0 ? Math.min(cuotasPagadasReales + 1, cuotasTotales) : 1);
+            : financiamientoLiquidado ? null
+                : (cuotasTotales > 0 ? Math.min(cuotasPagadasReales + 1, cuotasTotales) : 1);
 
         // Con convenio activo el plan se calcula desde el CAPITAL ORIGINAL del
         // convenio (monto_original) con el PLAZO ORIGINAL, para conservar el
@@ -375,7 +385,10 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             capital_original_plan: capitalPlanBase,
             cuotas_totales: cuotasTotales,
             cuotas_pagadas: cuotasPagadasReales,
-            cuotas_pendientes: Math.max(cuotasTotales - cuotasPagadasReales, 0),
+            cuotas_liquidadas: financiamientoLiquidado ? cuotasTotales : cuotasPagadasReales,
+            financiamiento_liquidado: financiamientoLiquidado,
+            abono_capital_total: abonoCapitalExtra,
+            cuotas_pendientes: financiamientoLiquidado ? 0 : Math.max(cuotasTotales - cuotasPagadasReales, 0),
             cuota_siguiente: cuotaSiguiente
         };
 
@@ -383,7 +396,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
             capital_restante: payload.capital_restante,
             interes_anual: payload.interes_anual,
             cuotas_totales: payload.cuotas_totales,
-            cuotas_pagadas: payload.cuotas_pagadas,
+            cuotas_pagadas: payload.cuotas_liquidadas,
             capital_inicial: capitalPlanBase,
             monto_cuota_pactada: payload.monto_cuota
         });
@@ -391,6 +404,7 @@ router.get('/detalle-contrato/:id_contrato', (req, res) => {
         db.query(sqlCuotasEstadoDetalle, [idContrato], (mesesErr, mesesRows) => {
             if (mesesErr) {
                 console.error('Error consultando estado de cuotas para cuenta capital:', mesesErr.message);
+                return res.status(500).send('No se pudo consultar el estado de las cuotas.');
             }
 
             return res.status(200).json({

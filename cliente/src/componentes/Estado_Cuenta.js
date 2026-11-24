@@ -9,6 +9,13 @@ import { CONTRACT_VISUAL_ASSETS } from '../utils/contractVisualAssets';
 import { resolveContractTemplateId } from '../utils/contractTemplates';
 import { calcularCuotaFija, generarTablaAmortizacion } from '../utils/amortizacion';
 
+const financiamientoLiquidado = (estado) => estado?.saldoFinanciamiento != null
+  && Number(estado.saldoFinanciamiento) === 0
+  && Number(estado.contrato?.monto_total || 0) > Number(estado.contrato?.enganche || 0)
+  && Number(estado.contrato?.cuotas_pactadas || estado.contrato?.plazo_meses || 0) > 0;
+const estadoCuotaLiquidada = (estado) => Number(estado?.contrato?.abono_capital_total || 0) > 0
+  ? 'LIQUIDADO POR ABONO' : 'LIQUIDADO';
+
 const EstadoCuenta = () => {
   const [busqueda, setBusqueda] = useState('');
   const [listaResidentes, setListaResidentes] = useState([]);
@@ -395,7 +402,9 @@ const EstadoCuenta = () => {
           noReferencia: '',
           monto: montoProgramado,
           recibo: '',
-          estado: montoProgramado === 0 && cuota === totalCuotas ? 'SIN CARGO' : 'PENDIENTE'
+          estado: financiamientoLiquidado(estadoCuenta)
+            ? estadoCuotaLiquidada(estadoCuenta)
+            : montoProgramado === 0 && cuota === totalCuotas ? 'SIN CARGO' : 'PENDIENTE'
         });
       }
     }
@@ -670,7 +679,8 @@ const EstadoCuenta = () => {
         const detalle = detallesPorCuota.get(i);
         const fechaProgramada = obtenerFechaCuotaContrato(contrato, i);
         const mesCuotaEtiqueta = etiquetaMesCaja(fechaProgramada);
-        const estaPendienteEnCaja = Boolean(mesCuotaEtiqueta && pendientesCajaSet.has(mesCuotaEtiqueta));
+        const estaPendienteEnCaja = !financiamientoLiquidado(estadoCuentaReporte)
+          && Boolean(mesCuotaEtiqueta && pendientesCajaSet.has(mesCuotaEtiqueta));
         if (!detalle && !estaPendienteEnCaja) {
           continue;
         }
@@ -887,7 +897,9 @@ const EstadoCuenta = () => {
         filasReporte.push(
           pagoDetalle
             ? crearFilaPago(pagoDetalle, fechaCuota, 'PAGADO', cuota)
-            : [fechaCuota || '', cuota === totalCuotas && ultimaCuota === 0 ? 'SIN CARGO' : 'PENDIENTE DE PAGO', String(cuota), '', '', '', formatoMoneda(cuota === totalCuotas ? ultimaCuota : montoCuota), '']
+            : [fechaCuota || '', financiamientoLiquidado(estadoCuentaReporte)
+              ? estadoCuotaLiquidada(estadoCuentaReporte)
+              : cuota === totalCuotas && ultimaCuota === 0 ? 'SIN CARGO' : 'PENDIENTE DE PAGO', String(cuota), '', '', '', formatoMoneda(cuota === totalCuotas ? ultimaCuota : montoCuota), '']
         );
       }
 
@@ -1272,7 +1284,7 @@ const EstadoCuenta = () => {
                               <td>Q{Number(fila.monto || 0).toFixed(2)}</td>
                               <td>{fila.recibo || 'N/A'}</td>
                               <td>
-                                <span className={`badge ${fila.estado === 'PAGADO' ? 'bg-success' : 'bg-warning text-dark'}`}>
+                                <span className={`badge ${['PAGADO', 'LIQUIDADO', 'LIQUIDADO POR ABONO'].includes(fila.estado) ? 'bg-success' : 'bg-warning text-dark'}`}>
                                   {fila.estado}
                                 </span>
                               </td>

@@ -244,6 +244,14 @@ const CuentaEstado = () => {
         }
         return acumulado;
       }, {});
+      if (contratoApi.financiamiento_liquidado) {
+        for (let numero = 1; numero <= Number(contratoApi.cuotas_totales || 0); numero += 1) {
+          if (mapaEstadosPorCuota[numero] !== 'PAGADO') {
+            mapaEstadosPorCuota[numero] = Number(contratoApi.abono_capital_total || 0) > 0
+              ? 'LIQUIDADO POR ABONO' : 'LIQUIDADO';
+          }
+        }
+      }
 
       setContrato(contratoApi);
       setEstadosPorCuota(mapaEstadosPorCuota);
@@ -259,7 +267,7 @@ const CuentaEstado = () => {
         monto_cuota_pactada: contratoApi.monto_cuota,
         interes_anual: contratoApi.interes_anual,
         cuotas_totales: contratoApi.cuotas_totales,
-        cuotas_pagadas: contratoApi.cuotas_pagadas,
+        cuotas_pagadas: contratoApi.cuotas_liquidadas ?? contratoApi.cuotas_pagadas,
         cuota_objetivo: null,
         estados_por_cuota: mapaEstadosPorCuota
       }));
@@ -269,7 +277,7 @@ const CuentaEstado = () => {
       setCapitalRestante(String(toNumber(contratoApi.capital_restante, 0)));
       setInteresAnual(String(toNumber(contratoApi.interes_anual, 0)));
       setCuotasTotales(String(toNumber(contratoApi.cuotas_totales, 0)));
-      setCuotasPagadas(String(toNumber(contratoApi.cuotas_pagadas, 0)));
+      setCuotasPagadas(String(toNumber(contratoApi.cuotas_liquidadas ?? contratoApi.cuotas_pagadas, 0)));
       setEngancheRegistrado(String(toNumber(contratoApi.enganche_registrado, 0)));
       setEnganchePagado(String(toNumber(contratoApi.enganche_pagado, 0)));
       setPrecioTotal(String(toNumber(contratoApi.precio_total_terreno, 0)));
@@ -496,7 +504,7 @@ const CuentaEstado = () => {
     const filasFinanciadasPDF = tablaAmortizacionPendiente.filter((fila) => Number(fila.numero_cuota || 0) > 0);
     const interesTotalPlan = round2(filasFinanciadasPDF.reduce((total, fila) => total + toNumber(fila.interes_mes, 0), 0));
     const totalPlan = round2(filasFinanciadasPDF.reduce((total, fila) => total + toNumber(fila.cuota_estimada || fila.cuota, 0), 0));
-    const filasPendientesPDF = filasFinanciadasPDF.filter((fila) => String(fila.estado || 'PENDIENTE').toUpperCase() !== 'PAGADO');
+    const filasPendientesPDF = filasFinanciadasPDF.filter((fila) => !['PAGADO', 'LIQUIDADO', 'LIQUIDADO POR ABONO'].includes(String(fila.estado || 'PENDIENTE').toUpperCase()));
     const interesTotalPendiente = round2(filasPendientesPDF.reduce((total, fila) => total + toNumber(fila.interes_mes, 0), 0));
     const totalLiquidacionPendiente = round2(filasPendientesPDF.reduce((total, fila) => total + toNumber(fila.cuota_estimada || fila.cuota, 0), 0));
     const capitalRestante = toNumber(simulacion.capital_restante || 0, 0);
@@ -770,7 +778,7 @@ const CuentaEstado = () => {
                       </div>
                       <p className="mb-1"><strong>Capital inicial financiado:</strong> {formatoMoneda(contrato.capital_inicial_financiado)}</p>
                       <p className="mb-1"><strong>Cuotas pagadas (historico):</strong> {contrato.cuotas_pagadas}</p>
-                      <p className="mb-1"><strong>Cuota siguiente:</strong> {contrato.cuota_siguiente}</p>
+                      <p className="mb-1"><strong>Cuota siguiente:</strong> {contrato.cuota_siguiente ?? 'N/A'}</p>
                       <p className="mb-0"><strong>Convenio activo:</strong> {contrato.id_convenio_activo > 0 ? 'Si' : 'No'}</p>
                     </div>
                   </div>
@@ -950,13 +958,13 @@ const CuentaEstado = () => {
                                 <td>{formatoMoneda(row.interes_mes || 0)}</td>
                                 <td>{formatoMoneda(saldoCapital)}</td>
                                 <td>
-                                  <span className={`badge bg-${estadoFila === 'PAGADO' ? 'success' : estadoFila === 'ANULADO' ? 'dark' : 'warning text-dark'}`}>
+                                  <span className={`badge bg-${['PAGADO', 'LIQUIDADO', 'LIQUIDADO POR ABONO'].includes(estadoFila) ? 'success' : estadoFila === 'ANULADO' ? 'dark' : 'warning text-dark'}`}>
                                     {estadoFila}
                                   </span>
                                 </td>
                                 {contrato && <td>
-                                  {estadoFila === 'PAGADO' ? (
-                                    <span className="text-success fw-bold">Cobro registrado</span>
+                                  {['PAGADO', 'LIQUIDADO', 'LIQUIDADO POR ABONO'].includes(estadoFila) ? (
+                                    <span className="text-success fw-bold">{estadoFila === 'PAGADO' ? 'Cobro registrado' : 'Financiamiento liquidado'}</span>
                                   ) : (
                                     <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => enviarCuotaACaja(row)}>
                                       Cobrar en Caja

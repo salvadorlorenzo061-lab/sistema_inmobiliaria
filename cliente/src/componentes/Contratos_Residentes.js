@@ -424,6 +424,10 @@ function Contratos_Residentes() {
     && saldoPendienteVisibleCalculado === 0
     ? 0
     : Math.max(cuotasCalculadasNumero - cuotasPagadasNumero, saldoPendienteVisibleCalculado > 0 && cuotasCalculadasNumero > 0 ? 1 : 0);
+  const financiamientoLiquidadoPorPagos = pagosFinanciamientoContrato !== null
+    && cuotasPagadasNumero === cuotasPagadasAlAbrir
+    && cuotasCalculadasNumero > 0 && Number(monto_total) > Number(enganche)
+    && saldoPendienteVisibleCalculado === 0;
   const capitalFinanciadoContrato = Math.max(Number(monto_total || 0) - Number(enganche || 0), 0);
   const interesFijoMensualContrato = calcularInteresFijoMensual(capitalFinanciadoContrato, Number(interes_porcentaje || 0));
   const cuotaManualDiferenteDeAutomatica = Math.round(Number(monto_cuota_manual || 0)) > 0
@@ -1717,14 +1721,16 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={cuotas_pactadas} disabled={modalidad_pago === 'contado'} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Cuotas pagadas:</label>
+                  <label className="form-label fw-bold">Cuotas pagadas / liquidadas:</label>
                   <input
                     type="number"
                     min="0"
                     className="form-control"
-                    value={cuotas_pagadas_manual}
+                    value={financiamientoLiquidadoPorPagos ? cuotasCalculadasNumero : cuotas_pagadas_manual}
+                    readOnly={financiamientoLiquidadoPorPagos}
                     onChange={e => setCuotas_pagadas_manual(e.target.value)}
                   />
+                  {financiamientoLiquidadoPorPagos && cuotasPagadasNumero < cuotasCalculadasNumero && <small className="text-muted">Incluye cuotas liquidadas mediante abonos; el historial no cambia.</small>}
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Última cuota pagada (real):</label>
@@ -2037,14 +2043,16 @@ function Contratos_Residentes() {
                   <input type="number" className="form-control" value={cuotas_pactadas} disabled={modalidad_pago === 'contado'} onChange={e => actualizarCuotasPactadas(e.target.value)} />
                 </div>
                 <div className="col-md-3 mb-3">
-                  <label className="form-label fw-bold">Cuotas pagadas:</label>
+                  <label className="form-label fw-bold">Cuotas pagadas / liquidadas:</label>
                   <input
                     type="number"
                     min="0"
                     className="form-control"
-                    value={cuotas_pagadas_manual}
+                    value={financiamientoLiquidadoPorPagos ? cuotasCalculadasNumero : cuotas_pagadas_manual}
+                    readOnly={financiamientoLiquidadoPorPagos}
                     onChange={e => setCuotas_pagadas_manual(e.target.value)}
                   />
+                  {financiamientoLiquidadoPorPagos && cuotasPagadasNumero < cuotasCalculadasNumero && <small className="text-muted">Incluye cuotas liquidadas mediante abonos; el historial no cambia.</small>}
                 </div>
                 <div className="col-md-3 mb-3">
                   <label className="form-label fw-bold">Cuotas pendientes:</label>

@@ -116,6 +116,8 @@ const EstadoCuenta = () => {
       movimientos: movimientos.slice(0, cantidad),
       cuotasPagadas,
       cuotasPendientes,
+      cuotasLiquidadas: cuotasPendientes === 0 && estado.saldoFinanciamiento != null
+        && Number(estado.saldoFinanciamiento) === 0 ? cuotas : cuotasPagadas,
       capitalPagado,
       abonoCapital,
       saldoCapital: redondearMoneda(Math.max(capital - capitalPagado, 0)),
@@ -168,7 +170,7 @@ const EstadoCuenta = () => {
       body: [
         ['Precio total', moneda(contrato.monto_total), 'Enganche', moneda(contrato.enganche), 'Saldo financiado', moneda(resumen.capital)],
         ['Tasa anual', `${Number(contrato.interes_porcentaje || 0).toFixed(2)}%`, 'Cuota mensual', moneda(resumen.montoCuota), 'Plazo original', `${resumen.cuotas} meses`],
-        ['Capital pagado', moneda(resumen.capitalPagado), 'Cuotas pagadas', String(resumen.cuotasPagadas), 'Saldo de capital', moneda(resumen.saldoCapital)],
+        ['Capital pagado', moneda(resumen.capitalPagado), 'Cuotas liquidadas', String(resumen.cuotasLiquidadas), 'Saldo de capital', moneda(resumen.saldoCapital)],
         ['Próxima cuota', String(resumen.proxima || 'N/A'), 'Cuotas pendientes', String(resumen.cuotasPendientes), 'Saldo inmueble', moneda(estado.saldoInmueble ?? estado.saldoPendiente)],
         ['Mora registrada', moneda(moraRegistrada), 'Abonos a capital', moneda(resumen.abonoCapital), '', '']
       ],
