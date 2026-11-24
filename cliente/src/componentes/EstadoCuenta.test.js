@@ -81,3 +81,46 @@ test('mantiene el cálculo de las cuotas cuando no hay abonos a capital', async 
   expect(tablas[0].body[2][1]).toBe('Q 1,000.00');
   expect(tablas[0].body[2][5]).toBe('Q 11,000.00');
 });
+
+test('no muestra cuotas pendientes cuando el financiamiento se liquidó con abonos, aunque exista mora', async () => {
+  const estado = crearEstado(11000);
+  estado.saldoFinanciamiento = 0;
+  estado.saldoInmueble = 0;
+  estado.contrato.mora_registrada = 300;
+  const tablas = await cargarYGenerar(estado);
+  expect(tablas[0].body[2][3]).toBe('1');
+  expect(tablas[0].body[3]).toEqual(['Próxima cuota', 'N/A', 'Cuotas pendientes', '0', 'Saldo inmueble', 'Q 0.00']);
+  expect(tablas[0].body[4][1]).toBe('Q 300.00');
+});
+
+test('mantiene cuotas pendientes si aún se deben intereses, aunque el capital esté pagado', async () => {
+  const estado = crearEstado(11000);
+  estado.saldoFinanciamiento = 1320;
+  estado.saldoInmueble = 1320;
+  const tablas = await cargarYGenerar(estado);
+  expect(tablas[0].body[2][5]).toBe('Q 0.00');
+  expect(tablas[0].body[3]).toEqual(['Próxima cuota', '2', 'Cuotas pendientes', '11', 'Saldo inmueble', 'Q 1,320.00']);
+});
+
+test('no muestra una próxima cuota cuando se pagaron todas las cuotas', async () => {
+  const estado = crearEstado(0);
+  estado.cuotasDetalle = Array.from({ length: 12 }, (_, indice) => ({
+    id_pago: indice + 1, numero_cuota: indice + 1, monto_total_detalle: 1120, fecha_pago: '2026-01-01'
+  }));
+  estado.otrosPagos = [];
+  estado.saldoFinanciamiento = 0;
+  estado.saldoInmueble = 0;
+  const tablas = await cargarYGenerar(estado);
+  expect(tablas[0].body[3].slice(0, 4)).toEqual(['Próxima cuota', 'N/A', 'Cuotas pendientes', '0']);
+});
+
+test('mantiene una cuota pendiente cuando hay saldo aunque existan registros para todas las cuotas', async () => {
+  const estado = crearEstado(0);
+  estado.cuotasDetalle = Array.from({ length: 12 }, (_, indice) => ({
+    id_pago: indice + 1, numero_cuota: indice + 1, monto_total_detalle: 1000, fecha_pago: '2026-01-01'
+  }));
+  estado.saldoFinanciamiento = 1440;
+  estado.saldoInmueble = 1440;
+  const tablas = await cargarYGenerar(estado);
+  expect(tablas[0].body[3].slice(0, 4)).toEqual(['Próxima cuota', '12', 'Cuotas pendientes', '1']);
+});

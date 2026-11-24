@@ -105,13 +105,17 @@ const EstadoCuenta = () => {
     const abonoCapital = Math.max(Number(contrato.abono_capital_total || 0), 0);
     const capitalCuotas = tabla.slice(0, cuotasPagadas).reduce((suma, fila) => suma + Number(fila.capital_cuota || 0), 0);
     const capitalPagado = redondearMoneda(Math.min(capital, capitalCuotas + abonoCapital));
-    const proxima = Math.min(cuotasPagadas + 1, cuotas);
+    const cuotasPendientes = Number(estado.saldoFinanciamiento) === 0 && estado.saldoFinanciamiento != null
+      ? 0
+      : Math.max(cuotas - cuotasPagadas, estado.saldoFinanciamiento > 0 && cuotas > 0 ? 1 : 0);
+    const proxima = cuotasPendientes > 0 ? Math.min(cuotasPagadas + 1, cuotas) : null;
     return {
       capital,
       cuotas,
       tabla,
       movimientos: movimientos.slice(0, cantidad),
       cuotasPagadas,
+      cuotasPendientes,
       capitalPagado,
       abonoCapital,
       saldoCapital: redondearMoneda(Math.max(capital - capitalPagado, 0)),
@@ -165,7 +169,7 @@ const EstadoCuenta = () => {
         ['Precio total', moneda(contrato.monto_total), 'Enganche', moneda(contrato.enganche), 'Saldo financiado', moneda(resumen.capital)],
         ['Tasa anual', `${Number(contrato.interes_porcentaje || 0).toFixed(2)}%`, 'Cuota mensual', moneda(resumen.montoCuota), 'Plazo original', `${resumen.cuotas} meses`],
         ['Capital pagado', moneda(resumen.capitalPagado), 'Cuotas pagadas', String(resumen.cuotasPagadas), 'Saldo de capital', moneda(resumen.saldoCapital)],
-        ['Próxima cuota', String(resumen.proxima || 'N/A'), 'Cuotas pendientes', String(Math.max(resumen.cuotas - resumen.cuotasPagadas, 0)), 'Saldo total', moneda(estado.saldoPendiente)],
+        ['Próxima cuota', String(resumen.proxima || 'N/A'), 'Cuotas pendientes', String(resumen.cuotasPendientes), 'Saldo inmueble', moneda(estado.saldoInmueble ?? estado.saldoPendiente)],
         ['Mora registrada', moneda(moraRegistrada), 'Abonos a capital', moneda(resumen.abonoCapital), '', '']
       ],
       columnStyles: { 0: { fontStyle: 'bold' }, 2: { fontStyle: 'bold' }, 4: { fontStyle: 'bold' } }
@@ -214,7 +218,7 @@ const EstadoCuenta = () => {
     const resultado = await Swal.fire({
       title: 'Texto manual del estado de cuenta',
       width: 950,
-      html: `<div class="text-start mb-2"><b>Contrato:</b> ${estado.contrato.codigo_contrato} &nbsp; <b>Total pagado:</b> ${moneda(estado.totalPagado)} &nbsp; <b>Saldo:</b> ${moneda(estado.saldoPendiente)}</div><div style="max-height:220px;overflow:auto"><table class="table table-sm table-bordered"><thead><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Boleta</th><th>Recibo</th></tr></thead><tbody>${filas || '<tr><td colspan="6">Sin movimientos</td></tr>'}</tbody></table></div><label class="d-block text-start fw-bold" for="texto-estado-cuenta">Texto para el PDF</label><textarea id="texto-estado-cuenta" class="swal2-textarea" style="width:90%" rows="4" placeholder="Ejemplo: SALDO A CANCELAR: Q 10,000.00">${String(textoManual || '').replace(/</g, '&lt;')}</textarea>`,
+      html: `<div class="text-start mb-2"><b>Contrato:</b> ${estado.contrato.codigo_contrato} &nbsp; <b>Total pagado:</b> ${moneda(estado.totalPagado)} &nbsp; <b>Saldo inmueble:</b> ${moneda(estado.saldoInmueble ?? estado.saldoPendiente)}</div><div style="max-height:220px;overflow:auto"><table class="table table-sm table-bordered"><thead><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Boleta</th><th>Recibo</th></tr></thead><tbody>${filas || '<tr><td colspan="6">Sin movimientos</td></tr>'}</tbody></table></div><label class="d-block text-start fw-bold" for="texto-estado-cuenta">Texto para el PDF</label><textarea id="texto-estado-cuenta" class="swal2-textarea" style="width:90%" rows="4" placeholder="Ejemplo: SALDO A CANCELAR: Q 10,000.00">${String(textoManual || '').replace(/</g, '&lt;')}</textarea>`,
       showCancelButton: true,
       confirmButtonText: 'Guardar y generar PDF',
       cancelButtonText: 'Cancelar',
@@ -236,7 +240,7 @@ const EstadoCuenta = () => {
         texto_manual: texto,
         cantidad_movimientos: cantidad,
         pdf_base64: pdfBase64,
-        datos: { contrato: estado.contrato, totalPagado: estado.totalPagado, saldoPendiente: estado.saldoPendiente, resumen, texto }
+        datos: { contrato: estado.contrato, totalPagado: estado.totalPagado, saldoPendiente: estado.saldoPendiente, saldoInmueble: estado.saldoInmueble, resumen, texto }
       });
       setTextoManual(texto);
       const { data } = await axios.get(`${API_BASE_URL}/api/estado_cuenta/historial/${estado.contrato.id_contrato}`);
@@ -263,7 +267,7 @@ const EstadoCuenta = () => {
             <div className="d-flex gap-2"><select className="form-select" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))}><option value={5}>Últimos 5 movimientos</option><option value={10}>Últimos 10 movimientos</option></select><button className="btn btn-outline-secondary text-nowrap" onClick={() => setMostrarHistorial((valor) => !valor)}>Historial ({historial.length})</button><button className="btn btn-danger text-nowrap" onClick={generarEstadoCuenta}>Generar PDF</button></div>
           </div>
           {mostrarHistorial && <div className="card border-secondary mb-3"><div className="card-header fw-bold">Historial de estados de cuenta generados</div><div className="table-responsive"><table className="table table-sm table-striped mb-0"><thead><tr><th>Fecha</th><th>Usuario</th><th>Movimientos</th><th>Texto registrado</th><th>Acciones</th></tr></thead><tbody>{historial.length ? historial.map((item) => <tr key={item.id_estado_cuenta}><td>{fecha(item.fecha_generacion)}</td><td>{item.nombre_usuario}</td><td>{item.cantidad_movimientos}</td><td>{item.texto_manual}</td><td><div className="d-flex gap-1"><button className="btn btn-sm btn-outline-primary" onClick={() => setTextoManual(item.texto_manual || '')}>Usar texto</button><button className="btn btn-sm btn-danger" disabled={!Number(item.tiene_pdf)} onClick={() => descargarHistorico(item)}>Descargar PDF</button></div></td></tr>) : <tr><td colSpan="5" className="text-center">Aún no se han generado estados de cuenta.</td></tr>}</tbody></table></div></div>}
-          <div className="row g-3 mb-3"><div className="col-md-4"><div className="alert alert-primary mb-0"><strong>Contrato:</strong> {estado.contrato.codigo_contrato}</div></div><div className="col-md-4"><div className="alert alert-success mb-0"><strong>Total pagado:</strong> {moneda(estado.totalPagado)}</div></div><div className="col-md-4"><div className="alert alert-warning mb-0"><strong>Saldo pendiente:</strong> {moneda(estado.saldoPendiente)}</div></div></div>
+          <div className="row g-3 mb-3"><div className="col-md-4"><div className="alert alert-primary mb-0"><strong>Contrato:</strong> {estado.contrato.codigo_contrato}</div></div><div className="col-md-4"><div className="alert alert-success mb-0"><strong>Total pagado:</strong> {moneda(estado.totalPagado)}</div></div><div className="col-md-4"><div className="alert alert-warning mb-0"><strong>Saldo inmueble:</strong> {moneda(estado.saldoInmueble ?? estado.saldoPendiente)}</div></div></div>
           <div className="table-responsive"><table className="table table-striped table-bordered"><thead className="table-dark"><tr><th>Fecha</th><th>Cuota</th><th>Monto</th><th>Banco</th><th>Boleta</th><th>Recibo</th><th>Capital</th><th>Interés</th></tr></thead><tbody>{resumen.movimientos.length ? resumen.movimientos.map((m) => <tr key={m.id}><td>{fecha(m.fecha)}</td><td>{m.numero}</td><td>{moneda(m.monto)}</td><td>{m.banco}</td><td>{m.boleta}</td><td>{m.recibo}</td><td>{moneda(m.capital)}</td><td>{moneda(m.interes)}</td></tr>) : <tr><td colSpan="8" className="text-center">No hay movimientos registrados.</td></tr>}</tbody></table></div>
         </>}
       </div>

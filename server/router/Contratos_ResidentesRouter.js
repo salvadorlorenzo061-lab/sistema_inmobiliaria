@@ -1169,6 +1169,18 @@ router.get("/", (req, res) => {
            SELECT c.id_contrato, c.codigo_contrato, c.id_residente, c.id_tipo_contrato,
                c.fecha_firma AS fecha_inicio, c.fecha_firma, c.fecha_compra, c.fecha_fin,
                    c.monto_total, c.saldo_pendiente, c.enganche, c.cuotas_pactadas,
+                   (
+                       SELECT SUM(pd_fin.subtotal)
+                       FROM pagos p_fin
+                       INNER JOIN pagos_detalle pd_fin ON pd_fin.id_pago = p_fin.id_pago
+                       WHERE p_fin.id_contrato = c.id_contrato
+                         AND pd_fin.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital')
+                         AND NOT EXISTS (
+                             SELECT 1 FROM facturas_historial fh_fin
+                             WHERE fh_fin.id_pago = p_fin.id_pago
+                               AND UPPER(TRIM(COALESCE(fh_fin.estado_factura, ''))) = 'ANULADA'
+                         )
+                   ) AS total_financiamiento_pagado,
                    COALESCE((
                        SELECT SUM(pd_eng.subtotal)
                        FROM pagos p_eng

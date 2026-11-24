@@ -209,6 +209,30 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                   )
             ), 0) AS abono_capital_total,
             COALESCE((
+                SELECT SUM(pd_fin.subtotal)
+                FROM pagos p_fin
+                INNER JOIN pagos_detalle pd_fin ON pd_fin.id_pago = p_fin.id_pago
+                WHERE p_fin.id_contrato = c.id_contrato
+                  AND pd_fin.tipo_concepto IN ('cuota_terreno', 'interes', 'abono_capital')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM facturas_historial fa_fin
+                      WHERE fa_fin.id_pago = p_fin.id_pago
+                        AND UPPER(TRIM(COALESCE(fa_fin.estado_factura, ''))) = 'ANULADA'
+                  )
+            ), 0) AS total_financiamiento_pagado,
+            COALESCE((
+                SELECT SUM(pd_eng.subtotal)
+                FROM pagos p_eng
+                INNER JOIN pagos_detalle pd_eng ON pd_eng.id_pago = p_eng.id_pago
+                WHERE p_eng.id_contrato = c.id_contrato
+                  AND pd_eng.tipo_concepto = 'enganche'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM facturas_historial fa_eng
+                      WHERE fa_eng.id_pago = p_eng.id_pago
+                        AND UPPER(TRIM(COALESCE(fa_eng.estado_factura, ''))) = 'ANULADA'
+                  )
+            ), 0) AS enganche_pagado,
+            COALESCE((
                 SELECT SUM(mora_unica.monto_mora)
                 FROM (
                     SELECT m.id_contrato, LOWER(TRIM(m.mes_atrasado)) AS mes_mora, m.monto_mora AS monto_mora
@@ -352,6 +376,12 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                             cuotasContrato
                         ) + Number(contract.enganche || 0);
                         const saldoPendiente = totalConIntereses - totalPagado;
+                        const saldoFinanciamiento = capitalFinanciado > 0 && cuotasContrato <= 0 ? null : Math.max(0, Number((
+                            totalConIntereses - Number(contract.enganche || 0) - Number(contract.total_financiamiento_pagado || 0)
+                        ).toFixed(2)));
+                        const saldoInmueble = saldoFinanciamiento === null ? null : Number((saldoFinanciamiento + Math.max(
+                            Number(contract.enganche || 0) - Number(contract.enganche_pagado || 0), 0
+                        )).toFixed(2));
 
                         return res.status(200).json({
                             contrato: contract,
@@ -362,6 +392,8 @@ router.get("/estado-cuenta/:id_contrato", (req, res) => {
                             totalPagado: totalPagado,
                             totalConIntereses: Number(totalConIntereses.toFixed(2)),
                             saldoPendiente: Math.max(0, saldoPendiente),
+                            saldoFinanciamiento,
+                            saldoInmueble,
                             fecha_inicio: fecha_inicio || contract.fecha_firma,
                             fecha_fin: fecha_fin || null,
                             cuotas_pactadas: contract.cuotas_pactadas

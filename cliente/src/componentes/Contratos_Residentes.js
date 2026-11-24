@@ -74,6 +74,11 @@ function Contratos_Residentes() {
       return calcularTotalPlanPlano(capitalFinanciado, Number(interes_porcentaje || 0), cuotasNumero);
     })();
 
+    if (totalConIntereses > 0 && pagosFinanciamientoContrato !== null
+      && cuotasPagadas === cuotasPagadasAlAbrir) {
+      return redondearMoneda(Math.max(totalConIntereses - pagosFinanciamientoContrato, 0));
+    }
+
     if (totalConIntereses > 0 && cuotasPagadas <= 0) {
       return totalConIntereses;
     }
@@ -167,6 +172,8 @@ function Contratos_Residentes() {
   const [anios_financiamiento, setAnios_financiamiento] = useState("");
   const [monto_cuota_manual, setMonto_cuota_manual] = useState("");
   const [cuotas_pagadas_manual, setCuotas_pagadas_manual] = useState("0");
+  const [pagosFinanciamientoContrato, setPagosFinanciamientoContrato] = useState(null);
+  const [cuotasPagadasAlAbrir, setCuotasPagadasAlAbrir] = useState(0);
   const ultimoInicioPagosAutoRef = useRef({ mes: '', anio: '' });
 
   // Listas de datos
@@ -412,8 +419,11 @@ function Contratos_Residentes() {
     parseInt(String(cuotas_pagadas_manual || '0').trim(), 10) || 0,
     0
   );
-  const cuotasPendientesCalculadas = Math.max(cuotasCalculadasNumero - cuotasPagadasNumero, 0);
   const saldoPendienteVisibleCalculado = calcularSaldoPendienteDesdeCuota();
+  const cuotasPendientesCalculadas = cuotasCalculadasNumero > 0 && Number(monto_total) > Number(enganche)
+    && saldoPendienteVisibleCalculado === 0
+    ? 0
+    : Math.max(cuotasCalculadasNumero - cuotasPagadasNumero, saldoPendienteVisibleCalculado > 0 && cuotasCalculadasNumero > 0 ? 1 : 0);
   const capitalFinanciadoContrato = Math.max(Number(monto_total || 0) - Number(enganche || 0), 0);
   const interesFijoMensualContrato = calcularInteresFijoMensual(capitalFinanciadoContrato, Number(interes_porcentaje || 0));
   const cuotaManualDiferenteDeAutomatica = Math.round(Number(monto_cuota_manual || 0)) > 0
@@ -1292,6 +1302,8 @@ function Contratos_Residentes() {
     setPlazo_meses(val.cuotas_pactadas || val.plazo_meses || '');
     const ultimaCuotaPagadaPersistida = Math.max(parseInt(String(val.ultima_cuota_pagada ?? val.cuotas_pagadas ?? '0').trim(), 10) || 0, 0);
     setCuotas_pagadas_manual(String(ultimaCuotaPagadaPersistida));
+    setCuotasPagadasAlAbrir(ultimaCuotaPagadaPersistida);
+    setPagosFinanciamientoContrato(val.total_financiamiento_pagado == null ? null : Number(val.total_financiamiento_pagado));
     setAnios_financiamiento(
       Number.isFinite(plazoContrato) && plazoContrato > 0
         ? String(redondearMoneda(plazoContrato / 12))
@@ -1387,6 +1399,8 @@ function Contratos_Residentes() {
     setModalidad_pago("financiado");
     setEnganchePagadoContrato(false);
     setMontoEnganchePagadoContrato(0);
+    setPagosFinanciamientoContrato(null);
+    setCuotasPagadasAlAbrir(0);
     setPorcentaje_dominio("80"); setPlazo_meses(""); setAnios_financiamiento(""); setCuotas_pagadas_manual("0");
     setMonto_cuota_manual("");
     setInicioPagosCalculado({ mes: '', anio: '', dia: '' });
